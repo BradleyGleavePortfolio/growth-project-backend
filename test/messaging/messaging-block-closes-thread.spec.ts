@@ -39,8 +39,8 @@ function fixture(blocks: Array<[blocker: string, blocked: string]>) {
   const prisma = {
     user: {
       findFirst: jest.fn().mockResolvedValue({ id: CLIENT, coach_id: COACH }),
-      findUnique: jest.fn().mockResolvedValue({ coach_id: COACH, name: 'Coach' }),
-      findMany: jest.fn().mockResolvedValue([{ id: CLIENT, name: 'Client' }]),
+      findUnique: jest.fn().mockResolvedValue({ coach_id: COACH, name: 'Corey Coach' }),
+      findMany: jest.fn().mockResolvedValue([{ id: CLIENT, name: 'Casey Client' }]),
     },
     coachMessage: {
       findFirst: jest.fn().mockResolvedValue(rows[1]),
@@ -115,6 +115,9 @@ describe('#168-4: a block closes the coaching 1:1 thread both ways', () => {
     expect(client).toMatchObject({ closed: true, blocked_by_me: blocks[0][0] === CLIENT, last_message: null, unread_count: 0 });
     const coach = (await f.inbox.inboxForCoach(COACH, {})).items[0];
     expect(coach).toMatchObject({ closed: true, blocked_by_me: blocks[0][0] === COACH, last_message: null, unread_count: 0 });
+    // #169-5 CLOSED-LINE: each row names the other person, so the blocked side can read "{N} has blocked you".
+    expect(client.counterpart).toEqual({ user_id: COACH, display_name: 'Corey Coach' });
+    expect(coach.counterpart).toEqual({ user_id: CLIENT, display_name: 'Casey Client' });
     expect(await f.messaging.unreadCountForClient(CLIENT)).toEqual({ total: 0 });
   });
 

@@ -41,8 +41,19 @@ export type CommunityDmThreadResponse = z.infer<
   typeof CommunityDmThreadResponseSchema
 >;
 
+/**
+ * #169-5 CLOSED-LINE: a list row says whether a block (either way) closed the
+ * thread and who placed it, with the other member's display name. A closed row
+ * carries no time (last_message_at null); DM rows carry no text or unread count.
+ */
+export const CommunityDmThreadListRowSchema = CommunityDmThreadSchema.extend({
+  closed: z.boolean(),
+  blocked_by_me: z.boolean(),
+  other_display_name: z.string(),
+}).strict();
+
 export const CommunityDmThreadListResponseSchema = z
-  .object({ threads: z.array(CommunityDmThreadSchema) })
+  .object({ threads: z.array(CommunityDmThreadListRowSchema) })
   .strict();
 export type CommunityDmThreadListResponse = z.infer<
   typeof CommunityDmThreadListResponseSchema

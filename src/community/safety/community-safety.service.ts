@@ -35,9 +35,15 @@ export const DM_BLOCKED_BY_YOU = {
 } as const;
 
 /**
- * DM refusal for the person who WAS blocked: the same 404 body as a DM with a
- * member who is not there, so the block is never disclosed ("they are not
- * told"). Kept identical to CommunityDmsService's not-found body.
+ * #169-5 CLOSED-LINE (owner): in a one-to-one conversation the person who WAS
+ * blocked is told, so the phone shows "{N} has blocked you" (BAM-2b). Nobody
+ * else learns of the block: spaces, search and notifications are unchanged.
+ */
+export const DM_BLOCKED_BY_THEM = { error: 'forbidden', code: 'community.dm.blocked_by_them' } as const;
+
+/**
+ * DM refusal when a member is not there (left, banned, never joined). Kept
+ * identical to CommunityDmsService's not-found body.
  */
 export const DM_UNAVAILABLE = {
   error: 'not_found',
@@ -249,7 +255,7 @@ export class CommunitySafetyService {
   /**
    * A block in either direction closes the DM (open, read, send). The blocker
    * gets 403 community.dm.blocked_by_you with the unblock step; the blocked
-   * person gets the plain not-found body, so the block is not disclosed.
+   * person gets 403 community.dm.blocked_by_them (#169-5 CLOSED-LINE).
    */
   async assertDmAllowed(senderId: string, recipientId: string): Promise<void> {
     const rows = await this.prisma.userBlock.findMany({
@@ -265,7 +271,34 @@ export class CommunitySafetyService {
     if (rows.some((r) => r.blocker_id === senderId && r.blocked_id === recipientId)) {
       throw new ForbiddenException(DM_BLOCKED_BY_YOU);
     }
-    throw new NotFoundException(DM_UNAVAILABLE);
+    throw new ForbiddenException(DM_BLOCKED_BY_THEM);
+  }
+
+  /**
+   * #169-5 CLOSED-LINE, the DM list: filterBlocked's place rule alone (a partner
+   * who left or is banned drops the row), plus the block either way, so a
+   * blocked thread stays listed for both people as a closed row.
+   */
+  async dmRowsWithBlock<T>(
+    viewerId: string,
+    rows: T[],
+    otherOf: (row: T) => string,
+    placeOf: (row: T) => RowPlace,
+  ): Promise<Array<{ row: T; closed: boolean; blockedByMe: boolean }>> {
+    if (rows.length === 0) return [];
+    const [kept, blocks] = await Promise.all([
+      rowsByAuthorsWhoStay(this.prisma, viewerId, rows, otherOf, placeOf),
+      this.prisma.userBlock.findMany({
+        where: { OR: [{ blocker_id: viewerId }, { blocked_id: viewerId }] },
+        select: { blocker_id: true, blocked_id: true },
+      }),
+    ]);
+    const byMe = new Set(blocks.filter((b) => b.blocker_id === viewerId).map((b) => b.blocked_id));
+    const byThem = new Set(blocks.filter((b) => b.blocked_id === viewerId).map((b) => b.blocker_id));
+    return kept.map((row) => {
+      const other = otherOf(row);
+      return { row, closed: byMe.has(other) || byThem.has(other), blockedByMe: byMe.has(other) };
+    });
   }
 
   /**

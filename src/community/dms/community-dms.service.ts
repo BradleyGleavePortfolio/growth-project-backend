@@ -23,12 +23,13 @@ import {
   CommunityDmThreadResponseSchema,
 } from '../dto/community-dm.dto';
 import { CommunitySafetyService, DM_UNAVAILABLE } from '../safety/community-safety.service';
+import { memberName } from '../member-display-name';
 
 const DEFAULT_PAGE = 30;
 const MAX_PAGE = 100;
 
-// Same body as the block refusal seen by a blocked member (DM_UNAVAILABLE),
-// so "not there" and "blocked you" are indistinguishable.
+// A member who is not there (left, banned, never joined). A block is told
+// apart since #169-5 (403 blocked_by_you / blocked_by_them).
 const DM_NOT_FOUND = DM_UNAVAILABLE;
 
 const DM_DISABLED = {
@@ -252,20 +253,28 @@ export class CommunityDmsService {
       userId: user.id,
       limit: this.parsePage(query.limit),
     });
-    // #168-4: the other member's place in this community too (left, or banned).
-    const visible = await this.safety.filterBlocked(
-      user.id,
-      rows,
-      (m) => (m.sender_id === user.id ? m.recipient_user_id : m.sender_id),
-      (m) => [m.workspace_id, null],
-    );
+    const otherOf = (m: CommunityMessage) => (m.sender_id === user.id ? (m.recipient_user_id ?? '') : m.sender_id);
+    // #168-4: a partner who left or is banned drops the row. #169-5 CLOSED-LINE: a block either way keeps
+    // it for both people as a closed row (no time), so each phone can say who closed it.
+    const kept = await this.safety.dmRowsWithBlock(user.id, rows, otherOf, (m) => [m.workspace_id, null]);
+    const ids = kept.map(({ row }) => otherOf(row));
+    const [names, full] = await Promise.all([
+      this.dms.namesOf(ids),
+      this.access.fullNamesFor(user.id, workspaceId, ids.map((id) => [null, id] as const)),
+    ]);
+    // The community's own name rule: the coach sees full names; members see a first name, or the full
+    // name where a space open to all of the coach's clients shows it (#C6-NAMES-EVERYWHERE).
+    const nameOf = (id: string) => memberName(names.get(id), workspace.coach_id === user.id || full(null, id));
     return CommunityDmThreadListResponseSchema.parse({
-      threads: visible.map((m) => ({
+      threads: kept.map(({ row: m, closed, blockedByMe }) => ({
         thread_id: m.dm_key ?? '',
         workspace_id: m.workspace_id,
-        other_user_id: m.sender_id === user.id ? (m.recipient_user_id ?? '') : m.sender_id,
+        other_user_id: otherOf(m),
         created_at: null,
-        last_message_at: m.created_at.toISOString(),
+        last_message_at: closed ? null : m.created_at.toISOString(),
+        closed,
+        blocked_by_me: blockedByMe,
+        other_display_name: nameOf(otherOf(m)),
       })),
     });
   }
