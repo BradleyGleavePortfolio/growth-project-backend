@@ -341,7 +341,7 @@ describe('PublicPagesController help pages', () => {
   });
 });
 
-// MUTED-TEXT (owner #166-9 op 1): the small grey text meets WCAG AA 4.5:1 on the page paper.
+// MUTED-TEXT (owner #166-9 op 1, then #168-13 #2C2C2C): the small grey text meets WCAG AA 4.5:1 on the page paper.
 describe('help pages small grey text contrast', () => {
   it('nav links, reviewed date, footnote and footer meet AA contrast', () => {
     const ratios = contrastOnPaper(renderHelpPage('index'), [

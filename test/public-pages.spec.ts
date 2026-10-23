@@ -207,7 +207,7 @@ describe('public page copy accuracy (F10)', () => {
   });
 });
 
-// MUTED-TEXT (owner #166-9 op 1): the small grey text meets WCAG AA 4.5:1 on the page paper.
+// MUTED-TEXT (owner #166-9 op 1, then #168-13 #2C2C2C): the small grey text meets WCAG AA 4.5:1 on the page paper.
 describe('public pages small grey text contrast', () => {
   it('invite code label and footer meet AA contrast', () => {
     const html = renderSignupPage('GP-A1B2C3');

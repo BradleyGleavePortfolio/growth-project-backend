@@ -141,7 +141,7 @@ function baseDocument(opts: { title: string; body: string }): string {
 <meta name="robots" content="noindex,nofollow" />
 <title>${escapeHtml(opts.title)}</title>
 <style>
-  :root { --accent: #1F1B16; --ink: #1F1B16; --paper: #FAF7F2; --muted: #6B6259; --line: #E7E1D6; --soft: #F1ECE1; }
+  :root { --accent: #1F1B16; --ink: #1F1B16; --paper: #FAF7F2; --muted: #2C2C2C; --line: #E7E1D6; --soft: #F1ECE1; }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
   body { background: var(--paper); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; line-height: 1.5; min-height: 100vh; display: grid; place-items: center; padding: 32px 20px; }

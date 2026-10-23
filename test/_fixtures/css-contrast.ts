@@ -1,4 +1,4 @@
-// MUTED-TEXT (owner #166-9 op 1): WCAG contrast of a rule's text colour against
+// MUTED-TEXT (owner #166-9 op 1; FX-1136 #168-13): WCAG contrast of a rule's text colour against
 // the page background, both read from the page's own <style> block.
 function luminance(hex: string): number {
   const [r, g, b] = [1, 3, 5].map((i) => {

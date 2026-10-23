@@ -897,7 +897,7 @@ describe('the wearable AI notes sentence (owner 161-1 op 1, WEAR-AI-03 / WEAR-AI
   });
 });
 
-// MUTED-TEXT (owner #166-9 op 1): the small grey text meets WCAG AA 4.5:1 on the page paper.
+// MUTED-TEXT (owner #166-9 op 1, then #168-13 #2C2C2C): the small grey text meets WCAG AA 4.5:1 on the page paper.
 describe('trust pages small grey text contrast', () => {
   it('nav links, reviewed date, footnote and footer meet AA contrast', () => {
     const ratios = contrastOnPaper(renderTrustPage('privacy'), [
