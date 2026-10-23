@@ -3,9 +3,12 @@
  * jest.config.js roots do not include src/community/space-push (FX-1138 moved it here so CI runs it).
  */
 import 'reflect-metadata';
+import { readdirSync, readFileSync } from 'fs';
+import { join } from 'path';
 import { NotificationKind } from '../../../src/notifications/notification-kind';
 import { lockScreenCopy } from '../../../src/notifications/push/lock-screen-copy';
 import { quietHoursFor } from '../../../src/notifications/push/push-quiet-hours';
+import { pushTapData } from '../../../src/notifications/notifications.service';
 import { CommunitySpacePushService } from '../../../src/community/space-push/community-space-push.service';
 import {
   HIGH_ALERT_DAILY_LIMIT,
@@ -55,12 +58,21 @@ describe('SC-PUSH policy', () => {
     expect(HIGH_ALERT_DAILY_LIMIT).toBe(3);
   });
 
+  it('one push per person per message: a reply that is also a High alert sends the author one push, not two', () => {
+    const plan = planSpacePush({ senderId: S, repliedToId: 'all1', highAlert: true }, readers);
+    expect(plan.filter((p) => p.userId === 'all1')).toEqual([{ userId: 'all1', kind: 'high_alert', unread: 1 }]);
+    const ids = planSpacePush({ senderId: S, repliedToId: 'all5', highAlert: false }, readers).map((p) => p.userId);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
   it('one collapse id per space; the first unread rings, later ones update quietly; priority rings on its own', () => {
     const at = (kind: 'unread' | 'reply' | 'high_alert', unread: number) => ({ kind, unread, space: 'Team', cohortId: 'c1' });
     expect(spacePushExpoFields(at('unread', 1))).toEqual({ sound: 'default', interruptionLevel: 'active', collapseId: spaceCollapseId('c1'), tag: spaceCollapseId('c1') });
     expect(spacePushExpoFields(at('unread', 4))).toEqual({ sound: null, interruptionLevel: 'passive', collapseId: 'space-unread-c1', tag: 'space-unread-c1' });
     expect(spaceCollapseId('c2')).not.toBe(spaceCollapseId('c1'));
-    expect(spacePushExpoFields(at('reply', 4))).toEqual({ sound: 'default', interruptionLevel: 'time-sensitive' });
+    // CONTRACT 6352893561: a reply rings as an ordinary notification; only a High alert is time-sensitive.
+    expect(spacePushExpoFields(at('reply', 4))).toEqual({ sound: 'default', interruptionLevel: 'active' });
+    expect(spacePushExpoFields(at('high_alert', 0))).toEqual({ sound: 'default', interruptionLevel: 'time-sensitive' });
     expect(spacePushExpoFields(at('high_alert', 0)).collapseId).toBeUndefined();
     expect(spacePushExpoFields(undefined)).toEqual({});
   });
@@ -95,6 +107,44 @@ describe('SC-PUSH policy', () => {
     expect(night).toEqual({ deliverAt: new Date('2026-10-23T15:00:00Z'), deferred: true, reason: 'quiet_hours' });
     const noon = new Date('2026-10-23T19:00:00Z');
     expect(quietHoursFor({ kind: NotificationKind.COMMUNITY_MESSAGE_RECEIVED, timeZone: tz, now: noon })).toEqual({ deliverAt: noon, deferred: false, reason: 'open' });
+  });
+
+  it('quiet hours are the app window 21:00-08:00 in the member\'s own zone (#168-14 record 6353457468)', () => {
+    const at = (iso: string, timeZone = 'America/Los_Angeles') =>
+      quietHoursFor({ kind: NotificationKind.COMMUNITY_MESSAGE_RECEIVED, timeZone, now: new Date(iso) });
+    expect(at('2026-10-24T03:59:00Z').deferred).toBe(false); // 20:59 PDT
+    expect(at('2026-10-24T04:00:00Z')).toMatchObject({ deferred: true, deliverAt: new Date('2026-10-24T15:00:00Z') }); // 21:00 PDT
+    expect(at('2026-10-23T14:59:00Z')).toMatchObject({ deferred: true, deliverAt: new Date('2026-10-23T15:00:00Z') }); // 07:59 PDT
+    expect(at('2026-10-23T15:00:00Z').deferred).toBe(false); // 08:00 PDT
+    // The same instant is 19:00 in Los Angeles (goes now) and 22:00 in New York (waits for 08:00 there).
+    expect(at('2026-10-24T02:00:00Z').deferred).toBe(false);
+    expect(at('2026-10-24T02:00:00Z', 'America/New_York')).toMatchObject({ deferred: true, deliverAt: new Date('2026-10-24T12:00:00Z') });
+  });
+
+  it('a tap opens the space at that message: the deep link reaches the push data unchanged', () => {
+    const link = 'tgp://community/cohorts/c1?message=m2';
+    expect(pushTapData(NotificationKind.COMMUNITY_MESSAGE_RECEIVED, link, undefined)).toMatchObject({ deepLink: link });
+  });
+
+  it('#170-1: a ban covers the whole community; the space readers come from the one access rule', () => {
+    // readersNow asks app.community_can_access for a space; its newest definition leaves out anyone with an
+    // open community_workspace_bans row for the space's community (workspace), never a per-space ban.
+    const src = readFileSync(join(__dirname, '../../../src/community/community-space-access.ts'), 'utf8');
+    expect(src).toMatch(/app\.community_can_access\(\$\{spaceId\}::uuid/);
+    const dir = join(__dirname, '../../../prisma/migrations');
+    const defs = readdirSync(dir)
+      .filter((d) => /^\d+_/.test(d))
+      .sort()
+      .map((d) => {
+        try {
+          return readFileSync(join(dir, d, 'migration.sql'), 'utf8');
+        } catch {
+          return '';
+        }
+      })
+      .filter((sql) => /FUNCTION app\.community_can_access\(/.test(sql));
+    const newest = defs[defs.length - 1].split(/FUNCTION app\.community_can_access\(/)[1].split('$fn$;')[0];
+    expect(newest).toMatch(/community_workspace_bans" b\s+WHERE b\."workspace_id" = c\."workspace_id" AND b\."user_id" = p_user_id AND b\."lifted_at" IS NULL/);
   });
 });
 
@@ -231,11 +281,14 @@ describe('SC-PUSH service', () => {
     });
 
     it('either side of a block: the author replied to gets nothing, and a reply to yourself pushes no one twice', async () => {
-      replyTo('a');
-      prisma.$queryRaw.mockReset().mockResolvedValueOnce([{ id: S }, { id: 'a' }]).mockResolvedValue([{ c: 'c1', n: 1 }]);
-      prisma.userBlock.findMany.mockResolvedValue([{ blocker_id: 'a', blocked_id: S }]);
-      await svc.messageStored('m2');
-      expect(sendPush).not.toHaveBeenCalled();
+      for (const block of [{ blocker_id: 'a', blocked_id: S }, { blocker_id: S, blocked_id: 'a' }]) {
+        sendPush.mockClear();
+        replyTo('a');
+        prisma.$queryRaw.mockReset().mockResolvedValueOnce([{ id: S }, { id: 'a' }]).mockResolvedValue([{ c: 'c1', n: 1 }]);
+        prisma.userBlock.findMany.mockResolvedValue([block]);
+        await svc.messageStored('m2');
+        expect(sendPush).not.toHaveBeenCalled();
+      }
 
       replyTo(S);
       prisma.$queryRaw.mockReset().mockResolvedValueOnce([{ id: S }, { id: 'a' }]).mockResolvedValue([{ c: 'c1', n: 1 }]);
@@ -243,6 +296,32 @@ describe('SC-PUSH service', () => {
       await svc.messageStored('m2');
       expect(sendPush.mock.calls.map((c) => [c[0].user_id, c[0].context.spacePush.kind])).toEqual([['a', 'unread']]);
     });
+  });
+
+  it('#170-1: an author banned from the community is not a reader, so a reply to them pushes no one and names no one', async () => {
+    prisma.communityMessage.findFirst
+      .mockReset()
+      .mockResolvedValueOnce({ id: 'm2', workspace_id: 'w', cohort_id: 'c1', sender_id: S, parent_message_id: 'p1', high_alert: false })
+      .mockResolvedValueOnce({ sender_id: 'banned' });
+    // app.community_can_access (readersNow) leaves out the banned author; only 'b' reads the space.
+    prisma.$queryRaw.mockReset().mockResolvedValueOnce([{ id: S }, { id: 'b' }]).mockResolvedValue([{ c: 'c1', n: 1 }]);
+    prisma.userBlock.findMany.mockResolvedValue([]);
+    await svc.messageStored('m2');
+    expect(sendPush.mock.calls.map((c) => [c[0].user_id, c[0].context.spacePush.kind])).toEqual([['b', 'unread']]);
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('every space push goes through the outbox as non-urgent, so quiet hours and the master switch apply', async () => {
+    prisma.communityMessage.findFirst.mockResolvedValue({ id: 'm3', workspace_id: 'w', cohort_id: 'c1', sender_id: S, parent_message_id: null, high_alert: true });
+    prisma.$queryRaw.mockReset().mockResolvedValueOnce([{ id: S }, { id: 'a' }, { id: 'b' }]).mockResolvedValue([{ c: 'c1', n: 1 }]);
+    prisma.userBlock.findMany.mockResolvedValue([]);
+    await svc.messageStored('m3');
+    expect(sendPush).toHaveBeenCalledTimes(2);
+    for (const [input] of sendPush.mock.calls) {
+      expect(input.urgent).toBeUndefined();
+      expect(input.deep_link).toBe('tgp://community/cohorts/c1?message=m3');
+      expect(input.context.spacePush.kind).toBe('high_alert');
+    }
   });
 
   it('switch off: nothing', async () => {

@@ -82,7 +82,8 @@ export function spacePushCopy(p: SpacePushContext): { title: string; body: strin
   return { title: p.space, body: p.unread === 1 ? `1 unread message in ${p.space}` : `${n} unread messages in ${p.space}` };
 }
 
-/** Extra Expo fields: the unread notification collapses and goes quiet after the first; priority ones ring. */
+/** Extra Expo fields: the unread notification collapses and goes quiet after the first; priority ones ring.
+ * Only a High alert is time-sensitive (CONTRACT 6352893561); a reply rings as an ordinary notification. */
 export function spacePushExpoFields(p: SpacePushContext | undefined): {
   sound?: 'default' | null;
   interruptionLevel?: 'active' | 'passive' | 'time-sensitive';
@@ -90,7 +91,8 @@ export function spacePushExpoFields(p: SpacePushContext | undefined): {
   tag?: string;
 } {
   if (!p) return {};
-  if (p.kind !== 'unread') return { sound: 'default', interruptionLevel: 'time-sensitive' };
+  if (p.kind === 'high_alert') return { sound: 'default', interruptionLevel: 'time-sensitive' };
+  if (p.kind === 'reply') return { sound: 'default', interruptionLevel: 'active' };
   const id = spaceCollapseId(p.cohortId);
   return p.unread <= 1
     ? { sound: 'default', interruptionLevel: 'active', collapseId: id, tag: id }
