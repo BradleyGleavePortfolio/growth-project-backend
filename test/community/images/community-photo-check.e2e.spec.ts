@@ -28,6 +28,7 @@ function stub<T>(v: unknown): T {
 
 const WS = '22222222-2222-4222-8222-222222222222';
 const SPACE = '11111111-1111-4111-8111-111111111111';
+const FOREIGN = '33333333-3333-4333-8333-333333333333';
 const ME = 'aaaaaaaa-0000-4000-8000-000000000001';
 const me = stub<User>({ id: ME, role: 'client' });
 const CAPTION = 'after the long run';
@@ -116,7 +117,7 @@ function world(opts: { reply?: Reply; statSize?: number } = {}) {
   const key = mintImageKey(ME, SPACE);
   objects.set(key, PHOTO);
   const send = (body = CAPTION) => service.send(me, SPACE, body, undefined, undefined, { key, width: 1200, height: 900 });
-  return { send, key, objects, messages, rows, checks, reader, setReply: (r: Reply) => (reply = r) };
+  return { service, send, key, objects, messages, rows, checks, reader, setReply: (r: Reply) => (reply = r) };
 }
 
 const codeOf = (p: Promise<unknown>) =>
@@ -192,6 +193,17 @@ describe('the automatic photo check on a space chat photo send (PHOTO-CHECK-BE)'
     expect(w.messages).toEqual([]);
     expect(w.rows).toEqual([]);
     expect([...w.objects.keys()]).toEqual([w.key]);
+  });
+
+  it("never sends another member's upload, or a space the sender cannot see, to the check", async () => {
+    const w = world();
+    const theirs = mintImageKey('bbbbbbbb-0000-4000-8000-000000000002', SPACE);
+    w.objects.set(theirs, PHOTO);
+    expect(await codeOf(w.send())).toBe('ok'); // control: my own photo is checked, once
+    const before = w.checks.length;
+    expect(await codeOf(w.service.send(me, SPACE, CAPTION, undefined, undefined, { key: theirs, width: 1, height: 1 }))).not.toBe('ok');
+    await expect(w.service.send(me, FOREIGN, CAPTION, undefined, undefined, { key: w.key, width: 1, height: 1 })).rejects.toThrow();
+    expect([before, w.checks.length]).toEqual([1, 1]);
   });
 
   it('the same send goes through once the check answers again', async () => {
