@@ -132,12 +132,12 @@ const codeOf = (p: Promise<unknown>) =>
 beforeEach(() => {
   process.env.FEATURE_COMMUNITY_IMAGES = 'true';
   process.env.VOICE_KEY_SIGNING_SECRET = 'photo-check-test-secret';
-  process.env.OPENAI_MODERATION_API_KEY = 'k-photo-check';
+  process.env.PHOTO_CHECK_OPENAI_API_KEY = 'k-photo-check';
 });
 afterEach(() => {
   delete process.env.FEATURE_COMMUNITY_IMAGES;
   delete process.env.VOICE_KEY_SIGNING_SECRET;
-  delete process.env.OPENAI_MODERATION_API_KEY;
+  delete process.env.PHOTO_CHECK_OPENAI_API_KEY;
   jest.restoreAllMocks();
 });
 
@@ -177,17 +177,17 @@ describe('the automatic photo check on a space chat photo send (PHOTO-CHECK-BE)'
     expect(w.objects.size).toBe(0); // no sent copy, and the upload is gone
   });
 
-  const unavailable: Array<[string, Parameters<typeof world>[0], (() => void)?]> = [
-    ['no key is set', {}, () => delete process.env.OPENAI_MODERATION_API_KEY],
+  const unavailable: Array<[string, { reply?: Reply; statSize?: number; noKey?: boolean }]> = [
+    ['no key is set', { noKey: true }],
     ['OpenAI answers 429', { reply: () => new Response('{}', { status: 429 }) }],
     ['OpenAI answers 500', { reply: () => new Response('{}', { status: 500 }) }],
     ['the network fails', { reply: () => Promise.reject(new TypeError('fetch failed')) }],
     ['the answer has no results', { reply: () => new Response('{"results":[]}', { status: 200, headers: { 'content-type': 'application/json' } }) }],
     ['the download is not the whole checked upload', { statSize: PHOTO.length + 1 }],
   ];
-  it.each(unavailable)('fails closed when %s: 503 PHOTO_CHECK_UNAVAILABLE, nothing written, upload kept', async (_why, opts, before) => {
+  it.each(unavailable)('fails closed when %s: 503 PHOTO_CHECK_UNAVAILABLE, nothing written, upload kept', async (_why, opts) => {
     const w = world(opts);
-    before?.();
+    if (opts.noKey) delete process.env.PHOTO_CHECK_OPENAI_API_KEY;
     expect(await codeOf(w.send())).toBe('503 PHOTO_CHECK_UNAVAILABLE');
     expect(w.checks.length).toBeLessThanOrEqual(1); // never a retry
     expect(w.messages).toEqual([]);

@@ -38,7 +38,7 @@ async function outcome(
   size: number,
   caption: string,
 ): Promise<Outcome> {
-  const apiKey = process.env.OPENAI_MODERATION_API_KEY?.trim();
+  const apiKey = process.env.PHOTO_CHECK_OPENAI_API_KEY?.trim();
   if (!apiKey) return 'not_configured';
   let jpeg: Buffer;
   try {

@@ -2219,11 +2219,11 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Photos in the space chat (SC-BE3).',
   },
   {
-    name: 'OPENAI_MODERATION_API_KEY',
+    name: 'PHOTO_CHECK_OPENAI_API_KEY',
     tier: 'optional',
     default: 'unset → every space chat photo send is refused with 503 PHOTO_CHECK_UNAVAILABLE',
     reason:
-      'OpenAI API key for the automatic photo check (PHOTO-CHECK-BE: omni-moderation-latest, before a space chat photo posts). Secret. Its own key, separate from OPENAI_API_KEY.',
+      'OpenAI API key for the automatic photo check (PHOTO-CHECK-BE: omni-moderation-latest, before a space chat photo posts). Secret. Its own key, named outside the OpenAI SDK env family (OPENAI_*), so the SDK never reads it on its own.',
   },
   {
     name: 'FEATURE_COMMUNITY_VOICE_NOTES',

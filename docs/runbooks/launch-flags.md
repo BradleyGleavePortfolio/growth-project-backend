@@ -204,11 +204,10 @@ Emergency kill, in order: `FEATURE_MWB_AI_LIVE_CREATE` unset (only the builder s
 
 **Community core (Wave A).** Flip `FEATURE_COMMUNITY_API` and the core set (`_POSTS`, `_MESSAGES`, `_PUSH`, `_REALTIME`, and `_VOICE_NOTES` once its audit and device pass are done) in one PR, after the community report/block lane (#610) is deployed. The preconditions reject surface flags without the API flag.
 
-**OPENAI_MODERATION_API_KEY before FEATURE_COMMUNITY_IMAGES (PHOTO-CHECK-BE, #167-7 IMAGES op 1).** Every space chat photo is checked by OpenAI's moderation endpoint before it posts. The key ships as its ghost value (`"unset"`), and while it is unset every photo send is refused with `503 PHOTO_CHECK_UNAVAILABLE`, so the owner must add this key before FEATURE_COMMUNITY_IMAGES turns on:
+**PHOTO_CHECK_OPENAI_API_KEY before FEATURE_COMMUNITY_IMAGES (PHOTO-CHECK-BE, #167-7 IMAGES op 1).** Every space chat photo is checked by OpenAI's moderation endpoint before it posts. The key is a provider key (listed under `excluded`, so the sync never touches it) and ships as its ghost value, unset; while it is unset every photo send is refused with `503 PHOTO_CHECK_UNAVAILABLE`, so the owner must add this key before FEATURE_COMMUNITY_IMAGES turns on:
 
-1. The owner creates the GitHub Actions secret `OPENAI_MODERATION_API_KEY` (its own OpenAI key, not `OPENAI_API_KEY`).
-2. One PR declares `"OPENAI_MODERATION_API_KEY": "github-secret"` and adds it to the `BEGIN SOURCES` blocks; run plan, then apply with `deploy_staged=true`, then plan (`Deployed | match | keep`).
-3. Only then, in its own PR, `"FEATURE_COMMUNITY_IMAGES": "true"`. Device pass: an everyday photo posts; a photo the check flags gets `422 PHOTO_NOT_ALLOWED` and nothing posts.
+1. The owner sets `PHOTO_CHECK_OPENAI_API_KEY` on Fly (`fly secrets set --stage`; its own OpenAI key, not `OPENAI_API_KEY`); the next deploy picks it up.
+2. Only then, in its own PR, `"FEATURE_COMMUNITY_IMAGES": "true"`. Device pass: an everyday photo posts; a photo the check flags gets `422 PHOTO_NOT_ALLOWED` and nothing posts.
 
 Roll back the photos with `"FEATURE_COMMUNITY_IMAGES": "unset"`. Removing the key never lets a photo through unchecked: every send is refused until it is back.
 

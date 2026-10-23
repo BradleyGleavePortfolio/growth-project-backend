@@ -84,7 +84,6 @@
     "CONTRACT_PDF_URL_SECRET": "unset",
     "SCHEDULING_WEBHOOK_SECRET": "unset",
     "VOICE_KEY_SIGNING_SECRET": "github-secret",
-    "OPENAI_MODERATION_API_KEY": "unset",
     "SIGNUP_MARKER_SIGNING_SECRET": "github-secret",
     "PUBLIC_LISTING_CURSOR_SECRET": "github-secret",
     "GARMIN_WEBHOOK_SALT": "unset",
@@ -171,7 +170,6 @@
     "CONTRACT_PDF_URL_SECRET": "Absent on Fly; contracts are not in launch scope. To set: create the GitHub secret, then flip to github-secret.",
     "SCHEDULING_WEBHOOK_SECRET": "Absent on Fly. To set: create the GitHub secret, then flip to github-secret.",
     "VOICE_KEY_SIGNING_SECRET": "K5 (SEC-06): own secret for community voice key MACs. github-secret: the operator set the GitHub secret on 2026-10-12 under owner decision 39 (Option 1: the operator generates it unseen into GitHub secrets, 64 hex characters from 'openssl rand -hex 32'; the env sync then pushes it). Absent on Fly before this (env-truth 37652856906), so keys were derived from SUPABASE_SERVICE_ROLE_KEY. Merge only after the GitHub secret exists; the plan fails closed while it is missing. Unpublished uploads minted before keep working for 24h10m after the restart.",
-    "OPENAI_MODERATION_API_KEY": "PHOTO-CHECK-BE: the automatic photo check (#167-7 IMAGES op 1) sends each space chat photo to OpenAI's moderation endpoint before it posts. Ships as its ghost value: unset, so every photo send is refused with 503 PHOTO_CHECK_UNAVAILABLE (fail closed). The owner must add this key before FEATURE_COMMUNITY_IMAGES turns on: create the GitHub secret, then flip this to github-secret (and add it to the fly-env-sync env block) in its own PR.",
     "SIGNUP_MARKER_SIGNING_SECRET": "K5 (SEC-06): own HMAC key for the sign-up attempt marker. github-secret: the operator set the GitHub secret on 2026-10-12 under owner decision 39 (Option 1: the operator generates it unseen into GitHub secrets, 64 hex characters from 'openssl rand -hex 32'; the env sync then pushes it). Absent on Fly before this, so SUPABASE_SERVICE_ROLE_KEY keyed it. Merge only after the GitHub secret exists; the plan fails closed while it is missing. Markers minted before keep verifying for 7 days after the restart.",
     "PUBLIC_LISTING_CURSOR_SECRET": "HMAC key for the talent marketplace public listing cursors (src/talent-marketplace/public-listing.cursor.ts). github-secret: the operator set the GitHub secret on 2026-10-12 with the two K5 secrets, under owner decisions 36 and 39 (Option 1 each: the operator generates it unseen into GitHub secrets, 64 hex characters from 'openssl rand -hex 32'; the env sync then pushes it). Not managed here before this; while it is absent on Fly, production signs cursors with the public fallback 'tm3-public-cursor-dev' and logs one boot warning. Merge only after the GitHub secret exists; the plan fails closed while it is missing. Cursors issued before the restart stop verifying and that browse request returns page 1; there is no error and no data change.",
     "GARMIN_WEBHOOK_SALT": "Cloud wearables are not used in v1 (Apple Health and Health Connect are on-device). Absent on Fly.",
@@ -204,6 +202,7 @@
   },
   "excluded": {
     "FEATURE_COMMUNITY_API_ALLOWLIST": "A list of user ids, not a closed-choice switch; not needed at launch because FEATURE_COMMUNITY_API opens community for everyone.",
+    "PHOTO_CHECK_OPENAI_API_KEY": "PHOTO-CHECK-BE: the automatic photo check's own OpenAI key (#167-7 IMAGES op 1). A provider key like ANTHROPIC_API_KEY, not a switch, so this manifest does not manage it. Unset on Fly today (its ghost value): every photo send is refused with 503 PHOTO_CHECK_UNAVAILABLE. The owner must add this key before FEATURE_COMMUNITY_IMAGES turns on (docs/runbooks/launch-flags.md).",
     "HOUSE_COACH_USER_ID": "RENEWAL-BE (b#1127): a user id, not a closed-choice switch. Unset on Fly today (the house coach choice is never offered); the owner sets it when the house coach account exists.",
     "FEATURE_BANK_PAYOUTS_V2": "Ledger: money paths wait for S-FEE.",
     "FEATURE_STRIPE_TREASURY_PAYOUTS": "Ledger: money paths wait for S-FEE.",
