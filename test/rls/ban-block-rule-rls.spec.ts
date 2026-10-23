@@ -4,7 +4,7 @@
 // also writes in B's public space. The moderation Ban records the ban for A's community (community_workspace_bans).
 // Every 0 follows a 1: each read runs before the ban (or block), after it, and after the unban (or unblock).
 import { randomUUID } from 'crypto';
-import { PrismaClient, type User } from '@prisma/client';
+import { Prisma, PrismaClient, type User } from '@prisma/client';
 import { CommunityAccessService } from '../../src/community/community-access.service';
 import { authorsWhoLeft } from '../../src/community/community-space-access';
 import { CommunityCoachInboxRepository } from '../../src/community/inbox/community-coach-inbox.repository';
@@ -41,6 +41,7 @@ const ROLE = (k: Key) => (k === 'A' || k === 'B' ? 'coach' : 'student');
   const inbox = new CommunityCoachInboxService(access, new CommunityCoachInboxRepository(db));
   const segments = new SegmentResolverService(db);
   const id = Object.fromEntries((['A', 'B', 'V', 'X', 'mV', 'mX', 'mXb'] as const).map((k) => [k, randomUUID()]));
+  const sub = Object.fromEntries((['A', 'B', 'V', 'X'] as const).map((k) => [k, randomUUID()]));
   const ws = { A: randomUUID(), B: randomUUID() };
   const space = { cli: randomUUID(), pub: randomUUID() };
   const run = randomUUID().slice(0, 8);
@@ -54,11 +55,22 @@ const ROLE = (k: Key) => (k === 'A' || k === 'B' ? 'coach' : 'student');
     update: { lifted_at: lifted },
   });
   const sorted = (...keys: string[]) => keys.map((k) => id[k]).sort();
+  // The coach inbox's limited read run as coach A under forced row security (authenticated cannot read the bans
+  // table, so the ban reaches the query through app.community_author_unbanned).
+  const inboxUnderRls = () => prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    await tx.$executeRawUnsafe('SET LOCAL ROLE authenticated');
+    await tx.$executeRawUnsafe(`SELECT set_config('request.jwt.claims', $1, true)`, JSON.stringify({ sub: sub.A, role: 'authenticated' }));
+    await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_id', $1, true)`, id.A);
+    await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_role', $1, true)`, 'coach');
+    const rows = await new CommunityCoachInboxRepository(stub<PrismaService>(tx))
+      .unansweredMessages({ cohortIds: [space.cli], limit: 50, after: null, viewerId: id.A });
+    return rows.map((r) => r.id).sort();
+  });
 
   beforeAll(async () => {
     for (const k of ['A', 'B', 'V', 'X'] as Key[]) {
       await prisma.$executeRaw`INSERT INTO "User" ("id", "supabase_id", "email", "name", "role", "coach_id")
-        VALUES (${id[k]}, ${randomUUID()}, ${`banblock-${id[k]}`}, ${`RLS ${k}`}, ${ROLE(k)}::"Role", ${COACH[k] ? id[COACH[k] as Key] : null})`;
+        VALUES (${id[k]}, ${sub[k]}, ${`banblock-${id[k]}`}, ${`RLS ${k}`}, ${ROLE(k)}::"Role", ${COACH[k] ? id[COACH[k] as Key] : null})`;
     }
     for (const c of ['A', 'B'] as const) {
       await prisma.$executeRaw`INSERT INTO "community_workspaces" ("id", "coach_id", "name", "slug", "updated_at")
@@ -85,7 +97,9 @@ const ROLE = (k: Key) => (k === 'A' || k === 'B' ? 'coach' : 'student');
     expect(await byId('V', 'mX')).toBe('ok');
     expect(await inboxOf('A')).toEqual(sorted('mV', 'mX'));
     expect((await authorsWhoLeft(db, [space.cli])).length).toBe(0);
+    expect(await inboxUnderRls()).toEqual(sorted('mV', 'mX'));
     await ban(null);
+    expect(await inboxUnderRls()).toEqual(sorted('mV'));
     expect(await chatOf('V', space.cli)).toEqual(sorted('mV'));
     expect(await chatOf('A', space.cli)).toEqual(sorted('mV'));
     expect(await byId('V', 'mX')).toBe(404);
@@ -95,6 +109,7 @@ const ROLE = (k: Key) => (k === 'A' || k === 'B' ? 'coach' : 'student');
     expect(await chatOf('V', space.cli)).toEqual(sorted('mV', 'mX'));
     expect(await byId('V', 'mX')).toBe('ok');
     expect(await inboxOf('A')).toEqual(sorted('mV', 'mX'));
+    expect(await inboxUnderRls()).toEqual(sorted('mV', 'mX'));
   });
 
   it('the ban covers that community only: another coach\'s space still shows the banned person', async () => {

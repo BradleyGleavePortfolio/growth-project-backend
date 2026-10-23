@@ -91,7 +91,8 @@ export const placeOf = (row: { workspace_id: string; cohort_id: string | null })
  * leaves the former coach's community, so what they wrote in its Hall and in its spaces that are not public
  * no longer reads there. The row policies ask the same function. #168-4: a member banned from the community
  * (community_workspace_bans, the moderation Ban) has left it too, so nothing they wrote there reads for anyone
- * else; unban restores it. The viewer keeps their own rows. One round trip. */
+ * else; unban restores it (app.community_author_unbanned, 20270502008900, so this also runs under row
+ * security). The viewer keeps their own rows. One round trip. */
 export async function rowsByAuthorsWhoStay<T>(
   prisma: PrismaService,
   viewerId: string,
@@ -106,8 +107,7 @@ export async function rowsByAuthorsWhoStay<T>(
     FROM unnest(${ask.map(([, p]) => p[0])}::uuid[], ${ask.map(([, p]) => p[1] ?? '')}::text[],
                 ${ask.map(([, , a]) => a as string)}::text[]) WITH ORDINALITY AS t("w", "s", "a", "n")
     WHERE app.community_author_stays(t."w", NULLIF(t."s", '')::uuid, t."a")
-      AND NOT EXISTS (SELECT 1 FROM "community_workspace_bans" b
-                      WHERE b."workspace_id" = t."w" AND b."user_id" = t."a" AND b."lifted_at" IS NULL)`;
+      AND app.community_author_unbanned(t."w", t."a")`;
   const gone = new Set(ask.map(([i]) => i));
   for (const k of kept) gone.delete(ask[k.n][0]);
   return gone.size === 0 ? rows : rows.filter((_, i) => !gone.has(i));
@@ -130,8 +130,7 @@ export async function authorsWhoLeft(
       UNION SELECT "workspace_id", "cohort_id", "author_id" FROM "community_posts"
         WHERE "cohort_id" = ANY(${spaceIds}::uuid[]) AND "deleted_at" IS NULL)
     SELECT t."s"::text AS "s", t."a" FROM t WHERE NOT app.community_author_stays(t."w", t."s", t."a")
-      OR EXISTS (SELECT 1 FROM "community_workspace_bans" b
-                 WHERE b."workspace_id" = t."w" AND b."user_id" = t."a" AND b."lifted_at" IS NULL)
+      OR NOT app.community_author_unbanned(t."w", t."a")
       OR EXISTS (SELECT 1 FROM "UserBlock" ub
                  WHERE (ub."blocker_id" = ${viewerId} AND ub."blocked_id" = t."a")
                     OR (ub."blocker_id" = t."a" AND ub."blocked_id" = ${viewerId}))`;
