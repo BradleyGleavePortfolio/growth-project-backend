@@ -9201,7 +9201,7 @@ model RomanUsageDaily {
   @@map("roman_usage_daily")
 }
 
-/// SC-BE2 (20270502008400): one row per (person, space): the read line, the notification mode (null = the
+/// SC-BE2 (20270502009100): one row per (person, space): the read line, the notification mode (null = the
 /// space's default) and an optional silence end. RLS forced: own rows, written only for a space the person can read.
 model CommunitySpaceRead {
   user_id              String

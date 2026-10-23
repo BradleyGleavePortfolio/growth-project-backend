@@ -89,6 +89,7 @@ function memoryPrisma() {
       ),
     },
     communityCohort: {
+      findMany: jest.fn(async () => []),
       createMany: jest.fn(
         async ({ data }: { data: Array<Omit<Cohort, 'id' | 'status' | 'archived_at' | 'created_at'>> }) => {
           const fresh = data.filter(
@@ -143,7 +144,8 @@ function memoryPrisma() {
       ),
     },
     communityWorkspaceBan: { findFirst: jest.fn(async () => null) },
-    communityMessage: { count: jest.fn(async () => 0) },
+    // SC-BE2: getMe's tab badge sums the space list (none listed here, so no count runs).
+    user: { findUnique: jest.fn(async () => null) },
     $queryRaw: jest.fn(async (_q: unknown, spaces: string[], people: string[]) =>
       spaces.map((c, i) => ({ k: `${c}:${people[i]}` })),
     ),
