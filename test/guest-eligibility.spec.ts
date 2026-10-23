@@ -97,12 +97,12 @@ describe('GUEST-ELIGIBILITY — who may buy on the web page', () => {
     ['sub-coach', ACCOUNTS['sub@example.com'], 'not_client'],
     ['owner / staff', ACCOUNTS['staff@example.com'], 'not_client'],
   ])('%s -> %s', (_label, account, verdict) => {
-    expect(buyerVerdict(account as Row | null, COACH)).toBe(verdict);
+    expect(buyerVerdict(account as never, COACH)).toBe(verdict);
   });
 
-  it("house coach's package: a client of another coach is refused until b#1131 (house join)", () => {
-    expect(buyerVerdict(ACCOUNTS['other@example.com'] as Row, 'coach-house')).toBe('other_coach');
-    expect(buyerVerdict(ACCOUNTS['house@example.com'] as Row, 'coach-house')).toBe('same_coach');
+  it("house coach's package: the same one-coach rule (another coach's client is refused)", () => {
+    expect(buyerVerdict(ACCOUNTS['other@example.com'] as never, 'coach-house')).toBe('other_coach');
+    expect(buyerVerdict(ACCOUNTS['house@example.com'] as never, 'coach-house')).toBe('same_coach');
   });
 });
 
