@@ -79,8 +79,8 @@ export async function assertPhotoAllowed(
   const result = await outcome(egress, store, key, ownerId, size, caption);
   if (result === 'clean') return;
   if (result === 'flagged') {
-    logger.log('community.photo_check outcome=flagged');
-    await store.removeObjects([key]).catch(() => undefined);
+    const { failed } = await store.removeObjects([key]).catch(() => ({ failed: true }));
+    logger.log(`community.photo_check outcome=flagged${failed ? ' erase=deferred_to_link_expiry' : ''}`);
     throw new UnprocessableEntityException({ error: 'invalid_image', code: 'PHOTO_NOT_ALLOWED' });
   }
   logger.warn(`community.photo_check outcome=${result}`);

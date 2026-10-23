@@ -50,8 +50,8 @@ export function createPerplexityClient(
 
 /**
  * PHOTO-CHECK-BE: OpenAI's moderation endpoint (the automatic photo check).
- * The host, organisation and project are pinned, so the SDK's OPENAI_* env
- * fallbacks can never redirect the photos or bill them elsewhere.
+ * Host, organisation, project and log level are pinned, so the SDK's OPENAI_*
+ * env fallbacks can never redirect a photo, bill it elsewhere or log it.
  */
 export function createOpenAiModerationClient(
   apiKey: string,
@@ -63,6 +63,7 @@ export function createOpenAiModerationClient(
       baseURL: OPENAI_BASE_URL,
       organization: null,
       project: null,
+      logLevel: 'off',
       maxRetries: 0,
       ...(opts.fetch ? { fetch: opts.fetch } : {}),
     }),
