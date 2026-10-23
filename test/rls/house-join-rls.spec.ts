@@ -27,6 +27,13 @@ import { BillingService } from '../../src/billing/billing.service';
 import { PackagesService } from '../../src/packages/packages.service';
 import { ClientPackagesController } from '../../src/packages/packages.controller';
 import { PurchaseFanoutService } from '../../src/packages/purchase-fanout.service';
+import { AssignableAssetResolverRegistry } from '../../src/packages/asset-resolvers/assignable-asset-resolver.registry';
+import { AutoMessageAssetResolver } from '../../src/packages/asset-resolvers/auto-message.resolver';
+import { MealPlanAssetResolver } from '../../src/packages/asset-resolvers/meal-plan.resolver';
+import { ResolverSubCoachScope } from '../../src/packages/asset-resolvers/sub-coach-scope.helper';
+import { DripDispatcherCron } from '../../src/packages/drip-dispatcher.cron';
+import { MessagingService } from '../../src/messaging/messaging.service';
+import { SupabaseService } from '../../src/supabase/supabase.service';
 import { SubCoachScopeService } from '../../src/sub-coach/sub-coach-scope.service';
 import { TrialUsageService } from '../../src/packages/trials/trial-usage.service';
 import { SchedulingSessionLifecycleService } from '../../src/scheduling/scheduling-session-lifecycle.service';
@@ -44,12 +51,13 @@ const DAY = PLAN_RENEWAL_DAY_MS;
 const quiet = new Proxy({}, { get: (_t, p) => (p === 'then' ? undefined : async () => 'not_configured') });
 
 (DB_URL ? describe : describe.skip)('HOUSE-JOIN-BE: the house coach door', () => {
-  const prisma = new PrismaService({ datasources: { db: { url: DB_URL } } });
-  // b#1131 B2: B, C and D (K's clients) check out on the hosted page.
-  const keys = [...'KLHAOQEBCD'];
+  // FX-JOIN's scope check reads the committed roster beside the purchase transaction: 5 connections.
+  const prisma = new PrismaService({ datasources: { db: { url: DB_URL.replace('connection_limit=1', 'connection_limit=5') } } });
+  // b#1131 B2: B, C, D and M (K's clients) check out on the hosted page.
+  const keys = [...'KLHAOQEBCDM'];
   const u: Record<string, string> = Object.fromEntries(keys.map((k) => [k, randomUUID()]));
   const supa: Record<string, string> = Object.fromEntries(keys.map((k) => [k, randomUUID()]));
-  const coachOf: Record<string, string> = { A: 'K', O: 'K', E: 'K', Q: 'H', B: 'K', C: 'K', D: 'K' };
+  const coachOf: Record<string, string> = { A: 'K', O: 'K', E: 'K', Q: 'H', B: 'K', C: 'K', D: 'K', M: 'K' };
   const isCoach = (k: string) => 'KLH'.includes(k);
   const pkg = { PH: randomUUID(), PHR: randomUUID(), PHT: randomUUID(), PH0: randomUUID(), PL: randomUUID() };
   const PI = `pi_house_${u.A}`;
@@ -369,6 +377,76 @@ const quiet = new Proxy({}, { get: (_t, p) => (p === 'then' ? undefined : async 
       await stripeSends('D', 'async_payment_failed', 'unpaid');
       expect(await where('D')).toEqual(moved);
       expect(await prisma.notification.count({ where: { user_id: u.H, body: FLAGGED_JOIN_ALERT_BODY } })).toBe(1);
+    });
+
+    // B1 (FX-JOIN, b#1140): the house move is written in the purchase transaction before the items
+    // are delivered, so the delivery reads the move there. The meal plan arrives in that transaction;
+    // the welcome message (its service checks and writes on its own connection) waits for the
+    // dispatcher's tick after the commit. Real resolvers, real MessagingService, real dispatcher.
+    it('B1: a house package with a welcome message and a meal plan, paid on the hosted page: the client moves and both arrive once', async () => {
+      const PHW = randomUUID();
+      const MPH = randomUUID();
+      const WELCOME = 'Welcome to the house team. Your first week is ready.';
+      const none = new Proxy({}, { get: (_t, p) => (p === 'then' ? undefined : async () => undefined) });
+      const realtime = { channel: () => ({ httpSend: async () => ({ success: true }) }), removeChannel: async () => 'ok' };
+      const supabase = Object.assign(Object.create(SupabaseService.prototype) as SupabaseService, { getClient: () => realtime });
+      const messaging = new MessagingService(prisma, supabase, ...stub<[never, never, never, never, never]>(Array(5).fill(none)));
+      const rscope = new ResolverSubCoachScope(new SubCoachScopeService(prisma));
+      const registry = new AssignableAssetResolverRegistry([
+        new MealPlanAssetResolver(prisma, rscope),
+        new AutoMessageAssetResolver(messaging, rscope, prisma),
+      ]);
+      const delivering: CheckoutWebhookHandlerService = Reflect.construct(CheckoutWebhookHandlerService, [
+        prisma, stub<never>(stripe), undefined, undefined, undefined, new PurchaseFanoutService(registry, undefined, undefined, prisma, sessions),
+      ]);
+      const billingD: BillingService = Reflect.construct(BillingService, [
+        prisma, { capture: jest.fn(), identify: jest.fn() }, { write: jest.fn(async () => undefined), list: jest.fn(async () => []) }, undefined, delivering,
+      ]);
+      const cron = new DripDispatcherCron(prisma, registry, stub<never>(none));
+      await prisma.coachPackage.create({ data: { id: PHW, coach_id: u.H, name: 'House welcome', amount_cents: 20000, published_at: new Date(Date.now() - DAY) } });
+      await prisma.dailyMealPlan.create({ data: { id: MPH, coach_id: u.H, name: 'House meals' } });
+      const item = { package_id: PHW, cadence_kind: 'immediate', cadence_payload: {}, display_title: 'Week 1' };
+      await prisma.coachPackageContent.createMany({
+        data: [
+          { ...item, asset_type: 'meal_plan', asset_id: MPH },
+          { ...item, asset_type: 'auto_message', asset_id: randomUUID(), display_caption: WELCOME },
+        ],
+      });
+      await ranOut('M', HOUR);
+      await renewal.runSweep(new Date());
+
+      cs.M = (await checkout.createCheckoutForClient(u.M, { package_id: PHW })).session_id;
+      const purchase = await prisma.clientPurchase.findUniqueOrThrow({ where: { stripe_checkout_session_id: cs.M } });
+      let n = 0;
+      const paid = () => billingD.handleEvent({
+        id: `evt_house_welcome_${u.M}_${(n += 1)}`,
+        type: 'checkout.session.completed',
+        data: { object: { id: cs.M, mode: 'payment', payment_status: 'paid', payment_intent: `pi_hosted_${u.M}`, customer: `cus_hosted_${u.M}` } },
+      });
+      const drops = async () =>
+        (await prisma.scheduledDrop.findMany({ where: { client_purchase_id: purchase.id } })).map((d) => `${d.asset_type} ${d.status}`).sort();
+      const holds = async () => [
+        await prisma.dailyMealPlanAssignment.count({ where: { client_id: u.M, daily_meal_plan_id: MPH } }),
+        await prisma.coachMessage.count({ where: { client_id: u.M, coach_id: u.H, body: WELCOME } }),
+      ];
+      const tick = () => cron.runOnce(new Date(Date.now() + 1000));
+      const delivered = ['auto_message delivered', 'meal_plan fired'];
+
+      await expect(paid()).resolves.toMatchObject({ processed: true });
+      expect(await prisma.user.findUniqueOrThrow({ where: { id: u.M } })).toMatchObject({ coach_id: u.H });
+      expect([await drops(), await holds()]).toEqual([['auto_message pending', 'meal_plan fired'], [1, 0]]);
+      await tick();
+      expect([await drops(), await holds()]).toEqual([delivered, [1, 1]]);
+      // A redelivered completion and a re-entered fan-out (a replay): nothing new arrives.
+      await paid();
+      await prisma.$transaction(
+        (tx) => new PurchaseFanoutService(registry, undefined, undefined, prisma, sessions)
+          .onPurchaseEntitled({ id: purchase.id }, { entrypoint: 'in_app_hosted', coachId: u.H, clientId: u.M }, tx),
+        { timeout: 20_000 },
+      );
+      await tick();
+      expect([await drops(), await holds()]).toEqual([delivered, [1, 1]]);
+      expect(await prisma.user.findUniqueOrThrow({ where: { id: u.M } })).toMatchObject({ coach_id: u.H });
     });
   });
 });
