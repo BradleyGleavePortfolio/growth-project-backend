@@ -5,10 +5,10 @@
 -- mode for that space (NULL = the space's default: Announcements "all", every other space "mute_low") and
 -- an optional silence end. Clients read an open "clients" space without a community_memberships row, so the
 -- read line cannot live on memberships (SPACE-CHAT plan section 3).
--- Row security, forced: a person reads and writes only their own rows, and writes only for a space
--- app.community_can_access lets them read now (a banned person, a moved client or another coach's client
+-- Row security, forced: a person reads only their own rows, and inserts, changes or deletes one only for a
+-- space app.community_can_access lets them read now (a banned person, a moved client or another coach's client
 -- cannot write one). The server (service role) keeps every row.
--- community_messages.high_alert marks a coach's high-alert message (#167-8 HIGH-ALERT); the server caps it.
+-- community_messages.high_alert marks a coach's high-alert message (#167-8 HIGH-ALERT); b#1138 (SC-PUSH) sets and caps it.
 -- Reverse: down.sql. Live proof: test/rls/community-space-reads-rls.spec.ts.
 
 BEGIN;
@@ -40,10 +40,24 @@ ALTER TABLE "community_space_reads" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "community_space_reads" FORCE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE "community_space_reads" FROM anon;
 
-CREATE POLICY "community_space_reads_own" ON "community_space_reads" FOR ALL TO public
-  USING ("user_id" = app.current_user_id())
+-- One policy per command (LS-1137 C1): a person keeps reading their own row after they lose the space,
+-- but every write (insert, change, delete) needs the space to be readable now.
+CREATE POLICY "community_space_reads_own_select" ON "community_space_reads" FOR SELECT TO public
+  USING ("user_id" = app.current_user_id());
+CREATE POLICY "community_space_reads_own_insert" ON "community_space_reads" FOR INSERT TO public
   WITH CHECK ("user_id" = app.current_user_id() AND app.community_can_access("cohort_id", "user_id"));
-COMMENT ON POLICY "community_space_reads_own" ON "community_space_reads" IS
-  '20270502009100: a person reads only their own read rows, and writes one only for a space they can read now.';
+CREATE POLICY "community_space_reads_own_update" ON "community_space_reads" FOR UPDATE TO public
+  USING ("user_id" = app.current_user_id() AND app.community_can_access("cohort_id", "user_id"))
+  WITH CHECK ("user_id" = app.current_user_id() AND app.community_can_access("cohort_id", "user_id"));
+CREATE POLICY "community_space_reads_own_delete" ON "community_space_reads" FOR DELETE TO public
+  USING ("user_id" = app.current_user_id() AND app.community_can_access("cohort_id", "user_id"));
+COMMENT ON POLICY "community_space_reads_own_select" ON "community_space_reads" IS
+  '20270502009100: a person reads only their own read rows, even after they lose the space.';
+COMMENT ON POLICY "community_space_reads_own_insert" ON "community_space_reads" IS
+  '20270502009100: a person adds a read row only for themselves and a space they can read now.';
+COMMENT ON POLICY "community_space_reads_own_update" ON "community_space_reads" IS
+  '20270502009100: a person changes their own read row only while they can read the space now.';
+COMMENT ON POLICY "community_space_reads_own_delete" ON "community_space_reads" IS
+  '20270502009100: a person deletes their own read row only while they can read the space now.';
 
 COMMIT;
