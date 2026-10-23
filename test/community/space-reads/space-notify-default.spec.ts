@@ -1,7 +1,7 @@
 // FX-1137 (LS-1137 B2): a space's default notification mode follows its kind (Announcements: All), never who may
 // post there; a saved choice and a running silence still win.
 import type { CommunityPostingPolicy, CommunitySpaceKind } from '@prisma/client';
-import { notifySettingOf } from '../community-space-reads.service';
+import { notifySettingOf } from '../../../src/community/space-reads/community-space-reads.service';
 
 const KINDS: CommunitySpaceKind[] = ['chat', 'announcement', 'section'];
 const POLICIES: CommunityPostingPolicy[] = ['all', 'coach'];
