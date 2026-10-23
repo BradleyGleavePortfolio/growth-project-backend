@@ -128,3 +128,166 @@ const SPACE_OF: Record<Key, 'A' | 'B'> = { A: 'A', B: 'B', O: 'A', X: 'A', Y: 'A
     expect(await rows('B')).toEqual(['vW voice Voice note']);
   });
 });
+
+// VOICE-INBOX fix round (Sol B1-B3 on b#1134). One rule for every inbox row, typed words, voice notes and posts:
+// the authors authorsWhoLeft names (b#1141: moved away, banned, in a block either way with the coach) stay out. In a
+// public space a voice note is a row only for its author's current coach (it stays playable there); typed rows and
+// posts there keep the merged C6 rule (community-moved-client-rls.spec.ts). Pages: each stream is asked one row past
+// the page, an answered post never uses up a place, and a cursor (milliseconds) never hands back a row
+// (microseconds). A, B, C and D coach. In A's clients space S: O and M (A's clients), X (A blocked X), V (V blocked
+// A), Y (banned). In A's public space P: O, M and N (no coach). B's space SB holds W. C's space SC holds K1 and K2;
+// D's space SD holds K3. Each 0 follows its control 1.
+type K2 = 'A' | 'B' | 'C' | 'D' | 'O' | 'M' | 'X' | 'V' | 'Y' | 'N' | 'W' | 'K1' | 'K2' | 'K3';
+const COACHES: K2[] = ['A', 'B', 'C', 'D'];
+const CLIENT_OF: Partial<Record<K2, K2>> = { O: 'A', M: 'A', X: 'A', V: 'A', Y: 'A', W: 'B', K1: 'C', K2: 'C', K3: 'D' };
+
+(DB_URL ? describe : describe.skip)('VOICE-INBOX rules: every row kind, public spaces and pages', () => {
+  const prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
+  const db = stub<PrismaService>(prisma);
+  const notes = new CommunityVoiceRepository(db);
+  const repo = new CommunityCoachInboxRepository(db);
+  const inbox = new CommunityCoachInboxService(new CommunityAccessService(db), repo);
+  const people: K2[] = [...COACHES, 'O', 'M', 'X', 'V', 'Y', 'N', 'W', 'K1', 'K2', 'K3'];
+  const id = Object.fromEntries(people.map((k) => [k, randomUUID()])) as Record<K2, string>;
+  const sub = Object.fromEntries(people.map((k) => [k, randomUUID()])) as Record<K2, string>;
+  const ws = Object.fromEntries(COACHES.map((k) => [k, randomUUID()])) as Record<K2, string>;
+  const space = { S: randomUUID(), P: randomUUID(), SB: randomUUID(), SC: randomUUID(), SD: randomUUID() };
+  type Space = keyof typeof space;
+  const owner: Record<Space, K2> = { S: 'A', P: 'A', SB: 'B', SC: 'C', SD: 'D' };
+  const run = randomUUID().slice(0, 8);
+  const label: Record<string, string> = {};
+  const isCoach = (k: K2) => COACHES.includes(k);
+  const user = (k: K2) => stub<User>({ id: id[k], role: isCoach(k) ? 'coach' : 'student', coach_id: CLIENT_OF[k] ? id[CLIENT_OF[k] as K2] : null });
+  const tick = () => new Promise((r) => setTimeout(r, 5));
+  const voice = async (k: K2, s: Space) => {
+    const note = await notes.createVoiceNote({ workspaceId: ws[owner[s]], cohortId: space[s], conversationId: null, authorId: id[k],
+      storageKey: `${id[k]}/1700000000000-${randomUUID().replace(/-/g, '').slice(0, 16)}.m4a`, durationMs: 4_000, bytes: 1000,
+      mimeType: 'audio/mp4', waveformPeaks: null, parent: null, answersClients: false });
+    label[note.id] = `${k}.${s}.voice`;
+    await tick();
+  };
+  // Typed words as Postgres stamps them: clock_timestamp() keeps microseconds, which a JS Date cursor drops.
+  const typed = async (k: K2, s: Space, tag = '') => {
+    const m = randomUUID();
+    await prisma.$executeRaw`INSERT INTO "community_messages" ("id", "created_at", "workspace_id", "cohort_id", "scope", "sender_id", "body", "updated_at")
+      VALUES (${m}::uuid, clock_timestamp(), ${ws[owner[s]]}::uuid, ${space[s]}::uuid, 'cohort', ${id[k]}, ${`words of ${k}`}, now())`;
+    label[m] = `${k}.${s}.typed${tag}`;
+    await tick();
+  };
+  const post = async (k: K2, s: Space, answeredBy?: K2) => {
+    const p = await prisma.communityPost.create({ data: { workspace_id: ws[owner[s]], cohort_id: space[s], author_id: id[k], scope: 'cohort', body: `post of ${k}` } });
+    if (answeredBy) {
+      await prisma.communityMessage.create({ data: { workspace_id: ws[owner[s]], cohort_id: space[s], scope: 'cohort', sender_id: id[answeredBy],
+        body: 'answer', plan_context_type: 'community_post_comment', plan_context_id: p.id } });
+    }
+    label[p.id] = `${k}.${s}.post`;
+    await tick();
+  };
+  const rows = async (k: K2) => (await inbox.list(user(k), {})).items.map((i) => label[i.id] ?? i.id).sort();
+  const pages = async (k: K2, limit: number) => {
+    const out: string[][] = [];
+    let cursor: string | null = null;
+    do {
+      const page = await inbox.list(user(k), { limit: String(limit), ...(cursor ? { cursor } : {}) });
+      out.push(page.items.map((i) => label[i.id] ?? i.id));
+      cursor = page.next_cursor;
+    } while (cursor && out.length < 10);
+    return out;
+  };
+  const reads = (k: K2, table: string, rowId: string) =>
+    prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await tx.$executeRawUnsafe('SET LOCAL ROLE authenticated');
+      await tx.$executeRawUnsafe(`SELECT set_config('request.jwt.claims', $1, true)`, JSON.stringify({ sub: sub[k], role: 'authenticated' }));
+      await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_id', $1, true)`, id[k]);
+      await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_role', $1, true)`, isCoach(k) ? 'coach' : 'student');
+      const r = await tx.$queryRawUnsafe<{ n: number }[]>(`SELECT count(*)::int AS "n" FROM "${table}" WHERE "id"::text = $1`, rowId);
+      return r[0].n;
+    });
+  const idOf = (l: string) => Object.keys(label).find((k) => label[k] === l) ?? '';
+
+  beforeAll(async () => {
+    for (const k of people) {
+      const coach = CLIENT_OF[k] ? id[CLIENT_OF[k] as K2] : null;
+      await prisma.$executeRaw`INSERT INTO "User" ("id", "supabase_id", "email", "name", "role", "coach_id")
+        VALUES (${id[k]}, ${sub[k]}, ${`voice-inbox-rules-${id[k]}`}, ${`RLS person ${k}`}, ${isCoach(k) ? 'coach' : 'student'}::"Role", ${coach})`;
+    }
+    for (const c of COACHES) {
+      await prisma.$executeRaw`INSERT INTO "community_workspaces" ("id", "coach_id", "name", "slug", "updated_at")
+        VALUES (${ws[c]}::uuid, ${id[c]}, 'RLS workspace', ${`voice-inbox-rules-${run}-${c}`}, now())`;
+    }
+    for (const s of Object.keys(space) as Space[]) {
+      await prisma.$executeRawUnsafe(`INSERT INTO "community_cohorts" ("id", "workspace_id", "name", "visibility", "status", "updated_at")
+        VALUES ($1::uuid, $2::uuid, $3, $4::"CommunitySpaceVisibility", 'active', now())`, space[s], ws[owner[s]], `RLS space ${s}`,
+        s === 'P' ? 'public' : 'clients');
+    }
+    const members: Array<[K2, Space]> = [['O', 'S'], ['M', 'S'], ['X', 'S'], ['V', 'S'], ['Y', 'S'], ['O', 'P'], ['M', 'P'], ['N', 'P'],
+      ['W', 'SB'], ['K1', 'SC'], ['K2', 'SC'], ['K3', 'SD']];
+    for (const [k, s] of members) {
+      await prisma.$executeRawUnsafe(`INSERT INTO "community_memberships" ("id", "workspace_id", "cohort_id", "user_id", "role", "status", "updated_at")
+        VALUES ($1::uuid, $2::uuid, $3::uuid, $4, 'student', 'active', now())`, randomUUID(), ws[owner[s]], space[s], id[k]);
+    }
+    await prisma.userBlock.create({ data: { blocker_id: id.A, blocked_id: id.X } });
+    await prisma.userBlock.create({ data: { blocker_id: id.V, blocked_id: id.A } });
+    await prisma.communityWorkspaceBan.create({ data: { workspace_id: ws.A, user_id: id.Y, banned_by_id: id.A } });
+    for (const k of ['O', 'M', 'X', 'V', 'Y'] as K2[]) {
+      await typed(k, 'S');
+      await post(k, 'S');
+      await voice(k, 'S');
+    }
+    for (const k of ['O', 'M', 'N'] as K2[]) {
+      await typed(k, 'P');
+      await post(k, 'P');
+      await voice(k, 'P');
+    }
+    await typed('W', 'SB');
+    // C's queue, oldest first: three answered posts, then m1 v1 p1 m2 v2 m3.
+    for (let i = 0; i < 3; i += 1) await post('K1', 'SC', 'C');
+    await typed('K1', 'SC');
+    await voice('K2', 'SC');
+    await post('K2', 'SC');
+    await typed('K2', 'SC');
+    await voice('K1', 'SC');
+    await typed('K1', 'SC');
+    // D's queue: three typed rows and nothing else.
+    for (const tag of ['1', '2', '3']) await typed('K3', 'SD', tag);
+  });
+  afterAll(() => prisma.$disconnect());
+
+  it('a blocked, blocking or banned author has no row of any kind; the coach\'s own clients have all three', async () => {
+    expect(await rows('A')).toEqual(['M.P.post', 'M.P.typed', 'M.P.voice', 'M.S.post', 'M.S.typed', 'M.S.voice',
+      'N.P.post', 'N.P.typed', 'O.P.post', 'O.P.typed', 'O.P.voice', 'O.S.post', 'O.S.typed', 'O.S.voice']);
+  });
+
+  it('in a public space the voice note of a client of no coach stays playable to the coach but is no inbox row', async () => {
+    expect(await reads('A', 'community_voice_notes', idOf('O.P.voice'))).toBe(1);
+    expect(await reads('A', 'community_voice_notes', idOf('N.P.voice'))).toBe(1);
+    expect((await rows('A')).filter((r) => r.endsWith('.voice'))).toEqual(['M.P.voice', 'M.S.voice', 'O.P.voice', 'O.S.voice']);
+  });
+
+  it('a client who moves leaves the former coach\'s inbox: every row in S, the voice note in P; the new coach gets none', async () => {
+    expect(await rows('B')).toEqual(['W.SB.typed']);
+    await prisma.$executeRaw`UPDATE "User" SET "coach_id" = ${id.B} WHERE "id" = ${id.M}`;
+    expect(await reads('A', 'community_voice_notes', idOf('M.P.voice'))).toBe(1);
+    expect(await rows('A')).toEqual(['M.P.post', 'M.P.typed', 'N.P.post', 'N.P.typed',
+      'O.P.post', 'O.P.typed', 'O.P.voice', 'O.S.post', 'O.S.typed', 'O.S.voice']);
+    expect(await rows('B')).toEqual(['W.SB.typed']);
+  });
+
+  it('the AI triage reads typed words only, under the same rules', async () => {
+    const cohortIds = await repo.coachedCohortIds(id.A);
+    const words = await repo.unansweredMessages({ cohortIds, limit: 50, after: null, viewerId: id.A });
+    expect(words.map((m) => label[m.id]).sort()).toEqual(['M.P.typed', 'N.P.typed', 'O.P.typed', 'O.S.typed']);
+  });
+
+  it('pages walk every unanswered row once, in order, across voice, typed and post rows; answered posts use no place', async () => {
+    expect(await pages('C', 2)).toEqual([['K1.SC.typed', 'K2.SC.voice'], ['K2.SC.post', 'K2.SC.typed'], ['K1.SC.voice', 'K1.SC.typed']]);
+    expect(await pages('C', 4)).toEqual([['K1.SC.typed', 'K2.SC.voice', 'K2.SC.post', 'K2.SC.typed'], ['K1.SC.voice', 'K1.SC.typed']]);
+    expect((await pages('C', 6)).length).toBe(1);
+  });
+
+  it('a backlog in one stream alone still gives a next page, and the cursor row never comes back', async () => {
+    expect(await pages('D', 2)).toEqual([['K3.SD.typed1', 'K3.SD.typed2'], ['K3.SD.typed3']]);
+    expect(await pages('D', 1)).toEqual([['K3.SD.typed1'], ['K3.SD.typed2'], ['K3.SD.typed3']]);
+    expect(await pages('D', 3)).toEqual([['K3.SD.typed1', 'K3.SD.typed2', 'K3.SD.typed3']]);
+  });
+});

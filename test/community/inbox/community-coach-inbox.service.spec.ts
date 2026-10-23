@@ -180,10 +180,27 @@ describe('CommunityCoachInboxService', () => {
   });
 
   // VOICE-INBOX (owner #167-4 op 1): a client's space voice note is a row in the same message stream.
-  it('asks the repository for the voice notes the calling coach can hear', async () => {
+  it('asks the repository for the voice notes, under the rules for the calling coach', async () => {
     repo.coachedCohortIds.mockResolvedValue([COHORT_1]);
     await service.list(coach, new CoachInboxQueryDto());
-    expect(repo.unansweredMessages).toHaveBeenCalledWith(expect.objectContaining({ voiceFor: coach.id }));
+    expect(repo.unansweredMessages).toHaveBeenCalledWith(
+      expect.objectContaining({ viewerId: coach.id, withVoice: true }),
+    );
+    expect(repo.unansweredPosts).toHaveBeenCalledWith(expect.objectContaining({ viewerId: coach.id }));
+  });
+
+  // VOICE-INBOX (Sol B2): each stream is asked for one row past the page, so a backlog in one stream alone
+  // still says there is a next page.
+  it('gives a next_cursor when only one stream holds more than a page', async () => {
+    repo.coachedCohortIds.mockResolvedValue([COHORT_1]);
+    const rows = [1, 2, 3].map((n) =>
+      msg({ id: `aaaaaaaa-0000-0000-0000-00000000000${n}`, created_at: new Date(`2026-01-0${n}T00:00:00.000Z`) }),
+    );
+    repo.unansweredMessages.mockImplementation(async (p: { limit: number }) => rows.slice(0, p.limit));
+    const res = await service.list(coach, { limit: '2' } as never);
+    expect(repo.unansweredMessages).toHaveBeenCalledWith(expect.objectContaining({ limit: 3 }));
+    expect(res.items.map((i) => i.id)).toEqual([rows[0].id, rows[1].id]);
+    expect(res.next_cursor).not.toBeNull();
   });
 
   it('renders a voice note as a "Voice note" row with its length and note id; a typed row says text', async () => {
