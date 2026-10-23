@@ -164,7 +164,7 @@ ${billing}
 <div data-k="same_coach"><h2>${PAY_PAGE_COPY.oneCoachH}</h2><p>${PAY_PAGE_COPY.oneCoach(c)}</p><h2>${PAY_PAGE_COPY.nextH}</h2><p>${PAY_PAGE_COPY.nextSteps}</p></div>
 </div></section>
 <form id="pay" class="card" hidden>
-<p class="row"><span>${PAY_PAGE_COPY.payingAs}</span><strong id="as"></strong></p><p class="links"><button id="chg" type="button" class="link">${PAY_PAGE_COPY.change}</button></p>
+<p class="who"><span>${PAY_PAGE_COPY.payingAs}</span><strong id="as"></strong></p><p class="links"><button id="chg" type="button" class="link">${PAY_PAGE_COPY.change}</button></p>
 <div id="express"></div><p class="or" id="or" hidden>${PAY_PAGE_COPY.orCard}</p>
 <label for="nm">${PAY_PAGE_COPY.name}</label><input id="nm" autocomplete="name" required minlength="2" maxlength="120">
 <label for="ph">${PAY_PAGE_COPY.phone}</label><input id="ph" type="tel" inputmode="tel" autocomplete="tel" required maxlength="32">
@@ -197,7 +197,7 @@ export function renderConfirmedPage(nonce: string, appStoreUrl: string): string 
     nonce,
     `<header class="band"><div class="wrap"><p class="kicker">TGP Fitness</p></div></header>
 <main class="wrap sheet"><section id="ok"><h1 class="state">${PAY_PAGE_COPY.confirmedH}</h1><p>${PAY_PAGE_COPY.confirmed}</p>${store}
-<p class="row"><span>${PAY_PAGE_COPY.loginWith}</span><strong id="le">${PAY_PAGE_COPY.loginEmailUnknown}</strong></p><p class="terms">${esc(PAY_PAGE_COPY.setPassword)}</p></section>
+<p class="who"><span>${PAY_PAGE_COPY.loginWith}</span><strong id="le">${PAY_PAGE_COPY.loginEmailUnknown}</strong></p><p class="terms">${esc(PAY_PAGE_COPY.setPassword)}</p></section>
 <section id="gone" hidden><h1 class="state">${PAY_PAGE_COPY.expiredH}</h1><p>${esc(PAY_PAGE_COPY.expired)}</p>${store}</section></main>
 <script nonce="${nonce}">${CONFIRMED_JS}</script>`,
   );
@@ -241,7 +241,8 @@ button[aria-busy=true]::after{content:"";display:inline-block;width:1em;height:1
 .foot{margin:1rem .25rem 0;font-size:.8125rem;color:var(--muted);text-align:center}
 form.card+form.card,.back{margin-top:1rem}.lead{margin:0;overflow-wrap:anywhere}.code{font-size:1.25rem;letter-spacing:.3em}
 .links{display:flex;flex-wrap:wrap;gap:0 1.5rem;margin:0}button.link{margin:0;min-height:2.75rem;padding:.5rem 0;background:none;color:var(--forest);text-decoration:underline;text-underline-offset:.2em}
-.hey{margin:1.5rem 0;font:500 1.625rem/1.25 var(--serif);text-align:center;outline:0;transition:opacity .6s}.hey.out{opacity:0}.sum{outline:0}.sum>div{margin:0 0 1.25rem}.sum p{margin:0}
+.hey{margin:1.5rem 0;font:500 1.625rem/1.25 var(--serif);text-align:center;outline:0;transition:opacity .6s}.hey.out{opacity:0}.sum{outline:0}.sum>div{margin:0 0 1.25rem}.sum p{margin:0}.sum h2{margin-top:1.25rem}
+.who{margin:0}.who span,.who strong{display:block}.who span{font-size:.875rem;color:var(--muted)}
 #as,#le{min-width:0;overflow-wrap:anywhere}.btn{display:flex;align-items:center;justify-content:center;min-height:3.25rem;margin:1.25rem 0;border-radius:.75rem;background:var(--forest);color:var(--on);font-weight:600;text-decoration:none}
 @media (prefers-reduced-motion:reduce){.hey{transition:none}}.state{margin:0;font:500 1.375rem/1.35 var(--serif)}[hidden]{display:none!important}`;
 
