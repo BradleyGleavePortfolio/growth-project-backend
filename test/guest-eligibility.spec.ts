@@ -16,6 +16,8 @@ import {
   GuestCheckoutService,
 } from '../src/storefront/guest-checkout.service';
 import { SWITCH_V1_MESSAGE, buyerVerdict } from '../src/storefront/buyer-check';
+import { CheckoutIpRateLimiterService } from '../src/storefront/checkout-rate-limiter.service';
+import { StorefrontPublicController } from '../src/storefront/storefront-public.controller';
 
 // GUEST-ELIGIBILITY (agent 170; audit LS-1140 item 2; owner #170-2, #169-8,
 // #SWITCH-V1). Every buyer case through the code routes' service, the real
@@ -205,6 +207,21 @@ describe('GUEST-ELIGIBILITY — the email code (check-email, verify-code)', () =
   it("house coach's package refuses a client of another coach (#SWITCH-V1)", async () => {
     const res = await rejection(prove(world('coach-house'), 'other@example.com'));
     expect(res).toMatchObject({ status: 409, error: 'BUYER_HAS_COACH', message: SWITCH_V1_MESSAGE });
+  });
+
+  it('per IP: the 11th check-email or verify-code in an hour is 429 with Retry-After', async () => {
+    const limiter = new CheckoutIpRateLimiterService({ get: () => undefined } as never);
+    const recovery = { checkBuyerEmail: jest.fn(async () => ({ account: 'new' })), verifyBuyerCode: jest.fn() };
+    const ctl = new StorefrontPublicController({} as never, {} as never, recovery as never, config as never, limiter, {} as never, {} as never);
+    const req = { headers: { 'fly-client-ip': '203.0.113.7' } } as never;
+    const res = { setHeader: jest.fn() };
+    for (let i = 0; i < 10; i += 1) await ctl.checkBuyerEmail(TOKEN, { guest_email: `a${i}@example.com` }, req, res as never);
+    expect(await rejection(ctl.checkBuyerEmail(TOKEN, { guest_email: 'b@example.com' }, req, res as never))).toMatchObject({ status: 429, error: 'TOO_MANY_REQUESTS' });
+    expect(res.setHeader).toHaveBeenCalledWith('Retry-After', expect.any(String));
+    expect(recovery.checkBuyerEmail).toHaveBeenCalledTimes(10);
+    for (let i = 0; i < 10; i += 1) await ctl.verifyBuyerCode(TOKEN, { guest_email: 'b@example.com', code: '000000' }, req, res as never);
+    expect(await rejection(ctl.verifyBuyerCode(TOKEN, { guest_email: 'b@example.com', code: '000000' }, req, res as never))).toMatchObject({ status: 429 });
+    expect(recovery.verifyBuyerCode).toHaveBeenCalledTimes(10);
   });
 });
 

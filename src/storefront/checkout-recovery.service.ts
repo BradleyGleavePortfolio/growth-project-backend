@@ -621,7 +621,7 @@ export class CheckoutRecoveryService implements OnModuleInit, OnModuleDestroy {
       verified: true,
       first_name: firstNameOf(account.name),
       summary: verdict,
-      buyer_token: await mintBuyerToken(key, to, shareToken),
+      buyer_token: mintBuyerToken(key, to, shareToken),
     };
   }
 

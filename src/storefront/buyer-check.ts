@@ -1,7 +1,6 @@
 import { ConflictException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import { createHmac, randomInt, timingSafeEqual } from 'crypto';
-import { SignJWT, jwtVerify } from 'jose';
 import { MIN_CHECKOUT_RECOVERY_SECRET_LENGTH } from '../common/env-validation';
 
 // GUEST-ELIGIBILITY (agent 170, owner #170-2 WELCOME-BACK-CHECK + #169-8
@@ -26,7 +25,6 @@ export interface BuyerAccount {
 export const CODE_TTL_SECONDS = 10 * 60;
 export const CODE_MAX_WRONG = 5;
 export const BUYER_TOKEN_TTL_SECONDS = 30 * 60;
-const BUYER_TOKEN_TYPE = 'buyer_verified';
 
 // #SWITCH-V1 (owner, reused verbatim). The not-client line needs owner words.
 export const SWITCH_V1_MESSAGE =
@@ -74,7 +72,7 @@ export async function findBuyerAccount(db: any, email: string): Promise<BuyerAcc
   });
 }
 
-/** Shared HS256 key (CHECKOUT_RECOVERY_SECRET) for recovery links and buyer proofs. */
+/** Shared key (CHECKOUT_RECOVERY_SECRET): recovery-link JWTs (HS256), buyer codes and proofs (HMAC). */
 export function recoverySecretKey(config: ConfigService): Uint8Array {
   // Audit A276-F3-P2-1 — share the entropy floor with the boot validator
   // (≥256 bits per RFC 7518 §3.2 for HS256). Trim defensively so a
@@ -111,28 +109,40 @@ export function sameHash(a: string, b: string): boolean {
   return x.length === y.length && x.length > 0 && timingSafeEqual(x, y);
 }
 
-/** Proof that this email passed the code for this package, carried into createIntent. */
-export async function mintBuyerToken(key: Uint8Array, email: string, shareToken: string): Promise<string> {
-  return new SignJWT({ em: email.toLowerCase(), st: shareToken, type: BUYER_TOKEN_TYPE })
-    .setProtectedHeader({ alg: 'HS256' })
-    .setIssuedAt()
-    .setExpirationTime(`${BUYER_TOKEN_TTL_SECONDS}s`)
-    .sign(key);
+/**
+ * Proof that this email passed the code for this package, carried into
+ * createIntent: base64url({em, st, exp}).HMAC-SHA256 under the recovery key
+ * (domain-separated from codes and slots). Not a session; it only opens
+ * createIntent for this email + share link for 30 minutes.
+ */
+export function mintBuyerToken(key: Uint8Array, email: string, shareToken: string): string {
+  const exp = Math.floor(Date.now() / 1000) + BUYER_TOKEN_TTL_SECONDS;
+  const body = Buffer.from(JSON.stringify({ em: email.toLowerCase(), st: shareToken, exp })).toString('base64url');
+  return `${body}.${proofMac(key, body)}`;
 }
 
-export async function buyerTokenValid(
+function proofMac(key: Uint8Array, body: string): string {
+  return createHmac('sha256', key).update(`buyer_verified:${body}`).digest('base64url');
+}
+
+export function buyerTokenValid(
   key: Uint8Array,
   token: string | undefined,
   email: string,
   shareToken: string,
-): Promise<boolean> {
-  if (!token) return false;
+): boolean {
+  const [body, mac, extra] = (token ?? '').split('.');
+  if (!body || !mac || extra !== undefined) return false;
+  const want = Buffer.from(proofMac(key, body));
+  const got = Buffer.from(mac);
+  if (want.length !== got.length || !timingSafeEqual(want, got)) return false;
   try {
-    const { payload } = await jwtVerify(token, key, { algorithms: ['HS256'] });
+    const p = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as Record<string, unknown>;
     return (
-      payload.type === BUYER_TOKEN_TYPE &&
-      payload.st === shareToken &&
-      payload.em === email.toLowerCase()
+      p.em === email.toLowerCase() &&
+      p.st === shareToken &&
+      typeof p.exp === 'number' &&
+      p.exp > Math.floor(Date.now() / 1000)
     );
   } catch {
     return false;
@@ -154,7 +164,7 @@ export async function assertBuyerMayPay(
   const verdict = buyerVerdict(account, args.sellingCoachId);
   if (verdict === 'new') return verdict;
   const key = recoverySecretKey(config);
-  if (!(await buyerTokenValid(key, args.buyerToken, args.email, args.shareToken))) {
+  if (!buyerTokenValid(key, args.buyerToken, args.email, args.shareToken)) {
     throw new ForbiddenException({ error: 'BUYER_CODE_REQUIRED', message: CODE_REQUIRED_MESSAGE });
   }
   const refusal = buyerRefusal(verdict);
