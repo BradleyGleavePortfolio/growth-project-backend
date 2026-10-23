@@ -547,4 +547,111 @@ const quiet = new Proxy({}, { get: (_t, p) => (p === 'then' ? undefined : async 
       expect(await prisma.user.findUniqueOrThrow({ where: { id: u.M } })).toMatchObject({ coach_id: u.H });
     });
   });
+
+  // FX-1132 (agent 169): the moved alert and Money's moved date follow the payment, not the hosted
+  // completion. Coach P's clients R and S pay late (the completion says 'unpaid'); R's payment fails,
+  // S's settles. Through the real webhook path: BillingService -> checkout webhook -> fan-out -> move.
+  describe('b#1132: the former coach is told only once the hosted payment is paid', () => {
+    const [P, R, S] = [randomUUID(), randomUUID(), randomUUID()];
+    const charge: Record<string, string> = {};
+    const cs: Record<string, string> = {};
+    const ids: Record<string, string> = {};
+    let n = 0;
+    /** Stripe sends `type` for `client`'s session; `same` repeats the last event id (a duplicate delivery). */
+    const sends = (client: string, type: string, payment_status: string, same = false) => {
+      const key = `${client}-${type}`;
+      if (!same || !ids[key]) ids[key] = `evt_tell_${type}_${client}_${(n += 1)}`;
+      return billing.handleEvent({
+        id: ids[key],
+        type: `checkout.session.${type}`,
+        data: { object: { id: cs[client], mode: 'payment', payment_status, payment_intent: `pi_tell_${client}`, customer: `cus_tell_${client}` } },
+      });
+    };
+    const inboxes = new InboxService(prisma);
+    const money = new CoachMoneyService(prisma);
+    /** Every moved row about `client` (any recipient), what P's inbox shows, and P's Money line for `client`. */
+    const told = async (client: string) => {
+      const rows = await prisma.notification.findMany({
+        where: { kind: 'coach_client_moved', payload: { path: ['client_id'], equals: client } },
+      });
+      const list = (await inboxes.listNotifications(P, {})).items.filter((x) => x.kind === 'coach_client_moved');
+      const line = (await money.listCharges(P, { status: 'all' })).charges.find((c) => c.id === charge[client]);
+      const detail = (await money.getChargeBreakdown(P, charge[client])).charge;
+      return { rows, list, badge: await inboxes.getUnreadCount(P), line, detail };
+    };
+
+    beforeAll(async () => {
+      for (const [id, name, role, coach] of [[P, 'Pat Coach', 'coach', null], [R, 'Rae Client', 'student', P], [S, 'Sam Client', 'student', P]] as const) {
+        await prisma.$executeRaw`INSERT INTO "User" ("id", "supabase_id", "email", "name", "role", "coach_id")
+          VALUES (${id}, ${randomUUID()}, ${`house-${id}@example.test`}, ${name}, ${role}::"Role", ${coach})`;
+      }
+      await prisma.connectAccount.upsert({
+        where: { coach_user_id: u.H },
+        create: { coach_user_id: u.H, stripe_account_id: `acct_house_${u.H}`, charges_enabled: true },
+        update: {},
+      });
+      const old = randomUUID();
+      await prisma.coachPackage.create({ data: { id: old, coach_id: P, name: 'Coaching', amount_cents: 15000 } });
+      for (const client of [R, S]) {
+        charge[client] = randomUUID();
+        await prisma.clientPurchase.create({
+          data: {
+            id: charge[client], client_user_id: client, coach_user_id: P, package_id: old, amount_cents: 15000,
+            stripe_checkout_session_id: `cs-house-${charge[client]}`, idempotency_key: `idem-house-${charge[client]}`, billing_type: 'one_time',
+            status: 'paid', entitlement_active: true, access_expires_at: new Date(Date.now() - HOUR),
+          },
+        });
+      }
+      await renewal.runSweep(new Date());
+    });
+
+    it('unpaid at completion: no alert, no badge, no Money date; the payment fails: still none, and replays add none', async () => {
+      const before = await told(R);
+      expect(before).toMatchObject({ rows: [], list: [], line: { client: { id: R }, moved_away_at: null }, detail: { moved_away_at: null } });
+      cs[R] = (await checkout.createCheckoutForClient(R, { package_id: pkg.PH })).session_id;
+      await expect(sends(R, 'completed', 'unpaid')).resolves.toMatchObject({ processed: true });
+      expect(await prisma.user.findUniqueOrThrow({ where: { id: R } })).toMatchObject({ coach_id: P });
+      expect(await told(R)).toEqual(before);
+
+      await expect(sends(R, 'async_payment_failed', 'unpaid')).resolves.toMatchObject({ processed: true });
+      await sends(R, 'async_payment_failed', 'unpaid', true);
+      await sends(R, 'async_payment_failed', 'unpaid');
+      await sends(R, 'completed', 'unpaid');
+      expect(await prisma.user.findUniqueOrThrow({ where: { id: R } })).toMatchObject({ coach_id: P });
+      expect(await told(R)).toEqual(before);
+    });
+
+    it('unpaid at completion, then the payment settles: exactly one alert and one Money date; replays and a late failure add none', async () => {
+      const before = await told(S);
+      expect(before).toMatchObject({ rows: [], line: { client: { id: S }, moved_away_at: null } });
+      cs[S] = (await checkout.createCheckoutForClient(S, { package_id: pkg.PH })).session_id;
+      await sends(S, 'completed', 'unpaid');
+      expect(await told(S)).toEqual(before);
+
+      await expect(sends(S, 'async_payment_succeeded', 'paid')).resolves.toMatchObject({ processed: true });
+      expect(await prisma.user.findUniqueOrThrow({ where: { id: S } })).toMatchObject({ coach_id: u.H });
+      const after = await told(S);
+      expect(after.rows).toEqual([
+        expect.objectContaining({
+          user_id: P, channel: 'inapp', deep_link: null, inbox_hidden: false, body: 'Sam Client has moved to another coach.', payload: { client_id: S },
+        }),
+      ]);
+      expect(after.list.map((x) => x.id)).toEqual([after.rows[0].id]);
+      expect(after.badge).toBe(before.badge + 1);
+      const movedAt = after.rows[0].created_at.toISOString();
+      expect(after.line).toMatchObject({ client: { id: '', name: 'Sam Client' }, moved_away_at: movedAt });
+      expect(after.detail).toMatchObject({ moved_away_at: movedAt });
+      expect(await prisma.notification.count({ where: { user_id: P, channel: 'push' } })).toBe(0);
+
+      // The same success again (deduplicated), a new delivery of it, a late unpaid completion and a
+      // late failure: still exactly one alert, the same date.
+      await expect(sends(S, 'async_payment_succeeded', 'paid', true)).resolves.toMatchObject({ processed: false, alreadyProcessed: true });
+      await sends(S, 'async_payment_succeeded', 'paid');
+      await sends(S, 'completed', 'unpaid');
+      await sends(S, 'async_payment_failed', 'unpaid');
+      expect(await told(S)).toEqual(after);
+      // R's failed payment never told anyone about R.
+      expect((await told(R)).rows).toEqual([]);
+    });
+  });
 });
