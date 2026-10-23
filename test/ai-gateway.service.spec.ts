@@ -7,7 +7,7 @@ import { deriveGatewayDataSubject } from '../src/ai/gateway/ai-gateway.service';
 import { AiEgressService } from '../src/ai-egress/ai-egress.service';
 import { AiConsentRequiredException } from '../src/ai-egress/ai-consent-required.exception';
 import { clientDataSubject, noClientDataSubject } from '../src/ai-egress/ai-egress.types';
-import { egressWithGrants, grantAllEgress, withTx } from './ai-egress/ai-egress.fakes';
+import { egressWithGrants, fakeOf, grantAllEgress, withTx } from './ai-egress/ai-egress.fakes';
 
 function buildPrisma() {
   const created = { audits: [] as any[], drafts: [] as any[], blocks: [] as Array<{ blocker_id: string; blocked_id: string }> };
@@ -217,8 +217,8 @@ describe('AiGatewayService', () => {
       recordUsage: jest.fn(async () => ({ recorded: true })),
     };
     const complete = jest.fn(async () => ({ text: 'ok', enabled: true, provider: 'anthropic', model: 'm', promptTokenEstimate: 10, responseTokenEstimate: 5, meta: {} }));
-    const registry = new AiProviderRegistry(new StubProviderAdapter(), { name: 'anthropic', complete } as any);
-    const svc = new AiGatewayService(prisma, new AiGatewayConfig(), new AiRedactionService(), registry, grantAllEgress(), budget as any);
+    const registry = new AiProviderRegistry(new StubProviderAdapter(), fakeOf({ name: 'anthropic', complete }));
+    const svc = new AiGatewayService(prisma, new AiGatewayConfig(), new AiRedactionService(), registry, grantAllEgress(), fakeOf(budget));
     const ask = {
       capability: 'draft.send_notification', requester: { id: 'coach-1', role: 'coach' as const }, subjectUserId: clientId,
       tenantCoachId: 'coach-1', userMessage: 'Draft a check-in nudge.', systemPrompt: 'context',
