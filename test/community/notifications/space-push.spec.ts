@@ -120,7 +120,8 @@ describe('SC-PUSH service', () => {
     prisma.communityCohort.findUnique.mockResolvedValue({ name: 'Team' });
     prisma.communityCohort.findUniqueOrThrow.mockResolvedValue({ posting_policy: 'coach' }); // default All
     // readersNow, then one unread count per reader on All
-    prisma.$queryRaw.mockResolvedValueOnce([{ id: S }, { id: 'a' }, { id: 'blocked' }, { id: 'blocker' }]).mockResolvedValue([{ c: 'c1', n: 2 }]);
+    // mockReset: clearAllMocks keeps an unused once-queue from the test before.
+    prisma.$queryRaw.mockReset().mockResolvedValueOnce([{ id: S }, { id: 'a' }, { id: 'blocked' }, { id: 'blocker' }]).mockResolvedValue([{ c: 'c1', n: 2 }]);
     prisma.userBlock.findMany.mockResolvedValue([{ blocker_id: S, blocked_id: 'blocked' }, { blocker_id: 'blocker', blocked_id: S }]);
     prisma.communitySpaceRead.findMany.mockResolvedValue([]);
     prisma.communityWorkspaceBan.findFirst.mockResolvedValue(null);
