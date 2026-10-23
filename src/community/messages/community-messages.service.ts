@@ -136,17 +136,6 @@ export class CommunityMessagesService {
     );
   }
 
-  /** SC-BE3 (ban ruling): a photo from an author banned in the workspace is hidden. */
-  private async withoutBannedImages<T extends Pick<CommunityMessage, 'kind' | 'sender_id'>>(
-    workspaceId: string,
-    rows: T[],
-  ): Promise<T[]> {
-    const authors = rows.filter((m) => m.kind === 'image').map((m) => m.sender_id);
-    if (authors.length === 0) return rows;
-    const banned = await this.repo.bannedSenders(workspaceId, authors);
-    return rows.filter((m) => m.kind !== 'image' || !banned.has(m.sender_id));
-  }
-
   /**
    * SC-BE3: write a photo message. Flag off is 422. The key must be one this
    * server minted for this sender in this space (10 minutes); the object must
@@ -195,10 +184,7 @@ export class CommunityMessagesService {
    */
   private async chatOf(user: User, cohort: CommunityCohort, rows: CommunityMessage[]): Promise<ChatOf> {
     const x = await this.repo.chatExtras(user.id, cohort.workspace_id, cohort.id, rows);
-    const live = await this.withoutBannedImages(
-      cohort.workspace_id,
-      x.parents.filter((p) => !p.deleted_at && p.plan_context_type === null),
-    );
+    const live = x.parents.filter((p) => !p.deleted_at && p.plan_context_type === null);
     const parents = new Map(
       (await this.safety.filterBlocked(user.id, live, (p) => p.sender_id, placeOf)).map((p) => [p.id, p]),
     );
@@ -464,10 +450,7 @@ export class CommunityMessagesService {
     const next = rows.length === limit ? rows[rows.length - 1].created_at.toISOString() : null;
     // Block filter AFTER the cursor is computed from the unfiltered page, so
     // pagination stays stable and a hidden row never becomes the cursor.
-    const visible = await this.withoutBannedImages(
-      cohort.workspace_id,
-      await this.safety.filterBlocked(user.id, rows, (m) => m.sender_id, placeOf),
-    );
+    const visible = await this.safety.filterBlocked(user.id, rows, (m) => m.sender_id, placeOf);
     const [voice, chat, images] = await Promise.all([
       this.voiceOf(user, visible),
       this.chatOf(user, cohort, visible),
@@ -495,7 +478,6 @@ export class CommunityMessagesService {
     }
     // Two-way block: a direct id read cannot go around the list filter.
     await this.safety.assertVisibleTo(user.id, m.sender_id, NOT_FOUND, placeOf(m));
-    if ((await this.withoutBannedImages(cohort.workspace_id, [m])).length === 0) throw new NotFoundException(NOT_FOUND);
     const [voice, chat, images] = await Promise.all([
       this.voiceOf(user, [m]),
       this.chatOf(user, cohort, [m]),

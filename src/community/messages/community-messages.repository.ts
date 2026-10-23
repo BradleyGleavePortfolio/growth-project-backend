@@ -341,11 +341,6 @@ export class CommunityMessagesRepository {
     return this.prisma.communityMessageImage.findMany({ where: { message_id: { in: ids } } });
   }
 
-  /** Senders among `ids` banned in the workspace (their photos are hidden). */
-  async bannedSenders(workspaceId: string, ids: string[]): Promise<Set<string>> {
-    return bannedAmong(this.prisma, workspaceId, [...new Set(ids)]);
-  }
-
   /**
    * Delete an image message: record the object's erasure (B-610-5 order), then
    * soft-delete the message, in one transaction. The caller tries the erasure
