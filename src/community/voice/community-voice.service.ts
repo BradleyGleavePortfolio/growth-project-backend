@@ -698,7 +698,7 @@ export class CommunityVoiceService {
     const row = await this.readableNote(user, voiceNoteId);
     if (!(await this.isCoach(row.workspace_id, user))) {
       // Blocked either way reads as missing, like every other voice read.
-      await this.safety.assertVisibleTo(user.id, row.author_id, NOT_FOUND);
+      await this.safety.assertVisibleTo(user.id, row.author_id, NOT_FOUND, placeOf(row));
       throw new ForbiddenException(VOICE_NOT_AUTHOR);
     }
     await this.deleteAndErase(row);

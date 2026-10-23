@@ -57,6 +57,7 @@ function prismaWith(factors: Factor[]) {
   const created: Array<Record<string, unknown>> = [];
   return {
     created,
+    userBlock: { findMany: async () => [] }, // #168-4: no blocks
     user: {
       findMany: async () => CLIENTS.map((id) => ({ id, name: `Client ${id}` })),
       findFirst: async ({ where }: { where: { id: string } }) => ({ id: where.id, name: `Client ${where.id}` }),

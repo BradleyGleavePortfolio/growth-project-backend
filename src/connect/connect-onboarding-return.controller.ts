@@ -25,7 +25,7 @@ function landingHtml(appUrl: string, heading: string, body: string): string {
     '<title>The Growth Project</title>',
     '<style>body{font-family:-apple-system,system-ui,sans-serif;margin:0;padding:48px 24px;color:#1a1a1a;background:#faf8f5}',
     'h1{font-size:22px;font-weight:600;margin:0 0 12px}p{font-size:16px;line-height:24px;margin:0 0 24px}',
-    'a{display:inline-block;background:#1a1a1a;color:#fff;padding:14px 20px;border-radius:8px;text-decoration:none;font-weight:600}</style>',
+    'a{display:inline-block;background:#1a1a1a;color:#fff;padding:14px 20px;border-radius:12px;text-decoration:none;font-weight:600}</style>',
     '</head><body>',
     `<h1>${heading}</h1>`,
     `<p>${body}</p>`,

@@ -70,6 +70,8 @@ function fixture() {
       findUnique: jest.fn().mockResolvedValue(null),
       findMany: jest.fn().mockResolvedValue([]),
     },
+    // #168-4: CLIENT blocked SUB, so SUB is the one blocked (same block as getBlockedIdsFor below).
+    userBlock: { findMany: jest.fn(async ({ where }: { where: { blocked_id: string } }) => (where.blocked_id === SUB ? [{ blocker_id: CLIENT }] : [])) },
     $queryRaw: jest.fn().mockResolvedValue([row()]),
     $transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
   };

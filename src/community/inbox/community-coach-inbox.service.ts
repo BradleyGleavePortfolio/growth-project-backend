@@ -191,8 +191,8 @@ export class CommunityCoachInboxService {
     // stream is itself keyset-filtered by `after`, the union of the two
     // `limit`-bounded streams always contains the global first `limit` items.
     const [messages, posts] = await Promise.all([
-      this.repo.unansweredMessages({ cohortIds, limit, after: cursor, voiceFor: user.id }),
-      this.repo.unansweredPosts({ cohortIds, limit, after: cursor }),
+      this.repo.unansweredMessages({ cohortIds, limit, after: cursor, viewerId: user.id, voiceFor: user.id }),
+      this.repo.unansweredPosts({ cohortIds, limit, after: cursor, viewerId: user.id }),
     ]);
 
     // Resolve cohort names once for every cohort referenced in this page.

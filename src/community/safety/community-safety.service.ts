@@ -208,7 +208,7 @@ export class CommunitySafetyService {
    * Drop rows authored by anyone in a block relation with the viewer, in
    * either direction (the viewer blocked them, or they blocked the viewer).
    * C6-WINS-MOVE: given the row's place, also drop rows whose author left the
-   * community they were written in (rowsByAuthorsWhoStay).
+   * community they were written in, or (#168-4) is banned from it (rowsByAuthorsWhoStay).
    */
   async filterBlocked<T>(
     viewerId: string,
