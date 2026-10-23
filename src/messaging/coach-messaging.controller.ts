@@ -11,6 +11,7 @@ import {
   Put,
   Query,
   Request,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
@@ -30,6 +31,7 @@ import {
   VoiceUploadRequestDto,
 } from './messaging.dto';
 import { MessagingService } from './messaging.service';
+import { CONVERSATION_CLOSED_HEADER } from './block-pair';
 import { MessageActionsService } from './message-actions.service';
 import { MessagingInboxService } from './messaging-inbox.service';
 import { MessagingCoreV2Guard } from './messaging-core.feature';
@@ -58,8 +60,12 @@ export class CoachMessagingController {
     @Request() req: AuthedRequest,
     @Param('client_id') clientId: string,
     @Query() query: ListThreadQueryDto,
+    @Res({ passthrough: true }) res?: { setHeader(name: string, value: string): void },
   ) {
-    return this.messaging.listThreadForCoach(req.user.id, clientId, query);
+    // FX-1141: a closed chat answers 200 [] plus the closed header.
+    return this.messaging.listThreadForCoach(req.user.id, clientId, query, (state) =>
+      res?.setHeader(CONVERSATION_CLOSED_HEADER, state),
+    );
   }
 
   // 30/min per user (coach-id keyed by UserThrottlerGuard). Named throttler
@@ -99,10 +105,10 @@ export class CoachMessagingController {
     // exists for symmetry with the send endpoint and lets the controller
     // verify the coach actually has this client (defence-in-depth before we
     // burn a signed URL).
-    await this.messaging.listThreadForCoach(req.user.id, clientId, {
-      limit: 1,
-    });
-    return this.messaging.createVoiceUpload(req.user.id, body);
+    // FX-1141 (B5): an empty closed page is not write admission; the pair
+    // gate refuses the upload across a block.
+    await this.messaging.resolveThreadForCoach(req.user.id, clientId);
+    return this.messaging.createThreadVoiceUpload(req.user.id, clientId, body);
   }
 
   // A3-MSG-CORE: optional { up_to_message_id } marks read up to that message
