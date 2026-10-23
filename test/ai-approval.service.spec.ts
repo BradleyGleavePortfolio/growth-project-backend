@@ -28,11 +28,12 @@ function buildPrisma(
   seed: any[] = [],
   // B-AIB1-125: roster (client id -> coach id) and active sub-coach count for
   // the tenant-coach self-decide rule.
-  opts: { coachOf?: Record<string, string>; subCoachCount?: number } = {},
+  opts: { coachOf?: Record<string, string>; subCoachCount?: number; blocks?: Array<{ blocker_id: string; blocked_id: string }> } = {},
 ) {
   const drafts: any[] = [...seed];
   const client: any = {
     drafts,
+    userBlock: { findMany: jest.fn(async () => opts.blocks ?? []) },
     user: {
       findUnique: jest.fn(async ({ where }: any) =>
         opts.coachOf && where.id in opts.coachOf
@@ -119,6 +120,25 @@ describe('AiApprovalService', () => {
     const ids = async (tenantCoachId?: string) => (await svc.listPending({ tenantCoachId })).map((d: any) => d.id);
     expect(await ids('coach-1')).toEqual(['kept', 'self', 'none']);
     expect(await ids()).toEqual(['moved', 'kept', 'self', 'none']);
+  });
+
+  // FX-1141 (Sol B2): a message draft for a client in a block either way
+  // leaves the queue; other drafts for that client stay.
+  it.each([
+    ['the client blocked the coach', { blocker_id: 'client-b', blocked_id: 'coach-1' }],
+    ['the coach blocked the client', { blocker_id: 'coach-1', blocked_id: 'client-b' }],
+  ])('%s: the message drafts leave the queue', async (_label, block) => {
+    const draft = (id: string, capability: string, subject: string) =>
+      ({ id, status: 'pending', capability, subject_user_id: subject, tenant_coach_id: 'coach-1', payload: {} });
+    const seed = [draft('msg', 'draft.coach_message', 'client-b'), draft('note', 'draft.send_notification', 'client-b'),
+      draft('plan', 'draft.assign_workout', 'client-b'), draft('other', 'draft.coach_message', 'client-c')];
+    const coachOf = { 'client-b': 'coach-1', 'client-c': 'coach-1' };
+    const open = buildPrisma(seed, { coachOf });
+    expect((await new AiApprovalService(open, makeAudit(open)).listPending({ tenantCoachId: 'coach-1' })).map((d: any) => d.id))
+      .toEqual(['msg', 'note', 'plan', 'other']);
+    const prisma = buildPrisma(seed, { coachOf, blocks: [block] });
+    const ids = (await new AiApprovalService(prisma, makeAudit(prisma)).listPending({ tenantCoachId: 'coach-1' })).map((d: any) => d.id);
+    expect(ids).toEqual(['plan', 'other']);
   });
 
   it.each(['clientId', 'client_id', 'target_client_id'])(

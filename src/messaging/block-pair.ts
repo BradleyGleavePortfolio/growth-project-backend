@@ -1,4 +1,5 @@
 import { HttpStatus } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import type { PrismaService } from '../prisma.service';
 import { MESSAGING_ERRORS, messagingError } from './messaging-errors';
 
@@ -27,6 +28,19 @@ export async function inBlockWith(
     select: { blocker_id: true, blocked_id: true },
   });
   return new Set(rows.map((r) => (r.blocker_id === userId ? r.blocked_id : r.blocker_id)));
+}
+
+/**
+ * FX-1141 (Sol B2): a User filter, "not in a block with any of `ids`, either
+ * way", for one-query readers of coaching words (AI and Roman context, Roman
+ * timeline, playbook): put it on the message's `coach`, `sender` or `client`.
+ */
+export function notInBlockWith(ids: string | readonly string[]): Prisma.UserWhereInput {
+  const list = typeof ids === 'string' ? [ids] : [...ids];
+  return {
+    blocks_set: { none: { blocked_id: { in: list } } },
+    blocks_received: { none: { blocker_id: { in: list } } },
+  };
 }
 
 /** FX-1141: everyone in a block with `userId`, either way (one-person reads). */
