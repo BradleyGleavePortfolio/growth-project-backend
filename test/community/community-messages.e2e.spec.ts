@@ -537,6 +537,8 @@ itLive('community v1-3 cohort messages (live DB)', () => {
 
     expect((await call('DELETE', `/api/community/messages/${root.id}`, asUser(ids.studentA2))).status).toBe(200);
     expect((await say(ids.studentA, { body: 'x', parent_message_id: root.id })).status).toBe(404);
+    // FX-1135: a reply to a reply joins the first message's thread, so it is checked too.
+    expect((await say(ids.studentA2, { body: 'x', parent_message_id: reply.id })).status).toBe(404);
     const list = await call('GET', `/api/community/cohorts/${ids.cohortA}/messages`, asUser(ids.studentA));
     expect(list.body.messages.find((m: { id: string }) => m.id === reply.id).parent).toEqual({
       id: root.id,

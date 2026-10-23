@@ -146,6 +146,7 @@ function build(opts: { blocked?: string[]; eitherBlocked?: boolean } = {}) {
       })),
     },
     conversationReview: { upsert: jest.fn(), findUnique: jest.fn() },
+    userBlock: { findMany: jest.fn().mockResolvedValue([]) }, // #168-4: who blocked the caller
     $queryRaw: jest.fn().mockResolvedValue([]),
     $transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
   };
@@ -582,14 +583,14 @@ describe('message pins', () => {
     expect(t.prisma.coachMessage.updateMany).not.toHaveBeenCalled();
   });
 
-  it('the pins bar hides pins authored by someone the caller blocked', async () => {
+  it('#168-4: the pins bar is empty when the caller blocked the other party (the thread is closed)', async () => {
     const t = build({ blocked: [COACH] });
     t.prisma.coachMessage.findMany.mockResolvedValueOnce([
       row({ id: 'a', sender_id: COACH, pinned_at: new Date() }),
       row({ id: 'b', sender_id: CLIENT, pinned_at: new Date() }),
     ]);
     const out = await t.actions.listPins(thread);
-    expect(out.items.map((i) => i.id)).toEqual(['b']);
+    expect(out.items).toEqual([]);
   });
 
   it('a message authored by a blocked party is not addressable (404)', async () => {

@@ -231,26 +231,38 @@ export class CommunityMessagesService {
   }
 
   /**
-   * SC-BE1: a text reply obeys the voice reply rule line for line (VOICE-BE,
-   * community-voice.service.ts replyParent): the parent is a live plain chat
-   * message in the same space whose author the caller can see; a reply to a
-   * reply joins the first message's thread (one level). Anything else is the
-   * message 404 (no new words).
+   * SC-BE1: a text reply. The tapped message and its thread's first message are
+   * each a live plain chat message in the same space whose author the caller can
+   * see (blocks and bans, #168-4); a reply to a reply joins the first message's
+   * thread (one level). A missing or hidden one is the message 404 (no new
+   * words). In a coach-only space a member answers only a thread the coach
+   * started (plan §3); any other thread needs the start right (403).
+   * app.community_voice_reply (20270502009000) holds direct writes to the same.
    */
   private async replyParent(
     user: User,
-    cohortId: string,
+    cohort: CommunityCohort,
     parentId: string | undefined,
   ): Promise<{ id: string; at: Date } | null> {
     if (!parentId) return null;
-    const m = await this.repo.findById(parentId);
+    const tapped = await this.liveParent(user, cohort.id, parentId);
+    const root = tapped.parent_message_id
+      ? await this.liveParent(user, cohort.id, tapped.parent_message_id)
+      : tapped;
+    const open =
+      cohort.posting_policy !== 'coach' ||
+      (await this.access.isWorkspaceCoach(cohort.workspace_id, root.sender_id));
+    if (!open) await this.access.assertCanPost(cohort, user);
+    return { id: root.id, at: root.created_at };
+  }
+
+  private async liveParent(user: User, cohortId: string, messageId: string): Promise<CommunityMessage> {
+    const m = await this.repo.findById(messageId);
     if (!m || m.scope !== 'cohort' || m.cohort_id !== cohortId || m.deleted_at || m.plan_context_type !== null) {
       throw new NotFoundException(NOT_FOUND);
     }
     await this.safety.assertVisibleTo(user.id, m.sender_id, NOT_FOUND, placeOf(m));
-    return m.parent_message_id && m.parent_message_at
-      ? { id: m.parent_message_id, at: m.parent_message_at }
-      : { id: m.id, at: m.created_at };
+    return m;
   }
 
   /** VOICE-BE: the voice notes behind this page's live voice messages (one read; none for text). */
@@ -345,9 +357,9 @@ export class CommunityMessagesService {
       throw new NotFoundException(NOT_FOUND);
     }
     // C6-B1: a section takes no messages; a coach-only space only the coach's.
-    // SC-BE1 (the voice rule, FIX-1122-R1): a reply needs only access there.
+    // SC-BE1: there a member may still reply to the coach's thread.
     if (!parentId || cohort.kind === 'section') await this.access.assertCanPost(cohort, user);
-    const parent = await this.replyParent(user, cohort.id, parentId);
+    const parent = await this.replyParent(user, cohort, parentId);
     // Apple 1.2: objectionable-content filter before anything is written.
     this.safety.assertAllowed(body);
     // v2-1: validate + authorize any attached plan-context tag BEFORE the write

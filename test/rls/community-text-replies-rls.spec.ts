@@ -1,11 +1,14 @@
-// SC-BE1 (agent 167): text replies in the space chat, live on the replayed migration chain (20270502008300):
+// SC-BE1 (agent 167): text replies in the space chat, live on the replayed migration chain (20270502009000):
 // the real chat service with the real CommunitySafetyService; row reads and writes run as role authenticated.
 // A coaches O, V and N; O and V are members of A's members-only space "mem", N is not; X is a client of
 // coach B (another tenant) in B's space "bmem". Each "0" follows a control read of 1.
 //  - a text reply obeys the voice reply rule: in A's coach-only Announcements a client may reply (read access
 //    + a live parent in that space), never start one; a section takes neither, in the server and at the row layer;
 //  - only the space reads a reply; the read names its sender (the voice name rule) and quotes its parent;
-//  - a blocked member's message is never answered by the person who blocked, and reads `gone` in their quotes.
+//  - a blocked member's message is never answered by the person who blocked, and reads `gone` in their quotes;
+//  - FX-1135: in a space the coach made coach-only a client answers the coach's threads only (plan section 3); a
+//    reply to a reply is checked against its thread's first message; a member banned from A's community (#168-4)
+//    reads gone in quotes and is never answered, even through a reply to their message.
 import { randomUUID } from 'crypto';
 import { Prisma, PrismaClient, type User } from '@prisma/client';
 import { CommunityAccessService } from '../../src/community/community-access.service';
@@ -25,7 +28,7 @@ if (!DB_URL && process.env.CI === 'true') {
 }
 
 type Key = 'A' | 'B' | 'O' | 'V' | 'N' | 'X';
-type Space = 'mem' | 'bmem' | 'ann' | 'sec';
+type Space = 'mem' | 'bmem' | 'ann' | 'sec' | 'flip' | 'open';
 const PEOPLE: Key[] = ['A', 'B', 'O', 'V', 'N', 'X']; // coaches first: clients reference them
 const COACH: Record<Key, 'A' | 'B' | null> = { A: null, B: null, O: 'A', V: 'A', N: 'A', X: 'B' };
 const NAME: Record<Key, string> = { A: 'Ada Stone', B: 'Ben Hale', O: 'Olive Reed', V: 'Vera Lane', N: 'Nia Park', X: 'Xan Field' };
@@ -42,7 +45,7 @@ const DENIED = '42501';
   const id = ids(PEOPLE);
   const sub = ids(PEOPLE);
   const ws = ids(['A', 'B'] as const);
-  const space = ids(['mem', 'bmem', 'ann', 'sec'] as const);
+  const space = ids(['mem', 'bmem', 'ann', 'sec', 'flip', 'open'] as const);
   const parentOf = ids(['mem', 'ann', 'sec'] as const); // A's text message in each of A's spaces
   const parentAt: Record<string, Date> = {};
   const run = randomUUID().slice(0, 8);
@@ -61,9 +64,13 @@ const DENIED = '42501';
       .then((r) => r[0].n);
   const TEXT_ROW = `INSERT INTO "community_messages" ("id", "workspace_id", "cohort_id", "scope", "kind", "sender_id", "body",
     "parent_message_id", "parent_message_at", "updated_at") VALUES ($1::uuid, $2::uuid, $3::uuid, 'cohort', 'text', $4, 'row reply', $5::uuid, $6::timestamptz, now())`;
-  const textRow = (k: Key, s: 'ann' | 'sec', p: 'mem' | 'ann' | 'sec' | null) =>
-    as(k, (tx) => tx.$executeRawUnsafe(TEXT_ROW, randomUUID(), ws.A, space[s], id[k], p && parentOf[p], p && parentAt[p]))
+  const rowIn = (k: Key, s: Space, parent: string | null, at: Date | null) =>
+    as(k, (tx) => tx.$executeRawUnsafe(TEXT_ROW, randomUUID(), ws.A, space[s], id[k], parent, at))
       .catch((e: { code?: string; meta?: { code?: string } }) => String(e.code === 'P2010' ? e.meta?.code : e.code));
+  const textRow = (k: Key, s: 'ann' | 'sec', p: 'mem' | 'ann' | 'sec' | null) => rowIn(k, s, p && parentOf[p], p && parentAt[p]);
+  // A row-layer reply as `k` to a message the server wrote.
+  const rowReply = async (k: Key, s: Space, parent: string) =>
+    rowIn(k, s, parent, (await prisma.communityMessage.findFirstOrThrow({ where: { id: parent } })).created_at);
   const sentBy = (k: Key) => prisma.communityMessage.count({ where: { sender_id: id[k], kind: 'text' } });
   const quoteOf = async (k: Key, s: Space, msg: string) =>
     (await chat.list(user(k), space[s], {})).messages.find((m) => m.id === msg)?.parent;
@@ -89,7 +96,9 @@ const DENIED = '42501';
     // A's coach-only Announcements and a section, both open to all of A's clients (the C6-B1 defaults).
     await prisma.$executeRaw`INSERT INTO "community_cohorts" ("id", "workspace_id", "name", "kind", "posting_policy", "visibility", "updated_at")
       VALUES (${space.ann}::uuid, ${ws.A}::uuid, 'RLS ann', 'announcement', 'coach', 'clients', now()),
-             (${space.sec}::uuid, ${ws.A}::uuid, 'RLS sec', 'section', 'all', 'clients', now())`;
+             (${space.sec}::uuid, ${ws.A}::uuid, 'RLS sec', 'section', 'all', 'clients', now()),
+             (${space.flip}::uuid, ${ws.A}::uuid, 'RLS flip', 'chat', 'all', 'clients', now()),
+             (${space.open}::uuid, ${ws.A}::uuid, 'RLS open', 'chat', 'all', 'clients', now())`;
     for (const s of ['mem', 'ann', 'sec'] as const) {
       const m = await prisma.communityMessage.create({ data: { id: parentOf[s], workspace_id: ws.A, cohort_id: space[s],
         scope: 'cohort', sender_id: id.A, body: `Plan for ${s}` } });
@@ -156,5 +165,47 @@ const DENIED = '42501';
     const vRoot = (await chat.send(user('V'), space.mem, 'Rest day')).message;
     expect(await status(chat.send(user('O'), space.mem, 'Nope', undefined, vRoot.id))).toBe(404);
     expect(await quoteOf('O', 'mem', coachReply.id)).toMatchObject({ gone: false, snippet: 'Leg day done' });
+  });
+
+  it('a space the coach made coach-only: a client answers the coach\'s threads only, in the server and at the row layer', async () => {
+    const root = (await chat.send(user('O'), space.flip, 'Who is in for Sunday?')).message;
+    const reply = (await chat.send(user('N'), space.flip, 'Me', undefined, root.id)).message;
+    expect(await rowReply('N', 'flip', root.id)).toBe(1); // control: while anyone may post
+    await prisma.communityCohort.update({ where: { id: space.flip }, data: { posting_policy: 'coach' } });
+    const coachRoot = (await chat.send(user('A'), space.flip, 'Sunday is a rest day')).message;
+    const before = await sentBy('N');
+    expect(await status(chat.send(user('N'), space.flip, 'Me too', undefined, root.id))).toBe(403);
+    expect(await status(chat.send(user('N'), space.flip, 'Me too', undefined, reply.id))).toBe(403); // joins O's thread
+    expect(await sentBy('N')).toBe(before);
+    expect(await rowReply('N', 'flip', root.id)).toBe(DENIED);
+    const thanks = (await chat.send(user('N'), space.flip, 'Thanks', undefined, coachRoot.id)).message;
+    expect(thanks.parent_message_id).toBe(coachRoot.id);
+    expect(await rowReply('N', 'flip', coachRoot.id)).toBe(1);
+    expect(await rowReply('N', 'flip', thanks.id)).toBe(DENIED); // a row reply names the thread's first message
+    expect((await chat.send(user('A'), space.flip, 'See you Monday', undefined, reply.id)).message.parent_message_id).toBe(root.id);
+  });
+
+  it('a reply is checked against its thread\'s first message: a member banned from the community (#168-4) reads gone and is never answered', async () => {
+    const root = (await chat.send(user('O'), space.open, 'New squat best')).message;
+    const reply = (await chat.send(user('N'), space.open, 'Huge', undefined, root.id)).message;
+    const listed = async (k: Key) => (await chat.list(user(k), space.open, {})).messages.map((m) => m.id);
+    expect(await listed('N')).toContain(root.id);
+    expect(await quoteOf('N', 'open', reply.id)).toMatchObject({ gone: false, sender_name: 'Olive Reed', snippet: 'New squat best' });
+    await prisma.communityWorkspaceBan.create({ data: { workspace_id: ws.A, user_id: id.O, banned_by_id: id.A } });
+    try {
+      expect([(await listed('N')).includes(root.id), (await listed('A')).includes(root.id)]).toEqual([false, false]);
+      expect(await quoteOf('N', 'open', reply.id)).toEqual({
+        id: root.id, gone: true, kind: null, sender_name: null, snippet: null, voice_duration_ms: null,
+      });
+      expect(await status(chat.getOne(user('N'), root.id))).toBe(404);
+      const before = await sentBy('N');
+      expect(await status(chat.send(user('N'), space.open, 'Again', undefined, root.id))).toBe(404);
+      expect(await status(chat.send(user('N'), space.open, 'Again', undefined, reply.id))).toBe(404); // still O's thread
+      expect(await sentBy('N')).toBe(before);
+      expect(await status(chat.list(user('O'), space.open, {}))).toBe(404);
+    } finally {
+      await prisma.communityWorkspaceBan.deleteMany({ where: { workspace_id: ws.A, user_id: id.O } });
+    }
+    expect(await quoteOf('N', 'open', reply.id)).toMatchObject({ gone: false, snippet: 'New squat best' }); // unban restores
   });
 });

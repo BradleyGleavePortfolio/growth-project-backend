@@ -203,6 +203,7 @@ export class CommunitySearchRepository {
             AND ${role} = ANY("visibleToRoles")
             AND ${cohortVisibility}
             AND app.community_author_stays("workspaceId", "cohortId", "authorId"::text)
+            AND app.community_author_unbanned("workspaceId", "authorId"::text) -- #168-4: a banned author's words, out of the page
             AND search_tsv @@ websearch_to_tsquery('english', ${term})
             ${kindFilter}
             ${cohortFilter}

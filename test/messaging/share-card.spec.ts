@@ -87,6 +87,7 @@ function fixture() {
   };
   const prisma = {
     user: { findUnique: jest.fn(first(users)), findFirst: jest.fn(first(users)) },
+    userBlock: { findMany: jest.fn().mockResolvedValue([]) }, // #168-4: who blocked the caller
     coachMessage: {
       findFirst: jest.fn(first(messages)),
       create: jest.fn(async ({ data }: { data: Row & { card?: { create: Row } } }) => {
