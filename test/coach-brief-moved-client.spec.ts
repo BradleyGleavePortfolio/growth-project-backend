@@ -227,6 +227,30 @@ describe('B-939-1 stored briefs after a client moves (owner decision 4)', () => 
     expect(out.summary?.action_items).toEqual(KEPT_ONLY.action_items);
   });
 
+  // FR-1141 (Sol B3): a brief saved before a block, either way, with one of its clients still holds
+  // that chat's count and narrative. Today's is written again; history keeps its day; unblock restores.
+  it.each([
+    ['the client blocked the coach', { blocker_id: 'kept', blocked_id: 'S' }],
+    ['the coach blocked the client', { blocker_id: 'S', blocked_id: 'kept' }],
+  ])('%s after the brief was saved: rewritten today, withheld in history, back on unblock', async (_label, pair) => {
+    const block = { ...pair, created_at: new Date(KEPT_ONLY.generated_at.getTime() + 60_000) };
+    const { prisma, svc } = stored(KEPT_ONLY);
+    prisma.userBlock.findMany.mockResolvedValue([block]);
+    const out = await svc.generateBrief('S', 'America/Los_Angeles', '2026-10-10');
+    expect(prisma.coachBrief.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'generating' }) }),
+    );
+    expect(out.summary?.narrative).not.toBe(KEPT_ONLY.narrative);
+    expect(JSON.stringify(out)).not.toContain('Can we move my session');
+    prisma.coachBrief.count.mockResolvedValue(1);
+    prisma.coachBrief.findMany.mockResolvedValue([KEPT_ONLY]);
+    const blocked = await svc.getBriefHistory('S', 1, 20);
+    expect(blocked.items.map((i) => [i.id, i.status, i.summary?.narrative ?? null])).toEqual([['b-kept', 'generated', null]]);
+    prisma.userBlock.findMany.mockResolvedValue([]);
+    const lifted = await svc.getBriefHistory('S', 1, 20);
+    expect(lifted.items.map((i) => i.summary?.narrative ?? null)).toEqual([KEPT_ONLY.narrative]);
+  });
+
   it('history: a brief naming the moved client keeps its day and status, not its content', async () => {
     const { prisma, svc } = stored(STORED);
     prisma.coachBrief.count.mockResolvedValue(2);

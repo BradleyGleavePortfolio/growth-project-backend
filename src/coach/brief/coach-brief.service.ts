@@ -2257,6 +2257,9 @@ export class CoachBriefService {
    * delegated by a head coach who still has them. A row stored before the
    * scope list cannot show whose data it holds, so it counts as stale.
    * Archiving is the coach's own choice, not a move, so it is not checked.
+   * FR-1141 (Sol B3): so is a brief written before a block, either way,
+   * between this coach and one of its clients: its count and narrative still
+   * hold that chat. Lifting the block shows it again.
    */
   private async briefsWithMovedClients(
     coachId: string,
@@ -2264,6 +2267,7 @@ export class CoachBriefService {
       id: string;
       brief_mode: string | null;
       brief_context: Prisma.JsonValue | null;
+      generated_at: Date | null;
     }>,
   ): Promise<Set<string>> {
     const builtFrom = new Map<string, { delegated: boolean; ids: string[] }>();
@@ -2303,6 +2307,17 @@ export class CoachBriefService {
       const stillTheirs = new Set(current.map((u) => u.id));
       for (const [briefId, n] of ofMode) {
         if (n.ids.some((id) => !stillTheirs.has(id))) stale.add(briefId);
+      }
+    }
+    const scoped = Array.from(new Set(Array.from(builtFrom.values()).flatMap((n) => n.ids)));
+    if (scoped.length > 0) {
+      const blocks = await this.prisma.userBlock.findMany({
+        where: { OR: [{ blocker_id: coachId, blocked_id: { in: scoped } }, { blocked_id: coachId, blocker_id: { in: scoped } }] },
+        select: { blocker_id: true, blocked_id: true, created_at: true },
+      });
+      const since = new Map(blocks.map((b) => [b.blocker_id === coachId ? b.blocked_id : b.blocker_id, b.created_at]));
+      for (const r of rows) {
+        if (builtFrom.get(r.id)?.ids.some((id) => writtenBefore(r, since.get(id) ?? null))) stale.add(r.id);
       }
     }
     return stale;
