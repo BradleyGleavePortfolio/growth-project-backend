@@ -216,9 +216,12 @@ describe('the automatic photo check on a space chat photo send (PHOTO-CHECK-BE)'
 
   it('logs the outcome only: never the caption, the photo, the key or who sent it', async () => {
     const lines: string[] = [];
-    for (const level of ['log', 'warn', 'error'] as const) {
-      jest.spyOn(Logger.prototype, level).mockImplementation((m: unknown) => void lines.push(String(m)));
-    }
+    const keep = (...args: unknown[]): void => {
+      lines.push(String(args[0]));
+    };
+    jest.spyOn(Logger.prototype, 'log').mockImplementation(keep);
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(keep);
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(keep);
     await codeOf(world({ reply: () => answer(true) }).send());
     await codeOf(world({ reply: () => new Response('{}', { status: 500 }) }).send());
     expect(lines.filter((l) => l.includes('photo_check'))).toEqual([
