@@ -38,6 +38,10 @@ function makePrisma() {
         if (val !== null && val !== undefined) return false;
         continue;
       }
+      if (typeof v === 'object' && v !== null && 'notIn' in v) {
+        if (((v as any).notIn as any[]).includes(val)) return false;
+        continue;
+      }
       if (typeof v === 'object' && v !== null && ('lt' in v || 'gt' in v || 'gte' in v || 'lte' in v || 'in' in v)) {
         if ('lt' in v && !(val < (v as any).lt)) return false;
         if ('gt' in v && !(val > (v as any).gt)) return false;
@@ -51,9 +55,24 @@ function makePrisma() {
     return true;
   };
 
+  // FX-1141: [blocker, blocked] pairs.
+  const blocks: Array<[string, string]> = [];
   return {
     _users: users,
     _nudges: nudges,
+    _blocks: blocks,
+    userBlock: {
+      findMany: jest.fn(async ({ where }: any) =>
+        blocks
+          .filter(([a, b]) =>
+            where.OR.some((o: any) =>
+              typeof o.blocked_id === 'object' || typeof o.blocker_id === 'object'
+                ? (o.blocker_id === a && o.blocked_id.in?.includes(b)) || (o.blocked_id === b && o.blocker_id.in?.includes(a))
+                : (o.blocker_id === undefined || o.blocker_id === a) && (o.blocked_id === undefined || o.blocked_id === b),
+            ),
+          )
+          .map(([a, b]) => ({ blocker_id: a, blocked_id: b }))),
+    },
     user: {
       findFirst: jest.fn(async ({ where, select }: any) => {
         const row = users.find((u) => matches(u, where));
@@ -126,6 +145,26 @@ describe('NudgesService', () => {
       { id: 'client-other', role: 'student', coach_id: 'coach-B' },
     );
     svc = new NudgesService(prisma as any);
+  });
+
+  // FX-1141 (Sol B1): a block either way: no new nudge (403, no row), and the
+  // client's list and unread count leave that coach out; unblock restores.
+  it.each([
+    ['the client blocked the coach', ['client-1', 'coach-A']],
+    ['the coach blocked the client', ['coach-A', 'client-1']],
+  ] as Array<[string, [string, string]]>)('block: %s', async (_label, pair) => {
+    await svc.createForClient('coach-A', 'client-1', 'Before', 'b');
+    prisma._blocks.push(pair);
+    await expect(svc.createForClient('coach-A', 'client-1', 'After', 'b')).rejects.toMatchObject({
+      status: 403,
+      response: { code: 'messaging.blocked' },
+    });
+    expect(prisma._nudges.map((n) => n.title)).toEqual(['Before']);
+    expect(await svc.listForClient('client-1', {})).toEqual([]);
+    expect(await svc.unreadCountForClient('client-1')).toEqual({ total: 0 });
+    prisma._blocks.length = 0;
+    expect((await svc.listForClient('client-1', {})).map((n) => n.title)).toEqual(['Before']);
+    expect(await svc.unreadCountForClient('client-1')).toEqual({ total: 1 });
   });
 
   describe('create', () => {

@@ -29,6 +29,18 @@ export async function inBlockWith(
   return new Set(rows.map((r) => (r.blocker_id === userId ? r.blocked_id : r.blocker_id)));
 }
 
+/** FX-1141: everyone in a block with `userId`, either way (one-person reads). */
+export async function everyoneInBlockWith(
+  prisma: Pick<PrismaService, 'userBlock'>,
+  userId: string,
+): Promise<string[]> {
+  const rows = await prisma.userBlock.findMany({
+    where: { OR: [{ blocker_id: userId }, { blocked_id: userId }] },
+    select: { blocker_id: true, blocked_id: true },
+  });
+  return [...new Set(rows.map((r) => (r.blocker_id === userId ? r.blocked_id : r.blocker_id)))];
+}
+
 /**
  * FX-1141: the one write gate for a coaching message between two people
  * (send, draft, nudge, churn draft or send, Roman notification, voice upload).
