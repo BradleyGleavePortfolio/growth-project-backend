@@ -147,14 +147,14 @@ describe('#168-4: a block closes the coaching 1:1 thread both ways', () => {
   it('B5: no voice upload URL across a block, either side, either direction', async () => {
     const control = fixture([]);
     const okUpload = jest.fn().mockResolvedValue({ upload_url: 'u', public_url: 'p' });
-    jest.spyOn(control.messaging as never, 'voiceUploadProvider').mockReturnValue({ createSignedUpload: okUpload } as never);
+    Reflect.set(control.messaging, 'voiceUpload', { createSignedUpload: okUpload });
     await control.messaging.createThreadVoiceUpload(CLIENT, null, VOICE);
     await control.messaging.createThreadVoiceUpload(COACH, CLIENT, VOICE);
     expect(okUpload).toHaveBeenCalledTimes(2);
     for (const blocks of [[[COACH, CLIENT]], [[CLIENT, COACH]]] as Array<Array<[string, string]>>) {
       const f = fixture(blocks);
       const upload = jest.fn();
-      jest.spyOn(f.messaging as never, 'voiceUploadProvider').mockReturnValue({ createSignedUpload: upload } as never);
+      Reflect.set(f.messaging, 'voiceUpload', { createSignedUpload: upload });
       for (const call of [() => f.messaging.createThreadVoiceUpload(CLIENT, null, VOICE), () => f.messaging.createThreadVoiceUpload(COACH, CLIENT, VOICE)]) {
         await expect(call()).rejects.toMatchObject({ status: 403, response: { code: 'messaging.blocked' } });
       }

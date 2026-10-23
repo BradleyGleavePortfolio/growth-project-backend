@@ -39,7 +39,8 @@ function makePrisma() {
         continue;
       }
       if (typeof v === 'object' && v !== null && 'notIn' in v) {
-        if (((v as any).notIn as any[]).includes(val)) return false;
+        const { notIn } = v as { notIn: unknown[] };
+        if (notIn.includes(val)) return false;
         continue;
       }
       if (typeof v === 'object' && v !== null && ('lt' in v || 'gt' in v || 'gte' in v || 'lte' in v || 'in' in v)) {
