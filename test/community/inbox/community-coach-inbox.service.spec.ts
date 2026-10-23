@@ -197,7 +197,7 @@ describe('CommunityCoachInboxService', () => {
       msg({ id: `aaaaaaaa-0000-0000-0000-00000000000${n}`, created_at: new Date(`2026-01-0${n}T00:00:00.000Z`) }),
     );
     repo.unansweredMessages.mockImplementation(async (p: { limit: number }) => rows.slice(0, p.limit));
-    const res = await service.list(coach, { limit: '2' } as never);
+    const res = await service.list(coach, Object.assign(new CoachInboxQueryDto(), { limit: '2' }));
     expect(repo.unansweredMessages).toHaveBeenCalledWith(expect.objectContaining({ limit: 3 }));
     expect(res.items.map((i) => i.id)).toEqual([rows[0].id, rows[1].id]);
     expect(res.next_cursor).not.toBeNull();
