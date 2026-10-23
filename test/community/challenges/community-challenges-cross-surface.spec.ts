@@ -69,6 +69,7 @@ describe('v3-1 cross-surface containment (Finding 1)', () => {
       findById: jest.Mock;
       updateBody: jest.Mock;
       softDelete: jest.Mock;
+      chatExtras: jest.Mock;
     };
     let realtime: {
       channels: { cohort: jest.Mock };
@@ -87,6 +88,8 @@ describe('v3-1 cross-surface containment (Finding 1)', () => {
         findById: jest.fn(),
         updateBody: jest.fn(async (m) => m),
         softDelete: jest.fn(async (m) => m),
+        // SC-BE1: the sender and reply quote of a space chat read (nothing to name here).
+        chatExtras: jest.fn(async () => ({ parents: [], coachId: null, people: new Map(), fullName: () => false })),
       };
       realtime = {
         channels: { cohort: jest.fn(() => 'cohort-channel') },
@@ -154,7 +157,7 @@ describe('v3-1 cross-surface containment (Finding 1)', () => {
     };
     it('counts only plan_context_type: null cohort messages', async () => {
       const count = jest.fn<Promise<number>, [CountArg]>(async () => 3);
-      const prisma = { communityMessage: { count } };
+      const prisma = { communityMessage: { count }, $queryRaw: async () => [] }; // #168-4: no hidden authors
       const repository = new CommunityRepository(prisma as never);
 
       await repository.countUnreadCohortMessages({

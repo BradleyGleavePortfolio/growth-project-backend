@@ -520,25 +520,26 @@ describe('MessagingService — block-aware list + unread filters', () => {
     );
   });
 
-  it('client thread excludes coach messages when client has blocked coach', async () => {
+  // #168-4 (owner): a block closes the whole thread both ways ("hide ALL messaging entirely"), own history included.
+  it('client thread is empty when client has blocked coach (and for the coach too)', async () => {
     let rows = await svc.listThreadForClient('client-1', { limit: 100 });
     expect(rows.map((r) => r.sender_id).sort()).toEqual(['client-1', 'coach-1']);
 
     await safety.blockUser('client-1', 'coach-1');
 
     rows = await svc.listThreadForClient('client-1', { limit: 100 });
-    // Coach's authored row is stripped. Client's own message remains so the
-    // user can still see their last sent line.
-    expect(rows.map((r) => r.sender_id)).toEqual(['client-1']);
+    expect(rows).toEqual([]);
+    expect(await svc.listThreadForCoach('coach-1', 'client-1', { limit: 100 })).toEqual([]);
   });
 
-  it('coach thread excludes client messages when coach has blocked client', async () => {
+  it('coach thread is empty when coach has blocked client (and for the client too)', async () => {
     let rows = await svc.listThreadForCoach('coach-1', 'client-1', { limit: 100 });
     expect(rows.map((r) => r.sender_id).sort()).toEqual(['client-1', 'coach-1']);
 
     await safety.blockUser('coach-1', 'client-1');
     rows = await svc.listThreadForCoach('coach-1', 'client-1', { limit: 100 });
-    expect(rows.map((r) => r.sender_id)).toEqual(['coach-1']);
+    expect(rows).toEqual([]);
+    expect(await svc.listThreadForClient('client-1', { limit: 100 })).toEqual([]);
   });
 
   it('unreadCountForClient returns 0 when the client has blocked their coach', async () => {
