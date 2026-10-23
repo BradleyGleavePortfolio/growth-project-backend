@@ -6,21 +6,39 @@ The notifications module is the single place all communication with users and co
 
 ## Notification Kind × Channel × Default-On Matrix
 
-| Kind                      | In-app | Push | Email | Who receives                                                            |
-| ------------------------- | ------ | ---- | ----- | ----------------------------------------------------------------------- |
-| `milestone_reached`       | on     | on   | off   | Client                                                                  |
-| `message_received`        | on     | on   | off   | Client                                                                  |
-| `missed_checkin`          | on     | on   | off   | Client + Coach                                                          |
-| `weight_trend_alert`      | on     | on   | off   | Client                                                                  |
-| `checkin_submitted`       | on     | off  | off   | Coach                                                                   |
-| `build_week_day_unlocked` | on     | on   | on    | Client                                                                  |
-| `coach_alert`             | on     | on   | off   | Coach                                                                   |
-| `coach_client_moved`      | on     | off  | off   | Coach (the coach a client left for TGP's house coach; SWITCH-TELL-BE; muted coach: row kept for Money, `inbox_hidden`) |
-| `client_digest`           | off    | off  | on    | Client                                                                  |
-| `coach_digest`            | off    | off  | on    | Coach                                                                   |
-| `workout_reminder`        | on     | on   | n/a   | Client (C05 item 7; `workout_reminder_push` / `workout_reminder_inapp`) |
+| Kind | In-app | Push | Email | Setting | Who receives |
+| ---- | ------ | ---- | ----- | ------- | ------------ |
+| `milestone_reached` | on | on | off | `milestone_*` | Client |
+| `message_received` | on | on | off | `message_*` | Client |
+| `missed_checkin` | on | on | off | `missed_checkin_*` | Client + Coach |
+| `weight_trend_alert` | on | on | off | `weight_trend_*` | Client |
+| `checkin_submitted` | on | off | off | `checkin_submitted_*` | Coach |
+| `build_week_day_unlocked` | on | on | on | `build_week_*` | Client |
+| `coach_alert` | on | on | off | `coach_alert_*` | Coach |
+| `coach_client_moved` | on | off | off | none | Coach (the coach a client left for TGP's house coach; SWITCH-TELL-BE; muted coach: row kept for Money, `inbox_hidden`) |
+| `client_digest` | off | off | on | `digest_*` | Client |
+| `coach_digest` | off | off | on | `digest_*` | Coach |
+| `workout_reminder` | on | on | n/a | `workout_reminder_*` | Client (C05 item 7) |
+| `workout_assigned` | on | on | n/a | `workout_reminder_*` | Client (FU-WORKLOG-126: the workout reminder switches) |
+| `meal_plan_assigned` | on | on | n/a | none | Client (one row, written on the `push` channel; it shows in the inbox) |
+| `drip_released` | on | on | off | `drip_released_*` | Client (buyer) |
+| `coach_new_purchase` | on | on | off | `coach_new_purchase_*` | Coach |
+| `booking_requested`, `booking_confirmed`, `booking_declined`, `booking_cancelled`, `booking_rescheduled`, `booking_reminder_24h`, `booking_reminder_1h`, `booking_link_needed`, `booking_link_ready`, `booking_request_expired` | on | on | off | `booking_*` | Client + Coach |
+| `nudge_missed_checkin` | on | on | off | `nudge_missed_checkin_*` | Client |
+| `nudge_streak_broken` | on | on | off | `nudge_practice_paused_*` | Client |
+| `nudge_onboarding_abandoned` | on | on | on | `nudge_onboarding_abandoned_*` | Client |
+| `nudge_inactive` | on | on | on | `nudge_inactive_*` | Client |
+| `dunning_blocker` | on | n/a | n/a | none | Client (the Day 3, Day 7 and dispute payment blocker, and the full-refund notice; the payment push goes through `pushToUser`) |
+| `first_payment` | on | on | n/a | none | Coach |
+| `trial_ending` | on | on | n/a | none | Client |
+| `plan_renewal` | n/a | on | n/a | `plan_renewal_*` | Client (push only, no inbox row) |
+| `contract_signed`, `contract_declined`, `contract_expired` | off | off | on | `digest_*` | Coach (B5 contracts; no sender on main yet) |
 
 Defaults live in `NotificationsService.getPreferences`. Each channel flag can be toggled independently via `PATCH /notifications/preferences`.
+Setting is the column family `notificationPrefsPrefix` picks for the kind (`src/notifications/push/push-preferences.ts`). `none` means
+the kind has no column of its own: only `muted` (Mute all) stops it at the core gate. A kind with no line there falls to `digest_*`,
+whose in-app and push are off by default, so every money or safety kind has its own line. `test/dunning-kind-fix-notification-kinds.spec.ts`
+walks every kind through the real gate and fails when one lands under an off setting this table does not name.
 
 ### Community v1-4 push kinds
 
@@ -31,15 +49,15 @@ live in `COMMUNITY_PUSH_DEFAULTS`
 (`src/community/notifications/community-notifications.types.ts`) and are applied
 at the read path. All delivery is gated behind `FEATURE_COMMUNITY_PUSH`.
 
-| Kind                                     | In-app | Push | Email | Category     | Who receives    |
-| ---------------------------------------- | ------ | ---- | ----- | ------------ | --------------- |
-| `community_message_received`             | on     | on   | off   | COACH_DIRECT | Member          |
-| `community_dm_received`                  | on     | on   | off   | COACH_DIRECT | Member          |
-| `community_post_replied`                 | on     | on   | off   | CLIENT_BOT   | Post author     |
-| `community_event_starting_soon`          | on     | on   | off   | MILESTONE    | RSVP'd member   |
-| `community_challenge_milestone`          | on     | on   | off   | MILESTONE    | Participant     |
-| `community_moderation_action_against_me` | on     | on   | on    | SYSTEM       | Actioned member |
-| `community_membership_changed`           | on     | off  | off   | SYSTEM       | Member          |
+| Kind | In-app | Push | Email | Setting | Category | Who receives |
+| ---- | ------ | ---- | ----- | ------- | -------- | ------------ |
+| `community_message_received` | on | on | off | `digest_*` (b#1138 makes it none) | COACH_DIRECT | Member |
+| `community_dm_received` | on | on | off | none | COACH_DIRECT | Member |
+| `community_post_replied` | on | on | off | none | CLIENT_BOT | Post author |
+| `community_event_starting_soon` | on | on | off | none | MILESTONE | RSVP'd member |
+| `community_challenge_milestone` | on | on | off | none | MILESTONE | Participant |
+| `community_moderation_action_against_me` | on | on | on | none | SYSTEM | Actioned member |
+| `community_membership_changed` | on | off | off | none | SYSTEM | Member |
 
 Lock-screen privacy: when enabled, the push `body` is a fixed safe string
 (`COMMUNITY_PUSH_BODIES[kind].privacyOn`) that never contains user names,
