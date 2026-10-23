@@ -260,6 +260,78 @@ describe('GC-1 pay page GET /p/:token', () => {
     });
   });
 
+  // The page's own script with stand-ins for the DOM, Stripe.js and fetch.
+  // GUEST-ELIGIBILITY: the email step runs first (check-email; `account` and
+  // `verify` script the answers), then the code step for an existing email.
+  type Answers = {
+    checkout: boolean[];
+    confirm: boolean[];
+    account?: 'new' | 'existing';
+    verify?: { status: number; body: Record<string, unknown> };
+    refuse?: Record<string, unknown>;
+  };
+  async function bootPage(answers: Answers, email = 'ann@example.com') {
+    const html = (await get(`/p/${A}`)).body;
+    const js = [...html.matchAll(/<script nonce="[^"]+">([\s\S]*?)<\/script>/g)].pop()?.[1] ?? '';
+    const on: Record<string, (e: unknown) => Promise<void>> = {};
+    const nodes: Record<string, Record<string, unknown>> = {};
+    const kinds = ['no_coach', 'same_coach'].map((k) => ({ k, hidden: false, getAttribute: () => k }));
+    const ids = ['cfg', 'pay', 'go', 'msg', 'nm', 'ph', 'em', 'or', 'express', 'f1', 'b1', 'm1', 'f2', 'b2', 'm2', 'cd', 'rs', 'ch', 'chg', 's3', 'hey', 'sum', 'to', 'as', 'inc0'];
+    for (const id of ids) {
+      nodes[id] = {
+        value: '', hidden: ['f2', 's3', 'sum', 'pay'].includes(id), textContent: id === 'cfg' ? JSON.stringify(cfgOf(html)) : '',
+        setAttribute() {}, focus() {}, checkValidity: () => true, querySelectorAll: () => kinds,
+        addEventListener: (t: string, h: never) => (on[`${id}:${t}`] = h),
+      };
+    }
+    const store = new Map<string, string>();
+    const keys: string[] = [];
+    const bodies: Record<string, unknown>[] = [];
+    const calls: string[] = [];
+    const reply = (status: number, body: unknown) => ({ ok: status < 400, status, json: async () => body });
+    const sandbox: Record<string, unknown> = {
+      document: { getElementById: (id: string) => nodes[id] },
+      addEventListener() {},
+      setTimeout: (fn: () => void) => fn(),
+      location: { origin: 'https://app.example' },
+      crypto: { randomUUID },
+      sessionStorage: { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v), removeItem: (k: string) => store.delete(k) },
+      fetch: async (url: string, init: { body: string }) => {
+        const body = JSON.parse(init.body);
+        calls.push(url.split('/checkout')[1] || 'checkout');
+        if (url.endsWith('/check-email')) return reply(200, { account: answers.account ?? 'new' });
+        if (url.endsWith('/verify-code')) return reply(answers.verify?.status ?? 200, answers.verify?.body ?? {});
+        keys.push(body.idempotency_key);
+        bodies.push(body);
+        if (answers.refuse) return reply(403, answers.refuse);
+        const ok = answers.checkout.shift() ?? true;
+        return reply(ok ? 200 : 400, ok ? { client_secret: 'pi_1_secret_1' } : { message: 'This checkout link has expired. Please request a new one.' });
+      },
+      Stripe: () => ({
+        elements: () => ({ create: (type: string) => ({ on: (t: string, h: never) => (on[`${type}:${t}`] = h), mount() {} }), submit: async () => ({}) }),
+        confirmPayment: async () => ((answers.confirm.shift() ?? true) ? {} : { error: { message: 'Your card was declined.' } }),
+      }),
+    };
+    sandbox.window = sandbox;
+    vm.runInNewContext(js, sandbox);
+    Object.assign(nodes.nm, { value: 'Ann Buyer' });
+    Object.assign(nodes.ph, { value: '415 555 0100' });
+    Object.assign(nodes.em, { value: email });
+    const flush = () => new Promise((r) => setImmediate(r));
+    await on['f1:submit']({ preventDefault() {} });
+    await flush();
+    const tap = {
+      card: () => on['pay:submit']({ preventDefault() {} }),
+      wallet: () => on['expressCheckout:confirm']({ billingDetails: { name: 'Ann Buyer', email: 'wallet@example.com' }, paymentFailed() {} }),
+      code: async (code: string) => {
+        Object.assign(nodes.cd, { value: code });
+        await on['f2:submit']({ preventDefault() {} });
+        await flush();
+      },
+    };
+    return { tap, keys, bodies, calls, nodes, kinds, flush, msg: () => nodes.msg.textContent };
+  }
+
   // The page's own script, run with stand-ins for the DOM, Stripe.js and
   // fetch. The server treats a failed attempt's idempotency key as spent
   // (guest-checkout replayExistingIntent: "expired"), so every failed attempt
@@ -267,41 +339,7 @@ describe('GC-1 pay page GET /p/:token', () => {
   // tap replays the same checkout and can never charge twice).
   describe('paying again after a failed attempt', () => {
     async function boot(answers: { checkout: boolean[]; confirm: boolean[] }) {
-      const html = (await get(`/p/${A}`)).body;
-      const js = [...html.matchAll(/<script nonce="[^"]+">([\s\S]*?)<\/script>/g)].pop()?.[1] ?? '';
-      const on: Record<string, (e: unknown) => Promise<void>> = {};
-      const nodes: Record<string, Record<string, unknown>> = {};
-      for (const id of ['cfg', 'pay', 'go', 'msg', 'nm', 'ph', 'em', 'or', 'express']) {
-        nodes[id] = { value: '', textContent: id === 'cfg' ? JSON.stringify(cfgOf(html)) : '', setAttribute() {}, focus() {}, addEventListener: (t: string, h: never) => (on[`${id}:${t}`] = h) };
-      }
-      const store = new Map<string, string>();
-      const keys: string[] = [];
-      const sandbox: Record<string, unknown> = {
-        document: { getElementById: (id: string) => nodes[id] },
-        addEventListener() {},
-        location: { origin: 'https://app.example' },
-        crypto: { randomUUID },
-        sessionStorage: { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v), removeItem: (k: string) => store.delete(k) },
-        fetch: async (_url: string, init: { body: string }) => {
-          keys.push(JSON.parse(init.body).idempotency_key);
-          const ok = answers.checkout.shift() ?? true;
-          return { ok, json: async () => (ok ? { client_secret: 'pi_1_secret_1' } : { message: 'This checkout link has expired. Please request a new one.' }) };
-        },
-        Stripe: () => ({
-          elements: () => ({ create: (type: string) => ({ on: (t: string, h: never) => (on[`${type}:${t}`] = h), mount() {} }), submit: async () => ({}) }),
-          confirmPayment: async () => ((answers.confirm.shift() ?? true) ? {} : { error: { message: 'Your card was declined.' } }),
-        }),
-      };
-      sandbox.window = sandbox;
-      vm.runInNewContext(js, sandbox);
-      Object.assign(nodes.nm, { value: 'Ann Buyer' });
-      Object.assign(nodes.ph, { value: '415 555 0100' });
-      Object.assign(nodes.em, { value: 'ann@example.com' });
-      const tap = {
-        card: () => on['pay:submit']({ preventDefault() {} }),
-        wallet: () => on['expressCheckout:confirm']({ billingDetails: { name: 'Ann Buyer', email: 'ann@example.com' }, paymentFailed() {} }),
-      };
-      return { tap, keys, msg: () => nodes.msg.textContent };
+      return bootPage(answers);
     }
 
     it.each([
@@ -324,6 +362,118 @@ describe('GC-1 pay page GET /p/:token', () => {
       await page.tap.wallet();
       expect(page.keys).toHaveLength(2);
       expect(page.keys[1]).toBe(page.keys[0]);
+    });
+  });
+
+  describe('GUEST-ELIGIBILITY: the email first, the code for a TGP email, Welcome Back, then pay', () => {
+    it('renders the steps: email first, code and summary hidden, pay form hidden, both summaries server-escaped', async () => {
+      rows[A] = pkg(A, {}, { name: '<b>Sam</b>' });
+      const html = (await get(`/p/${A}`)).body;
+      expect(html).toMatch(/<form id="f1" class="card" novalidate>\s*<label for="em">Email<\/label>/);
+      for (const id of ['f2', 's3', 'pay']) expect(html).toMatch(new RegExp(`id="${id}"[^>]*hidden`));
+      expect(html).toContain(PAY_PAGE_COPY.appChange('&lt;b&gt;Sam&lt;/b&gt;'));
+      expect(html).toContain(PAY_PAGE_COPY.oneCoach('&lt;b&gt;Sam&lt;/b&gt;'));
+      expect(html).not.toContain('<b>Sam</b>');
+      expect(cfgOf(html).copy.hey).toBe('Hey {N}, Welcome Back!');
+    });
+
+    it('new email: no code step; the payment carries the checked email and no proof (#170-2)', async () => {
+      const page = await bootPage({ checkout: [true], confirm: [true], account: 'new' }, 'new@example.com');
+      expect(page.nodes.f2.hidden).toBe(true);
+      expect(page.nodes.pay.hidden).toBe(false);
+      expect(page.nodes.as.textContent).toBe('new@example.com');
+      await page.tap.wallet();
+      expect(page.calls).toEqual(['/check-email', 'checkout']);
+      expect(page.bodies[0]).toMatchObject({ guest_email: 'new@example.com' });
+      expect(page.bodies[0]).not.toHaveProperty('buyer_token');
+    });
+
+    it.each([
+      ['no coach', 'no_coach', [false, true]],
+      ['client of this coach', 'same_coach', [true, false]],
+    ] as const)('existing email, %s: code, "Hey Ann, Welcome Back!", that summary, then pay with the proof (#169-8)', async (_l, summary, hiddenKinds) => {
+      const page = await bootPage({ checkout: [true], confirm: [true], account: 'existing', verify: { status: 200, body: { verified: true, first_name: 'Ann', summary, buyer_token: 'proof-1' } } });
+      expect(page.nodes.f2.hidden).toBe(false);
+      expect(page.nodes.pay.hidden).toBe(true);
+      expect(page.nodes.to.textContent).toBe('ann@example.com');
+      await page.tap.code('12 34');
+      expect(page.nodes.m2.textContent).toBe(PAY_PAGE_COPY.badCode);
+      expect(page.calls).toEqual(['/check-email']);
+      await page.tap.code('123456');
+      expect(page.nodes.hey.textContent).toBe('Hey Ann, Welcome Back!');
+      expect(page.nodes.hey.hidden).toBe(true);
+      expect(page.nodes.sum.hidden).toBe(false);
+      expect(page.kinds.map((k) => k.hidden)).toEqual(hiddenKinds);
+      expect(page.nodes.inc0.hidden).toBe(true);
+      expect(page.nodes.pay.hidden).toBe(false);
+      await page.tap.card();
+      expect(page.bodies[0]).toMatchObject({ guest_email: 'ann@example.com', buyer_token: 'proof-1' });
+    });
+
+    it.each([
+      ['client of another coach', 'BUYER_HAS_COACH', 'Your account already has a coach. To change coaches, contact support from Settings.'],
+      ['coach account', 'BUYER_NOT_CLIENT', 'This email belongs to a coach account, so it can’t buy a coaching package. Use a different email.'],
+    ])('%s: the refusal shows and the payment never opens', async (_l, error, message) => {
+      const page = await bootPage({ checkout: [], confirm: [], account: 'existing', verify: { status: 409, body: { error, message } } });
+      await page.tap.code('123456');
+      expect(page.nodes.m2.textContent).toBe(message);
+      expect(page.nodes.pay.hidden).toBe(true);
+      expect(page.nodes.b2.hidden).toBe(true);
+      expect(page.calls).toEqual(['/check-email', '/verify-code']);
+    });
+
+    it('proof expired at payment (403 BUYER_CODE_REQUIRED): back to the code step, a new code is sent', async () => {
+      const refuse = { error: 'BUYER_CODE_REQUIRED', message: 'This email already has a TGP account. Enter the code we emailed you to keep going.' };
+      const page = await bootPage({ checkout: [], confirm: [], account: 'existing', verify: { status: 200, body: { verified: true, first_name: '', summary: 'no_coach', buyer_token: 'old' } }, refuse });
+      await page.tap.code('123456');
+      expect(page.nodes.hey.textContent).toBe('Welcome Back!');
+      await page.tap.card();
+      await page.flush();
+      expect(page.calls).toEqual(['/check-email', '/verify-code', 'checkout', '/check-email']);
+      expect(page.nodes.f2.hidden).toBe(false);
+      expect(page.nodes.pay.hidden).toBe(true);
+      expect(page.nodes.m2.textContent).toBe(refuse.message);
+    });
+  });
+
+  describe('GUEST-ELIGIBILITY: the confirm-and-download state (/p/:token?confirmed=1)', () => {
+    it('serves the confirm page with the CSP, App Store link and login email; off means 404', async () => {
+      const res = await get(`/p/${A}?confirmed=1`);
+      expect(res.status).toBe(200);
+      expect(res.headers['content-security-policy']).toContain("default-src 'none'");
+      expect(res.body).toContain(PAY_PAGE_COPY.confirmedH);
+      expect(res.body).toContain('<a class="btn" href="https://apps.apple.com/app/id6765847915">Download on the App Store</a>');
+      expect(res.body).toContain(`<strong id="le">${PAY_PAGE_COPY.loginEmailUnknown}</strong>`);
+      expect(res.body).not.toContain('Monthly coaching');
+      env.GUEST_PAY_PAGE_ENABLED = undefined;
+      expect((await get(`/p/${A}?confirmed=1`)).status).toBe(404);
+    });
+
+    async function land(hash: string) {
+      const html = (await get(`/p/${A}?confirmed=1`)).body;
+      const js = [...html.matchAll(/<script nonce="[^"]+">([\s\S]*?)<\/script>/g)].pop()?.[1] ?? '';
+      const nodes: Record<string, Record<string, unknown>> = { ok: { hidden: false }, gone: { hidden: true }, le: { textContent: 'the email you paid with' } };
+      const replaced: string[] = [];
+      vm.runInNewContext(js, {
+        document: { getElementById: (id: string) => nodes[id] },
+        location: { hash, pathname: `/p/${A}`, search: '?confirmed=1' },
+        history: { replaceState: (_s: unknown, _t: string, url: string) => replaced.push(url) },
+        URLSearchParams, atob: (b: string) => Buffer.from(b, 'base64').toString('latin1'), escape, decodeURIComponent,
+      });
+      return { nodes, replaced };
+    }
+
+    it('shows the email from the confirmed session and drops the token from the address bar', async () => {
+      const payload = Buffer.from(JSON.stringify({ email: 'ann@example.com', sub: 'u1' })).toString('base64url');
+      const { nodes, replaced } = await land(`#access_token=h.${payload}.s&type=invite`);
+      expect(nodes.le.textContent).toBe('ann@example.com');
+      expect(nodes.gone.hidden).toBe(true);
+      expect(replaced).toEqual([`/p/${A}?confirmed=1`]);
+    });
+
+    it('an expired or used link shows the run-out state', async () => {
+      const { nodes } = await land('#error=access_denied&error_code=otp_expired');
+      expect([nodes.ok.hidden, nodes.gone.hidden]).toEqual([true, false]);
     });
   });
 });

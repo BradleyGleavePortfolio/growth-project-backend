@@ -16,7 +16,7 @@ export function storefrontBaseUrl(configured: string | undefined): string {
 export function payPageUrl(
   configured: string | undefined,
   token: string,
-  query: { lp?: string; resume?: string } = {},
+  query: { lp?: string; resume?: string; confirmed?: string } = {},
 ): string {
   const qs = new URLSearchParams(
     Object.entries(query).filter((e): e is [string, string] => !!e[1]),
