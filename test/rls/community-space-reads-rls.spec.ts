@@ -102,7 +102,7 @@ const DENIED = '42501';
     expect(await routes.getRead(req('O'), space.mem)).toEqual({ last_read_at: expect.any(String), last_read_message_id: null });
     expect(await status(routes.getRead(req('A'), space.mem))).toBe(200);
     expect(await status(routes.getRead(req('N'), space.ann))).toBe(200); // control: N reads A's open space
-    expect(await status(routes.getRead(req('N'), space.mem))).toBe(404); // a space they cannot read: as unknown
+    expect(await status(routes.getRead(req('N'), space.mem))).toBe(404); // a space they cannot read answers like an unknown one
     expect(await status(routes.getRead(req('X'), space.mem))).toBe(404);
     expect(await status(routes.markRead(req('X'), space.mem, { message_id: await say('O', 'mem') }))).toBe(404);
     expect(await status(routes.getRead(req('B'), space.mem))).toBe(404);
