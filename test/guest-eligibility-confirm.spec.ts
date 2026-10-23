@@ -36,7 +36,10 @@ async function service(env: Record<string, string | undefined>) {
       { provide: FeePolicyService, useValue: {} },
     ],
   }).compile();
-  return { svc: moduleRef.get(GuestCheckoutService) as unknown as Svc, generateLink };
+  // `any` lets the spec reach the service's private helpers without a cast.
+  const real: any = moduleRef.get(GuestCheckoutService);
+  const svc: Svc = real;
+  return { svc, generateLink };
 }
 
 const checkout = {
@@ -74,10 +77,12 @@ describe('GUEST-ELIGIBILITY 2 — the new buyer confirms the email, then lands o
   async function sent(inviteLink: string | null) {
     const { svc } = await service({ RESEND_API_KEY: 're_test', EMAIL_FROM_ADDRESS: 'TGP Fitness <hello@trygrowthproject.com>' });
     const fetchMock = jest.fn(async () => ({ ok: true, status: 200 }));
-    global.fetch = fetchMock as never;
+    const fetchDouble: any = fetchMock;
+    global.fetch = fetchDouble;
     await svc.sendWelcomeEmail(checkout, inviteLink);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    return JSON.parse((fetchMock.mock.calls[0] as unknown as [string, { body: string }])[1].body) as { subject: string; html: string };
+    const call: any = fetchMock.mock.calls[0];
+    return JSON.parse(call[1].body) as { subject: string; html: string };
   }
 
   it('new account: the approved confirm email (subject, button, fallback line)', async () => {
