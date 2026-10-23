@@ -1,7 +1,5 @@
-/** PUSH-KIND-FIX (b#1138): every space chat push (unread, reply, High alert) is community_message_received. The
- * preference gate filed it under 'digest' (push default off), so sendPush dropped it and the send-time re-check
- * dropped it for any saved preferences row. Real chain: messageStored -> sendPush -> outbox -> drain -> Expo (mocked).
- * Only the master mute and the person's own space setting (Mute all, a running silence) stop it. Fails on 0a3d82ec. */
+// PUSH-KIND-FIX (b#1138): space chat pushes were filed under 'digest' (push default off) and never sent. Real chain
+// messageStored -> sendPush -> outbox -> drain -> Expo (mocked); only mute and the space's own setting stop it.
 import { Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { CommunitySpacePushService } from '../../../src/community/space-push/community-space-push.service';
@@ -22,43 +20,26 @@ class Clocked extends PushDeliveryService {
   }
 }
 beforeAll(() => ['warn', 'error', 'log'].forEach((l) => jest.spyOn(Logger.prototype, l as 'log').mockImplementation(() => undefined)));
-beforeEach(() => {
-  process.env.FEATURE_COMMUNITY_SPACE_PUSH = 'true';
-});
-afterAll(() => {
-  delete process.env.FEATURE_COMMUNITY_SPACE_PUSH;
-});
-
+beforeEach(() => void (process.env.FEATURE_COMMUNITY_SPACE_PUSH = 'true'));
+afterAll(() => void delete process.env.FEATURE_COMMUNITY_SPACE_PUSH);
 async function chain() {
   const w = pushOutboxWorld({ now: () => NOW, tokens: Object.fromEntries(PEOPLE.map((p, i) => [p, token('abcde'[i])])) });
   const send = jest.fn(async (m: Array<{ to: unknown }>) => m.map(() => ({ status: 'ok' as const, id: 't' })));
   const delivery = new Clocked(Object.create(w.db), { send, getReceipts: jest.fn(async () => ({})) });
   delivery.autoDrain = false;
   const notifications = new NotificationsService(Object.create(w.db), undefined, undefined, delivery);
-  // 'fresh' never saved a preference (no row); the rest hold a saved row of every default (digest_push false).
-  const defaults = await notifications.getPreferences('saved');
+  const defaults = await notifications.getPreferences('saved'); // 'fresh' has no row; the rest save every default
   for (const p of PEOPLE.slice(1)) w.prefs[p] = { ...defaults, user_id: p, muted: p === 'muted' };
   const queued: Promise<unknown>[] = [];
   const real = notifications.sendPush.bind(notifications);
-  jest.spyOn(notifications, 'sendPush').mockImplementation((...a) => {
-    const p = real(...a);
-    queued.push(p);
-    return p;
-  });
-  const findFirst = jest.fn();
-  const queryRaw = jest.fn();
+  jest.spyOn(notifications, 'sendPush').mockImplementation((...a) => { const p = real(...a); queued.push(p); return p; });
+  const [findFirst, queryRaw] = [jest.fn(), jest.fn()];
   const prisma = {
     communityMessage: { findFirst },
     communityCohort: { findUnique: async () => ({ name: 'Team' }), findUniqueOrThrow: async () => ({ kind: 'announcement' }), findMany: async () => [] },
-    communityWorkspaceBan: { findFirst: async () => null },
-    user: { findUnique: async () => ({ name: 'Sam Rivers' }) },
-    userBlock: { findMany: async () => [] },
-    communitySpaceRead: {
-      findMany: async () => [
-        { user_id: 'space-muted', notify_mode: 'mute_all', silenced_until: null },
-        { user_id: 'silenced', notify_mode: 'all', silenced_until: new Date(Date.now() + 3_600_000) },
-      ],
-    },
+    communityWorkspaceBan: { findFirst: async () => null }, user: { findUnique: async () => ({ name: 'Sam Rivers' }) }, userBlock: { findMany: async () => [] },
+    communitySpaceRead: { findMany: async () => [{ user_id: 'space-muted', notify_mode: 'mute_all', silenced_until: null },
+      { user_id: 'silenced', notify_mode: 'all', silenced_until: new Date(Date.now() + 3_600_000) }] },
     $queryRaw: queryRaw, // readersNow, then one unread count per reader on All
   };
   const svc = new CommunitySpacePushService(prisma as never, notifications, { onSpaceMessageStored: jest.fn() } as never);
@@ -71,7 +52,6 @@ async function chain() {
   };
   return { w, sent: () => send.mock.calls.flatMap((c) => c[0]).map((x) => x.to), delivery, message };
 }
-
 it('files the space chat kind under a prefix with no column, not digest', () => {
   expect(notificationPrefsPrefix(K)).toBe('community_message');
   const columns = Object.values(Prisma.NotificationPreferencesScalarFieldEnum) as string[];
@@ -80,7 +60,6 @@ it('files the space chat kind under a prefix with no column, not digest', () => 
   expect([saved, null, { ...saved, muted: true }].map((p) => pushAllowedByPreferences(p, K))).toEqual([true, true, false]);
   expect(pushAllowedByPreferences(saved, NotificationKind.CLIENT_DIGEST)).toBe(false); // digests unchanged
 });
-
 it.each([
   ['unread', { id: 'm1' }, 'saved', { title: 'Team', body: '1 unread message in Team' }],
   ['reply', { id: 'm2', parent_message_id: 'p1' }, 'fresh', { title: 'New reply', body: 'Sam replied to your message in Team' }],
@@ -88,14 +67,12 @@ it.each([
 ] as const)('%s: queued and sent with default preferences; muted, Mute all and silence get none', async (_k, m, who, copy) => {
   const { w, sent, delivery, message } = await chain();
   await message(m);
-  // A reply goes to the author replied to ('fresh'); everyone else on All gets the unread notification.
   expect(w.rows.map((r) => [r.user_id, r.kind]).sort()).toEqual([['fresh', K], ['saved', K]]);
   expect(w.rows.find((r) => r.user_id === who)).toMatchObject(copy);
   await delivery.drain();
   expect(sent().sort()).toEqual([token('a'), token('b')]);
   expect(w.rows.map((r) => r.status)).toEqual(['sent', 'sent']);
 });
-
 it('send time: a saved default row lets a queued push out; mute all switched on while it waits stops it', async () => {
   const { w, sent, delivery, message } = await chain();
   await message({ id: 'm4', high_alert: true });

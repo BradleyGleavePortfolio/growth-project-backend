@@ -70,9 +70,8 @@ export function notificationPrefsPrefix(kind: string): string {
   if (kind.startsWith('trial_ending')) return 'trial_ending';
   // RENEWAL-BE: the client's "plan renewal reminders" switch (plan_renewal_push, default on).
   if (kind === 'plan_renewal') return 'plan_renewal';
-  // SC-PUSH (PUSH-KIND-FIX, b#1138): every space chat push (unread, reply, High alert) is this one kind. No
-  // prefs column, so only the master mute and the person's own setting for the space (Mute all, silence)
-  // stop it; on 'digest' (push default off) none would ever be queued or sent.
+  // PUSH-KIND-FIX (b#1138): every space chat push (unread, reply, High alert). No prefs column: only `muted` and
+  // the space's own setting (Mute all, silence) stop it; on 'digest' (push default off) none was ever sent.
   if (kind === 'community_message_received') return 'community_message';
   if (kind.startsWith('fasting')) return 'fasting';
   if (kind.includes('digest')) return 'digest';
