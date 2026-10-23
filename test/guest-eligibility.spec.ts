@@ -29,9 +29,10 @@ const OTHER_TOKEN = 'tokOTHER7890abcDEFGH';
 const COACH = 'coach-1';
 const SECRET = 'x'.repeat(48);
 const KEY = '550e8400-e29b-41d4-a716-446655440000';
-const config = { get: (k: string) => (k === 'CHECKOUT_RECOVERY_SECRET' ? SECRET : undefined) };
+// Test doubles are typed `any` so they stand in for the real services without casts.
+const config: any = { get: (k: string) => (k === 'CHECKOUT_RECOVERY_SECRET' ? SECRET : undefined) };
 
-const ACCOUNTS: Record<string, Row> = {
+const ACCOUNTS: Record<string, any> = {
   'nocoach@example.com': { id: 'u-nc', name: 'Nia Cole Park', role: 'student', coach_id: null },
   'mine@example.com': { id: 'u-me', name: 'Sam Lee', role: 'student', coach_id: COACH },
   'other@example.com': { id: 'u-ot', name: 'Ola Diaz', role: 'student', coach_id: 'coach-2' },
@@ -43,7 +44,7 @@ const ACCOUNTS: Record<string, Row> = {
 
 function world(packageCoach = COACH) {
   const sent: Row[] = [];
-  const db: Row = {
+  const db: any = {
     accounts: { ...ACCOUNTS },
     sendCount: 0,
     coachPackage: { findUnique: jest.fn(async () => ({ coach_id: packageCoach })) },
@@ -55,8 +56,8 @@ function world(packageCoach = COACH) {
     },
     emailSendLog: { count: jest.fn(async () => db.sendCount) },
   };
-  const email = { send: jest.fn(async (m: Row) => void sent.push(m)) };
-  const recovery = new CheckoutRecoveryService(db as never, config as never, email as never);
+  const email: any = { send: jest.fn(async (m: Row) => void sent.push(m)) };
+  const recovery = new CheckoutRecoveryService(db, config, email);
   const lastCode = () => String(sent[sent.length - 1]?.data?.code);
   return { db, sent, email, recovery, lastCode };
 }
@@ -97,12 +98,12 @@ describe('GUEST-ELIGIBILITY — who may buy on the web page', () => {
     ['sub-coach', ACCOUNTS['sub@example.com'], 'not_client'],
     ['owner / staff', ACCOUNTS['staff@example.com'], 'not_client'],
   ])('%s -> %s', (_label, account, verdict) => {
-    expect(buyerVerdict(account as never, COACH)).toBe(verdict);
+    expect(buyerVerdict(account, COACH)).toBe(verdict);
   });
 
   it("house coach's package: the same one-coach rule (another coach's client is refused)", () => {
-    expect(buyerVerdict(ACCOUNTS['other@example.com'] as never, 'coach-house')).toBe('other_coach');
-    expect(buyerVerdict(ACCOUNTS['house@example.com'] as never, 'coach-house')).toBe('same_coach');
+    expect(buyerVerdict(ACCOUNTS['other@example.com'], 'coach-house')).toBe('other_coach');
+    expect(buyerVerdict(ACCOUNTS['house@example.com'], 'coach-house')).toBe('same_coach');
   });
 });
 
@@ -210,17 +211,19 @@ describe('GUEST-ELIGIBILITY — the email code (check-email, verify-code)', () =
   });
 
   it('per IP: the 11th check-email or verify-code in an hour is 429 with Retry-After', async () => {
-    const limiter = new CheckoutIpRateLimiterService({ get: () => undefined } as never);
-    const recovery = { checkBuyerEmail: jest.fn(async () => ({ account: 'new' })), verifyBuyerCode: jest.fn() };
-    const ctl = new StorefrontPublicController({} as never, {} as never, recovery as never, config as never, limiter, {} as never, {} as never);
-    const req = { headers: { 'fly-client-ip': '203.0.113.7' } } as never;
-    const res = { setHeader: jest.fn() };
-    for (let i = 0; i < 10; i += 1) await ctl.checkBuyerEmail(TOKEN, { guest_email: `a${i}@example.com` }, req, res as never);
-    expect(await rejection(ctl.checkBuyerEmail(TOKEN, { guest_email: 'b@example.com' }, req, res as never))).toMatchObject({ status: 429, error: 'TOO_MANY_REQUESTS' });
+    const limiterConfig: any = { get: () => undefined };
+    const limiter = new CheckoutIpRateLimiterService(limiterConfig);
+    const recovery: any = { checkBuyerEmail: jest.fn(async () => ({ account: 'new' })), verifyBuyerCode: jest.fn() };
+    const unused: any = {};
+    const ctl = new StorefrontPublicController(unused, unused, recovery, config, limiter, unused, unused);
+    const req: any = { headers: { 'fly-client-ip': '203.0.113.7' } };
+    const res: any = { setHeader: jest.fn() };
+    for (let i = 0; i < 10; i += 1) await ctl.checkBuyerEmail(TOKEN, { guest_email: `a${i}@example.com` }, req, res);
+    expect(await rejection(ctl.checkBuyerEmail(TOKEN, { guest_email: 'b@example.com' }, req, res))).toMatchObject({ status: 429, error: 'TOO_MANY_REQUESTS' });
     expect(res.setHeader).toHaveBeenCalledWith('Retry-After', expect.any(String));
     expect(recovery.checkBuyerEmail).toHaveBeenCalledTimes(10);
-    for (let i = 0; i < 10; i += 1) await ctl.verifyBuyerCode(TOKEN, { guest_email: 'b@example.com', code: '000000' }, req, res as never);
-    expect(await rejection(ctl.verifyBuyerCode(TOKEN, { guest_email: 'b@example.com', code: '000000' }, req, res as never))).toMatchObject({ status: 429 });
+    for (let i = 0; i < 10; i += 1) await ctl.verifyBuyerCode(TOKEN, { guest_email: 'b@example.com', code: '000000' }, req, res);
+    expect(await rejection(ctl.verifyBuyerCode(TOKEN, { guest_email: 'b@example.com', code: '000000' }, req, res))).toMatchObject({ status: 429 });
     expect(recovery.verifyBuyerCode).toHaveBeenCalledTimes(10);
   });
 });
@@ -386,7 +389,7 @@ function settlementWorld() {
       return { ...row };
     },
   });
-  const prisma: Row = {};
+  const prisma: any = {};
   for (const n of Object.keys(tables)) prisma[n] = model(n);
   // A thrown callback rolls back in place (row objects keep their identity).
   prisma.$transaction = async (cb: (t: Row) => Promise<unknown>) => {
@@ -444,7 +447,7 @@ function settlementWorld() {
     undefined, { handle: jest.fn(async () => ({ claimed: false })), settleGuestPurchase: jest.fn(async () => undefined) },
     undefined, guest,
   ]);
-  const reconciler = new GuestCheckoutReconciliationService(prisma as never, guest);
+  const reconciler = new GuestCheckoutReconciliationService(prisma, guest);
   const seed = (pi: string, email: string): Row => {
     const row: Row = {
       id: `gc-${pi}`, idempotency_key: `idem-${pi}`, guest_email: email, guest_name: 'Guest Buyer',
@@ -460,11 +463,13 @@ function settlementWorld() {
     listUsers.push({ id: `sb-${email}`, email });
     tables.user.push({ id: `user-${email}`, supabase_id: `sb-${email}`, email, name: 'Ola Diaz', role: 'student', coach_id: coachId });
   };
-  const paid = (pi: string) =>
-    billing.handleEvent({
+  const paid = (pi: string) => {
+    const event: any = {
       id: `evt_${pi}`, type: 'payment_intent.succeeded',
       data: { object: { id: pi, metadata: { [GUEST_CHECKOUT_METADATA_KEY]: `idem-${pi}` }, latest_charge: `ch_${pi}` } },
-    } as never);
+    };
+    return billing.handleEvent(event);
+  };
   return { tables, notifications, welcome, guest, reconciler, seed, account, paid };
 }
 
