@@ -8030,6 +8030,9 @@ model RomanMessage {
   // never sets it but the column ships now so branching is additive later.
   parent_message_id String?
 
+  // COPILOT-BE2: on a Path Copilot reply only, { question_id, sources, suggestion_id }; null on every other turn.
+  copilot Json?
+
   created_at DateTime @default(now())
 
   session RomanSession   @relation(fields: [session_id], references: [id], onDelete: Cascade)
