@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -28,6 +29,7 @@ import { memberName } from '../member-display-name';
 import { CommunityNotificationsService } from '../notifications/community-notifications.service';
 import { NotificationKind } from '../../notifications/notification-kind';
 import { describeFailure } from '../../observability/log-pii';
+import { IDEMPOTENCY_KEY_REUSED, keyedMessageId } from './message-idempotency';
 
 const EDIT_WINDOW_MS = 5 * 60 * 1000;
 const DEFAULT_PAGE = 50;
@@ -247,6 +249,7 @@ export class CommunityMessagesService {
     body: string,
     planContextRaw?: unknown,
     parentId?: string,
+    idempotencyKey?: string | null,
   ): Promise<CommunityMessageResponse> {
     const cohort = await this.access.findCohort(cohortId);
     // Treat a missing cohort and an unauthorised cohort identically (404).
@@ -262,14 +265,23 @@ export class CommunityMessagesService {
     // v2-1: validate + authorize any attached plan-context tag BEFORE the write
     // (flag-off drops it; malformed → 422; missing entity → 422; foreign → 403).
     const planContext = await this.resolveIncomingPlanContext(user, planContextRaw);
-    const created = await this.repo.createCohortMessage({
-      workspaceId: cohort.workspace_id,
-      cohortId: cohort.id,
-      senderId: user.id,
-      body,
-      planContext,
-      parent,
-    });
+    const data = { workspaceId: cohort.workspace_id, cohortId: cohort.id, senderId: user.id, body, planContext, parent };
+    // FX-IDEM: a resend with the same Idempotency-Key (same author, same space) answers with the first message and
+    // repeats none of the side effects below; the same key on a different message is refused.
+    let created: CommunityMessage;
+    if (idempotencyKey) {
+      const { row, replayed } = await this.repo.createKeyedCohortMessage(
+        keyedMessageId(user.id, cohort.id, idempotencyKey), data);
+      if (replayed) {
+        const same = row.sender_id === user.id && row.cohort_id === cohort.id && row.kind === 'text'
+          && row.body === body && row.parent_message_id === (parent?.id ?? null);
+        if (!same) throw new ConflictException(IDEMPOTENCY_KEY_REUSED);
+        return CommunityMessageResponseSchema.parse({ message: this.view(row) });
+      }
+      created = row;
+    } else {
+      created = await this.repo.createCohortMessage(data);
+    }
     // v1-6 coach-inbox producer: a coach/owner message into the cohort answers
     // the cohort's outstanding client messages, so stamp coach_replied_at on
     // them (the inbox message arm keys "unanswered" off that column). Bounded to

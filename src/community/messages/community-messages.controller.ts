@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   Param,
   Patch,
   Post,
@@ -20,6 +21,7 @@ import { THROTTLER_ROUTE_LIMITS } from '../../throttler/throttler.config';
 import { CommunityFeatureFlagGuard } from '../community-feature-flag.guard';
 import { CommunityMessagesEnabledGuard } from '../community-write-flag.guard';
 import { CommunityMessagesService } from './community-messages.service';
+import { messageKey } from './message-idempotency';
 import {
   CreateMessageDto,
   EditMessageDto,
@@ -56,8 +58,10 @@ export class CommunityMessagesController {
     @Request() req: AuthedRequest,
     @Param('cohortId') cohortId: string,
     @Body() body: CreateMessageDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
-    return this.messages.send(req.user, cohortId, body.body, body.plan_context, body.parent_message_id);
+    const key = messageKey(idempotencyKey);
+    return this.messages.send(req.user, cohortId, body.body, body.plan_context, body.parent_message_id, key);
   }
 
   @Get('cohorts/:cohortId/messages')

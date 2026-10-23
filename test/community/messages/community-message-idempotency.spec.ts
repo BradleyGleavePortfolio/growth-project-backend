@@ -3,11 +3,15 @@
  * pending row and sends it again after a timeout or a lost reply; the second send must answer with the first
  * message, never post a second one. The real service and repository run over an in-memory table (no DB); the
  * race under one key and the cross-tenant reads run live in test/rls/community-message-idempotency.live.spec.ts.
+ * The first describe failed on the code before FX-IDEM (two rows, no 409); the second pins the header and the id.
  */
 import { randomUUID } from 'crypto';
+import { BadRequestException } from '@nestjs/common';
 import type { CommunityMessage, User } from '@prisma/client';
+import { CommunityMessagesController } from '../../../src/community/messages/community-messages.controller';
 import { CommunityMessagesRepository } from '../../../src/community/messages/community-messages.repository';
 import { CommunityMessagesService } from '../../../src/community/messages/community-messages.service';
+import { keyedMessageId, messageKey } from '../../../src/community/messages/message-idempotency';
 import { safetyWithBlocks } from '../safety/safety-test-helpers';
 import { noCommunityPush } from './community-push-test-helpers';
 
@@ -79,5 +83,38 @@ describe('FX-IDEM: POST /community/cohorts/:id/messages with Idempotency-Key', (
     await h.send(olive, 'Leg day done');
     await h.send(olive, 'Leg day done');
     expect(h.rows).toHaveLength(2);
+  });
+});
+
+describe('FX-IDEM: the header and the id it names', () => {
+  it('no header or a blank one means no dedupe; a UUID is read case-blind; anything else is a 400', () => {
+    expect(messageKey(undefined)).toBeNull();
+    expect(messageKey('  ')).toBeNull();
+    expect(messageKey(KEY.toUpperCase())).toBe(KEY);
+    expect(messageKey([KEY, 'second'])).toBe(KEY);
+    let refused: unknown;
+    try { messageKey('send-1'); } catch (e) { refused = e; }
+    expect((refused as BadRequestException).getResponse()).toEqual({ error: 'bad_request', code: 'community.message.idempotency_key_invalid' });
+  });
+
+  it('one author, space and key always name the same UUID; change any one and the id changes', () => {
+    const idOf = keyedMessageId(olive.id, SPACE, KEY);
+    expect(idOf).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(keyedMessageId(olive.id, SPACE, KEY)).toBe(idOf);
+    const others = [keyedMessageId(vera.id, SPACE, KEY), keyedMessageId(olive.id, OTHER_SPACE, KEY),
+      keyedMessageId(olive.id, SPACE, randomUUID())];
+    expect(new Set([idOf, ...others]).size).toBe(4);
+  });
+
+  it('the route passes the read key to the send, and refuses a bad key before any send', async () => {
+    const send = jest.fn(async () => ({ message: {} }));
+    const route = new CommunityMessagesController({ send } as never);
+    const req = { user: olive } as never;
+    await route.send(req, SPACE, { body: 'Leg day done' } as never, KEY.toUpperCase());
+    expect(send).toHaveBeenCalledWith(olive, SPACE, 'Leg day done', undefined, undefined, KEY);
+    await route.send(req, SPACE, { body: 'Leg day done' } as never, undefined);
+    expect(send).toHaveBeenLastCalledWith(olive, SPACE, 'Leg day done', undefined, undefined, null);
+    await expect(route.send(req, SPACE, { body: 'x' } as never, 'nope')).rejects.toBeInstanceOf(BadRequestException);
+    expect(send).toHaveBeenCalledTimes(2);
   });
 });
