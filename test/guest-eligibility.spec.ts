@@ -129,8 +129,23 @@ describe('GUEST-ELIGIBILITY — the email code (check-email, verify-code)', () =
       data: { first_name: 'Nia' },
     });
     expect(w.lastCode()).toMatch(/^\d{6}$/);
-    expect(w.sent[0].idempotencyKey).toMatch(/^buyer-code:[0-9a-f]{32}:\d+$/);
+    expect(w.sent[0].idempotencyKey).toMatch(/^buyer-code:[0-9a-f-]{36}$/);
     expect(JSON.stringify(w.sent[0].idempotencyKey)).not.toContain('nocoach');
+  });
+
+  it('a new code sent in the same minute gets its own email key, and the newest code works', async () => {
+    const w = world();
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(Date.now());
+    await w.recovery.checkBuyerEmail(TOKEN, 'mine@example.com');
+    await flush();
+    await w.recovery.checkBuyerEmail(TOKEN, 'mine@example.com');
+    await flush();
+    clock.mockRestore();
+    expect(w.sent).toHaveLength(2);
+    expect(w.sent[1].idempotencyKey).not.toBe(w.sent[0].idempotencyKey);
+    expect(await w.recovery.verifyBuyerCode(TOKEN, 'mine@example.com', w.lastCode())).toMatchObject({
+      verified: true,
+    });
   });
 
   it('right code: first name only + summary kind + a proof; the code is single use', async () => {
