@@ -207,4 +207,14 @@ describe('ThankYouService (PR-15A A3)', () => {
     const html = renderThankYouPage(vm);
     expect(html).toMatch(/finalising/);
   });
+
+  // PUBLIC-WEB (op164): the receipt card uses the 16 px card radius.
+  it('the receipt card uses 16 px corners', () => {
+    const html = renderThankYouPage({
+      packageName: 'P', amountFormatted: '$1.00', isRecurring: false, nextChargeAt: null,
+      unlocked: [], upcoming: [],
+    });
+    expect(html).toMatch(/\.card \{[^}]*border-radius: 16px;/);
+    expect(html).not.toContain('border-radius: 18px');
+  });
 });

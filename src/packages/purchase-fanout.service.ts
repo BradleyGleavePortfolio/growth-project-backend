@@ -237,6 +237,10 @@ export class PurchaseFanoutService {
       // HOUSE-JOIN-BE — a client whose plan ended bought TGP's house coach's
       // package through the renewal door: now that it is paid, they move.
       const cancelled = await moveToHouseCoachTx(tx, ctx.clientId, ctx.coachId, this.sessions);
+      // b#1131 LO B2 (owner 61a): the move made the house coach the client's
+      // coach, so a flagged consultation alerts them once (a replay moves
+      // nothing: cancelled is null).
+      if (cancelled) await alertCoachOfFlaggedJoinTx(tx, ctx.clientId, ctx.coachId);
       if (cancelled?.length) this.pendingMoveCancels.set(purchase.id, { clientId: ctx.clientId, cancelled });
     }
 
@@ -370,10 +374,11 @@ export class PurchaseFanoutService {
       // (due now) and the one-minute drip dispatcher delivers it in its own
       // transaction with retries + a coach alert, so a large or broken program
       // can never time out or roll back the purchase. Its buyer alert fires
-      // when the dispatcher delivers it.
+      // when the dispatcher delivers it. FX-JOIN: so does a workout plan or
+      // welcome message for a client this tx just attached (see onlyInTx).
       if (await this.resolvers.shouldDeferInline(drop.asset_type, materialiseInput)) {
         this.logger.log(
-          `PurchaseFanout: drop=${drop.id} type=${drop.asset_type} left pending for the drip dispatcher (program delivery runs in its own transaction)`,
+          `PurchaseFanout: drop=${drop.id} type=${drop.asset_type} left pending for the drip dispatcher (it delivers in its own transaction)`,
         );
         continue;
       }
@@ -554,7 +559,9 @@ export class PurchaseFanoutService {
     this.pendingMoveCancels.delete(purchaseId);
     // The client's purchase made the move, so the client is the actor.
     if (moved && this.sessions) {
-      void this.sessions.finishMoveCancels(moved.clientId, moved.cancelled, 'student').catch(() => undefined);
+      void this.sessions
+        .finishMoveCancels(moved.clientId, moved.cancelled, 'student')
+        .catch(() => this.logger.warn(`house move: session clean-up failed client=${moved.clientId}`));
     }
   }
 

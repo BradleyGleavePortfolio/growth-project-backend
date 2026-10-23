@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import type { CoachPackage, Prisma, PrismaClient } from '@prisma/client';
 import { deleteDraftsLeftByMove } from '../../coach/moved-client-drafts';
 import type {
@@ -10,6 +11,7 @@ import { packageTrialDays } from '../subscription-plan';
 import { tellFormerCoachTx } from './switch-tell';
 
 type Db = PrismaClient | Prisma.TransactionClient;
+const log = new Logger('HouseJoin');
 
 /**
  * HOUSE-JOIN-BE: the one door through the cross-coach purchase block (owner
@@ -33,7 +35,15 @@ export async function houseJoinFrom(
   if (!isPlanRenewalEnabled() || packageCoachId !== houseCoachUserId()) return null;
   const view = await readPlanRenewal(db, clientUserId, undefined, now);
   const open = view.state === 'ended' && (anyDay || view.banner_due) && view.house_coach?.id === packageCoachId;
-  return open ? (view.coach?.id ?? null) : null;
+  if (!open || !view.coach) return null;
+  // b#1131 LO N3: the house account must be a coach (the renewal offer also
+  // accepts 'owner'); any other role keeps the door closed.
+  const house = await db.user.findUnique({ where: { id: packageCoachId }, select: { role: true } });
+  if (house?.role !== 'coach') {
+    log.warn(`house join closed: HOUSE_COACH_USER_ID role is ${house?.role ?? 'missing'}, not coach`);
+    return null;
+  }
+  return view.coach.id;
 }
 
 /** #166-6 HOUSE-TRIALS ("offer no free trials from the house in v1"). */
@@ -43,7 +53,7 @@ export const freeTrialPackage = (pkg: CoachPackage): boolean => packageTrialDays
  * The door for one package, used by the package detail and all three checkout
  * paths (the list filters its rows with freeTrialPackage): a house package
  * that offers a free trial is not part of the door, so it gets the same 404
- * as any other cross-coach package. The door sells only packages that take
+ * as every other cross-coach package. The door sells only packages that take
  * payment at checkout, and a door purchase never starts a trial.
  */
 export async function houseJoinToBuy(

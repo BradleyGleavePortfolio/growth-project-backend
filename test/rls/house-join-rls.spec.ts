@@ -18,6 +18,7 @@ import { PrismaService } from '../../src/prisma.service';
 import { PlanRenewalService } from '../../src/checkout/plan-renewal/plan-renewal.service';
 import { readPlanRenewal } from '../../src/checkout/plan-renewal/plan-renewal.state';
 import { moveToHouseCoachTx } from '../../src/checkout/plan-renewal/house-join';
+import { FLAGGED_JOIN_ALERT_BODY } from '../../src/onboarding/flagged-join-alert';
 import { PLAN_RENEWAL_DAY_MS } from '../../src/checkout/plan-renewal/plan-renewal.cadence';
 import { CheckoutService } from '../../src/checkout/checkout.service';
 import { SubscriptionCheckoutService } from '../../src/checkout/subscription-checkout.service';
@@ -26,6 +27,13 @@ import { BillingService } from '../../src/billing/billing.service';
 import { PackagesService } from '../../src/packages/packages.service';
 import { ClientPackagesController } from '../../src/packages/packages.controller';
 import { PurchaseFanoutService } from '../../src/packages/purchase-fanout.service';
+import { AssignableAssetResolverRegistry } from '../../src/packages/asset-resolvers/assignable-asset-resolver.registry';
+import { AutoMessageAssetResolver } from '../../src/packages/asset-resolvers/auto-message.resolver';
+import { MealPlanAssetResolver } from '../../src/packages/asset-resolvers/meal-plan.resolver';
+import { ResolverSubCoachScope } from '../../src/packages/asset-resolvers/sub-coach-scope.helper';
+import { DripDispatcherCron } from '../../src/packages/drip-dispatcher.cron';
+import { MessagingService } from '../../src/messaging/messaging.service';
+import { SupabaseService } from '../../src/supabase/supabase.service';
 import { SubCoachScopeService } from '../../src/sub-coach/sub-coach-scope.service';
 import { TrialUsageService } from '../../src/packages/trials/trial-usage.service';
 import { SchedulingSessionLifecycleService } from '../../src/scheduling/scheduling-session-lifecycle.service';
@@ -46,21 +54,26 @@ const DAY = PLAN_RENEWAL_DAY_MS;
 const quiet = new Proxy({}, { get: (_t, p) => (p === 'then' ? undefined : async () => 'not_configured') });
 
 (DB_URL ? describe : describe.skip)('HOUSE-JOIN-BE: the house coach door', () => {
-  const prisma = new PrismaService({ datasources: { db: { url: DB_URL } } });
-  const keys = [...'KLHAOQE'];
+  // FX-JOIN's scope check reads the committed roster beside the purchase transaction: 5 connections.
+  const prisma = new PrismaService({ datasources: { db: { url: DB_URL.replace('connection_limit=1', 'connection_limit=5') } } });
+  // b#1131 B2: B, C, D and M (K's clients) check out on the hosted page.
+  const keys = [...'KLHAOQEBCDM'];
   const u: Record<string, string> = Object.fromEntries(keys.map((k) => [k, randomUUID()]));
   const supa: Record<string, string> = Object.fromEntries(keys.map((k) => [k, randomUUID()]));
-  const coachOf: Record<string, string> = { A: 'K', O: 'K', E: 'K', Q: 'H' };
+  const coachOf: Record<string, string> = { A: 'K', O: 'K', E: 'K', Q: 'H', B: 'K', C: 'K', D: 'K', M: 'K' };
   const isCoach = (k: string) => 'KLH'.includes(k);
   const pkg = { PH: randomUUID(), PHR: randomUUID(), PHT: randomUUID(), PH0: randomUUID(), PL: randomUUID() };
   const PI = `pi_house_${u.A}`;
   const env = { flag: process.env.FEATURE_PLAN_RENEWAL, house: process.env.HOUSE_COACH_USER_ID };
 
   const stripe = {
-    createCustomer: async () => ({ id: `cus_house_${u.A}` }),
+    createCustomer: async () => ({ id: `cus_house_${randomUUID()}` }),
     createPaymentIntent: async () => ({ id: PI, client_secret: `${PI}_secret` }),
     createEphemeralKey: async () => ({ secret: 'ek_house' }),
-    retrievePaymentIntent: async () => ({ id: PI, status: 'succeeded', latest_charge: `ch_house_${u.A}` }),
+    retrievePaymentIntent: async (id: string) => ({ id, status: 'succeeded', latest_charge: `ch_of_${id}` }),
+    createProduct: async () => ({ id: `prod_house_${randomUUID()}` }),
+    createPrice: async () => ({ id: `price_house_${randomUUID()}` }),
+    createCheckoutSession: async (a: { clientReferenceId: string }) => ({ id: `cs_house_${a.clientReferenceId}`, url: 'https://checkout.example.test' }),
   };
   const packages = new PackagesService(prisma, new SubCoachScopeService(prisma));
   const checkout = new CheckoutService(
@@ -349,5 +362,189 @@ const quiet = new Proxy({}, { get: (_t, p) => (p === 'then' ? undefined : async 
     await prisma.notificationPreferences.update({ where: { user_id: M }, data: { muted: false } });
     expect(await visible()).toEqual([]);
     expect(await inboxes.getUnreadCount(M)).toBe(badgeBefore);
+  });
+
+  // b#1131 B2 (OPERATOR RULING 6353458098, owner #166-5 "nothing moves before payment"): a hosted
+  // checkout moves the client only once Stripe reports it paid. B and C pay late (a delayed payment:
+  // the completion says 'unpaid'); B's payment fails, C's settles. D pays at completion. B and C were
+  // flagged for extra care in their consultation (LO B2, owner 61a); D was not.
+  describe('b#1131 B2: the hosted checkout moves the client only once paid', () => {
+    const cs: Record<string, string> = {};
+    const sent: Record<string, number> = {};
+    /** Stripe sends `type` for `who`'s session; a new event id each time unless `same` repeats the last one. */
+    const stripeSends = (who: string, type: string, payment_status: string, same = false) => {
+      const key = `${who}-${type}`;
+      if (!same) sent[key] = (sent[key] ?? 0) + 1;
+      return billing.handleEvent({
+        id: `evt_${type}_${u[who]}_${sent[key]}`,
+        type: `checkout.session.${type}`,
+        data: { object: { id: cs[who], mode: 'payment', payment_status, payment_intent: `pi_hosted_${u[who]}`, customer: `cus_hosted_${u[who]}` } },
+      });
+    };
+    /** Who coaches `who`, their house purchase, and the flag alerts the house coach has about them. */
+    const where = async (who: string) => {
+      const user = await prisma.user.findUniqueOrThrow({ where: { id: u[who] }, select: { coach_id: true } });
+      return {
+        coach: user.coach_id === u.H ? 'H' : user.coach_id === u.K ? 'K' : user.coach_id,
+        purchase: await prisma.clientPurchase.findFirstOrThrow({
+          where: { client_user_id: u[who], package_id: pkg.PH },
+          select: { status: true, entitlement_active: true },
+        }),
+        alerts: await prisma.notification.count({
+          where: { user_id: u.H, body: FLAGGED_JOIN_ALERT_BODY, payload: { path: ['client_id'], equals: u[who] } },
+        }),
+      };
+    };
+    const intake = (who: string, flagged: boolean) =>
+      prisma.clientOnboardingIntake.create({
+        data: {
+          client_id: u[who], version: 'consult-v1', answers: {}, completed_at: new Date(),
+          screening_any_yes: flagged, screening_flagged_at: flagged ? new Date() : null,
+        },
+      });
+
+    beforeAll(async () => {
+      await prisma.connectAccount.upsert({
+        where: { coach_user_id: u.H },
+        create: { coach_user_id: u.H, stripe_account_id: `acct_house_${u.H}`, charges_enabled: true },
+        update: {},
+      });
+      for (const who of 'BCD') await ranOut(who, HOUR);
+      await renewal.runSweep(new Date());
+      await intake('B', true);
+      await intake('C', true);
+      await intake('D', false);
+    });
+
+    it('LO N3: while the house account is not a coach the door is closed and a payment moves nobody', async () => {
+      await prisma.user.update({ where: { id: u.H }, data: { role: 'owner' } });
+      try {
+        expect(await everyBuy('D', pkg.PH, pkg.PHR, 'H')).toEqual(closed);
+        expect(await prisma.$transaction((tx) => moveToHouseCoachTx(tx, u.D, u.H))).toBeNull();
+      } finally {
+        await prisma.user.update({ where: { id: u.H }, data: { role: 'coach' } });
+      }
+      expect(await prisma.user.findUniqueOrThrow({ where: { id: u.D } })).toMatchObject({ coach_id: u.K });
+    });
+
+    it('unpaid at completion, then the payment fails: no move, no access, no alert; replays change nothing', async () => {
+      cs.B = (await checkout.createCheckoutForClient(u.B, { package_id: pkg.PH })).session_id;
+      await expect(stripeSends('B', 'completed', 'unpaid')).resolves.toMatchObject({ processed: true });
+      expect(await where('B')).toEqual({ coach: 'K', purchase: { status: 'pending', entitlement_active: false }, alerts: 0 });
+
+      await expect(stripeSends('B', 'async_payment_failed', 'unpaid')).resolves.toMatchObject({ processed: true });
+      const failed = { coach: 'K', purchase: { status: 'payment_failed', entitlement_active: false }, alerts: 0 };
+      expect(await where('B')).toEqual(failed);
+      // The same event again (deduplicated) and a new delivery of each: nothing new.
+      await stripeSends('B', 'async_payment_failed', 'unpaid', true);
+      await stripeSends('B', 'async_payment_failed', 'unpaid');
+      await stripeSends('B', 'completed', 'unpaid');
+      expect(await where('B')).toEqual(failed);
+      expect([await reads('K', 'B'), await reads('H', 'B')]).toEqual([1, 0]);
+    });
+
+    it('unpaid at completion, then the payment settles: one move, one access, one alert; replays and a late failure change nothing', async () => {
+      cs.C = (await checkout.createCheckoutForClient(u.C, { package_id: pkg.PH })).session_id;
+      await stripeSends('C', 'completed', 'unpaid');
+      expect(await where('C')).toEqual({ coach: 'K', purchase: { status: 'pending', entitlement_active: false }, alerts: 0 });
+      expect([await reads('K', 'C'), await reads('H', 'C')]).toEqual([1, 0]);
+
+      await expect(stripeSends('C', 'async_payment_succeeded', 'paid')).resolves.toMatchObject({ processed: true });
+      const moved = { coach: 'H', purchase: { status: 'paid', entitlement_active: true }, alerts: 1 };
+      expect(await where('C')).toEqual(moved);
+      expect(await prisma.planRenewal.findMany({ where: { client_user_id: u.C }, select: { status: true, stop_reason: true } }))
+        .toEqual([{ status: 'stopped', stop_reason: 'moved' }]);
+      expect([await reads('K', 'C'), await reads('H', 'C')]).toEqual([0, 1]);
+
+      await stripeSends('C', 'async_payment_succeeded', 'paid', true);
+      await stripeSends('C', 'async_payment_succeeded', 'paid');
+      await stripeSends('C', 'completed', 'unpaid');
+      // A failure after the payment was reported paid moves nobody back.
+      await stripeSends('C', 'async_payment_failed', 'unpaid');
+      expect(await where('C')).toEqual(moved);
+      expect(await prisma.purchaseFanout.count({ where: { purchase: { client_user_id: u.C, package_id: pkg.PH } } })).toBe(1);
+    });
+
+    it('paid at completion: one move, no flag alert for a client who was not flagged; a replay changes nothing', async () => {
+      cs.D = (await checkout.createCheckoutForClient(u.D, { package_id: pkg.PH })).session_id;
+      await expect(stripeSends('D', 'completed', 'paid')).resolves.toMatchObject({ processed: true });
+      const moved = { coach: 'H', purchase: { status: 'paid', entitlement_active: true }, alerts: 0 };
+      expect(await where('D')).toEqual(moved);
+      await stripeSends('D', 'completed', 'paid', true);
+      await stripeSends('D', 'completed', 'paid');
+      await stripeSends('D', 'async_payment_failed', 'unpaid');
+      expect(await where('D')).toEqual(moved);
+      expect(await prisma.notification.count({ where: { user_id: u.H, body: FLAGGED_JOIN_ALERT_BODY } })).toBe(1);
+    });
+
+    // B1 (FX-JOIN, b#1140): the house move is written in the purchase transaction before the items
+    // are delivered, so the delivery reads the move there. The meal plan arrives in that transaction;
+    // the welcome message (its service checks and writes on its own connection) waits for the
+    // dispatcher's tick after the commit. Real resolvers, real MessagingService, real dispatcher.
+    it('B1: a house package with a welcome message and a meal plan, paid on the hosted page: the client moves and both arrive once', async () => {
+      const PHW = randomUUID();
+      const MPH = randomUUID();
+      const WELCOME = 'Welcome to the house team. Your first week is ready.';
+      const none = new Proxy({}, { get: (_t, p) => (p === 'then' ? undefined : async () => undefined) });
+      const realtime = { channel: () => ({ httpSend: async () => ({ success: true }) }), removeChannel: async () => 'ok' };
+      const supabase = Object.assign(Object.create(SupabaseService.prototype) as SupabaseService, { getClient: () => realtime });
+      const messaging = new MessagingService(prisma, supabase, ...stub<[never, never, never, never, never]>(Array(5).fill(none)));
+      const rscope = new ResolverSubCoachScope(new SubCoachScopeService(prisma));
+      const registry = new AssignableAssetResolverRegistry([
+        new MealPlanAssetResolver(prisma, rscope),
+        new AutoMessageAssetResolver(messaging, rscope, prisma),
+      ]);
+      const delivering: CheckoutWebhookHandlerService = Reflect.construct(CheckoutWebhookHandlerService, [
+        prisma, stub<never>(stripe), undefined, undefined, undefined, new PurchaseFanoutService(registry, undefined, undefined, prisma, sessions),
+      ]);
+      const billingD: BillingService = Reflect.construct(BillingService, [
+        prisma, { capture: jest.fn(), identify: jest.fn() }, { write: jest.fn(async () => undefined), list: jest.fn(async () => []) }, undefined, delivering,
+      ]);
+      const cron = new DripDispatcherCron(prisma, registry, stub<never>(none));
+      await prisma.coachPackage.create({ data: { id: PHW, coach_id: u.H, name: 'House welcome', amount_cents: 20000, published_at: new Date(Date.now() - DAY) } });
+      await prisma.dailyMealPlan.create({ data: { id: MPH, coach_id: u.H, name: 'House meals' } });
+      const item = { package_id: PHW, cadence_kind: 'immediate', cadence_payload: {}, display_title: 'Week 1' };
+      await prisma.coachPackageContent.createMany({
+        data: [
+          { ...item, asset_type: 'meal_plan', asset_id: MPH },
+          { ...item, asset_type: 'auto_message', asset_id: randomUUID(), display_caption: WELCOME },
+        ],
+      });
+      await ranOut('M', HOUR);
+      await renewal.runSweep(new Date());
+
+      cs.M = (await checkout.createCheckoutForClient(u.M, { package_id: PHW })).session_id;
+      const purchase = await prisma.clientPurchase.findUniqueOrThrow({ where: { stripe_checkout_session_id: cs.M } });
+      let n = 0;
+      const paid = () => billingD.handleEvent({
+        id: `evt_house_welcome_${u.M}_${(n += 1)}`,
+        type: 'checkout.session.completed',
+        data: { object: { id: cs.M, mode: 'payment', payment_status: 'paid', payment_intent: `pi_hosted_${u.M}`, customer: `cus_hosted_${u.M}` } },
+      });
+      const drops = async () =>
+        (await prisma.scheduledDrop.findMany({ where: { client_purchase_id: purchase.id } })).map((d) => `${d.asset_type} ${d.status}`).sort();
+      const holds = async () => [
+        await prisma.dailyMealPlanAssignment.count({ where: { client_id: u.M, daily_meal_plan_id: MPH } }),
+        await prisma.coachMessage.count({ where: { client_id: u.M, coach_id: u.H, body: WELCOME } }),
+      ];
+      const tick = () => cron.runOnce(new Date(Date.now() + 1000));
+      const delivered = ['auto_message delivered', 'meal_plan fired'];
+
+      await expect(paid()).resolves.toMatchObject({ processed: true });
+      expect(await prisma.user.findUniqueOrThrow({ where: { id: u.M } })).toMatchObject({ coach_id: u.H });
+      expect([await drops(), await holds()]).toEqual([['auto_message pending', 'meal_plan fired'], [1, 0]]);
+      await tick();
+      expect([await drops(), await holds()]).toEqual([delivered, [1, 1]]);
+      // A redelivered completion and a re-entered fan-out (a replay): nothing new arrives.
+      await paid();
+      await prisma.$transaction(
+        (tx) => new PurchaseFanoutService(registry, undefined, undefined, prisma, sessions)
+          .onPurchaseEntitled({ id: purchase.id }, { entrypoint: 'in_app_hosted', coachId: u.H, clientId: u.M }, tx),
+        { timeout: 20_000 },
+      );
+      await tick();
+      expect([await drops(), await holds()]).toEqual([delivered, [1, 1]]);
+      expect(await prisma.user.findUniqueOrThrow({ where: { id: u.M } })).toMatchObject({ coach_id: u.H });
+    });
   });
 });
