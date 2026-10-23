@@ -7,7 +7,8 @@
  *            reached. `count` is exact; `items` holds the newest 50.
  *   rings    today's counts: check-ins reviewed / submitted, client messages
  *            answered / received, and Needs-you clients contacted out of up
- *            to 5.
+ *            to 5, with the ids of every Needs-you client contacted today
+ *            (REACHED-TODAY: the phone marks those Reach-outs rows).
  *
  * The week (Monday to Sunday) and the day are the coach's own, in the coach's
  * zone. Every read is scoped by the caller's roster now and the sharing gate
@@ -66,7 +67,8 @@ export interface CoachHomeDay {
   rings: {
     check_ins: { reviewed: number; submitted: number };
     replies: { answered: number; received: number };
-    reach_outs: { contacted: number; goal: number };
+    /** `contacted_ids`: every Needs-you client reached today (all of them; `contacted` stops at `goal`). */
+    reach_outs: { contacted: number; goal: number; contacted_ids: string[] };
   };
 }
 
@@ -310,7 +312,9 @@ async function contactRings(
 ): Promise<Pick<Rings, 'replies' | 'reach_outs'>> {
   const { clientIds, ownerCoachId, needsYou } = scope;
   const goal = Math.min(REACH_OUT_GOAL_MAX, needsYou.length);
-  if (clientIds.length === 0) return { replies: { answered: 0, received: 0 }, reach_outs: { contacted: 0, goal } };
+  if (clientIds.length === 0) {
+    return { replies: { answered: 0, received: 0 }, reach_outs: { contacted: 0, goal, contacted_ids: [] } };
+  }
   const today = { gte: dayFrom, lte: now };
   const [received, replies, nudges] = await Promise.all([
     // Messages a client sent in their thread with this coach today. A client
@@ -362,11 +366,15 @@ async function contactRings(
   const answered = received.filter(
     (m) => m.client_id !== null && (lastReply.get(m.client_id) ?? 0) > m.created_at.getTime(),
   ).length;
+  // Reached today: a coach-side message a person sent in the client's thread
+  // (text, voice note, or an approved Roman draft; not a broadcast copy, an
+  // automated message or a deleted one), or a nudge from this coach or the
+  // head coach, in the coach's today.
   const nudged = new Set(nudges.map((n) => n.client_id));
-  const contacted = needsYou.filter((id) => lastReply.has(id) || nudged.has(id)).length;
+  const contacted = needsYou.filter((id) => lastReply.has(id) || nudged.has(id));
   return {
     replies: { answered, received: received.length },
-    reach_outs: { contacted: Math.min(contacted, goal), goal },
+    reach_outs: { contacted: Math.min(contacted.length, goal), goal, contacted_ids: contacted },
   };
 }
 

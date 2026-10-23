@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { SubCoachScopeService } from '../../sub-coach/sub-coach-scope.service';
 import { SubCoachOutOfScopeError } from './assignable-asset-resolver.errors';
 
@@ -33,17 +34,17 @@ export class ResolverSubCoachScope {
    * Verify that `coachId` is authorised to materialise for `clientId` and
    * return the tenant owner id to use on downstream rows.
    *
+   * `tx` (FX-JOIN): the purchase transaction. A paid join, a code join or a
+   * guest checkout writes the client's coach in it, so the check reads there.
+   *
    * Throws `SubCoachOutOfScopeError` when the check fails.
    */
   async resolve(
     coachId: string,
     clientId: string,
+    tx?: Prisma.TransactionClient,
   ): Promise<ResolvedActingCoach> {
-    const allowed =
-      (await this.subCoachScope.canAccessClient(coachId, clientId)) ||
-      // COACH-GONE-DELIVERY: a deleted coach's paid drop still reaches its buyer, nobody else.
-      (await this.subCoachScope.deliversForGoneCoach?.(coachId, clientId)) === true;
-    if (!allowed) {
+    if (!(await this.allowed(coachId, clientId, tx))) {
       throw new SubCoachOutOfScopeError(coachId, clientId);
     }
     const headCoachId =
@@ -52,5 +53,28 @@ export class ResolverSubCoachScope {
       tenantCoachId: headCoachId ?? coachId,
       actingCoachId: coachId,
     };
+  }
+
+  /**
+   * FX-JOIN: true when only `tx` lets `coachId` act for `clientId` (an attach
+   * written earlier in `tx`, not committed yet). A delegate that checks scope
+   * and writes on its own connection (sendAsCoach, assignPlan) cannot see it,
+   * so that drop waits for the drip dispatcher, which runs after the commit.
+   */
+  async onlyInTx(
+    coachId: string,
+    clientId: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<boolean> {
+    if (!tx || (await this.allowed(coachId, clientId))) return false;
+    return this.allowed(coachId, clientId, tx);
+  }
+
+  private async allowed(coachId: string, clientId: string, tx?: Prisma.TransactionClient): Promise<boolean> {
+    const s = this.subCoachScope;
+    if (await (tx ? s.canAccessClient(coachId, clientId, tx) : s.canAccessClient(coachId, clientId))) return true;
+    // COACH-GONE-DELIVERY: a deleted coach's paid drop still reaches its buyer, nobody else.
+    const gone = tx ? s.deliversForGoneCoach?.(coachId, clientId, tx) : s.deliversForGoneCoach?.(coachId, clientId);
+    return (await gone) === true;
   }
 }

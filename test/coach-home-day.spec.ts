@@ -109,25 +109,40 @@ describe("HOME-BE: the coach Home's day", () => {
     expect(out.rings.replies).toEqual({ answered: 1, received: 3 });
   });
 
-  it('Reach-outs: up to 5 Needs-you clients, contacted by a message or a nudge today', async () => {
+  it('Reach-outs: up to 5 Needs-you clients, contacted by a message or a nudge today; the ids of every one reached', async () => {
     const needsYou = ['n1', 'n2', 'n3', 'n4', 'n5', 'n6', 'n7'];
     const { prisma } = fakePrisma({
       coachReplies: [{ client_id: 'n1', created_at: at('15:00') }, { client_id: 'c1', created_at: at('15:00') }],
       nudges: [{ client_id: 'n2' }],
     });
     const out = await loadHomeDay(prisma, scope({ needsYou }), 'America/Los_Angeles', NOW);
-    expect(out.rings.reach_outs).toEqual({ contacted: 2, goal: 5 });
+    // c1 was answered but does not need the coach: not a reach-out, not marked.
+    expect(out.rings.reach_outs).toEqual({ contacted: 2, goal: 5, contacted_ids: ['n1', 'n2'] });
 
     const all = fakePrisma({
       coachReplies: needsYou.map((client_id) => ({ client_id, created_at: at('15:00') })),
     });
+    // The ring stops at its goal; every reached client is still marked.
     expect((await loadHomeDay(all.prisma, scope({ needsYou }), 'America/Los_Angeles', NOW)).rings.reach_outs)
-      .toEqual({ contacted: 5, goal: 5 });
+      .toEqual({ contacted: 5, goal: 5, contacted_ids: needsYou });
 
     const none = fakePrisma({});
     expect((await loadHomeDay(none.prisma, scope(), 'America/Los_Angeles', NOW)).rings.reach_outs)
-      .toEqual({ contacted: 0, goal: 0 });
+      .toEqual({ contacted: 0, goal: 0, contacted_ids: [] });
     expect(none.db.coachNudge.findMany).not.toHaveBeenCalled();
+  });
+
+  it("REACHED-TODAY: today is the coach's own day; in Tokyo it starts at 15:00 UTC the day before", async () => {
+    // 2026-10-15 05:00 in Tokyo (UTC+9) is 2026-10-14 20:00 UTC: the UTC day would start 5 hours ago, Tokyo's 14.
+    const { db, prisma } = fakePrisma({ coachReplies: [{ client_id: 'n1', created_at: at('15:30') }] });
+    const out = await loadHomeDay(prisma, scope({ needsYou: ['n1', 'n2'] }), 'Asia/Tokyo', NOW);
+    expect([out.date, out.time_zone]).toEqual(['2026-10-15', 'Asia/Tokyo']);
+    const tokyoDay = { gte: new Date('2026-10-14T15:00:00Z'), lte: NOW };
+    expect(db.coachMessage.findMany.mock.calls[1][0].where).toEqual(expect.objectContaining({ created_at: tokyoDay }));
+    expect(db.coachNudge.findMany.mock.calls[0][0]).toEqual(expect.objectContaining({
+      where: { coach_id: { in: ['sub-1', 'head-1'] }, client_id: { in: ['n1', 'n2'] }, created_at: tokyoDay },
+    }));
+    expect(out.rings.reach_outs).toEqual({ contacted: 1, goal: 2, contacted_ids: ['n1'] });
   });
 
   it("Check-ins: today's submitted check-ins and how many the coach reviewed", async () => {
@@ -197,7 +212,7 @@ describe("HOME-BE: the coach Home's day", () => {
     expect(out.rings).toEqual({
       check_ins: { reviewed: 0, submitted: 0 },
       replies: { answered: 0, received: 0 },
-      reach_outs: { contacted: 0, goal: 0 },
+      reach_outs: { contacted: 0, goal: 0, contacted_ids: [] },
     });
     for (const fn of [db.checkIn.groupBy, db.coachMessage.findMany, db.clientSignal.findMany, db.$queryRaw, db.user.findMany]) {
       expect(fn).not.toHaveBeenCalled();
