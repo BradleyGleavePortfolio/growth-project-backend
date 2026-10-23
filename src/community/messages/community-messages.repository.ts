@@ -6,6 +6,37 @@ import type { PlanContextTag } from '../plan-context/plan-context.dto';
 import { bannedAmong } from '../community-ban';
 import { fullNamesFor, rowsWithSpaceAccess } from '../community-space-access';
 import { bytesToPeaks } from '../voice/community-voice.dto';
+import { LOCK_NS_COMMUNITY_MESSAGE_KEY } from './message-idempotency';
+
+/** A new text message in a space. */
+export interface NewCohortMessage {
+  workspaceId: string;
+  cohortId: string;
+  senderId: string;
+  body: string;
+  // v2-1: a validated plan-context tag to persist into plan_context_payload
+  // (JsonB). Null/undefined writes a SQL NULL — the common, untagged case and
+  // the only case when FEATURE_COMMUNITY_PLAN_TAGS is off (tag dropped on send).
+  planContext?: PlanContextTag | null;
+  // SC-BE1: the thread's first message this reply answers, or none.
+  parent?: { id: string; at: Date } | null;
+}
+
+const cohortMessageData = (params: NewCohortMessage): Prisma.CommunityMessageUncheckedCreateInput => ({
+  workspace_id: params.workspaceId,
+  cohort_id: params.cohortId,
+  scope: 'cohort',
+  kind: 'text',
+  sender_id: params.senderId,
+  body: params.body,
+  visibility: 'active',
+  parent_message_id: params.parent?.id ?? null,
+  parent_message_at: params.parent?.at ?? null,
+  plan_context_payload:
+    params.planContext == null
+      ? Prisma.JsonNull
+      : (params.planContext as unknown as Prisma.InputJsonValue),
+});
 
 /** A space's client messages still waiting on a coach reply (the coach inbox message arm). */
 export const openClientMessagesOf = (cohortId: string): Prisma.CommunityMessageWhereInput => ({
@@ -68,34 +99,24 @@ export class CommunityMessagesRepository {
     return { parents, coachId: workspace?.coach_id ?? null, people, fullName };
   }
 
-  async createCohortMessage(params: {
-    workspaceId: string;
-    cohortId: string;
-    senderId: string;
-    body: string;
-    // v2-1: a validated plan-context tag to persist into plan_context_payload
-    // (JsonB). Null/undefined writes a SQL NULL — the common, untagged case and
-    // the only case when FEATURE_COMMUNITY_PLAN_TAGS is off (tag dropped on send).
-    planContext?: PlanContextTag | null;
-    // SC-BE1: the thread's first message this reply answers, or none.
-    parent?: { id: string; at: Date } | null;
-  }): Promise<CommunityMessage> {
-    return this.prisma.communityMessage.create({
-      data: {
-        workspace_id: params.workspaceId,
-        cohort_id: params.cohortId,
-        scope: 'cohort',
-        kind: 'text',
-        sender_id: params.senderId,
-        body: params.body,
-        visibility: 'active',
-        parent_message_id: params.parent?.id ?? null,
-        parent_message_at: params.parent?.at ?? null,
-        plan_context_payload:
-          params.planContext == null
-            ? Prisma.JsonNull
-            : (params.planContext as unknown as Prisma.InputJsonValue),
-      },
+  async createCohortMessage(params: NewCohortMessage): Promise<CommunityMessage> {
+    return this.prisma.communityMessage.create({ data: cohortMessageData(params) });
+  }
+
+  /**
+   * FX-IDEM: the keyed send. One transaction lock per message id (the id an author's Idempotency-Key names in
+   * a space, message-idempotency.ts), then the first row with that id is returned as is, or the row is written
+   * under that id. Racing resends wait on the lock and read the first row; no unique index is needed.
+   */
+  async createKeyedCohortMessage(
+    id: string,
+    params: NewCohortMessage,
+  ): Promise<{ row: CommunityMessage; replayed: boolean }> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${LOCK_NS_COMMUNITY_MESSAGE_KEY}::int4, hashtext(${id}))`;
+      const first = await tx.communityMessage.findFirst({ where: { id } });
+      if (first) return { row: first, replayed: true };
+      return { row: await tx.communityMessage.create({ data: { ...cohortMessageData(params), id } }), replayed: false };
     });
   }
 
