@@ -167,7 +167,7 @@ export class AiTriageService {
     cohortIds: string[],
     mayRefilter: boolean,
   ): Promise<TriageResponse> {
-    const fetched = await this.fetchCandidates(cohortIds);
+    const fetched = await this.fetchCandidates(cohortIds, user.id);
     // R2b — only items whose author holds a live box-2 grant reach the AI
     // (D2 box 2: "only your own data is used", processed by Anthropic). The
     // rest stay in the regular inbox, untriaged. The grant is read live here
@@ -366,17 +366,19 @@ export class AiTriageService {
    * coachedCohortIds(user.id), so this can only ever read the caller's own
    * coached cohorts.
    */
-  private async fetchCandidates(cohortIds: string[]): Promise<Candidate[]> {
+  private async fetchCandidates(cohortIds: string[], viewerId: string): Promise<Candidate[]> {
     const [messages, posts] = await Promise.all([
       this.repo.unansweredMessages({
         cohortIds,
         limit: TRIAGE_CANDIDATE_LIMIT,
         after: null,
+        viewerId,
       }),
       this.repo.unansweredPosts({
         cohortIds,
         limit: TRIAGE_CANDIDATE_LIMIT,
         after: null,
+        viewerId,
       }),
     ]);
 

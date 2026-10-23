@@ -29,6 +29,7 @@ interface Rows {
   lifts?: Array<{ id: string; user_id: string; exercise_name: string; w: number; r: number; at: Date }>;
   goals?: Array<{ id: string; user_id: string; weight_lbs: number; goal: number; logged_at: Date }>;
   names?: Array<{ id: string; name: string }>;
+  blocks?: Array<{ blocker_id: string; blocked_id: string }>;
 }
 
 function fakePrisma(rows: Rows) {
@@ -42,6 +43,7 @@ function fakePrisma(rows: Rows) {
     coachNudge: { findMany: jest.fn(async (_args: unknown) => rows.nudges ?? []) },
     clientSignal: { findMany: jest.fn(async (_args: unknown) => rows.signals ?? []) },
     user: { findMany: jest.fn(async (_args: unknown) => rows.names ?? []) },
+    userBlock: { findMany: jest.fn(async (_args: unknown) => rows.blocks ?? []) },
     $queryRaw: raw,
   };
   return { db, prisma: stub<PrismaService>(db) };
@@ -198,6 +200,27 @@ describe("HOME-BE: the coach Home's day", () => {
     );
     expect(out.wins.items.map((w) => w.at)).toEqual([...out.wins.items.map((w) => w.at)].sort().reverse());
     expect(db.user.findMany.mock.calls[0][0]).toEqual({ where: { id: { in: ['c2', 'c1'] } }, select: { id: true, name: true } });
+  });
+
+  it('#168-4: a client in a block with the coach, either way, gets no reach-out and no Roman win draft', async () => {
+    const rows: Rows = {
+      coachReplies: [{ client_id: 'c1', created_at: at('15:00') }, { client_id: 'c2', created_at: at('15:00') }],
+      goals: [{ id: 'wl-1', user_id: 'c2', weight_lbs: 179.64, goal: 180, logged_at: at('19:30') }],
+      lifts: [{ id: 'set-1', user_id: 'c1', exercise_name: 'Squat', w: 200, r: 5, at: at('19:00') }],
+    };
+    const open = await loadHomeDay(fakePrisma(rows).prisma, scope({ needsYou: ['c1', 'c2'] }), 'America/Los_Angeles', NOW);
+    expect(open.rings.reach_outs).toEqual({ contacted: 2, goal: 2, contacted_ids: ['c1', 'c2'] });
+    expect(open.wins.items.map((w) => w.client_id)).toEqual(['c2', 'c1']);
+    // The client blocked the coach (c2) and the coach blocked a client (c1): both leave every entry point.
+    const { db, prisma } = fakePrisma({ ...rows, blocks: [{ blocker_id: 'c2', blocked_id: 'sub-1' }] });
+    const one = await loadHomeDay(prisma, scope({ needsYou: ['c1', 'c2'] }), 'America/Los_Angeles', NOW);
+    expect(one.rings.reach_outs).toEqual({ contacted: 1, goal: 1, contacted_ids: ['c1'] });
+    expect(one.wins).toEqual({ count: 1, items: [expect.objectContaining({ client_id: 'c1' })] });
+    expect(db.userBlock.findMany).toHaveBeenCalledTimes(1);
+    const both = fakePrisma({ ...rows, blocks: [{ blocker_id: 'c2', blocked_id: 'sub-1' }, { blocker_id: 'sub-1', blocked_id: 'c1' }] });
+    const none = await loadHomeDay(both.prisma, scope({ needsYou: ['c1', 'c2'] }), 'America/Los_Angeles', NOW);
+    expect(none.rings.reach_outs).toEqual({ contacted: 0, goal: 0, contacted_ids: [] });
+    expect(none.wins).toEqual({ count: 0, items: [] });
   });
 
   it('an empty roster reads nothing and returns zeros', async () => {

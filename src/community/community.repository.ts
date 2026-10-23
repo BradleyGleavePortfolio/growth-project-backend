@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { CommunityCohort } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
-import { canEnterSpace, readersNow, rowsWithSpaceAccess } from './community-space-access';
+import { authorsWhoLeft, canEnterSpace, readersNow, rowsWithSpaceAccess } from './community-space-access';
 
 /** Name of a coach's auto-created community (B-E2E-1); the seed script reuses it. */
 export const DEFAULT_WORKSPACE_NAME = 'Community';
@@ -276,8 +276,12 @@ export class CommunityRepository {
     since: Date | null;
   }): Promise<number> {
     if (params.cohortIds.length === 0) return 0;
+    // #168-4: the badge matches the list: no row by an author banned from that
+    // community, in a block with the reader either way, or who left it.
+    const hidden = await authorsWhoLeft(this.prisma, params.cohortIds, params.userId);
     return this.prisma.communityMessage.count({
       where: {
+        ...(hidden.length > 0 ? { NOT: hidden.map(([s, a]) => ({ cohort_id: s, sender_id: a })) } : {}),
         scope: 'cohort',
         cohort_id: { in: params.cohortIds },
         sender_id: { not: params.userId },
