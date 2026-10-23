@@ -206,7 +206,7 @@ Emergency kill, in order: `FEATURE_MWB_AI_LIVE_CREATE` unset (only the builder s
 
 **PHOTO_CHECK_OPENAI_API_KEY before FEATURE_COMMUNITY_IMAGES (PHOTO-CHECK-BE, #167-7 IMAGES op 1).** Every space chat photo is checked by OpenAI's moderation endpoint before it posts. The key is a provider key (listed under `excluded`, so the sync never touches it) and ships as its ghost value, unset; while it is unset every photo send is refused with `503 PHOTO_CHECK_UNAVAILABLE`, so the owner must add this key before FEATURE_COMMUNITY_IMAGES turns on:
 
-1. The owner sets `PHOTO_CHECK_OPENAI_API_KEY` on Fly (`fly secrets set --stage`; its own OpenAI key, not `OPENAI_API_KEY`); the next deploy picks it up.
+1. **OWNER TO-DO before v1 launch (#171-2):** the owner sets the real OpenAI API key as `PHOTO_CHECK_OPENAI_API_KEY` on Fly (`fly secrets set --stage`; its own OpenAI key, not `OPENAI_API_KEY`); the next deploy picks it up.
 2. Only then, in its own PR, `"FEATURE_COMMUNITY_IMAGES": "true"`. Device pass: an everyday photo posts; a photo the check flags gets `422 PHOTO_NOT_ALLOWED` and nothing posts.
 
 Roll back the photos with `"FEATURE_COMMUNITY_IMAGES": "unset"`. Removing the key never lets a photo through unchecked: every send is refused until it is back.
