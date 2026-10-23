@@ -103,14 +103,4 @@ export class CommunityDmsRepository {
     }
     return latest;
   }
-
-  /** #169-5: names of the other members of the listed threads, by id. */
-  async namesOf(ids: readonly string[]): Promise<Map<string, string | null>> {
-    if (ids.length === 0) return new Map();
-    const users = await this.prisma.user.findMany({
-      where: { id: { in: [...new Set(ids)] } },
-      select: { id: true, name: true },
-    });
-    return new Map(users.map((u) => [u.id, u.name]));
-  }
 }

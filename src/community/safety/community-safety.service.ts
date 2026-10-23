@@ -157,11 +157,14 @@ export function assertDmParticipantIfDm(
  * reads by id answer 404 (same body as "does not exist"), and every
  * interaction that targets the other side (reply, react, RSVP, join, DM) is
  * refused the same way, so no push can cross a block. Unblocking restores
- * both directions at once (one row). The blocked user is never told.
- * Coach/owner moderation surfaces (queue, flagged list, coach inbox, AI
- * triage, the coach roster view) stay complete so reports can be actioned.
- * This makes the owner-approved copy true: "If you block someone, they can no
- * longer see your posts or message you, and they are not told."
+ * both directions at once (one row). Nobody else learns of a block. In a
+ * one-to-one DM the two people are told (#169-5 CLOSED-LINE): the blocker gets
+ * 403 community.dm.blocked_by_you and the blocked person 403
+ * community.dm.blocked_by_them, while the thread leaves both DM lists (owner
+ * 10-23 "Dissapear"). Coach/owner moderation surfaces (queue, flagged list,
+ * coach inbox, AI triage, the coach roster view) stay complete so reports can
+ * be actioned. COMMUNITY_RESPONSE_COMMITMENT still ends "and they are not
+ * told": its new sentence waits for the owner (137-2, b#1145).
  */
 @Injectable()
 export class CommunitySafetyService {
@@ -272,33 +275,6 @@ export class CommunitySafetyService {
       throw new ForbiddenException(DM_BLOCKED_BY_YOU);
     }
     throw new ForbiddenException(DM_BLOCKED_BY_THEM);
-  }
-
-  /**
-   * #169-5 CLOSED-LINE, the DM list: filterBlocked's place rule alone (a partner
-   * who left or is banned drops the row), plus the block either way, so a
-   * blocked thread stays listed for both people as a closed row.
-   */
-  async dmRowsWithBlock<T>(
-    viewerId: string,
-    rows: T[],
-    otherOf: (row: T) => string,
-    placeOf: (row: T) => RowPlace,
-  ): Promise<Array<{ row: T; closed: boolean; blockedByMe: boolean }>> {
-    if (rows.length === 0) return [];
-    const [kept, blocks] = await Promise.all([
-      rowsByAuthorsWhoStay(this.prisma, viewerId, rows, otherOf, placeOf),
-      this.prisma.userBlock.findMany({
-        where: { OR: [{ blocker_id: viewerId }, { blocked_id: viewerId }] },
-        select: { blocker_id: true, blocked_id: true },
-      }),
-    ]);
-    const byMe = new Set(blocks.filter((b) => b.blocker_id === viewerId).map((b) => b.blocked_id));
-    const byThem = new Set(blocks.filter((b) => b.blocked_id === viewerId).map((b) => b.blocker_id));
-    return kept.map((row) => {
-      const other = otherOf(row);
-      return { row, closed: byMe.has(other) || byThem.has(other), blockedByMe: byMe.has(other) };
-    });
   }
 
   /**

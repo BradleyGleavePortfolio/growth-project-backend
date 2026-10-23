@@ -221,29 +221,20 @@ describe('two-way block: posts, comments, cohort messages and DMs (in-memory Pri
     await expect(messages.getOne(bob, aM.message.id)).resolves.toBeDefined();
   });
 
-  it('DMs (#169-5 CLOSED-LINE): closed both ways, each person told who closed it; unblock reopens', async () => {
+  it('DMs (#169-5 CLOSED-LINE): closed both ways, gone from both lists, each person told who closed it; unblock reopens', async () => {
     await dms.send(alice, wsId, bob.id, 'hello');
     await dms.send(carol, wsId, bob.id, 'carol here');
     await safety.block(alice, bob.id);
 
-    // Both keep the thread as a closed row: the name, who placed the block, no time, no text.
-    const row = (t: { threads: Array<{ other_user_id: string }> }, id: string) =>
-      t.threads.find((x) => x.other_user_id === id);
-    expect(row(await dms.listThreads(alice, wsId, {}), bob.id)).toEqual({
-      thread_id: expect.any(String), workspace_id: wsId, other_user_id: bob.id, created_at: null,
-      last_message_at: null, closed: true, blocked_by_me: true, other_display_name: 'Bob',
-    });
-    const bobList = await dms.listThreads(bob, wsId, {});
-    expect(row(bobList, alice.id)).toMatchObject({
-      last_message_at: null, closed: true, blocked_by_me: false, other_display_name: 'Alice',
-    });
-    // Nobody else learns: bob's thread with carol is open and unchanged.
-    expect(row(bobList, carol.id)).toMatchObject({
-      closed: false, blocked_by_me: false, other_display_name: 'Carol', last_message_at: expect.any(String),
-    });
-    expect(row(await dms.listThreads(carol, wsId, {}), bob.id)).toMatchObject({ closed: false });
+    // Owner 10-23 "Dissapear": the thread leaves both lists (no row, no name, no time).
+    const ids = (t: { threads: Array<{ other_user_id: string }> }) => t.threads.map((x) => x.other_user_id);
+    expect((await dms.listThreads(alice, wsId, {})).threads).toHaveLength(0);
+    // Nobody else learns: bob's thread with carol stays, and carol's with bob.
+    expect(ids(await dms.listThreads(bob, wsId, {}))).toEqual([carol.id]);
+    expect(ids(await dms.listThreads(carol, wsId, {}))).toEqual([bob.id]);
 
-    // The blocked person (bob) is told it is a block by the other person; the blocker (alice) gets her way back.
+    // Reached another way (profile, old notification, link): the blocked person (bob) is told
+    // the other person blocked them; the blocker (alice) is told it is her block.
     for (const call of [
       () => dms.send(bob, wsId, alice.id, 'again'),
       () => dms.listThread(bob, wsId, alice.id, {}),
@@ -268,23 +259,9 @@ describe('two-way block: posts, comments, cohort messages and DMs (in-memory Pri
     });
 
     await safety.unblock(alice, bob.id);
-    expect(row(await dms.listThreads(bob, wsId, {}), alice.id)).toMatchObject({
-      closed: false, blocked_by_me: false, last_message_at: expect.any(String),
-    });
+    expect(ids(await dms.listThreads(alice, wsId, {}))).toEqual([bob.id]);
+    expect((await dms.listThreads(bob, wsId, {})).threads).toHaveLength(2);
     await expect(dms.send(bob, wsId, alice.id, 'back')).resolves.toBeDefined();
-  });
-
-  it('DMs (#169-5): a partner banned from the community still drops the row; a coach sees full names', async () => {
-    db.seed('communityMembership', {
-      workspace_id: wsId, cohort_id: cohortId, user_id: coach.id, status: 'active', role: 'coach', dm_enabled: null, removed_at: null,
-    });
-    await dms.send(alice, wsId, bob.id, 'hello');
-    await dms.send(coach, wsId, carol.id, 'hi Carol');
-    db.seed('communityWorkspaceBan', { workspace_id: wsId, user_id: bob.id, banned_at: new Date() });
-    expect((await dms.listThreads(alice, wsId, {})).threads).toEqual([]);
-    expect((await dms.listThreads(coach, wsId, {})).threads).toEqual([
-      expect.objectContaining({ other_user_id: carol.id, other_display_name: 'Carol Member', closed: false }),
-    ]);
   });
 
   it('hiddenFromViewer returns both directions and never the viewer', async () => {
@@ -825,7 +802,7 @@ describe('two-way block: member list, leaderboard, wins, Today, search and voice
  * routes name the service file + method that must apply the two-way filter;
  * EXEMPT routes carry the reason. An unclassified GET fails the suite.
  */
-const FILTER_CALL = /\b(filterBlocked|hiddenFromViewer|assertVisibleTo|visiblePost|authoriseDm|dmRowsWithBlock)\(/;
+const FILTER_CALL = /\b(filterBlocked|hiddenFromViewer|assertVisibleTo|visiblePost|authoriseDm)\(/;
 
 const FILTERED: Record<string, { file: string; method: string; entry?: string }> = {
   'CommunityPostsController.list': { file: 'posts/community-posts.service.ts', method: 'list' },

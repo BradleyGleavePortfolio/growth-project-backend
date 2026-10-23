@@ -1,7 +1,8 @@
-// BLOCK-TELL (agent 169), owner #169-5 CLOSED-LINE: in a one-to-one DM the blocked person is told ("{N} has blocked
-// you"), the thread stays listed for both people as a closed row, and nobody else learns. Live, on the replayed
-// migration chain, with the real DM service: coach A; V and X are A's clients in A's clients space. The block row
-// itself stays readable only by its owner under forced row security (control read of 1 before each 0).
+// BLOCK-TELL (agents 169, 170), owner #169-5 CLOSED-LINE and 10-23 "Dissapear": in a one-to-one DM the blocked
+// person is told ("{N} has blocked you") when they reach the thread another way, the thread leaves both people's
+// lists, and nobody else learns. Live, on the replayed migration chain, with the real DM service: coach A; V and X
+// are A's clients in A's clients space. The block row itself stays readable only by its owner under forced row
+// security (control read of 1 before each 0).
 import { randomUUID } from 'crypto';
 import { Prisma, PrismaClient, type User } from '@prisma/client';
 import { CommunityAccessService } from '../../src/community/community-access.service';
@@ -22,7 +23,7 @@ if (!DB_URL && process.env.CI === 'true') {
 type Key = 'A' | 'V' | 'X';
 const NAME: Record<Key, string> = { A: 'Avery Coach', V: 'Vera Member', X: 'Xavi Member' };
 
-(DB_URL ? describe : describe.skip)('#169-5: a DM block tells the blocked person; the block row stays its owner\'s', () => {
+(DB_URL ? describe : describe.skip)('#169-5: a DM block tells the blocked person and leaves both lists; the block row stays its owner\'s', () => {
   const prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
   const db = stub<PrismaService>(prisma);
   const safety = new CommunitySafetyService(db);
@@ -66,15 +67,11 @@ const NAME: Record<Key, string> = { A: 'Avery Coach', V: 'Vera Member', X: 'Xavi
   });
   afterAll(() => prisma.$disconnect());
 
-  it('both people keep a closed row; the blocked person is told; unblock reopens', async () => {
-    expect(await rowWith('V', 'X')).toMatchObject({ closed: false, blocked_by_me: false, other_display_name: 'Xavi Member' });
+  it('the thread leaves both lists; each person is told who closed it; unblock brings it back', async () => {
+    expect(await rowWith('V', 'X')).toMatchObject({ other_user_id: id.X, last_message_at: expect.any(String) });
     await prisma.userBlock.create({ data: { blocker_id: id.X, blocked_id: id.V } }); // X blocked V
-    expect(await rowWith('X', 'V')).toMatchObject({
-      closed: true, blocked_by_me: true, last_message_at: null, other_display_name: 'Vera Member',
-    });
-    expect(await rowWith('V', 'X')).toMatchObject({
-      closed: true, blocked_by_me: false, last_message_at: null, other_display_name: 'Xavi Member',
-    });
+    expect(await rowWith('X', 'V')).toBeUndefined();
+    expect(await rowWith('V', 'X')).toBeUndefined();
     await expect(dms.send(user('V'), ws, id.X, 'again')).rejects.toMatchObject({
       status: 403, response: { error: 'forbidden', code: 'community.dm.blocked_by_them' },
     });
@@ -82,7 +79,8 @@ const NAME: Record<Key, string> = { A: 'Avery Coach', V: 'Vera Member', X: 'Xavi
       status: 403, response: { code: 'community.dm.blocked_by_you' },
     });
     await prisma.userBlock.deleteMany({ where: { blocker_id: id.X } });
-    expect(await rowWith('V', 'X')).toMatchObject({ closed: false, last_message_at: expect.any(String) });
+    expect(await rowWith('V', 'X')).toMatchObject({ other_user_id: id.X, last_message_at: expect.any(String) });
+    expect(await rowWith('X', 'V')).toMatchObject({ other_user_id: id.V });
     await expect(dms.send(user('V'), ws, id.X, 'back')).resolves.toBeDefined();
   });
 

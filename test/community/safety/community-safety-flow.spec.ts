@@ -302,14 +302,11 @@ describe('community UGC safety flow (Apple 1.2)', () => {
     expect((await messages.list(bob, cohortId, {})).messages).toHaveLength(2);
   });
 
-  it('block closes DMs in both directions; both people keep a closed row and are told who closed it', async () => {
+  it('block closes DMs in both directions, hides the thread from both lists and tells each person who closed it', async () => {
     await dms.send(bob, wsId, alice.id, 'hello');
     expect((await dms.listThreads(alice, wsId, {})).threads).toHaveLength(1);
     await safety.block(alice, bob.id);
-    // #169-5 CLOSED-LINE: the thread stays listed for both, closed, with no time.
-    expect((await dms.listThreads(alice, wsId, {})).threads).toEqual([
-      expect.objectContaining({ closed: true, blocked_by_me: true, last_message_at: null }),
-    ]);
+    expect((await dms.listThreads(alice, wsId, {})).threads).toHaveLength(0);
     // Blocked person: told the other person blocked them (no message text: the phone shows "{N} has blocked you").
     await expect(dms.send(bob, wsId, alice.id, 'hello again')).rejects.toMatchObject({
       status: 403,
@@ -323,9 +320,7 @@ describe('community UGC safety flow (Apple 1.2)', () => {
         message: expect.stringContaining('unblock them in Community safety'),
       },
     });
-    expect((await dms.listThreads(bob, wsId, {})).threads).toEqual([
-      expect.objectContaining({ other_user_id: alice.id, closed: true, blocked_by_me: false, last_message_at: null }),
-    ]);
+    expect((await dms.listThreads(bob, wsId, {})).threads).toHaveLength(0);
   });
 
   it('block rejects self, strangers outside the community and the member’s own coach', async () => {
