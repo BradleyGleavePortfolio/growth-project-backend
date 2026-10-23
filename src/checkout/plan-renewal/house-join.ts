@@ -8,6 +8,7 @@ import type {
 import { houseCoachUserId, isPlanRenewalEnabled } from './plan-renewal.cadence';
 import { readPlanRenewal } from './plan-renewal.state';
 import { packageTrialDays } from '../subscription-plan';
+import { tellFormerCoachTx } from './switch-tell';
 
 type Db = PrismaClient | Prisma.TransactionClient;
 const log = new Logger('HouseJoin');
@@ -72,6 +73,8 @@ export async function houseJoinToBuy(
  * triggers mark the former coach's plans moved and set the join time), the
  * former coach's upcoming sessions end (HIST-2b), drafts left about the client
  * go (decision 17), and the renewal with the former coach stops ('moved').
+ * SWITCH-TELL-BE: the former coach gets one in-app notification that the
+ * client moved (never naming the house coach), in the same transaction.
  * Reads follow coach_id and row security from here: the former coach keeps
  * only their own money records. Returns the cancelled sessions to finish
  * after commit, or null when nothing moved (the door is closed).
@@ -95,5 +98,6 @@ export async function moveToHouseCoachTx(
     where: { client_user_id: clientUserId, coach_user_id: from, status: { in: ['active', 'done'] } },
     data: { status: 'stopped', stop_reason: 'moved' },
   });
+  await tellFormerCoachTx(tx, clientUserId, from);
   return cancelled;
 }

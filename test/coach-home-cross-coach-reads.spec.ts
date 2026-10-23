@@ -59,7 +59,8 @@ type Row = Record<string, any>;
 const db = new StatefulPrisma();
 for (const m of ['user', 'userProfile', 'teamSubCoachAssignment', 'subCoachAssignment', 'coachSubscription']) db.model(m);
 for (const m of ['payoutSnapshot', 'coachPackage', 'clientPurchase', 'chargeRefund', 'chargeDispute', 'splitLedgerEntry']) db.model(m);
-for (const m of ['clientSignal', 'macroTarget']) db.model(m);
+// SWITCH-TELL-BE: Money reads the former coach's move notifications for a moved client's charges.
+for (const m of ['clientSignal', 'macroTarget', 'notification']) db.model(m);
 db.model('connectAccount', [['id'], ['coach_user_id']]);
 db.model('coachLtvPeak', [['id'], ['coach_id']]);
 db.model('coachAIBudget', [['id'], ['coach_user_id']], () => ({
