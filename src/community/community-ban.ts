@@ -44,36 +44,6 @@ export async function bannedAmong(
   return new Set(rows.map((r) => r.user_id));
 }
 
-/**
- * #168-4: a ban hides everything the banned person wrote in that community
- * from everyone else. Drops rows whose author holds an active ban in the
- * row's workspace; the viewer's own rows stay. One query for the whole page.
- */
-export async function withoutBannedAuthors<T>(
-  prisma: BanDb,
-  viewerId: string,
-  rows: T[],
-  authorOf: (row: T) => string | null | undefined,
-  workspaceOf: (row: T) => string,
-): Promise<T[]> {
-  const others = rows.filter((r) => { const a = authorOf(r); return !!a && a !== viewerId; });
-  if (others.length === 0) return rows;
-  const bans = await prisma.communityWorkspaceBan.findMany({
-    where: {
-      workspace_id: { in: [...new Set(others.map(workspaceOf))] },
-      user_id: { in: [...new Set(others.map((r) => authorOf(r) as string))] },
-      lifted_at: null,
-    },
-    select: { workspace_id: true, user_id: true },
-  });
-  if (bans.length === 0) return rows;
-  const banned = new Set(bans.map((b) => `${b.workspace_id}:${b.user_id}`));
-  return rows.filter((r) => {
-    const a = authorOf(r);
-    return !a || a === viewerId || !banned.has(`${workspaceOf(r)}:${a}`);
-  });
-}
-
 export async function recordWorkspaceBan(
   prisma: BanDb,
   input: {

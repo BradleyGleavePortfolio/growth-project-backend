@@ -11,7 +11,6 @@ import { memberFirstName } from '../member-display-name';
 import { SUPPORT_EMAIL } from '../../public-pages/trust-pages.html';
 import { winModerationWorkspaceId } from '../community-wins.policy';
 import { type RowPlace, rowsByAuthorsWhoStay } from '../community-space-access';
-import { withoutBannedAuthors } from '../community-ban';
 import {
   COMMUNITY_MODERATION_NOTICE_KIND,
   type ModerationNoticeView,
@@ -209,8 +208,7 @@ export class CommunitySafetyService {
    * Drop rows authored by anyone in a block relation with the viewer, in
    * either direction (the viewer blocked them, or they blocked the viewer).
    * C6-WINS-MOVE: given the row's place, also drop rows whose author left the
-   * community they were written in (rowsByAuthorsWhoStay) and, #168-4, rows
-   * whose author is banned from that community (withoutBannedAuthors).
+   * community they were written in, or (#168-4) is banned from it (rowsByAuthorsWhoStay).
    */
   async filterBlocked<T>(
     viewerId: string,
@@ -219,10 +217,8 @@ export class CommunitySafetyService {
     placeOf?: (row: T) => RowPlace,
   ): Promise<T[]> {
     if (rows.length === 0) return rows;
-    const [kept, hidden] = await Promise.all([
-      placeOf ? this.staysAndNotBanned(viewerId, rows, authorOf, placeOf) : rows,
-      this.hiddenFromViewer(viewerId),
-    ]);
+    const kept = placeOf ? await rowsByAuthorsWhoStay(this.prisma, viewerId, rows, authorOf, placeOf) : rows;
+    const hidden = await this.hiddenFromViewer(viewerId);
     if (hidden.size === 0) return kept;
     return kept.filter((r) => {
       const author = authorOf(r);
@@ -230,21 +226,11 @@ export class CommunitySafetyService {
     });
   }
 
-  private async staysAndNotBanned<T>(
-    viewerId: string,
-    rows: T[],
-    authorOf: (row: T) => string | null | undefined,
-    placeOf: (row: T) => RowPlace,
-  ): Promise<T[]> {
-    const stay = await rowsByAuthorsWhoStay(this.prisma, viewerId, rows, authorOf, placeOf);
-    return withoutBannedAuthors(this.prisma, viewerId, stay, authorOf, (r) => placeOf(r)[0]);
-  }
-
   /**
    * Single-item reads: 404 (same body as "does not exist") when the viewer
    * and the author are in a block relation either way, so a direct link or
    * id cannot be used to read around the list filter. C6-WINS-MOVE: given the
-   * row's place, the same 404 when its author left or is banned from it.
+   * row's place, the same 404 when its author left that community.
    */
   async assertVisibleTo(
     viewerId: string,
@@ -254,7 +240,7 @@ export class CommunitySafetyService {
   ): Promise<void> {
     if (!authorId || authorId === viewerId) return;
     const left = async (p: RowPlace) =>
-      (await this.staysAndNotBanned(viewerId, [p], () => authorId, (r) => r)).length === 0;
+      (await rowsByAuthorsWhoStay(this.prisma, viewerId, [p], () => authorId, (r) => r)).length === 0;
     if ((await this.isBlockedEitherWay(viewerId, authorId)) || (place && (await left(place)))) {
       throw new NotFoundException(notFoundBody);
     }

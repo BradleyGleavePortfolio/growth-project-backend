@@ -89,8 +89,9 @@ export const placeOf = (row: { workspace_id: string; cohort_id: string | null })
 
 /** C6-WINS-MOVE (owner: history follows the client): a client who moves to another coach, or to none,
  * leaves the former coach's community, so what they wrote in its Hall and in its spaces that are not public
- * no longer reads there. The row policies ask the same function. The viewer keeps their own rows. One
- * round trip. */
+ * no longer reads there. The row policies ask the same function. #168-4: a member banned from the community
+ * (community_workspace_bans, the moderation Ban) has left it too, so nothing they wrote there reads for anyone
+ * else; unban restores it. The viewer keeps their own rows. One round trip. */
 export async function rowsByAuthorsWhoStay<T>(
   prisma: PrismaService,
   viewerId: string,
@@ -104,7 +105,9 @@ export async function rowsByAuthorsWhoStay<T>(
     SELECT (t."n" - 1)::int AS "n"
     FROM unnest(${ask.map(([, p]) => p[0])}::uuid[], ${ask.map(([, p]) => p[1] ?? '')}::text[],
                 ${ask.map(([, , a]) => a as string)}::text[]) WITH ORDINALITY AS t("w", "s", "a", "n")
-    WHERE app.community_author_stays(t."w", NULLIF(t."s", '')::uuid, t."a")`;
+    WHERE app.community_author_stays(t."w", NULLIF(t."s", '')::uuid, t."a")
+      AND NOT EXISTS (SELECT 1 FROM "community_workspace_bans" b
+                      WHERE b."workspace_id" = t."w" AND b."user_id" = t."a" AND b."lifted_at" IS NULL)`;
   const gone = new Set(ask.map(([i]) => i));
   for (const k of kept) gone.delete(ask[k.n][0]);
   return gone.size === 0 ? rows : rows.filter((_, i) => !gone.has(i));
