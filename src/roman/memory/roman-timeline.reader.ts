@@ -73,6 +73,7 @@ import {
   RomanTimelineReadOptions,
   RomanTimelineTable,
 } from './roman-timeline.types';
+import { notInBlockWith } from '../../messaging/block-pair';
 
 const DEFAULT_TZ = 'America/Los_Angeles';
 const DAY_MS = 86_400_000;
@@ -652,6 +653,9 @@ export class RomanTimelineReader {
         body: { not: null },
         deleted_at: null,
         created_at: p.instants,
+        // FX-1141 (Sol B2): no words from a chat in a block either way.
+        coach: notInBlockWith(p.clientId),
+        sender: notInBlockWith(p.clientId),
       },
       orderBy: { created_at: 'asc' },
       take: CAP + 1,

@@ -30,6 +30,7 @@ import { PlaybookSignalsService } from './playbook-signals.service';
 import type { PlaybookSignals } from './playbook-signals.types';
 import type { PlaybookSourceKind } from './coach-playbook.schema';
 import { buildPlaybookRoster, scrubPlaybookText, type PlaybookRoster } from './playbook-scrub';
+import { notInBlockWith } from '../../messaging/block-pair';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -243,6 +244,8 @@ export class PlaybookSourceCollector {
             coach_id: { in: team },
             sender_id: { in: authors },
             client_id: { in: consented },
+            // FX-1141 (Sol B2): no chat in a block with a team coach.
+            client: notInBlockWith(authors),
             deleted_at: null,
             body: { not: null },
             created_at: { gte: new Date(now.getTime() - L.messageDays * DAY_MS), lte: now },

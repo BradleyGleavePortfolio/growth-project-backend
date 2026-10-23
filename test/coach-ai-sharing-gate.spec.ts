@@ -287,6 +287,7 @@ describe('Churn re-engagement draft (U4)', () => {
         update: async ({ data }: { data: { draft_text: string } }) => ({ id: 'i1', client_id: PRIVATE, status: 'draft', top_factor: null, created_at: new Date(), ...data }),
       },
       checkIn: { findFirst: checkIn },
+      userBlock: { findMany: async () => [] },
     };
     const create = jest.fn(async (_body: { system: string }) => ({ content: [{ type: 'text', text: 'Sam, how is the week going? Coach One' }] }));
     const anthropic = AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>({ messages: { create } }));

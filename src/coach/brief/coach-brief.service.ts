@@ -39,6 +39,7 @@ import { describeFailure } from '../../observability/log-pii';
 import { usableTimeZone } from '../../notifications/local-time';
 import { ConsentScope, ConsentService } from '../../consent/consent.service';
 import { coachSharingCheck } from '../../consent/coach-sharing-gate';
+import { inBlockWith } from '../../messaging/block-pair';
 
 /**
  * Sentinel error surfaced by `markBriefRead` when the briefId either does
@@ -1196,8 +1197,16 @@ export class CoachBriefService {
       string,
       { client_id: string; client_name: string; message_preview: string; occurred_at: Date }
     >();
+    // FX-1141 (Opus B2): a chat in a block either way gives no brief row, no
+    // preview and no count, and its words never reach the brief's prompt.
+    const blockedPairs = await inBlockWith(
+      this.prisma,
+      coachId,
+      unreadMessagesRaw.flatMap((m) => (m.client_id ? [m.client_id] : [])),
+    );
     for (const m of unreadMessagesRaw) {
       if (!m.client_id || threadByClient.has(m.client_id)) continue;
+      if (blockedPairs.has(m.client_id)) continue;
       // Only the thread with the client's current coach (owner decision 4).
       if (m.coach_id !== m.client?.coach_id) continue;
       threadByClient.set(m.client_id, {
@@ -2340,11 +2349,13 @@ export class CoachBriefService {
     });
     // The same text the item's detail was cut from (aggregateSoloContext, buildActionItems).
     const inThread = new Set(found.map((m) => `${m.client_id}\n${briefPreview(m).slice(0, 80)}`));
+    // FX-1141 (Opus B2): a stored brief drops the row of a chat now in a block.
+    const blocked = await inBlockWith(this.prisma, coachId, asked.map((m) => m.client_id));
     return (items) =>
       Array.isArray(items)
         ? items.filter((i) => {
             const m = messageItem(i);
-            return !m || inThread.has(`${m.client_id}\n${m.detail}`);
+            return !m || (!blocked.has(m.client_id) && inThread.has(`${m.client_id}\n${m.detail}`));
           })
         : items;
   }

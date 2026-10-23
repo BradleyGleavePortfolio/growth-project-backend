@@ -141,6 +141,26 @@ describe('F-DP4-3 coach brief after a client moves (owner decision 4)', () => {
     ]);
   });
 
+  // FX-1141 (Opus B2): a chat in a block either way gives no unread row,
+  // preview or count in a new brief, and a stored brief drops its row.
+  it.each([
+    ['the client blocked the coach', { blocker_id: 'kept', blocked_id: 'H' }],
+    ['the coach blocked the client', { blocker_id: 'H', blocked_id: 'kept' }],
+  ])('%s: no unread row, preview or count; a stored brief drops it', async (_label, block) => {
+    const { prisma, svc } = wire();
+    prisma.userBlock.findMany.mockResolvedValue([block]);
+    const agg = await svc['aggregateSoloContext']('H', ['kept'], 'America/Los_Angeles', '2026-10-11', 'solo_coach');
+    expect(agg.unreadThreads).toEqual([]);
+    expect(agg.context.unread_messages).toBe(0);
+    expect(JSON.stringify(agg)).not.toContain('Can we move my session');
+    const item = { type: 'message_unread', client_id: 'kept', client_name: 'Kai Kept', detail: 'Can we move my session' };
+    const shown = await svc['ownThreadPreviews']('H', [{ brief_mode: 'solo_coach', action_items: [item] }]);
+    expect(shown([item])).toEqual([]);
+    prisma.userBlock.findMany.mockResolvedValue([]);
+    const open = await svc['ownThreadPreviews']('H', [{ brief_mode: 'solo_coach', action_items: [item] }]);
+    expect(open([item])).toEqual([item]);
+  });
+
   it("old head coach's brief no longer counts the moved client or bills against them", async () => {
     const { prisma, svc } = wire();
     const { context, scopeClientIds } = await svc['aggregateHeadCoachContext']('H', 'America/Los_Angeles', '2026-10-11');

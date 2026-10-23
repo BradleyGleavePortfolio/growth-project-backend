@@ -36,6 +36,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
+import { assertPairOpen } from '../../messaging/block-pair';
 import { AiEgressService, AnthropicHandle } from '../../ai-egress/ai-egress.service';
 import { isAiEgressRefusal } from '../../ai-egress/ai-consent-required.exception';
 import { AiDataSubject, clientDataSubject } from '../../ai-egress/ai-egress.types';
@@ -342,6 +343,9 @@ export class ChurnInterventionService {
       select: { id: true, name: true },
     });
     if (!client) throw new NotFoundException('Client not found');
+    // FX-1141 (Sol B1): no draft for a chat in a block either way (403, no
+    // AI call, no row).
+    await assertPairOpen(this.prisma, coachId, clientId);
 
     // B-865-SOL-130-2: the draft is written from the churn score and its
     // factors (all four kinds of logs) and the last check-in, so it needs all
@@ -535,6 +539,8 @@ export class ChurnInterventionService {
       where: { id: interventionId, coach_id: coachId },
     });
     if (!intervention) throw new NotFoundException('Intervention not found');
+    // FX-1141 (Sol B1): no nudge or push across a block either way (403).
+    await assertPairOpen(this.prisma, coachId, intervention.client_id);
 
     // Send-idempotency replay: if this exact send_idempotency_key was
     // already persisted for this coach, return the existing send result

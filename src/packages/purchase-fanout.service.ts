@@ -356,10 +356,11 @@ export class PurchaseFanoutService {
       // (due now) and the one-minute drip dispatcher delivers it in its own
       // transaction with retries + a coach alert, so a large or broken program
       // can never time out or roll back the purchase. Its buyer alert fires
-      // when the dispatcher delivers it.
+      // when the dispatcher delivers it. FX-JOIN: so does a workout plan or
+      // welcome message for a client this tx just attached (see onlyInTx).
       if (await this.resolvers.shouldDeferInline(drop.asset_type, materialiseInput)) {
         this.logger.log(
-          `PurchaseFanout: drop=${drop.id} type=${drop.asset_type} left pending for the drip dispatcher (program delivery runs in its own transaction)`,
+          `PurchaseFanout: drop=${drop.id} type=${drop.asset_type} left pending for the drip dispatcher (it delivers in its own transaction)`,
         );
         continue;
       }

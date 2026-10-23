@@ -88,6 +88,15 @@ export class AutoMessageAssetResolver implements AssignableAssetResolver {
     return assetType === 'auto_message';
   }
 
+  /**
+   * FX-JOIN: sendAsCoach checks the client and writes on its own connection,
+   * so a client attached earlier in this tx (paid join, code join, guest
+   * checkout) gets the message from the drip dispatcher after the commit.
+   */
+  deferInline(input: AssignableAssetMaterialiseInput): Promise<boolean> {
+    return this.scope.onlyInTx(input.coachId, input.clientId, input.tx);
+  }
+
   async materialise(
     input: AssignableAssetMaterialiseInput,
   ): Promise<AssignableAssetMaterialiseResult> {
@@ -101,7 +110,7 @@ export class AutoMessageAssetResolver implements AssignableAssetResolver {
     // sendAsCoach. The service does its own Phase-11 sub-coach split using
     // exactly that id; passing the head coach would mis-attribute the
     // sender. See the file-level comment for the full rationale.
-    const acting = await this.scope.resolve(input.coachId, input.clientId);
+    const acting = await this.scope.resolve(input.coachId, input.clientId, input.tx);
 
     const purchaseId = input.clientPurchaseId ?? null;
     const contentId = input.contentId ?? null;

@@ -20,6 +20,7 @@ import {
   CommunityWinSummary,
   LeaderboardSummary,
 } from './client-ai-context.types';
+import { notInBlockWith } from '../messaging/block-pair';
 
 // Token-budget knobs. Picked so the assembled context stays well under
 // ~3KB of JSON in the typical case (a 7-day, 5-workout user). Exported
@@ -189,7 +190,8 @@ export class ClientAIContextService {
       // the AI has a thread summary rather than a single-message excerpt.
       user.coach_id
         ? this.prisma.coachMessage.findMany({
-            where: { coach_id: user.coach_id, client_id: userId },
+            // FX-1141 (Sol B2): none from a chat in a block either way.
+            where: { coach_id: user.coach_id, client_id: userId, coach: notInBlockWith(userId) },
             orderBy: { created_at: 'desc' },
             take: 5,
           })

@@ -3,6 +3,8 @@
  * closes every conversation between the two people both ways ("hide ALL
  * messaging entirely, dont even let the banned person type!"). Coaching 1:1:
  * thread, pins, inbox preview and unread, both directions; unblock restores.
+ * FX-1141 (10-23 "Dissapear"): the closed chat leaves both inboxes; a direct
+ * open answers 200 [] plus the closed header; no voice upload URL either way.
  */
 import 'reflect-metadata';
 import type { CoachMessage } from '@prisma/client';
@@ -49,10 +51,7 @@ function fixture(blocks: Array<[blocker: string, blocked: string]>) {
       groupBy: jest.fn().mockResolvedValue([{ client_id: CLIENT, _count: { _all: 3 } }]),
     },
     coachThreadState: { findUnique: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]) },
-    userBlock: {
-      findMany: jest.fn(async ({ where }: { where: { blocked_id: string } }) =>
-        blocks.filter(([, b]) => b === where.blocked_id).map(([a]) => ({ blocker_id: a }))),
-    },
+    userBlock: { findMany: jest.fn(async ({ where }: { where: BlockWhere }) => blockRows(blocks, where)) },
     $queryRaw: jest.fn().mockResolvedValue([rows[1]]),
   };
   const safety = {
@@ -81,6 +80,19 @@ function fixture(blocks: Array<[blocker: string, blocked: string]>) {
   };
 }
 
+type BlockWhere = {
+  blocked_id?: string;
+  OR?: Array<{ blocker_id: string | { in: string[] }; blocked_id: string | { in: string[] } }>;
+};
+const hit = (v: string | { in: string[] }, id: string) => (typeof v === 'string' ? v === id : v.in.includes(id));
+/** The two UserBlock reads: blockSets (blocked_id = me) and inBlockWith (OR). */
+function blockRows(blocks: Array<[string, string]>, where: BlockWhere) {
+  return blocks
+    .filter(([a, b]) => (where.OR ? where.OR.some((o) => hit(o.blocker_id, a) && hit(o.blocked_id, b)) : b === where.blocked_id))
+    .map(([a, b]) => ({ blocker_id: a, blocked_id: b }));
+}
+const VOICE = { duration_sec: 5, size_bytes: 1000, content_type: 'audio/mp4' };
+
 const ids = (page: unknown) => (page as Array<{ id: string }>).map((m) => m.id).sort();
 const savedFlag = process.env.FEATURE_MESSAGING_CORE_V2;
 beforeEach(() => { process.env.FEATURE_MESSAGING_CORE_V2 = 'true'; });
@@ -99,7 +111,12 @@ describe('#168-4: a block closes the coaching 1:1 thread both ways', () => {
     const inbox = await f.inbox.inboxForClient(CLIENT);
     expect(inbox.items[0]).toMatchObject({ blocked_by_me: false, closed: false, unread_count: 3 });
     expect(inbox.items[0].last_message).not.toBeNull();
+    expect((await f.inbox.inboxForCoach(COACH, {})).items.map((i) => i.client_id)).toEqual([CLIENT]);
     expect(await f.messaging.unreadCountForClient(CLIENT)).toEqual({ total: 3 });
+    const told = jest.fn();
+    await f.messaging.listThreadForClient(CLIENT, {}, told);
+    await f.messaging.listThreadForCoach(COACH, CLIENT, {}, told);
+    expect(told).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -111,11 +128,38 @@ describe('#168-4: a block closes the coaching 1:1 thread both ways', () => {
     expect(await f.messaging.listThreadForCoach(COACH, CLIENT, {})).toEqual([]);
     expect((await f.actions.listPins(await f.messaging.resolveThreadForClient(CLIENT))).items).toEqual([]);
     expect((await f.actions.listPins(await f.messaging.resolveThreadForCoach(COACH, CLIENT))).items).toEqual([]);
-    const client = (await f.inbox.inboxForClient(CLIENT)).items[0];
-    expect(client).toMatchObject({ closed: true, blocked_by_me: blocks[0][0] === CLIENT, last_message: null, unread_count: 0 });
-    const coach = (await f.inbox.inboxForCoach(COACH, {})).items[0];
-    expect(coach).toMatchObject({ closed: true, blocked_by_me: blocks[0][0] === COACH, last_message: null, unread_count: 0 });
+    // 10-23 "Dissapear": the chat leaves both lists (no row, no name, unread 0).
+    expect(await f.inbox.inboxForClient(CLIENT)).toEqual({ items: [], next_cursor: null, total_unread: 0 });
+    const coach = await f.inbox.inboxForCoach(COACH, {});
+    expect(coach.items).toEqual([]);
+    expect(coach.total_unread).toBe(0);
     expect(await f.messaging.unreadCountForClient(CLIENT)).toEqual({ total: 0 });
+    // A direct open still answers closed, from each person's side.
+    const clientSaw = jest.fn();
+    const coachSaw = jest.fn();
+    await f.messaging.listThreadForClient(CLIENT, {}, clientSaw);
+    await f.messaging.listThreadForCoach(COACH, CLIENT, {}, coachSaw);
+    const byClient = blocks[0][0] === CLIENT;
+    expect(clientSaw).toHaveBeenCalledWith(byClient ? 'blocked_by_you' : 'blocked_by_them');
+    expect(coachSaw).toHaveBeenCalledWith(byClient ? 'blocked_by_them' : 'blocked_by_you');
+  });
+
+  it('B5: no voice upload URL across a block, either side, either direction', async () => {
+    const control = fixture([]);
+    const okUpload = jest.fn().mockResolvedValue({ upload_url: 'u', public_url: 'p' });
+    Reflect.set(control.messaging, 'voiceUpload', { createSignedUpload: okUpload });
+    await control.messaging.createThreadVoiceUpload(CLIENT, null, VOICE);
+    await control.messaging.createThreadVoiceUpload(COACH, CLIENT, VOICE);
+    expect(okUpload).toHaveBeenCalledTimes(2);
+    for (const blocks of [[[COACH, CLIENT]], [[CLIENT, COACH]]] as Array<Array<[string, string]>>) {
+      const f = fixture(blocks);
+      const upload = jest.fn();
+      Reflect.set(f.messaging, 'voiceUpload', { createSignedUpload: upload });
+      for (const call of [() => f.messaging.createThreadVoiceUpload(CLIENT, null, VOICE), () => f.messaging.createThreadVoiceUpload(COACH, CLIENT, VOICE)]) {
+        await expect(call()).rejects.toMatchObject({ status: 403, response: { code: 'messaging.blocked' } });
+      }
+      expect(upload).not.toHaveBeenCalled();
+    }
   });
 
   it.each([
