@@ -213,7 +213,7 @@ describe('AiGatewayService', () => {
       canCharge: jest.fn(async () => ({ allowed: true, budget: { actual_used_cents: 0, total_actual_available_cents: 4000 } })) };
     const complete = jest.fn(async () => ({ text: 'ok', enabled: true, provider: 'anthropic', model: 'm', promptTokenEstimate: 10, responseTokenEstimate: 5, meta: {} }));
     const registry = new AiProviderRegistry(new StubProviderAdapter(), fakeOf({ name: 'anthropic', complete }));
-    const svc = new AiGatewayService(prisma, new AiGatewayConfig(), new AiRedactionService(), registry, grantAllEgress(), fakeOf(budget));
+    const svc = new AiGatewayService(prisma, new AiGatewayConfig(), new AiRedactionService(), registry, grantAllEgress(), fakeOf<NonNullable<ConstructorParameters<typeof AiGatewayService>[5]>>(budget));
     const ask = { capability: n, requester: { id: 'coach-1', role: 'coach' as const }, subjectUserId: clientId, tenantCoachId: 'coach-1',
       userMessage: 'Draft a check-in nudge.', systemPrompt: 'context', proposedActionPayload: { clientId, kind: 'check_in', body: 'How is the week?' } };
     for (const block of [{ blocker_id: 'coach-1', blocked_id: clientId }, { blocker_id: clientId, blocked_id: 'coach-1' }]) {
