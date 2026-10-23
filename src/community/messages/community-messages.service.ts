@@ -576,7 +576,7 @@ export class CommunityMessagesService {
     if (work.length > 0) {
       await this.repo
         .attemptImageErasure(this.images, work, this.logger)
-        .catch((e: unknown) => this.logger.warn(`community image erasure left to the cron: ${String(e)}`));
+        .catch(() => this.logger.warn('community image erasure left to the cron'));
     }
     return CommunityMessageResponseSchema.parse({ message: this.view(deleted) });
   }
