@@ -586,7 +586,9 @@ export class CheckoutRecoveryService implements OnModuleInit, OnModuleDestroy {
     await this.email.send({
       to,
       template: EmailTemplateKey.BUYER_EMAIL_CODE,
-      idempotencyKey: `buyer-code:${slot.slice(0, 32)}:${Math.floor(Date.now() / 60_000)}`,
+      // One key per minted code: a resend replaces the stored code, so it must
+      // never be deduped into the earlier email (EmailService skips a reused key).
+      idempotencyKey: `buyer-code:${randomUUID()}`,
       data: { first_name: firstNameOf(name), code },
     });
     return true;
