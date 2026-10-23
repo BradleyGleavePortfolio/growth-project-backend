@@ -561,7 +561,7 @@ export class PurchaseFanoutService {
     if (moved && this.sessions) {
       void this.sessions
         .finishMoveCancels(moved.clientId, moved.cancelled, 'student')
-        .catch((err: Error) => this.logger.warn(`house move: session clean-up failed client=${moved.clientId}: ${err.message}`));
+        .catch(() => this.logger.warn(`house move: session clean-up failed client=${moved.clientId}`));
     }
   }
 
