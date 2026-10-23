@@ -1974,11 +1974,6 @@ export class GuestCheckoutService {
     throw new SupabaseExistingUserNotFoundError();
   }
 
-  // Audit #3 P1-6 — flip a paid (or retryable) row to
-  // conversion_failed_retryable, increment retry_count, and stamp the
-  // attempt. Past RECONCILIATION_MAX_ATTEMPTS the row moves to
-  // conversion_failed_terminal and the operator dashboard pages on-call.
-  // last_error is a short tag (no PII).
   // GUEST-ELIGIBILITY (audit LS-1140 item 2) — the buyer paid, then the
   // one-coach rule refused delivery (their account has another coach).
   // Lasting, never retried: conversion_failed_terminal with last_error
@@ -2021,6 +2016,11 @@ export class GuestCheckoutService {
       });
   }
 
+  // Audit #3 P1-6 — flip a paid (or retryable) row to
+  // conversion_failed_retryable, increment retry_count, and stamp the
+  // attempt. Past RECONCILIATION_MAX_ATTEMPTS the row moves to
+  // conversion_failed_terminal and the operator dashboard pages on-call.
+  // last_error is a short tag (no PII).
   private async markRetryable(
     checkoutId: string,
     lastError: string,
