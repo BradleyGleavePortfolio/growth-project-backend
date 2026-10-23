@@ -8,6 +8,7 @@
  *   G  a guest checkout: the account is created with coach K inside the conversion transaction
  *   A  already K's client, buys PK (today's path, unchanged)
  *   Z  L's client: K is outside Z's scope, so the purchase is still refused
+ *   N  coachless, pays for PK2 whose video is gone: a resolver error that is not scope rolls back
  * The real fan-out, the four real resolvers (real MessagingService and WorkoutBuilderService) and
  * the real DripDispatcherCron run on the superuser connection, as the API does, with a 5-connection
  * pool because the delegates read and write on their own connections. Row reads run as the
@@ -22,7 +23,7 @@ import { SupabaseService } from '../../src/supabase/supabase.service';
 import { MessagingService } from '../../src/messaging/messaging.service';
 import { CoachMediaService } from '../../src/coach-media/coach-media.service';
 import { AssignableAssetResolverRegistry } from '../../src/packages/asset-resolvers/assignable-asset-resolver.registry';
-import { SubCoachOutOfScopeError } from '../../src/packages/asset-resolvers/assignable-asset-resolver.errors';
+import { MediaAssetNotFoundError, SubCoachOutOfScopeError } from '../../src/packages/asset-resolvers/assignable-asset-resolver.errors';
 import { AutoMessageAssetResolver } from '../../src/packages/asset-resolvers/auto-message.resolver';
 import { MealPlanAssetResolver } from '../../src/packages/asset-resolvers/meal-plan.resolver';
 import { MediaAssetResolver } from '../../src/packages/asset-resolvers/media-asset.resolver';
@@ -44,7 +45,7 @@ if (!DB_URL && process.env.CI === 'true') {
 (DB_URL ? describe : describe.skip)('FX-JOIN: paid-join content reaches the new client', () => {
   const prisma = new PrismaService({ datasources: { db: { url: DB_URL.replace('connection_limit=1', 'connection_limit=5') } } });
   const run = randomUUID().slice(0, 8);
-  const [K, L, S, G, A, Z, PK, V, MP, W] = ['K', 'L', 'S', 'G', 'A', 'Z', 'PK', 'V', 'MP', 'W'].map((t) => `${t}-${run}`);
+  const [K, L, S, G, A, Z, N, PK, PK2, V, MP, W] = ['K', 'L', 'S', 'G', 'A', 'Z', 'N', 'PK', 'PK2', 'V', 'MP', 'W'].map((t) => `${t}-${run}`);
   const WELCOME = 'Welcome aboard. Your first week is ready.';
 
   const scope = new SubCoachScopeService(prisma);
@@ -71,11 +72,11 @@ if (!DB_URL && process.env.CI === 'true') {
 
   const person = (id: string, role: 'coach' | 'student', coach_id: string | null, db: Prisma.TransactionClient = prisma) =>
     db.user.create({ data: { id, supabase_id: id, email: `fxjoin-${id}`, name: 'Live person', role, coach_id } });
-  /** `who` pays for PK; `before` runs first in the same transaction (the guest checkout's account). */
-  const pay = async (who: string, entrypoint: FanoutContext['entrypoint'], before?: (tx: Prisma.TransactionClient) => Promise<unknown>) => {
+  /** `who` pays for `pkg`; `before` runs first in the same transaction (the guest checkout's account). */
+  const pay = async (who: string, entrypoint: FanoutContext['entrypoint'], before?: (tx: Prisma.TransactionClient) => Promise<unknown>, pkg = PK) => {
     const id = randomUUID();
     const sale = {
-      id, client_user_id: who, coach_user_id: K, package_id: PK, amount_cents: 4900, status: 'paid' as const,
+      id, client_user_id: who, coach_user_id: K, package_id: pkg, amount_cents: 4900, status: 'paid' as const,
       entitlement_active: true, stripe_checkout_session_id: `cs_${id}`, idempotency_key: `idem-${id}`,
     };
     await prisma.$transaction(async (tx) => {
@@ -86,8 +87,8 @@ if (!DB_URL && process.env.CI === 'true') {
     return id;
   };
   /** Replays the entitlement for an existing purchase (a Stripe webhook redelivery re-enters the fan-out). */
-  const replay = (purchaseId: string, who: string) =>
-    prisma.$transaction((tx) => fanout.onPurchaseEntitled({ id: purchaseId }, { entrypoint: 'in_app_hosted', coachId: K, clientId: who }, tx), { timeout: 20_000 });
+  const replay = (purchaseId: string, who: string, entrypoint: FanoutContext['entrypoint'] = 'in_app_hosted') =>
+    prisma.$transaction((tx) => fanout.onPurchaseEntitled({ id: purchaseId }, { entrypoint, coachId: K, clientId: who }, tx), { timeout: 20_000 });
   /** Each drop of the purchase: '<type> <status>'. */
   const drops = async (purchaseId: string) =>
     (await prisma.scheduledDrop.findMany({ where: { client_purchase_id: purchaseId } })).map((d) => `${d.asset_type} ${d.status}`).sort();
@@ -128,7 +129,8 @@ if (!DB_URL && process.env.CI === 'true') {
     await person(S, 'student', null);
     await person(A, 'student', K);
     await person(Z, 'student', L);
-    await prisma.coachPackage.create({ data: { id: PK, coach_id: K, name: 'Getting started', amount_cents: 4900 } });
+    await person(N, 'student', null);
+    for (const id of [PK, PK2]) await prisma.coachPackage.create({ data: { id, coach_id: K, name: 'Getting started', amount_cents: 4900 } });
     await prisma.coachMediaAsset.create({
       data: { id: V, coach_id: K, kind: 'video', title: 'Week 1', status: 'ready', provider: 'mux', storage_key: `mux-${V}`, mux_playback_id: `play-${V}` },
     });
@@ -141,6 +143,7 @@ if (!DB_URL && process.env.CI === 'true') {
         { ...item, asset_type: 'meal_plan', asset_id: MP },
         { ...item, asset_type: 'workout_plan', asset_id: W },
         { ...item, asset_type: 'auto_message', asset_id: randomUUID(), display_caption: WELCOME },
+        { ...item, package_id: PK2, asset_type: 'video', asset_id: randomUUID() },
       ],
     });
   });
@@ -178,11 +181,14 @@ if (!DB_URL && process.env.CI === 'true') {
     expect([await drops(purchases.S), await holds(S)]).toEqual([afterTick, [1, 1, 1, 1]]);
   });
 
-  it('a guest checkout that creates the account with the coach: every item arrives once', async () => {
+  it('a guest checkout that creates the account with the coach: every item arrives once, a replay before the tick too', async () => {
     purchases.G = await pay(G, 'storefront_guest', (tx) => person(G, 'student', K, tx));
     expect([await drops(purchases.G), await holds(G)]).toEqual([deferred, [1, 1, 0, 0]]);
+    // A redelivered event before the dispatcher's tick: the attach is committed now, so the replay
+    // delivers the two waiting items itself, and the tick then finds nothing due.
+    await replay(purchases.G, G, 'storefront_guest');
     await tick();
-    expect([await drops(purchases.G), await holds(G), await sees(G, 'student', G)]).toEqual([afterTick, [1, 1, 1, 1], [1, 1, 1]]);
+    expect([await drops(purchases.G), await holds(G), await sees(G, 'student', G)]).toEqual([inline, [1, 1, 1, 1], [1, 1, 1]]);
     expect(await video(G)).toBe(`mux:play-${V}`);
   });
 
@@ -196,5 +202,11 @@ if (!DB_URL && process.env.CI === 'true') {
     expect(await coachOf(Z)).toBe(L);
     expect(await prisma.clientPurchase.count({ where: { client_user_id: Z } })).toBe(0);
     expect(await holds(Z)).toEqual([0, 0, 0, 0]);
+  });
+
+  it('a resolver error that is not scope still rolls back the whole purchase, attach included', async () => {
+    await expect(pay(N, 'in_app_hosted', undefined, PK2)).rejects.toBeInstanceOf(MediaAssetNotFoundError);
+    expect(await coachOf(N)).toBeNull();
+    expect(await prisma.clientPurchase.count({ where: { client_user_id: N } })).toBe(0);
   });
 });
