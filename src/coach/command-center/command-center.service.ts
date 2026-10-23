@@ -503,13 +503,12 @@ export class CommandCenterService {
       // so `sender_id IN clientIds` is exactly "sent by a client"; every
       // coach-side send (head OR sub) is excluded because their ids are not
       // in the client set. Head-coach semantics are unchanged.
-      this.prisma.coachMessage.count({
-        where: {
-          coach_id: ownerCoachId,
-          client_id: { in: clientIds },
-          read_at: null,
-          sender_id: { in: clientIds },
-        },
+      // FX-1141: a chat in a block either way counts 0 in the unread tile.
+      inBlockWith(this.prisma, coachId, clientIds).then((blocked) => {
+        const open = clientIds.filter((id) => !blocked.has(id));
+        return this.prisma.coachMessage.count({
+          where: { coach_id: ownerCoachId, client_id: { in: open }, read_at: null, sender_id: { in: open } },
+        });
       }),
     ]);
 
@@ -822,8 +821,12 @@ export class CommandCenterService {
     // threads live under the head coach's coach_id; sender_id captures who
     // actually sent), so we filter messages by (coach_id = owner,
     // client_id IN assigned).
-    const { clientIds, ownerCoachId, nameMap } =
+    const { clientIds: roster, ownerCoachId, nameMap } =
       await this.resolveScopeWithNames(coachId);
+    // 10-23 "Dissapear": a chat in a block either way leaves the Inbox tab
+    // (no row, no words, unread 0 in the total); unblock brings it back.
+    const blocked = await inBlockWith(this.prisma, coachId, roster);
+    const clientIds = roster.filter((id) => !blocked.has(id));
     if (clientIds.length === 0) {
       return { threads: [], total_unread: 0 };
     }

@@ -518,6 +518,32 @@ describe('CommandCenterService.getInbox', () => {
     expect(out.total_unread).toBe(1);
   });
 
+  // FX-1141 (Opus B1, 10-23 "Dissapear"): a chat in a block either way
+  // leaves the Inbox tab and counts 0 in its total and the overview tile.
+  it.each([
+    ['the client blocked the coach', { blocker_id: 'u2', blocked_id: 'c1' }],
+    ['the coach blocked the client', { blocker_id: 'c1', blocked_id: 'u2' }],
+  ])('%s: the thread leaves the inbox and every unread count', async (_label, block) => {
+    const users = ['u1', 'u2'].map((id) => ({ id, name: id, coach_id: 'c1', role: 'student', deleted_at: null }));
+    const at = new Date(PINNED_NOW - 1000);
+    const messages = ['u1', 'u2'].map((id) => ({
+      id: `m-${id}`, coach_id: 'c1', client_id: id, sender_id: id, body: `words of ${id}`, read_at: null, created_at: at,
+    }));
+    const control = new CommandCenterService(buildPrisma({ users, messages }), buildAdminPtm(), buildAlertsService());
+    expect((await control.getInbox('c1', {})).threads.map((t) => t.client_id).sort()).toEqual(['u1', 'u2']);
+    expect((await control.getOverview('c1')).unread_messages).toBe(2);
+    const prisma = buildPrisma({ users, messages });
+    prisma.userBlock.findMany = jest.fn(async ({ where }: any) =>
+      where.OR.some((o: any) => (o.blocker_id === block.blocker_id && o.blocked_id.in.includes(block.blocked_id)) ||
+        (o.blocked_id === block.blocked_id && o.blocker_id.in.includes(block.blocker_id))) ? [block] : []);
+    const svc = new CommandCenterService(prisma, buildAdminPtm(), buildAlertsService());
+    const out = await svc.getInbox('c1', {});
+    expect(out.threads.map((t) => t.client_id)).toEqual(['u1']);
+    expect(JSON.stringify(out)).not.toContain('words of u2');
+    expect(out.total_unread).toBe(1);
+    expect((await svc.getOverview('c1')).unread_messages).toBe(1);
+  });
+
   it('truncates last_message_preview to 120 chars', async () => {
     const longBody = 'x'.repeat(500);
     const users = [{ id: 'u1', name: 'Alice', coach_id: 'c1', role: 'student', deleted_at: null }];

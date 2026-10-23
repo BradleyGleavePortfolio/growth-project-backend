@@ -178,6 +178,10 @@ export function makeMockPrisma(): MockPrisma {
     coachMessage: {
       findMany: jest.fn(),
     },
+    // FX-1141: the block-pair read (no block unless a spec sets one).
+    userBlock: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
     $queryRaw: jest.fn(),
   };
 }
