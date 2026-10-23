@@ -84,6 +84,8 @@ const TEMPLATE_SUBJECTS: Record<EmailTemplateKey, string> = {
     '{{#if clientName}}A payment from {{clientName}} needs attention{{else}}A client payment needs attention{{/if}}',
   // B-REPORTALERT-125 — ReportAlertService passes the subject (self-harm first).
   'report-alert': '{{#if subject}}{{subject}}{{else}}A new user report needs review{{/if}}',
+  // GUEST-ELIGIBILITY — approved (owner 10-23 10:57 PDT, A6.0-170).
+  'buyer-email-code': 'Your TGP Fitness code',
 };
 
 // MONEY-MAIL-128 (FW-MONEY-128 B-2) — payment and dunning emails come from a

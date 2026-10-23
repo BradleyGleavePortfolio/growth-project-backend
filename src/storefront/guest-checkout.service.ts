@@ -40,6 +40,7 @@ import { alertCoachOfFlaggedJoinTx } from '../onboarding/flagged-join-alert';
 import { type GuestCheckoutStatus } from './guest-checkout-status';
 import { EmailSenderConfigError, resolveEmailSender } from '../email/email-sender';
 import { SELLING_COACH } from '../packages/coach-selling';
+import { BuyerHasOtherCoachError, assertBuyerMayPay, buyerVerdict } from './buyer-check';
 
 // S-FEE — guest storefront charges are separate charges and transfers, like
 // every other checkout path. The PaymentIntent / Subscription carries NO
@@ -379,6 +380,17 @@ export class GuestCheckoutService {
 
     const normalisedEmail = dto.guest_email.toLowerCase().trim();
     const normalisedName = dto.guest_name.trim();
+
+    // GUEST-ELIGIBILITY (audit LS-1140 item 2, owner #170-2) — before any
+    // row, idempotency replay or Stripe object: a new email passes; an
+    // existing TGP email needs a fresh code proof for this email + package,
+    // then must be a buyer this coach can take (#SWITCH-V1 otherwise).
+    await assertBuyerMayPay(this.prisma, this.config, {
+      shareToken: token,
+      sellingCoachId: pkg.coach.id,
+      email: normalisedEmail,
+      buyerToken: dto.buyer_token,
+    });
 
     // R47 / Audit #6 P0-5 — validate the optional landing_page_id query
     // param. We must defend against three classes of abuse:
@@ -1590,6 +1602,12 @@ export class GuestCheckoutService {
           },
           update: {},
         });
+        // GUEST-ELIGIBILITY — settlement keeps the one-coach boundary: an
+        // account that gained another coach after the code check is held
+        // for refund (holdForRefund), never re-parented or retried.
+        if (buyerVerdict(dbUser, checkout.package.coach_id) === 'other_coach') {
+          throw new BuyerHasOtherCoachError();
+        }
         if (dbUser.coach_id == null && dbUser.role === 'student') {
           // User existed but had no coach (rare — orphaned account).
           // Attach them to the package's coach.  Done as a separate
@@ -1772,6 +1790,10 @@ export class GuestCheckoutService {
         }
       });
     } catch (err) {
+      if (err instanceof BuyerHasOtherCoachError) {
+        await this.holdForRefund(checkout);
+        return;
+      }
       // Audit #3 P1-6 — DB transaction failures (deadlocks, unique
       // races, connection drops) are transient. Flip to
       // conversion_failed_retryable; the reconciliation worker will
@@ -1957,6 +1979,48 @@ export class GuestCheckoutService {
   // attempt. Past RECONCILIATION_MAX_ATTEMPTS the row moves to
   // conversion_failed_terminal and the operator dashboard pages on-call.
   // last_error is a short tag (no PII).
+  // GUEST-ELIGIBILITY (audit LS-1140 item 2) — the buyer paid, then the
+  // one-coach rule refused delivery (their account has another coach).
+  // Lasting, never retried: conversion_failed_terminal with last_error
+  // 'buyer_has_other_coach' and retry_count at the cap (the reconciler only
+  // takes paid / conversion_failed_retryable). Operator: the error log line
+  // below. Coach: an in-app alert. Refund path (existing): refund the
+  // PaymentIntent in Stripe; charge.refunded -> handleChargeRefunded moves
+  // the row to 'refunded', pauses any subscription and tells the coach.
+  private async holdForRefund(checkout: CheckoutWithRelations): Promise<void> {
+    const moved = await this.prisma.guestCheckout.updateMany({
+      where: { id: checkout.id, status: { in: ['paid', 'conversion_failed_retryable'] } },
+      data: {
+        status: 'conversion_failed_terminal',
+        retry_count: RECONCILIATION_MAX_ATTEMPTS,
+        last_error: 'buyer_has_other_coach',
+        last_retry_at: new Date(),
+      },
+    });
+    this.logger.error(
+      `GuestCheckout ${checkout.id} held for refund (last_error=buyer_has_other_coach): refund pi=${checkout.stripe_payment_intent_id} in Stripe; charge.refunded closes the row`,
+    );
+    if (moved.count === 0) return;
+    await this.notifications
+      .createNotification({
+        user_id: checkout.package.coach_id,
+        kind: NotificationKind.COACH_ALERT,
+        body: `A buyer paid for ${checkout.package.name}, but their account already has another coach, so nothing was delivered. The payment needs a refund.`,
+        payload: {
+          event: 'guest_purchase_held_for_refund',
+          reason: 'buyer_has_other_coach',
+          guest_checkout_id: checkout.id,
+          payment_intent_id: checkout.stripe_payment_intent_id,
+        },
+        channel: 'inapp',
+      })
+      .catch((err) => {
+        this.logger.warn(
+          `held-for-refund coach alert failed checkout=${checkout.id} (tag=${safeErrorTag(err)})`,
+        );
+      });
+  }
+
   private async markRetryable(
     checkoutId: string,
     lastError: string,

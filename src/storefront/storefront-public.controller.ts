@@ -28,6 +28,8 @@ import {
   GuestCheckoutDto,
   GuestCheckoutResumeDto,
   SendRecoveryLinkDto,
+  CheckBuyerEmailDto,
+  VerifyBuyerCodeDto,
 } from './storefront.dto';
 import { GuestCheckoutService } from './guest-checkout.service';
 import { StorefrontService } from './storefront.service';
@@ -437,6 +439,64 @@ export class StorefrontPublicController {
       );
     }
     return this.recovery.sendRecoveryLink(token, body.guest_email);
+  }
+
+  // GUEST-ELIGIBILITY (owner #170-2) — POST …/checkout/check-email.
+  // { account: 'new' | 'existing' } and nothing else (no name, coach or
+  // package before the code). An existing email is sent a 6-digit code
+  // off the response path. Per IP 10/hr (this route answers "has an
+  // account", so it is the one that bounds email testing) + 10/min.
+  @Public()
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @Post('join/:token/checkout/check-email')
+  @HttpCode(HttpStatus.OK)
+  async checkBuyerEmail(
+    @Param('token', new ShareTokenPipe()) token: string,
+    @Body() body: CheckBuyerEmailDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    await this.buyerRate(req, res, RATE_LIMIT_SCOPES.CheckEmail);
+    return this.recovery.checkBuyerEmail(token, body.guest_email);
+  }
+
+  // GUEST-ELIGIBILITY — POST …/checkout/verify-code. Per IP 10/hr on top
+  // of the 5 tries each code allows. 200 { verified, first_name, summary,
+  // buyer_token } | 400 BUYER_CODE_INVALID | 409 BUYER_HAS_COACH /
+  // BUYER_NOT_CLIENT (refusals only ever follow a right code).
+  @Public()
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @Post('join/:token/checkout/verify-code')
+  @HttpCode(HttpStatus.OK)
+  async verifyBuyerCode(
+    @Param('token', new ShareTokenPipe()) token: string,
+    @Body() body: VerifyBuyerCodeDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    await this.buyerRate(req, res, RATE_LIMIT_SCOPES.VerifyCode);
+    return this.recovery.verifyBuyerCode(token, body.guest_email, body.code);
+  }
+
+  private async buyerRate(
+    req: Request,
+    res: Response,
+    scope: typeof RATE_LIMIT_SCOPES.CheckEmail | typeof RATE_LIMIT_SCOPES.VerifyCode,
+  ): Promise<void> {
+    const rate = await this.ipLimiter.checkAndIncrement(this.extractIp(req), {
+      scope,
+      maxAttempts: 10,
+    });
+    if (rate.allowed) return;
+    res.setHeader('Retry-After', String(rate.retryAfterSeconds));
+    throw new HttpException(
+      {
+        error: 'TOO_MANY_REQUESTS',
+        message: 'Too many checkout attempts. Please try again later.',
+        retry_after_seconds: rate.retryAfterSeconds,
+      },
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
   }
 
   // r48 #5 — GET /v1/packages/public/join/:token/checkout/resume/:jwt
