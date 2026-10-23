@@ -112,9 +112,13 @@ export async function rowsByAuthorsWhoStay<T>(
 
 /** C6-MOVED-PRIVILEGED-READS: the same rule for a list bounded by a limit, which must leave rows out in the
  * query itself (a filter after the limit would drop rows from the page). The [space, author] pairs of these
- * spaces' posts and chat whose author app.community_author_stays no longer keeps. One round trip; the rule is
- * asked once per pair. */
-export async function authorsWhoLeft(prisma: PrismaService, spaceIds: string[]): Promise<Array<[string, string]>> {
+ * spaces' posts and chat whose author app.community_author_stays no longer keeps, or (#168-4) whose author is
+ * banned from that community, or who is in a block with `viewerId` either way. One round trip. */
+export async function authorsWhoLeft(
+  prisma: PrismaService,
+  spaceIds: string[],
+  viewerId = '',
+): Promise<Array<[string, string]>> {
   if (spaceIds.length === 0) return [];
   const rows = await prisma.$queryRaw<{ s: string; a: string }[]>`
     WITH t AS MATERIALIZED (
@@ -122,6 +126,11 @@ export async function authorsWhoLeft(prisma: PrismaService, spaceIds: string[]):
         WHERE "cohort_id" = ANY(${spaceIds}::uuid[]) AND "deleted_at" IS NULL
       UNION SELECT "workspace_id", "cohort_id", "author_id" FROM "community_posts"
         WHERE "cohort_id" = ANY(${spaceIds}::uuid[]) AND "deleted_at" IS NULL)
-    SELECT t."s"::text AS "s", t."a" FROM t WHERE NOT app.community_author_stays(t."w", t."s", t."a")`;
+    SELECT t."s"::text AS "s", t."a" FROM t WHERE NOT app.community_author_stays(t."w", t."s", t."a")
+      OR EXISTS (SELECT 1 FROM "community_workspace_bans" b
+                 WHERE b."workspace_id" = t."w" AND b."user_id" = t."a" AND b."lifted_at" IS NULL)
+      OR EXISTS (SELECT 1 FROM "UserBlock" ub
+                 WHERE (ub."blocker_id" = ${viewerId} AND ub."blocked_id" = t."a")
+                    OR (ub."blocker_id" = t."a" AND ub."blocked_id" = ${viewerId}))`;
   return rows.map((r) => [r.s, r.a]);
 }

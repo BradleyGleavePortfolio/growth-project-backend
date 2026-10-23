@@ -146,6 +146,7 @@ function build(opts: { blocked?: string[]; eitherBlocked?: boolean } = {}) {
       })),
     },
     conversationReview: { upsert: jest.fn(), findUnique: jest.fn() },
+    userBlock: { findMany: jest.fn().mockResolvedValue([]) }, // #168-4: who blocked the caller
     $queryRaw: jest.fn().mockResolvedValue([]),
     $transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
   };

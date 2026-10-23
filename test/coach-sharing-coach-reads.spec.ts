@@ -109,6 +109,7 @@ function makePrisma() {
     id, coach_id: COACH, client_id, alert_type, message: alert_type, created_at: ago(n * 60_000), acknowledged_at: null,
   });
   const t: Record<string, Row[]> = {
+    userBlock: [], // #168-4: no blocks
     user: ids.map((id) => ({ id, name: `Client ${id}`, role: 'student', coach_id: COACH, deleted_at: null })),
     clientCoachConsent: [
       ...FOUR.map((s) => grant('c1', s, false)),
