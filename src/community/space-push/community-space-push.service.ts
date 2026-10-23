@@ -124,7 +124,7 @@ export class CommunitySpacePushService implements OnModuleInit {
         where: { cohort_id: cohortId, user_id: { in: everyone } },
         select: { user_id: true, notify_mode: true, silenced_until: true },
       }),
-      this.prisma.communityCohort.findUniqueOrThrow({ where: { id: cohortId }, select: { posting_policy: true } }),
+      this.prisma.communityCohort.findUniqueOrThrow({ where: { id: cohortId }, select: { kind: true } }),
     ]);
     const hidden = new Set(blocks.flatMap((b) => [b.blocker_id, b.blocked_id]));
     const rowOf = new Map(rows.map((r) => [r.user_id, r]));

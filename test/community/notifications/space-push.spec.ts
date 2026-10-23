@@ -118,7 +118,7 @@ describe('SC-PUSH service', () => {
     process.env.FEATURE_COMMUNITY_SPACE_PUSH = 'true';
     prisma.communityMessage.findFirst.mockResolvedValue({ id: 'm1', workspace_id: 'w', cohort_id: 'c1', sender_id: S, parent_message_id: null, high_alert: false, deleted_at: null });
     prisma.communityCohort.findUnique.mockResolvedValue({ name: 'Team' });
-    prisma.communityCohort.findUniqueOrThrow.mockResolvedValue({ posting_policy: 'coach' }); // default All
+    prisma.communityCohort.findUniqueOrThrow.mockResolvedValue({ kind: 'announcement' }); // an Announcements space defaults to All (#167-8)
     // readersNow, then one unread count per reader on All
     // mockReset: clearAllMocks keeps an unused once-queue from the test before.
     prisma.$queryRaw.mockReset().mockResolvedValueOnce([{ id: S }, { id: 'a' }, { id: 'blocked' }, { id: 'blocker' }]).mockResolvedValue([{ c: 'c1', n: 2 }]);
