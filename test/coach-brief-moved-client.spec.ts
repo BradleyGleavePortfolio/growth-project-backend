@@ -237,9 +237,7 @@ describe('B-939-1 stored briefs after a client moves (owner decision 4)', () => 
     const { prisma, svc } = stored(KEPT_ONLY);
     prisma.userBlock.findMany.mockResolvedValue([block]);
     const out = await svc.generateBrief('S', 'America/Los_Angeles', '2026-10-10');
-    expect(prisma.coachBrief.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: 'generating' }) }),
-    );
+    expect(prisma.coachBrief.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'generating' }) }));
     expect(out.summary?.narrative).not.toBe(KEPT_ONLY.narrative);
     expect(JSON.stringify(out)).not.toContain('Can we move my session');
     prisma.coachBrief.count.mockResolvedValue(1);
