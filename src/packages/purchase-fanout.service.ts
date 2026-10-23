@@ -559,7 +559,9 @@ export class PurchaseFanoutService {
     this.pendingMoveCancels.delete(purchaseId);
     // The client's purchase made the move, so the client is the actor.
     if (moved && this.sessions) {
-      void this.sessions.finishMoveCancels(moved.clientId, moved.cancelled, 'student').catch(() => undefined);
+      void this.sessions
+        .finishMoveCancels(moved.clientId, moved.cancelled, 'student')
+        .catch((err: Error) => this.logger.warn(`house move: session clean-up failed client=${moved.clientId}: ${err.message}`));
     }
   }
 

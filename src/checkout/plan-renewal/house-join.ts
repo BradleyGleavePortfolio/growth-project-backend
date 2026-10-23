@@ -52,7 +52,7 @@ export const freeTrialPackage = (pkg: CoachPackage): boolean => packageTrialDays
  * The door for one package, used by the package detail and all three checkout
  * paths (the list filters its rows with freeTrialPackage): a house package
  * that offers a free trial is not part of the door, so it gets the same 404
- * as any other cross-coach package. The door sells only packages that take
+ * as every other cross-coach package. The door sells only packages that take
  * payment at checkout, and a door purchase never starts a trial.
  */
 export async function houseJoinToBuy(

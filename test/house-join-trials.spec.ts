@@ -1,7 +1,7 @@
 // HOUSE-SERVER (agent 167) — owner "#166-6 HOUSE-TRIALS - offer no free
 // trials from the house in v1". A house package that offers a free trial is
 // not part of the house door: the list leaves it out and the detail answers
-// the same 404 as any other cross-coach package, while a paid house package
+// the same 404 that every other cross-coach package gets, while a paid house package
 // stays on the door. The live-DB proof of all three checkout paths is in
 // test/rls/house-join-rls.spec.ts; this spec pins the rule itself.
 import { Logger } from '@nestjs/common';
