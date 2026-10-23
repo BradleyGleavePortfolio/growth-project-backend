@@ -15,6 +15,7 @@ import { PrismaService } from '../../prisma.service';
 import { sanitizePromptInput } from '../../ai/utils/sanitize-prompt-input';
 import { localClock, localDateOf, selectWearableProviders } from '../context/roman-client-context.service';
 import { METRIC_AGGREGATION } from '../../wearables/samples/metric-bucket.map';
+import { withoutCites } from '../../copilot/copilot-turn';
 
 export const ROMAN_EXTRA_HISTORY_KINDS = ['health_day', 'fasting', 'roman_chat', 'community_post'] as const;
 export type RomanExtraHistoryKind = (typeof ROMAN_EXTRA_HISTORY_KINDS)[number];
@@ -179,11 +180,12 @@ export class RomanExtraHistory {
       },
       orderBy: { created_at: 'asc' },
       take: CAP + 1,
-      select: { created_at: true, role: true, content: true },
+      select: { created_at: true, role: true, content: true, copilot: true },
     });
     const events: ExtraEvent[] = [];
     for (const r of rows.slice(0, CAP)) {
-      const text = clamp(r.content, 300);
+      // COPILOT-BE2: a Copilot reply's [n] markers mean nothing outside its own turn.
+      const text = clamp(r.copilot ? withoutCites(r.content) : r.content, 300);
       if (!text) continue;
       const c = localClock(r.created_at, w.tz);
       const from = r.role === 'user' ? 'client' : 'roman';

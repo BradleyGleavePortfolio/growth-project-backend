@@ -126,6 +126,15 @@ import { ROMAN_TURN_AUGMENTER_TIMEOUT_MS } from './roman.constants';
 import { ROMAN_TOOL_LIMITS, ROMAN_TOOLBOX, type RomanToolbox } from './tools/roman-tool.types';
 import { isRomanToolsEnabled } from './tools/roman-tools.feature';
 import { RomanToolLoop, withToolFacts } from './tools/roman-tool-loop';
+import {
+  CopilotTurnService,
+  copilotChange,
+  copilotSection,
+  splitCopilotReply,
+  withoutCites,
+  type CopilotReply,
+  type StoredCopilot,
+} from '../copilot/copilot-turn';
 
 /** Minimal caller identity the service needs (from the authenticated User). */
 export interface RomanCaller {
@@ -144,6 +153,8 @@ export interface RomanStreamChunk {
   messageId?: string;
   /** True on `done` when the turn was persisted from a partial stream. */
   interrupted?: boolean;
+  /** COPILOT-BE2: on `done` of a Copilot turn only (the app sent ROMAN_COPILOT_HEADER). */
+  copilot?: CopilotReply;
 }
 
 /** Cursor-paginated message page (newest first). */
@@ -262,6 +273,10 @@ export class RomanService {
     @Optional()
     @Inject(CoachAlertsService)
     private readonly coachAlerts: CoachAlertsService | null = null,
+    // COPILOT-BE2: Path Copilot turns (RomanModule provides it).
+    @Optional()
+    @Inject(CopilotTurnService)
+    private readonly copilot: CopilotTurnService | null = null,
   ) {}
 
   // ─── Sessions ──────────────────────────────────────────────────────────────
@@ -615,6 +630,7 @@ export class RomanService {
       },
     });
     if (marked.count === 0) return false;
+    if (this.copilot) await this.copilot.forgetUnsent(tx, userId, sessionId);
     const erasedUserTurnsInWindow = await tx.romanMessage.count({
       where: {
         session_id: sessionId,
@@ -799,6 +815,7 @@ export class RomanService {
       modelId?: string | null;
       interrupted?: boolean;
       parentMessageId?: string | null;
+      copilot?: StoredCopilot;
     },
   ): Promise<RomanMessage> {
     return this.prisma.$transaction(async (tx) => {
@@ -823,6 +840,7 @@ export class RomanService {
           model_id: data.modelId ?? null,
           interrupted: data.interrupted ?? false,
           parent_message_id: data.parentMessageId ?? null,
+          ...(data.copilot ? { copilot: data.copilot } : {}),
         },
       });
     });
@@ -890,7 +908,8 @@ export class RomanService {
       .reverse()
       .map((m) => ({
         role: m.role === 'user' ? ('user' as const) : ('assistant' as const),
-        content: m.content,
+        // COPILOT-BE2: an earlier Copilot reply's [n] point at that turn's facts, not this one's.
+        content: m.copilot ? withoutCites(m.content) : m.content,
       }));
   }
 
@@ -918,7 +937,7 @@ export class RomanService {
   async *streamAssistantTurn(
     caller: RomanCaller,
     session: RomanSession,
-    opts: { signal?: AbortSignal; userMessage?: string; userMessageId?: string; usageDebit?: RomanUsageDebit | null } = {},
+    opts: { signal?: AbortSignal; userMessage?: string; userMessageId?: string; usageDebit?: RomanUsageDebit | null; copilot?: boolean } = {},
   ): AsyncGenerator<RomanStreamChunk> {
     // Defence-in-depth flag re-check (brief §1.6): never drive the model OFF.
     if (!isRomanChatEnabled()) {
@@ -994,6 +1013,15 @@ export class RomanService {
     // R11-T3: only a tools turn's prompt carries the tools and answer sections.
     const toolsTurn = this.toolsTurnOf(grounded && bundle !== null);
     const metBefore = grounded && (await this.hasEarlierChat(caller, session));
+    // COPILOT-BE2: a Copilot turn (grounded, with a bundle) adds the numbered facts; if they cannot be read it is a plain turn.
+    const copilot =
+      opts.copilot && grounded && bundle && this.copilot
+        ? await this.copilot.facts(caller.id, bundle.context).catch((err: unknown) => {
+            this.logger.warn(`roman.copilot_facts_unavailable session=${session.id} code=${(err as { code?: string }).code ?? 'unknown'}`);
+            return null;
+          })
+        : null;
+    const augments = [...(augmentRun?.applied.map((a) => a.block) ?? []), ...(copilot ? [copilotSection(copilot)] : [])];
 
     const system = buildRomanSystemPrompt({
       surface: session.surface,
@@ -1003,9 +1031,7 @@ export class RomanService {
       routerHint: routerHintFor(route.class),
       clientData: bundle?.rendered ?? null,
       clientDataUnavailable: contextUnavailable,
-      ...(augmentRun && augmentRun.applied.length > 0
-        ? { augments: augmentRun.applied.map((a) => a.block) }
-        : {}),
+      ...(augments.length > 0 ? { augments } : {}),
       ...(toolsTurn ? { tools: true } : {}),
       ...(metBefore ? { metBefore: true } : {}),
     });
@@ -1152,7 +1178,9 @@ export class RomanService {
       });
     }
 
-    const checked = postCheckRomanReply(acc, {
+    // COPILOT-BE2: the suggestion line never reaches the post-check, the store or the client as text.
+    const split = copilot ? splitCopilotReply(acc, copilot) : null;
+    const checked = postCheckRomanReply(split ? split.text : acc, {
       routerClass: route.class,
       context: bundle ? withToolFacts(postCheckContextOf(bundle.context), toolLoop) : null,
       contextUnavailable: grounded && contextUnavailable,
@@ -1173,6 +1201,12 @@ export class RomanService {
         ? `${checked.text}\n\n${ROMAN_COACH_TOLD_LINE}`
         : checked.text;
 
+    // COPILOT-BE2: the facts the checked reply still cites, and a suggestion only on a whole, normal, unrewritten reply.
+    const cited = copilot ? copilot.sources.filter((s) => reply.includes(`[${s.n}]`)) : [];
+    const change =
+      copilot && split && route.class === 'normal' && !checked.rewritten && !interrupted ? copilotChange(split.asked, copilot) : null;
+    const suggestionId = change ? randomUUID() : null;
+
     // Persisted ONCE, already checked: what is stored is what the client sees.
     let persisted: RomanMessage;
     try {
@@ -1183,6 +1217,7 @@ export class RomanService {
         completionTokens,
         modelId: ROMAN_MODEL_PHASE_1,
         interrupted,
+        ...(copilot ? { copilot: { question_id: opts.userMessageId ?? null, sources: cited, suggestion_id: suggestionId } } : {}),
       });
     } catch (err) {
       // The chat was deleted (or the write failed) while the model answered:
@@ -1212,8 +1247,10 @@ export class RomanService {
       `roman.turn session=${session.id} prompt_version=${romanPromptVersionOf(session.surface)} model_call=true rewritten=${checked.rewritten} guardrail_count=${checked.guardrails_applied.length} usage=${usage.kind} context=${bundle ? bundle.hash.slice(0, 12) : grounded ? 'unavailable' : 'none'}`,
     );
 
+    const suggestion = change && suggestionId && this.copilot ? await this.copilot.saveSuggestion(suggestionId, caller.id, session.id, change) : null;
+
     if (reply.length > 0) yield { type: 'delta', text: reply };
-    yield { type: 'done', text: reply, messageId: persisted.id, interrupted };
+    yield { type: 'done', text: reply, messageId: persisted.id, interrupted, ...(copilot ? { copilot: { sources: cited, suggestion } } : {}) };
   }
 
   /**
