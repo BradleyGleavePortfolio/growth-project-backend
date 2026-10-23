@@ -131,12 +131,18 @@ function recordingPrisma(
 }
 
 function storageClient(
-  opts: { failRemove?: boolean; keepObjects?: boolean; log?: Call[]; txState?: TxState } = {},
+  opts: { failRemove?: boolean; failRemoveIn?: string; keepObjects?: boolean; log?: Call[]; txState?: TxState } = {},
 ) {
   const removed: string[][] = [];
   const listed: string[] = [];
-  let folder = ['orphan-upload.m4a', 'note-a.m4a'];
-  const bucket = {
+  // FX-1139 (Sol C2): each bucket holds its own folder, so a test tells a
+  // photo removal in community-images from a voice removal in voice-notes.
+  const folders: Record<string, string[]> = {
+    'voice-notes': ['orphan-upload.m4a', 'note-a.m4a'],
+    'community-images': ['photo.jpg', 'photo.sent.jpg'],
+  };
+  const removedIn: Record<string, string[]> = {};
+  const bucketOf = (name: string) => ({
     remove: jest.fn(async (keys: string[]) => {
       opts.log?.push({
         delegate: 'storage',
@@ -145,28 +151,30 @@ function storageClient(
         tx: opts.txState?.current,
       });
       removed.push(keys);
-      if (opts.failRemove) return { data: null, error: { message: 'storage down' } };
-      if (!opts.keepObjects) folder = folder.filter((n) => !keys.includes(`${USER_ID}/${n}`));
-      return { data: keys.map((name) => ({ name })), error: null };
+      (removedIn[name] ??= []).push(...keys);
+      if (opts.failRemove || opts.failRemoveIn === name) return { data: null, error: { message: 'storage down' } };
+      if (!opts.keepObjects) folders[name] = (folders[name] ?? []).filter((n) => !keys.includes(`${USER_ID}/${n}`));
+      return { data: keys.map((key) => ({ name: key })), error: null };
     }),
     list: jest.fn(async (prefix: string) => {
       listed.push(prefix);
-      return { data: folder.map((name) => ({ name })), error: null };
+      return { data: (folders[name] ?? []).map((n) => ({ name: n })), error: null };
     }),
     info: jest.fn(async (key: string) =>
-      removed.some((batch) => batch.includes(key)) && !opts.keepObjects
+      (removedIn[name] ?? []).includes(key) && !opts.keepObjects && opts.failRemoveIn !== name
         ? { data: null, error: { message: 'Object not found', statusCode: '404' } }
         : { data: { size: 1, contentType: 'audio/mp4' }, error: null },
     ),
-  };
+  });
+  const buckets = new Map<string, ReturnType<typeof bucketOf>>();
   const client = {
     auth: { admin: { deleteUser: jest.fn(async () => ({ error: null })) } },
     storage: {
-      from: jest.fn(() => bucket),
+      from: jest.fn((name: string) => buckets.get(name) ?? buckets.set(name, bucketOf(name)).get(name)!),
       getBucket: jest.fn(async (id: string) => ({ data: { id, name: id }, error: null })),
     },
   };
-  return { client, removed, listed };
+  return { client, removed, listed, removedIn };
 }
 
 function build(prisma: Record<string, unknown>, client: unknown) {
@@ -210,7 +218,7 @@ describe('account deletion erases community voice recordings (B-610-5 composed w
 
   it('records the work in the transaction before the rows go, removes every recording and verifies each one', async () => {
     const calls: Call[] = [];
-    const { client, removed, listed } = storageClient();
+    const { client, removed, listed, removedIn } = storageClient();
     const service = build(recordingPrisma(calls), client);
     await expect(service.adminForceDelete(USER_ID, admin)).resolves.toEqual({
       message: `User ${USER_ID} has been permanently deleted.`,
@@ -257,6 +265,12 @@ describe('account deletion erases community voice recordings (B-610-5 composed w
     const flat = removed.flat();
     expect(flat).toEqual(expect.arrayContaining([KEY_A, KEY_B, `${USER_ID}/orphan-upload.m4a`]));
     expect(listed).toContain(USER_ID);
+    // FX-1139 (Sol C2): the photos go from community-images, and only there.
+    expect(client.storage.from).toHaveBeenCalledWith('community-images');
+    expect(removedIn['community-images']).toEqual(
+      expect.arrayContaining([`${USER_ID}/photo.jpg`, `${USER_ID}/photo.sent.jpg`]),
+    );
+    expect(removedIn['voice-notes']).not.toContain(`${USER_ID}/photo.jpg`);
 
     // After commit each work row is completed only after verification.
     const completions = calls.filter(
@@ -297,6 +311,23 @@ describe('account deletion erases community voice recordings (B-610-5 composed w
           (c.args as { data: { completed_at?: Date } }).data.completed_at instanceof Date,
       ),
     ).toBe(false);
+  });
+
+  it('a photo folder that will not clear stays open for the retry cron; the voice work completes (FX-1139 Sol C2)', async () => {
+    const calls: Call[] = [];
+    const { client, removedIn } = storageClient({ failRemoveIn: 'community-images' });
+    const service = build(recordingPrisma(calls), client);
+    await expect(service.adminForceDelete(USER_ID, admin)).resolves.toEqual({
+      message: `User ${USER_ID} has been permanently deleted.`,
+    });
+    expect(removedIn['community-images']).toEqual(expect.arrayContaining([`${USER_ID}/photo.jpg`]));
+    const completions = calls.filter(
+      (c) =>
+        c.delegate === 'communityVoiceErasure' &&
+        c.method === 'updateMany' &&
+        (c.args as { data: { completed_at?: Date } }).data.completed_at instanceof Date,
+    );
+    expect(completions).toHaveLength(3); // the two notes and the voice folder; the photo folder stays open
   });
 
   it('a recording that still reads back after commit stays open for the retry cron and never fails the deletion', async () => {
