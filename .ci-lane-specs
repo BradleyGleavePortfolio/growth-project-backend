@@ -1,0 +1,17 @@
+checkout
+notification
+coach-money
+onboarding
+plan-renewal
+renewal
+house-join
+switch-tell
+moved-client
+purchase-fanout
+current-coach-inbox
+coach-home-cross
+coach-brief-moved
+churn
+flagged-join
+billing
+--testPathIgnorePatterns=test/rls/
