@@ -26,10 +26,13 @@ function world(left: Array<{ s: string; a: string }>) {
 describe('CommunityCoachInboxRepository: a moved client leaves the former coach\'s inbox', () => {
   it('leaves the moved client\'s chat out in the query, so the limit counts only rows that stay', async () => {
     const { prisma, asked, repo } = world([{ s: SPACE, a: MOVED }]);
-    await repo.unansweredMessages({ cohortIds: [SPACE], limit: 2, after: null });
+    await repo.unansweredMessages({ cohortIds: [SPACE], limit: 2, after: null, viewerId: 'coach-1' });
     expect(asked).toHaveLength(1);
     expect(String(asked[0][0])).toContain('app.community_author_stays');
-    expect(asked[0].slice(1)).toEqual([[SPACE], [SPACE]]);
+    // #168-4: the same one query also leaves out banned authors and anyone in a block with the reading coach.
+    expect(String(asked[0][0])).toContain('community_workspace_bans');
+    expect(String(asked[0][0])).toContain('"UserBlock"');
+    expect(asked[0].slice(1)).toEqual([[SPACE], [SPACE], 'coach-1', 'coach-1']);
     const args = prisma.communityMessage.findMany.mock.calls[0][0];
     expect(args.where.NOT).toEqual([{ cohort_id: SPACE, sender_id: MOVED }]);
     expect(args.where.cohort_id).toEqual({ in: [SPACE] });
