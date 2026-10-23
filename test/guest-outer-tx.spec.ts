@@ -297,26 +297,26 @@ function harness(): Harness {
     flushAlerts: jest.fn(),
     discardPendingAlerts: jest.fn(),
   };
-  const guest = new GuestCheckoutService(
+  // Reflect.construct keeps the partial doubles untyped without a cast; the
+  // services themselves are the real classes.
+  const guest: GuestCheckoutService = Reflect.construct(GuestCheckoutService, [
     prisma,
-    stripe as any,
-    supabase as any,
-    { get: () => undefined } as any,
-    { createNotification: jest.fn(async () => undefined) } as any,
-    {} as any,
-    {} as any,
+    stripe,
+    supabase,
+    { get: () => undefined },
+    { createNotification: jest.fn(async () => undefined) },
+    {},
+    {},
     undefined,
     undefined,
-    fanout as any,
+    fanout,
     undefined,
-  );
-  jest
-    .spyOn(guest as any, 'sendWelcomeEmail')
-    .mockImplementation(async (...args: unknown[]) => {
-      record('email.welcome');
-      const [checkout, inviteLink] = args as [Row, string | null];
-      welcome.push({ checkoutId: checkout.id, inviteLink });
-    });
+  ]);
+  // The welcome email (Resend) is counted, not sent.
+  Reflect.set(guest, 'sendWelcomeEmail', async (checkout: Row, inviteLink: string | null) => {
+    record('email.welcome');
+    welcome.push({ checkoutId: checkout.id, inviteLink });
+  });
   const checkoutWebhooks = {
     handle: jest.fn(async () => ({ claimed: false })),
     settleGuestPurchase: jest.fn(async (pi: string) => {
@@ -327,15 +327,15 @@ function harness(): Harness {
       });
     }),
   };
-  const billing = new BillingService(
+  const billing: BillingService = Reflect.construct(BillingService, [
     prisma,
-    { capture: jest.fn(), identify: jest.fn() } as any,
-    { write: jest.fn(async () => undefined), list: jest.fn(async () => []) } as any,
+    { capture: jest.fn(), identify: jest.fn() },
+    { write: jest.fn(async () => undefined), list: jest.fn(async () => []) },
     undefined,
-    checkoutWebhooks as any,
+    checkoutWebhooks,
     undefined,
     guest,
-  );
+  ]);
   const reconciler = new GuestCheckoutReconciliationService(prisma, guest);
 
   db.packages[PKG_ONE] = {
@@ -564,7 +564,7 @@ describe('GUEST-OUTER-TX — web purchase setup runs after the payment save comm
 
     const outcomes = [a, b, c];
     expect(outcomes.filter((o) => o.processed === true)).toHaveLength(1);
-    expect(outcomes.filter((o) => (o as any).alreadyProcessed === true)).toHaveLength(2);
+    expect(outcomes.filter((o) => 'alreadyProcessed' in o && o.alreadyProcessed === true)).toHaveLength(2);
     expect(row.status).toBe('converted');
     expect(h.db.tables.stripeProcessedEvent).toHaveLength(1);
     expect(h.db.tables.clientPurchase).toHaveLength(1);
