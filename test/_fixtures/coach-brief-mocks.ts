@@ -112,6 +112,7 @@ export interface MockPrisma {
   chargeSettlement: MockChargeSettlementDelegate;
   notificationPreferences: MockNotificationPreferencesDelegate;
   coachMessage: MockCoachMessageDelegate;
+  userBlock: { findMany: jest.Mock };
   $queryRaw: jest.Mock;
 }
 
