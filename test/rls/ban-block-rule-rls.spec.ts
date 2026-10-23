@@ -15,6 +15,7 @@ import type { CommunityNotificationsService } from '../../src/community/notifica
 import type { PlanContextService } from '../../src/community/plan-context/plan-context.service';
 import type { CommunityRealtimeService } from '../../src/community/realtime/community-realtime.service';
 import { CommunitySafetyService } from '../../src/community/safety/community-safety.service';
+import { SegmentResolverService } from '../../src/broadcasts/segment-resolver.service';
 import { inBlockWith } from '../../src/messaging/block-pair';
 import type { PrismaService } from '../../src/prisma.service';
 import { stub } from '../utils/trial-fakes';
@@ -38,6 +39,7 @@ const ROLE = (k: Key) => (k === 'A' || k === 'B' ? 'coach' : 'student');
     stub<CommunityRealtimeService>({ broadcastCommunityEvent: async () => undefined }), stub<PlanContextService>({}), safety,
     stub<CommunityNotificationsService>({ pushEnabled: () => false }));
   const inbox = new CommunityCoachInboxService(access, new CommunityCoachInboxRepository(db));
+  const segments = new SegmentResolverService(db);
   const id = Object.fromEntries((['A', 'B', 'V', 'X', 'mV', 'mX', 'mXb'] as const).map((k) => [k, randomUUID()]));
   const ws = { A: randomUUID(), B: randomUUID() };
   const space = { cli: randomUUID(), pub: randomUUID() };
@@ -122,6 +124,12 @@ const ROLE = (k: Key) => (k === 'A' || k === 'B' ? 'coach' : 'student');
     expect(await inBlockWith(db, id.A, [id.V, id.X])).toEqual(new Set([id.V]));
     expect(await inBlockWith(db, id.V, [id.A, id.X])).toEqual(new Set([id.A, id.X]));
     expect(await inboxOf('A')).toEqual(sorted('mX'));
+    // Broadcasts skip the pair whichever side blocked (V blocked A here; A blocks X next).
+    const coachScope = { actorId: id.A, tenantId: id.A, clientIds: [id.V, id.X] };
+    expect(await segments.blockedAmong(coachScope, [id.V, id.X])).toEqual(new Set([id.V]));
+    await prisma.userBlock.create({ data: { blocker_id: id.A, blocked_id: id.X } });
+    expect(await segments.blockedAmong(coachScope, [id.V, id.X])).toEqual(new Set([id.V, id.X]));
+    await prisma.userBlock.deleteMany({ where: { blocker_id: id.A } });
     await prisma.userBlock.deleteMany({ where: { OR: [{ blocker_id: id.X }, { blocker_id: id.V }] } });
     expect(await chatOf('V', space.cli)).toEqual(sorted('mV', 'mX'));
     expect(await inboxOf('A')).toEqual(sorted('mV', 'mX'));
