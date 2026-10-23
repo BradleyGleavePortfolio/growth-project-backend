@@ -19,6 +19,7 @@ import type { PlanContextService } from '../../../src/community/plan-context/pla
 import type { CommunityNotificationsService } from '../../../src/community/notifications/community-notifications.service';
 import type { PrismaService } from '../../../src/prisma.service';
 import type { SupabaseService } from '../../../src/supabase/supabase.service';
+import { assertEnv, PHOTO_CHECK_KEY_GHOST } from '../../../src/common/env-validation';
 import { safetyWithBlocks } from '../safety/safety-test-helpers';
 import { egressWithGrants } from '../../ai-egress/ai-egress.fakes';
 
@@ -34,8 +35,8 @@ const me = stub<User>({ id: ME, role: 'client' });
 const CAPTION = 'after the long run';
 const PHOTO = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(2048, 7)]);
 const MODERATION_URL = 'https://api.openai.com/v1/moderations';
-const answer = (flagged: boolean) =>
-  new Response(JSON.stringify({ id: 'modr-1', model: 'omni-moderation-latest', results: [{ flagged, categories: {}, category_scores: {} }] }), {
+const answer = (flagged: boolean, applied: Record<string, string[]> = {}) =>
+  new Response(JSON.stringify({ id: 'modr-1', model: 'omni-moderation-latest', results: [{ flagged, categories: {}, category_scores: {}, category_applied_input_types: applied }] }), {
     status: 200,
     headers: { 'content-type': 'application/json' },
   });
@@ -158,6 +159,7 @@ describe('the automatic photo check on a space chat photo send (PHOTO-CHECK-BE)'
         },
       },
     ]);
+    expect(JSON.stringify(w.checks)).not.toMatch(new RegExp(`${ME}|${SPACE}|${WS}|${w.key}`)); // no member, space or key
     expect(w.rows).toEqual([expect.objectContaining({ storage_key: sentImageKey(w.key), author_id: ME })]);
     expect(w.objects.get(sentImageKey(w.key))).toEqual(PHOTO);
   });
@@ -177,8 +179,16 @@ describe('the automatic photo check on a space chat photo send (PHOTO-CHECK-BE)'
     expect(w.objects.size).toBe(0); // no sent copy, and the upload is gone
   });
 
-  const unavailable: Array<[string, { reply?: Reply; statSize?: number; noKey?: boolean }]> = [
-    ['no key is set', { noKey: true }],
+  it('a flagged caption refuses the photo the same way', async () => {
+    const w = world({ reply: () => answer(true, { harassment: ['text'] }) });
+    expect(await codeOf(w.send())).toBe('422 PHOTO_NOT_ALLOWED');
+    expect([w.messages, w.rows, w.objects.size]).toEqual([[], [], 0]);
+  });
+
+  const unavailable: Array<[string, { reply?: Reply; statSize?: number; key?: string }]> = [
+    ['no key is set', { key: '' }],
+    ['the key is still the ghost value', { key: PHOTO_CHECK_KEY_GHOST }],
+    ['the check times out', { reply: () => Promise.reject(new DOMException('The operation timed out.', 'TimeoutError')) }],
     ['OpenAI answers 429', { reply: () => new Response('{}', { status: 429 }) }],
     ['OpenAI answers 500', { reply: () => new Response('{}', { status: 500 }) }],
     ['the network fails', { reply: () => Promise.reject(new TypeError('fetch failed')) }],
@@ -187,7 +197,7 @@ describe('the automatic photo check on a space chat photo send (PHOTO-CHECK-BE)'
   ];
   it.each(unavailable)('fails closed when %s: 503 PHOTO_CHECK_UNAVAILABLE, nothing written, upload kept', async (_why, opts) => {
     const w = world(opts);
-    if (opts.noKey) delete process.env.PHOTO_CHECK_OPENAI_API_KEY;
+    if (opts.key !== undefined) process.env.PHOTO_CHECK_OPENAI_API_KEY = opts.key;
     expect(await codeOf(w.send())).toBe('503 PHOTO_CHECK_UNAVAILABLE');
     expect(w.checks.length).toBeLessThanOrEqual(1); // never a retry
     expect(w.messages).toEqual([]);
@@ -229,6 +239,27 @@ describe('the automatic photo check on a space chat photo send (PHOTO-CHECK-BE)'
       'community.photo_check outcome=check_failed',
     ]);
     for (const l of lines) expect(l).not.toMatch(new RegExp(`${CAPTION}|base64`));
+  });
+
+  it('warns once at boot when photos are on without a real key, and never blocks boot', () => {
+    const hard = {
+      DATABASE_URL: 'postgres://x',
+      DIRECT_URL: 'postgres://x:5432/db',
+      SUPABASE_URL: 'https://example.supabase.co',
+      SUPABASE_SERVICE_ROLE_KEY: 'srk',
+      USDA_API_KEY: 'usda-test-key',
+      RECENT_AUTH_SECRET: 'test-recent-auth-secret-at-least-32-chars-long',
+      RECENT_AUTH_TTL_MS: '300000',
+    };
+    const warnings = (env: NodeJS.ProcessEnv) => {
+      const warn = jest.fn();
+      assertEnv({ ...hard, ...env }, { logger: { log: jest.fn(), error: jest.fn(), warn } });
+      return warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes('PHOTO_CHECK_UNAVAILABLE'));
+    };
+    expect(warnings({ FEATURE_COMMUNITY_IMAGES: 'true' })).toHaveLength(1);
+    expect(warnings({ FEATURE_COMMUNITY_IMAGES: 'true', PHOTO_CHECK_OPENAI_API_KEY: PHOTO_CHECK_KEY_GHOST })).toHaveLength(1);
+    expect(warnings({ FEATURE_COMMUNITY_IMAGES: 'true', PHOTO_CHECK_OPENAI_API_KEY: 'k-real' })).toEqual([]);
+    expect(warnings({ PHOTO_CHECK_OPENAI_API_KEY: '' })).toEqual([]);
   });
 
   it('the running server always injects the check (it is never left out by the module graph)', () => {

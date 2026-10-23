@@ -11,7 +11,8 @@
  *              upload is erased now; its upload erasure row (recorded when the
  *              link was signed) still erases it at link death, like any unsent
  *              upload, if this delete fails.
- *   otherwise  503 PHOTO_CHECK_UNAVAILABLE, fail closed: no key, a timeout, a
+ *   otherwise  503 PHOTO_CHECK_UNAVAILABLE, fail closed: no key or the ghost
+ *              value (photoCheckKey), a timeout, a
  *              429 or 5xx, a network error, an answer we cannot read, or a
  *              download that is not the whole checked upload. The upload is
  *              kept, so the member can send it again while the key is good.
@@ -20,6 +21,7 @@
 import { Logger, ServiceUnavailableException, UnprocessableEntityException } from '@nestjs/common';
 import type { AiEgressService } from '../../ai-egress/ai-egress.service';
 import { createOpenAiModerationClient } from '../../ai-egress/provider-clients';
+import { photoCheckKey } from '../../common/env-validation';
 import type { CommunityImageStore } from './community-image-store';
 
 export const PHOTO_CHECK_MODEL = 'omni-moderation-latest';
@@ -38,7 +40,7 @@ async function outcome(
   size: number,
   caption: string,
 ): Promise<Outcome> {
-  const apiKey = process.env.PHOTO_CHECK_OPENAI_API_KEY?.trim();
+  const apiKey = photoCheckKey();
   if (!apiKey) return 'not_configured';
   let jpeg: Buffer;
   try {

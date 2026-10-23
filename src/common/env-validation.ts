@@ -2221,7 +2221,7 @@ export const ENV_RULES: EnvRule[] = [
   {
     name: 'PHOTO_CHECK_OPENAI_API_KEY',
     tier: 'optional',
-    default: 'unset → every space chat photo send is refused with 503 PHOTO_CHECK_UNAVAILABLE',
+    default: 'unset or ghost-owner-todo-171-2 (the ghost value) → every space chat photo send is refused with 503 PHOTO_CHECK_UNAVAILABLE',
     reason:
       'OpenAI API key for the automatic photo check (PHOTO-CHECK-BE: omni-moderation-latest, before a space chat photo posts). Secret. Its own key, named outside the OpenAI SDK env family (OPENAI_*), so the SDK never reads it on its own.',
   },
@@ -2734,6 +2734,15 @@ export interface EnvValidationResult {
   placeholderHard: string[];
   placeholderProd: string[];
   isProd: boolean;
+}
+
+/** PHOTO-CHECK-BE: the ghost value the photo check key ships with (OWNER TO-DO before v1 launch, #171-2). */
+export const PHOTO_CHECK_KEY_GHOST = 'ghost-owner-todo-171-2';
+
+/** The photo check's OpenAI key, or null when it is empty or still the ghost value (then every photo send is refused). */
+export function photoCheckKey(env: NodeJS.ProcessEnv = process.env): string | null {
+  const key = env.PHOTO_CHECK_OPENAI_API_KEY?.trim();
+  return key && key !== PHOTO_CHECK_KEY_GHOST ? key : null;
 }
 
 export function isProdLike(nodeEnv: string | undefined): boolean {
@@ -3249,6 +3258,14 @@ export function assertEnv(
         `Google recent-auth disabled — neither GOOGLE_CLIENT_ID nor GOOGLE_CLIENT_IDS is set. /auth/signup-policy will omit "google" from providers and Google OAuth users cannot complete sensitive actions (e.g. account deletion). Set at least one to enable. (NODE_ENV=${env.NODE_ENV})`,
       );
     }
+  }
+
+  // PHOTO-CHECK-BE: photos on without the photo check's key refuse every photo
+  // send (fail closed). One warning; never blocks boot, /readyz or /health.
+  if (env.FEATURE_COMMUNITY_IMAGES === 'true' && !photoCheckKey(env)) {
+    logger.warn(
+      'FEATURE_COMMUNITY_IMAGES is on but PHOTO_CHECK_OPENAI_API_KEY is empty or the ghost value: every space chat photo send is refused with 503 PHOTO_CHECK_UNAVAILABLE (OWNER TO-DO before v1 launch, #171-2).',
+    );
   }
 
   if (result.missingOptional.length) {
