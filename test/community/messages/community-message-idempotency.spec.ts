@@ -15,8 +15,8 @@ const WORKSPACE = '22222222-2222-4222-8222-222222222222';
 const SPACE = '11111111-1111-4111-8111-111111111111';
 const OTHER_SPACE = '33333333-3333-4333-8333-333333333333';
 const KEY = '6f1c2b0e-8d4a-4c1e-9b7a-2d3e4f5a6b7c';
-const olive = { id: 'olive-0001', role: 'student' } as unknown as User;
-const vera = { id: 'vera-0002', role: 'student' } as unknown as User;
+const olive = { id: '0a11ce00-0000-4000-8000-000000000001', role: 'student' } as unknown as User;
+const vera = { id: '0a11ce00-0000-4000-8000-000000000002', role: 'student' } as unknown as User;
 
 function harness() {
   const rows: CommunityMessage[] = [];
