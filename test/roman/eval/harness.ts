@@ -18,6 +18,7 @@ import type { CoachAIBudgetService } from '../../../src/ai-credits/coach-ai-budg
 import { FEATURE_ROMAN_CHAT_ENABLED_ENV } from '../../../src/roman/roman.feature';
 import { RomanReadToolbox } from '../../../src/roman/tools/roman-read-tools';
 import type { RomanToolbox } from '../../../src/roman/tools/roman-tool.types';
+import type { CopilotTurnService } from '../../../src/copilot/copilot-turn';
 import { RomanTimelineReader } from '../../../src/roman/memory/roman-timeline.reader';
 import { RomanClientMemoryAugmenter } from '../../../src/roman/memory/roman-client-memory.augmenter';
 import { RomanCoachMethodAugmenter } from '../../../src/roman/playbook/roman-coach-method.augmenter';
@@ -71,7 +72,7 @@ export interface R11Rows {
 
 export function makeWorld(
   defaultReply?: string,
-  r11: { tools?: boolean; augmenters?: boolean; wrapTools?: (t: RomanToolbox) => RomanToolbox } = {},
+  r11: { tools?: boolean; augmenters?: boolean; wrapTools?: (t: RomanToolbox) => RomanToolbox; copilot?: CopilotTurnService } = {},
 ): HarnessWorld & { r11: R11Rows; consent: ScopedConsentReader } {
   const db = makePersonaDb();
   const intake = new FakeSafetyIntakeSource();
@@ -109,6 +110,8 @@ export function makeWorld(
       ? [new RomanClientMemoryAugmenter(db.prisma), new RomanCoachMethodAugmenter(db.prisma, budget, null, eligible)]
       : null,
     r11.tools ? (r11.wrapTools ?? ((t: RomanToolbox) => t))(new RomanReadToolbox(db.prisma, new RomanTimelineReader(db.prisma, egress))) : null,
+    null,
+    r11.copilot ?? null,
   );
   return { db, ctx, intake, model, roman, consent: reader, r11: rows };
 }

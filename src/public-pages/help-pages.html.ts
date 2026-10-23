@@ -705,8 +705,10 @@ function deleteAccountContent(): HelpPageContent {
           'Your conversations with Roman, the AI assistant',
           'Your messages, community posts, comments, direct messages, voice notes and reactions',
           // OPERATOR RULING (agent 160, from #1105 LEARN-FROZEN-MEDIA): a
-          // coach's media that a client's kept lesson plays is kept.
-          'Coach media, notes and briefs, if you coach, except the video or file of each lesson your clients keep (see below)',
+          // coach's media that a client's kept lesson plays is kept; b#1110:
+          // so is what a client paid for. Same words as the app's delete
+          // screen (mobile DeleteAccountScreen PERMANENTLY_DELETED).
+          'Coach media, notes and briefs, if you coach, except lessons and paid content your clients keep',
           'Your targets, recipes, lists and preferences',
           'Notification settings and push notification tokens',
         ],
@@ -724,7 +726,7 @@ function deleteAccountContent(): HelpPageContent {
           // deletion paragraph and retention list, from shared strings.
           `Closed account: ${CLOSED_ACCOUNT_RECORD_TEXT}, so the payment records and logs that must be kept still point to one closed account. It is kept with no end date.`,
           `While removing your sign-in account at your sign-in provider is still being retried, that provider’s account ID is kept. Once it is removed, the account ID is replaced by ${ONE_WAY_CODE_TEXT}.`,
-          'If you coach: your clients are not deleted. They keep their own data, the plans you assigned them, and the lessons they completed or that are in a course they are enrolled in, including the video or file each of those lessons plays, without your contact details, and are no longer linked to you. Only a client who keeps a lesson can open its video or file.',
+          'If you coach: your clients are not deleted. They keep their own data, the plans you assigned them, the lessons they completed or that are in a course they are enrolled in, and the paid content they bought from you, including the video or file each of those plays, without your contact details, and are no longer linked to you. Only a client who keeps a lesson or paid content can open its video or file.',
           'Backups: database backups and copies are never kept more than six months after a confirmed deletion request. Copies of the database made before an update to the service are deleted 30 days after the update is verified, and never kept beyond 90 days.',
           'Security and audit logs: as long as needed to protect the service and meet legal duties.',
           `What Anthropic received: ${ANTHROPIC_RETENTION_TEXT}`,
@@ -803,11 +805,11 @@ function baseDocument(active: HelpPage, c: HelpPageContent): string {
   :root { color-scheme: light; }
   html, body { margin: 0; padding: 0; background: #FBF8F3; color: #1F1B16; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; min-height: 100vh; padding: 32px 20px 64px; }
-  main { max-width: 760px; width: 100%; margin: 0 auto; text-align: left; }
+  main { max-width: 760px; width: 100%; margin: 0 auto; text-align: left; overflow-wrap: break-word; }
   header.brand { display: flex; align-items: center; justify-content: space-between; margin-bottom: 40px; gap: 16px; flex-wrap: wrap; }
-  header.brand .wordmark { font-family: "Iowan Old Style", Georgia, serif; font-weight: 500; font-size: 18px; letter-spacing: 0.02em; color: #1F1B16; text-decoration: none; }
-  nav.help-nav { display: flex; gap: 16px; flex-wrap: wrap; }
-  nav.help-nav .nav-link { color: #8A7F6E; text-decoration: none; font-size: 14px; }
+  header.brand .wordmark { display: inline-flex; align-items: center; min-height: 44px; font-family: "Iowan Old Style", Georgia, serif; font-weight: 500; font-size: 18px; letter-spacing: 0.02em; color: #1F1B16; text-decoration: none; }
+  nav.help-nav { display: flex; flex-wrap: wrap; margin: 0 -8px; }
+  nav.help-nav .nav-link { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; padding: 0 8px; box-sizing: border-box; color: #8A7F6E; text-decoration: none; font-size: 14px; }
   nav.help-nav .nav-link.active { color: #1F1B16; }
   nav.help-nav .nav-link:hover { color: #1F1B16; }
   h1 { font-family: "Iowan Old Style", Georgia, serif; font-weight: 500; font-size: 40px; line-height: 1.1; letter-spacing: -0.01em; margin: 0 0 8px 0; }
@@ -819,13 +821,22 @@ function baseDocument(active: HelpPage, c: HelpPageContent): string {
   section p { font-size: 16px; line-height: 1.6; margin: 0 0 12px 0; color: #3A332B; }
   section ul { margin: 0 0 12px 0; padding: 0 0 0 20px; }
   section li { font-size: 16px; line-height: 1.6; margin: 0 0 6px 0; color: #3A332B; }
-  section p.links a { color: #1F1B16; text-decoration: underline; }
+  section p.links a { display: inline-flex; align-items: center; min-height: 44px; color: #1F1B16; text-decoration: underline; }
   table.intake { border-collapse: collapse; width: 100%; margin: 0 0 12px 0; font-size: 14px; }
   table.intake th, table.intake td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #E8E1D4; vertical-align: top; color: #3A332B; }
   table.intake th { font-weight: 600; color: #1F1B16; background: #F4EFE6; }
+  @media (max-width: 600px) {
+    table.intake, table.intake tbody, table.intake tr, table.intake td { display: block; }
+    table.intake thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    table.intake tr { padding: 12px 0; border-bottom: 1px solid #E8E1D4; }
+    table.intake td { padding: 2px 0; border: 0; }
+    table.intake td:first-child { font-weight: 600; color: #1F1B16; }
+    table.intake td[data-label] { display: grid; grid-template-columns: 84px minmax(0, 1fr); align-items: baseline; }
+    table.intake td[data-label]::before { content: attr(data-label); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #3A332B; }
+  }
   p.footnote { margin: 40px 0 0 0; font-size: 13px; line-height: 1.55; color: #8A7F6E; font-style: italic; }
   footer.brand-footer { margin-top: 48px; padding-top: 24px; border-top: 1px solid #E8E1D4; font-size: 13px; color: #8A7F6E; display: flex; gap: 16px; flex-wrap: wrap; justify-content: space-between; }
-  footer.brand-footer a { color: #8A7F6E; text-decoration: underline; }
+  footer.brand-footer a { display: inline-flex; align-items: center; min-height: 44px; color: #8A7F6E; text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -900,15 +911,15 @@ function renderIntakeTable(t: { heading: string; intro: string; fields: ContactF
   const rows = t.fields
     .map(
       (f) =>
-        `      <tr><td>${escapeHtml(f.name)}</td><td>${escapeHtml(f.type)}</td><td>${escapeHtml(f.required)}</td><td>${escapeHtml(f.notes)}</td></tr>`,
+        `      <tr role="row"><td role="cell">${escapeHtml(f.name)}</td><td role="cell" data-label="Type">${escapeHtml(f.type)}</td><td role="cell" data-label="Required">${escapeHtml(f.required)}</td><td role="cell" data-label="Notes">${escapeHtml(f.notes)}</td></tr>`,
     )
     .join('\n');
   return `  <section>
     <h2>${heading}</h2>
     <p>${intro}</p>
-    <table class="intake">
+    <table class="intake" role="table">
       <thead>
-        <tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr>
+        <tr role="row"><th role="columnheader">Field</th><th role="columnheader">Type</th><th role="columnheader">Required</th><th role="columnheader">Notes</th></tr>
       </thead>
       <tbody>
 ${rows}

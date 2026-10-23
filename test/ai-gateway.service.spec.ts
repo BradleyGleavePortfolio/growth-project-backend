@@ -10,7 +10,7 @@ import { clientDataSubject, noClientDataSubject } from '../src/ai-egress/ai-egre
 import { egressWithGrants, grantAllEgress, withTx } from './ai-egress/ai-egress.fakes';
 
 function buildPrisma() {
-  const created = { audits: [] as any[], drafts: [] as any[] };
+  const created = { audits: [] as any[], drafts: [] as any[], blocks: [] as Array<{ blocker_id: string; blocked_id: string }> };
   // Each client's current coach.
   const roster: Record<string, string> = { 'client-1': 'coach-1', 'client-2': 'coach-1', 'client-3': 'head-1' };
   return withTx({
@@ -39,6 +39,8 @@ function buildPrisma() {
           .map((id) => ({ id })),
       ),
     },
+    // #168-4: person-to-person blocks (inBlockWith asks both directions in one query).
+    userBlock: { findMany: jest.fn(async () => created.blocks) },
     subCoachAssignment: {
       findMany: jest.fn(async ({ where }: any) =>
         where.sub_coach_id === 'sub-1' && where.client_id.in.includes('client-3')
@@ -183,6 +185,20 @@ describe('AiGatewayService', () => {
       ).rejects.toMatchObject({ response: { error: 'AI_DRAFT_PAYLOAD_SERVER_WRITTEN', capability } });
       const out = await svc.invoke({ ...ask, capability });
       expect(out.approvalDraftId).toBeNull();
+    }
+    expect(prisma.aiActionDraft.create).not.toHaveBeenCalled();
+  });
+
+  it('#168-4: Roman never drafts a message to one client across a block, either way', async () => {
+    process.env.AI_GATEWAY_REQUIRE_APPROVAL = 'draft.coach_message,draft.coach_wearable_message';
+    const { svc, prisma } = buildSvc();
+    const ask = { requester: { id: 'coach-1', role: 'coach' as const }, subjectUserId: 'client-1', tenantCoachId: 'coach-1', userMessage: 'Draft a reply.', systemPrompt: 'context' };
+    await expect(svc.invoke({ ...ask, capability: 'draft.coach_message' })).resolves.toBeDefined();
+    for (const block of [{ blocker_id: 'coach-1', blocked_id: 'client-1' }, { blocker_id: 'client-1', blocked_id: 'coach-1' }]) {
+      prisma.created.blocks.splice(0, 1, block);
+      for (const capability of ['draft.coach_message', 'draft.coach_wearable_message']) {
+        await expect(svc.invoke({ ...ask, capability })).rejects.toMatchObject({ status: 403, response: { code: 'messaging.blocked' } });
+      }
     }
     expect(prisma.aiActionDraft.create).not.toHaveBeenCalled();
   });

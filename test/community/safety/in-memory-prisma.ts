@@ -157,21 +157,36 @@ export class InMemoryPrisma {
     return full;
   }
 
+  /** C6-WINS-MOVE app.community_author_stays, plus (#168-4) an active ban in that community. */
+  private authorGone(workspaceId: string, spaceId: string | null, a: string): boolean {
+    const w = this.table('communityWorkspace').find((r) => r.id === workspaceId);
+    const u = this.table('user').find((r) => r.id === a);
+    const left = !!w && !!u && u.role === 'student' && (u.coach_id ?? null) !== (w.coach_id ?? null) &&
+      !this.table('communityCohort').some((c) => c.id === spaceId && c.visibility === 'public') &&
+      !this.table('communityMembership').some((m) => m.workspace_id === w.id && m.user_id === a &&
+        m.role !== 'student' && m.status !== 'removed');
+    return left || this.table('communityWorkspaceBan').some((b) => b.workspace_id === workspaceId && b.user_id === a && b.lifted_at == null);
+  }
+
   async $queryRaw(strings: TemplateStringsArray, ...values: unknown[]): Promise<Row[]> {
-    if (strings.join('').includes('app.community_author_stays')) {
-      // C6-WINS-MOVE: app.community_author_stays over [workspace, space ('' = none), author] arrays.
-      const [ws, spaces, authors] = values as [string[], string[], string[]];
-      return authors.flatMap((a, n) => {
-        const w = this.table('communityWorkspace').find((r) => r.id === ws[n]);
-        const u = this.table('user').find((r) => r.id === a);
-        const left = !!w && !!u && u.role === 'student' && (u.coach_id ?? null) !== (w.coach_id ?? null) &&
-          !this.table('communityCohort').some((c) => c.id === spaces[n] && c.visibility === 'public') &&
-          !this.table('communityMembership').some((m) => m.workspace_id === w.id && m.user_id === a &&
-            m.role !== 'student' && m.status !== 'removed');
-        return left ? [] : [{ n }];
-      });
+    const sql = strings.join('');
+    if (sql.includes('WITH t AS MATERIALIZED')) {
+      // authorsWhoLeft: [space, author] pairs of these spaces' rows whose author is gone or in a block with the viewer.
+      const [spaceIds, , viewer] = values as [string[], string[], string];
+      const pairs = new Map<string, Row>();
+      for (const r of [...this.table('communityMessage'), ...this.table('communityPost')]) {
+        const a = (r.sender_id ?? r.author_id) as string;
+        if (spaceIds.includes(r.cohort_id as string) && r.deleted_at == null) pairs.set(`${r.cohort_id}:${a}`, { w: r.workspace_id, s: r.cohort_id, a });
+      }
+      return [...pairs.values()].filter((p) => this.authorGone(p.w as string, p.s as string, p.a as string) ||
+        this.table('userBlock').some((b) => (b.blocker_id === viewer && b.blocked_id === p.a) || (b.blocker_id === p.a && b.blocked_id === viewer)))
+        .map((p) => ({ s: p.s, a: p.a }));
     }
-    if (!strings.join('').includes('app.community_can_access')) throw new Error('InMemoryPrisma: unsupported $queryRaw');
+    if (sql.includes('app.community_author_stays')) {
+      const [ws, spaces, authors] = values as [string[], string[], string[]];
+      return authors.flatMap((a, n) => (this.authorGone(ws[n], spaces[n] || null, a) ? [] : [{ n }]));
+    }
+    if (!sql.includes('app.community_can_access')) throw new Error('InMemoryPrisma: unsupported $queryRaw');
     const [spaces, people, listed] = values as [string[], string[], boolean | undefined];
     return spaces.flatMap((c, i) => {
       const u = people[i];

@@ -77,6 +77,18 @@ const BASE_URL = 'https://app.trygrowthproject.com';
 // ─── Brand tokens ────────────────────────────────────────────────────────────
 
 describe('R52 SaaS-brand tokens', () => {
+  // PUBLIC-WEB (op164): buttons use 12 px corners (no pills) and cards 16 px.
+  it('buttons are radius 12 and cards radius 16', () => {
+    const html = renderPublicPage(buildPage(), [], 'jsmith', BASE_URL);
+    expect(html).toContain('--radius: 16px;');
+    for (const sel of ['.btn', '.lead-form__submit', '.legacy-pricing__cta']) {
+      const esc = sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const rule = new RegExp(`\\n${esc} \\{([^}]*)\\}`).exec(html)?.[1];
+      expect(rule).toBeDefined();
+      expect(rule).toContain('border-radius: 12px');
+    }
+  });
+
   it('inlines the dark-mode background + warm gold accent in critical CSS', () => {
     const html = renderPublicPage(buildPage(), [], 'jsmith', BASE_URL);
     expect(html).toContain('--bg: #0b0b0c');

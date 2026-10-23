@@ -22,6 +22,11 @@ function build(opts: { status?: string | null; granted?: boolean; recent?: Array
       count: jest.fn(async () => 4),
     },
     romanUsageDaily: { upsert: jest.fn() },
+    // COPILOT-BE2: the week block GET /client/copilot also returns (copilot-turn.spec.ts tests it).
+    user: { findUnique: jest.fn(async () => null) },
+    macroTarget: { findMany: jest.fn(async () => []) },
+    clientWorkoutAssignment: { findMany: jest.fn(async () => []) },
+    checkIn: { findFirst: jest.fn(async () => null) },
   };
   const { egress } = egressWithGrants(opts.granted === false ? [] : [CLIENT.id]);
   return { svc: new CopilotService(fakeOf<PrismaService>(prisma), egress), prisma };
@@ -57,14 +62,14 @@ describe('POST /client/copilot/suggestions/:id/send', () => {
 describe('GET /client/copilot', () => {
   it('reads only the client\'s own sent suggestions, newest first, three of them, with the total', async () => {
     const { svc, prisma } = build();
-    await expect(svc.recent('client-a')).resolves.toMatchObject({ suggestions: [{ id: 'd1', status: 'approved' }], suggestions_total: 4 });
+    await expect(svc.recent(CLIENT)).resolves.toMatchObject({ suggestions: [{ id: 'd1', status: 'approved' }], suggestions_total: 4 });
     const where = { capability: 'client_path_change', requester_id: 'client-a', subject_user_id: 'client-a', status: { in: ['pending', 'approved', 'rejected', 'expired'] } };
     expect(prisma.aiActionDraft.findMany).toHaveBeenCalledWith({ where, orderBy: [{ created_at: 'desc' }, { id: 'desc' }], take: 3 });
     expect(prisma.aiActionDraft.count).toHaveBeenCalledWith({ where });
   });
   it('#CP-LAPSE: a sent suggestion the coach left for 7 days reads as expired; a fresh one is still pending', async () => {
     const { svc } = build({ recent: [row('pending', 0.5), row('pending', 7.01), row('approved', 9)] });
-    const { suggestions } = await svc.recent('client-a');
+    const { suggestions } = await svc.recent(CLIENT);
     expect(suggestions.map((s) => s.status)).toEqual(['pending', 'expired', 'approved']);
   });
 });
