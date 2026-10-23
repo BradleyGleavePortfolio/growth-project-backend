@@ -3,6 +3,7 @@
 // authenticated. A coaches O and V (members of A's members-only space "mem") and N (A's client, not a member); X is
 // a client of coach B (another tenant) in B's space "bmem". Each "0" follows a control read of 1.
 //  - a resend with the same key returns the first message, also when the sends race, also for a reply;
+//  - a keyed message takes replies like any other;
 //  - the same key with other words is refused and writes nothing;
 //  - a key is one author's in one space: anyone else's send with it is their own message, and never reads back
 //    another person's message; another tenant gets the same 404 as without a key.
@@ -111,6 +112,13 @@ const ROLE = (k: Key) => (k === 'A' || k === 'B' ? 'coach' : 'student');
     expect((await send('O', 'mem', 'On it', key, root.id)).id).toBe(reply.id);
     // The same key on a different message (top level now) is refused, never answered with the reply.
     expect(await status(send('O', 'mem', 'On it', key))).toBe(409);
+  });
+
+  it('a message sent with a key takes replies like any other (its id is a version 4 UUID)', async () => {
+    const root = await send('A', 'mem', 'Week 3 plan is up', randomUUID());
+    expect(root.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    const reply = await send('O', 'mem', 'Thanks coach', randomUUID(), root.id);
+    expect(reply.parent_message_id).toBe(root.id);
   });
 
   it('the same key with other words is refused (409) and writes nothing', async () => {

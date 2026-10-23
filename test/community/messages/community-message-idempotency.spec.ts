@@ -6,11 +6,15 @@
  * The first describe failed on the code before FX-IDEM (two rows, no 409); the second pins the header and the id.
  */
 import { randomUUID } from 'crypto';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ParseUUIDPipe } from '@nestjs/common';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 import type { CommunityMessage, User } from '@prisma/client';
 import { CommunityMessagesController } from '../../../src/community/messages/community-messages.controller';
 import { CommunityMessagesRepository } from '../../../src/community/messages/community-messages.repository';
 import { CommunityMessagesService } from '../../../src/community/messages/community-messages.service';
+import { CreateMessageDto } from '../../../src/community/dto/community-message.dto';
+import { CreateVoiceNoteDto } from '../../../src/community/voice/community-voice.dto';
 import { keyedMessageId, messageKey } from '../../../src/community/messages/message-idempotency';
 import { safetyWithBlocks } from '../safety/safety-test-helpers';
 import { noCommunityPush } from './community-push-test-helpers';
@@ -99,7 +103,7 @@ describe('FX-IDEM: the header and the id it names', () => {
 
   it('one author, space and key always name the same UUID; change any one and the id changes', () => {
     const idOf = keyedMessageId(olive.id, SPACE, KEY);
-    expect(idOf).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(idOf).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     expect(keyedMessageId(olive.id, SPACE, KEY)).toBe(idOf);
     const others = [keyedMessageId(vera.id, SPACE, KEY), keyedMessageId(olive.id, OTHER_SPACE, KEY),
       keyedMessageId(olive.id, SPACE, randomUUID())];
@@ -116,5 +120,22 @@ describe('FX-IDEM: the header and the id it names', () => {
     expect(send).toHaveBeenLastCalledWith(olive, SPACE, 'Leg day done', undefined, undefined, null);
     await expect(route.send(req, SPACE, { body: 'x' } as never, 'nope')).rejects.toBeInstanceOf(BadRequestException);
     expect(send).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('FX-IDEM: a keyed message is repliable like any other (every version 4 id check accepts its id)', () => {
+  const idOf = keyedMessageId(olive.id, SPACE, KEY);
+
+  it('a text reply and a voice reply may name it as their parent', async () => {
+    const text = plainToInstance(CreateMessageDto, { body: 'On it', parent_message_id: idOf });
+    expect(await validate(text)).toEqual([]);
+    const voice = plainToInstance(CreateVoiceNoteDto, {
+      cohort_id: SPACE, storage_key: 'k', duration_ms: 1000, bytes: 10, mime_type: 'audio/m4a', parent_message_id: idOf,
+    });
+    expect((await validate(voice)).filter((e) => e.property === 'parent_message_id')).toEqual([]);
+  });
+
+  it('the ack routes take it (ParseUUIDPipe version 4)', async () => {
+    await expect(new ParseUUIDPipe({ version: '4' }).transform(idOf, { type: 'param' })).resolves.toBe(idOf);
   });
 });

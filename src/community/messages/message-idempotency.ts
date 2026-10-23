@@ -35,10 +35,14 @@ export function messageKey(raw: string | string[] | undefined): string | null {
   return key;
 }
 
-/** The one message id an author's key names in a space (RFC 9562 version 8: SHA-256, version and variant set). */
+/**
+ * The one message id an author's key names in a space: 122 bits of SHA-256, shaped as a version 4 UUID. Version 4,
+ * not a name-based version, because every message-id check downstream accepts version 4 only (a reply's
+ * parent_message_id, the voice reply link, the ack routes): a keyed message must be repliable like any other.
+ */
 export function keyedMessageId(senderId: string, cohortId: string, key: string): string {
   const h = createHash('sha256').update(`community.message.key\0${senderId}\0${cohortId}\0${key}`).digest();
-  h[6] = (h[6] & 0x0f) | 0x80;
+  h[6] = (h[6] & 0x0f) | 0x40;
   h[8] = (h[8] & 0x3f) | 0x80;
   const x = h.subarray(0, 16).toString('hex');
   return `${x.slice(0, 8)}-${x.slice(8, 12)}-${x.slice(12, 16)}-${x.slice(16, 20)}-${x.slice(20)}`;
