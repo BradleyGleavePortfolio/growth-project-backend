@@ -20,7 +20,7 @@ import {
   CommunityWinSummary,
   LeaderboardSummary,
 } from './client-ai-context.types';
-import { notInBlockWith } from '../messaging/block-pair';
+import { everyoneInBlockWith, notInBlockWith } from '../messaging/block-pair';
 
 // Token-budget knobs. Picked so the assembled context stays well under
 // ~3KB of JSON in the typical case (a 7-day, 5-workout user). Exported
@@ -48,6 +48,8 @@ const CONTEXT_CACHE_TTL_MS = 30_000;
 interface CacheEntry {
   ctx: ClientAIContext;
   expires_at: number;
+  /** FR-1141: everyone in a block with the client when this entry was built. */
+  blocks: string;
 }
 
 // Minimal first-name helper that won't throw on weird input. We strip
@@ -89,13 +91,17 @@ export class ClientAIContextService {
   // Public API. Reads cached context if fresh, else rebuilds from DB.
   // Caching is per-user and short — invalidation by TTL only. We do not
   // try to listen for log inserts; staleness is bounded to TTL.
+  // #168-4 (FR-1141): a block or unblock either way since the entry was built
+  // (on any machine) rebuilds it at once, so cached coach-thread words never
+  // outlive a block and come back as soon as it is lifted. One indexed read.
   async build(userId: string): Promise<ClientAIContext> {
+    const blocks = (await everyoneInBlockWith(this.prisma, userId)).sort().join(',');
     const cached = this.cache.get(userId);
-    if (cached && cached.expires_at > Date.now()) {
+    if (cached && cached.expires_at > Date.now() && cached.blocks === blocks) {
       return cached.ctx;
     }
     const ctx = await this.buildFresh(userId);
-    this.cache.set(userId, { ctx, expires_at: Date.now() + CONTEXT_CACHE_TTL_MS });
+    this.cache.set(userId, { ctx, blocks, expires_at: Date.now() + CONTEXT_CACHE_TTL_MS });
     return ctx;
   }
 
