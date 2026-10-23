@@ -18,6 +18,7 @@ import { PrismaService } from '../../src/prisma.service';
 import { PlanRenewalService } from '../../src/checkout/plan-renewal/plan-renewal.service';
 import { readPlanRenewal } from '../../src/checkout/plan-renewal/plan-renewal.state';
 import { moveToHouseCoachTx } from '../../src/checkout/plan-renewal/house-join';
+import { FLAGGED_JOIN_ALERT_BODY } from '../../src/onboarding/flagged-join-alert';
 import { PLAN_RENEWAL_DAY_MS } from '../../src/checkout/plan-renewal/plan-renewal.cadence';
 import { CheckoutService } from '../../src/checkout/checkout.service';
 import { SubscriptionCheckoutService } from '../../src/checkout/subscription-checkout.service';
@@ -44,20 +45,24 @@ const quiet = new Proxy({}, { get: (_t, p) => (p === 'then' ? undefined : async 
 
 (DB_URL ? describe : describe.skip)('HOUSE-JOIN-BE: the house coach door', () => {
   const prisma = new PrismaService({ datasources: { db: { url: DB_URL } } });
-  const keys = [...'KLHAOQE'];
+  // b#1131 B2: B, C and D (K's clients) check out on the hosted page.
+  const keys = [...'KLHAOQEBCD'];
   const u: Record<string, string> = Object.fromEntries(keys.map((k) => [k, randomUUID()]));
   const supa: Record<string, string> = Object.fromEntries(keys.map((k) => [k, randomUUID()]));
-  const coachOf: Record<string, string> = { A: 'K', O: 'K', E: 'K', Q: 'H' };
+  const coachOf: Record<string, string> = { A: 'K', O: 'K', E: 'K', Q: 'H', B: 'K', C: 'K', D: 'K' };
   const isCoach = (k: string) => 'KLH'.includes(k);
   const pkg = { PH: randomUUID(), PHR: randomUUID(), PHT: randomUUID(), PH0: randomUUID(), PL: randomUUID() };
   const PI = `pi_house_${u.A}`;
   const env = { flag: process.env.FEATURE_PLAN_RENEWAL, house: process.env.HOUSE_COACH_USER_ID };
 
   const stripe = {
-    createCustomer: async () => ({ id: `cus_house_${u.A}` }),
+    createCustomer: async () => ({ id: `cus_house_${randomUUID()}` }),
     createPaymentIntent: async () => ({ id: PI, client_secret: `${PI}_secret` }),
     createEphemeralKey: async () => ({ secret: 'ek_house' }),
-    retrievePaymentIntent: async () => ({ id: PI, status: 'succeeded', latest_charge: `ch_house_${u.A}` }),
+    retrievePaymentIntent: async (id: string) => ({ id, status: 'succeeded', latest_charge: `ch_of_${id}` }),
+    createProduct: async () => ({ id: `prod_house_${randomUUID()}` }),
+    createPrice: async () => ({ id: `price_house_${randomUUID()}` }),
+    createCheckoutSession: async (a: { clientReferenceId: string }) => ({ id: `cs_house_${a.clientReferenceId}`, url: 'https://checkout.example.test' }),
   };
   const packages = new PackagesService(prisma, new SubCoachScopeService(prisma));
   const checkout = new CheckoutService(
@@ -251,5 +256,119 @@ const quiet = new Proxy({}, { get: (_t, p) => (p === 'then' ? undefined : async 
     expect([await readsRenewal('K', 'O'), await readsRenewal('K', 'A')]).toEqual([1, 0]);
     // The door is shut behind them.
     expect(await answer(list('A', 'H'))).toBe('PACKAGE_NOT_FOUND');
+  });
+
+  // b#1131 B2 (OPERATOR RULING 6353458098, owner #166-5 "nothing moves before payment"): a hosted
+  // checkout moves the client only once Stripe reports it paid. B and C pay late (a delayed payment:
+  // the completion says 'unpaid'); B's payment fails, C's settles. D pays at completion. B and C were
+  // flagged for extra care in their consultation (LO B2, owner 61a); D was not.
+  describe('b#1131 B2: the hosted checkout moves the client only once paid', () => {
+    const cs: Record<string, string> = {};
+    const sent: Record<string, number> = {};
+    /** Stripe sends `type` for `who`'s session; a new event id each time unless `same` repeats the last one. */
+    const stripeSends = (who: string, type: string, payment_status: string, same = false) => {
+      const key = `${who}-${type}`;
+      if (!same) sent[key] = (sent[key] ?? 0) + 1;
+      return billing.handleEvent({
+        id: `evt_${type}_${u[who]}_${sent[key]}`,
+        type: `checkout.session.${type}`,
+        data: { object: { id: cs[who], mode: 'payment', payment_status, payment_intent: `pi_hosted_${u[who]}`, customer: `cus_hosted_${u[who]}` } },
+      });
+    };
+    /** Who coaches `who`, their house purchase, and the flag alerts the house coach has about them. */
+    const where = async (who: string) => {
+      const user = await prisma.user.findUniqueOrThrow({ where: { id: u[who] }, select: { coach_id: true } });
+      return {
+        coach: user.coach_id === u.H ? 'H' : user.coach_id === u.K ? 'K' : user.coach_id,
+        purchase: await prisma.clientPurchase.findFirstOrThrow({
+          where: { client_user_id: u[who], package_id: pkg.PH },
+          select: { status: true, entitlement_active: true },
+        }),
+        alerts: await prisma.notification.count({
+          where: { user_id: u.H, body: FLAGGED_JOIN_ALERT_BODY, payload: { path: ['client_id'], equals: u[who] } },
+        }),
+      };
+    };
+    const intake = (who: string, flagged: boolean) =>
+      prisma.clientOnboardingIntake.create({
+        data: {
+          client_id: u[who], version: 'consult-v1', answers: {}, completed_at: new Date(),
+          screening_any_yes: flagged, screening_flagged_at: flagged ? new Date() : null,
+        },
+      });
+
+    beforeAll(async () => {
+      await prisma.connectAccount.upsert({
+        where: { coach_user_id: u.H },
+        create: { coach_user_id: u.H, stripe_account_id: `acct_house_${u.H}`, charges_enabled: true },
+        update: {},
+      });
+      for (const who of 'BCD') await ranOut(who, HOUR);
+      await renewal.runSweep(new Date());
+      await intake('B', true);
+      await intake('C', true);
+      await intake('D', false);
+    });
+
+    it('LO N3: while the house account is not a coach the door is closed and a payment moves nobody', async () => {
+      await prisma.user.update({ where: { id: u.H }, data: { role: 'owner' } });
+      try {
+        expect(await everyBuy('D', pkg.PH, pkg.PHR, 'H')).toEqual(closed);
+        expect(await prisma.$transaction((tx) => moveToHouseCoachTx(tx, u.D, u.H))).toBeNull();
+      } finally {
+        await prisma.user.update({ where: { id: u.H }, data: { role: 'coach' } });
+      }
+      expect(await prisma.user.findUniqueOrThrow({ where: { id: u.D } })).toMatchObject({ coach_id: u.K });
+    });
+
+    it('unpaid at completion, then the payment fails: no move, no access, no alert; replays change nothing', async () => {
+      cs.B = (await checkout.createCheckoutForClient(u.B, { package_id: pkg.PH })).session_id;
+      await expect(stripeSends('B', 'completed', 'unpaid')).resolves.toMatchObject({ processed: true });
+      expect(await where('B')).toEqual({ coach: 'K', purchase: { status: 'pending', entitlement_active: false }, alerts: 0 });
+
+      await expect(stripeSends('B', 'async_payment_failed', 'unpaid')).resolves.toMatchObject({ processed: true });
+      const failed = { coach: 'K', purchase: { status: 'payment_failed', entitlement_active: false }, alerts: 0 };
+      expect(await where('B')).toEqual(failed);
+      // The same event again (deduplicated) and a new delivery of each: nothing new.
+      await stripeSends('B', 'async_payment_failed', 'unpaid', true);
+      await stripeSends('B', 'async_payment_failed', 'unpaid');
+      await stripeSends('B', 'completed', 'unpaid');
+      expect(await where('B')).toEqual(failed);
+      expect([await reads('K', 'B'), await reads('H', 'B')]).toEqual([1, 0]);
+    });
+
+    it('unpaid at completion, then the payment settles: one move, one access, one alert; replays and a late failure change nothing', async () => {
+      cs.C = (await checkout.createCheckoutForClient(u.C, { package_id: pkg.PH })).session_id;
+      await stripeSends('C', 'completed', 'unpaid');
+      expect(await where('C')).toEqual({ coach: 'K', purchase: { status: 'pending', entitlement_active: false }, alerts: 0 });
+      expect([await reads('K', 'C'), await reads('H', 'C')]).toEqual([1, 0]);
+
+      await expect(stripeSends('C', 'async_payment_succeeded', 'paid')).resolves.toMatchObject({ processed: true });
+      const moved = { coach: 'H', purchase: { status: 'paid', entitlement_active: true }, alerts: 1 };
+      expect(await where('C')).toEqual(moved);
+      expect(await prisma.planRenewal.findMany({ where: { client_user_id: u.C }, select: { status: true, stop_reason: true } }))
+        .toEqual([{ status: 'stopped', stop_reason: 'moved' }]);
+      expect([await reads('K', 'C'), await reads('H', 'C')]).toEqual([0, 1]);
+
+      await stripeSends('C', 'async_payment_succeeded', 'paid', true);
+      await stripeSends('C', 'async_payment_succeeded', 'paid');
+      await stripeSends('C', 'completed', 'unpaid');
+      // A failure after the payment was reported paid moves nobody back.
+      await stripeSends('C', 'async_payment_failed', 'unpaid');
+      expect(await where('C')).toEqual(moved);
+      expect(await prisma.purchaseFanout.count({ where: { purchase: { client_user_id: u.C, package_id: pkg.PH } } })).toBe(1);
+    });
+
+    it('paid at completion: one move, no flag alert for a client who was not flagged; a replay changes nothing', async () => {
+      cs.D = (await checkout.createCheckoutForClient(u.D, { package_id: pkg.PH })).session_id;
+      await expect(stripeSends('D', 'completed', 'paid')).resolves.toMatchObject({ processed: true });
+      const moved = { coach: 'H', purchase: { status: 'paid', entitlement_active: true }, alerts: 0 };
+      expect(await where('D')).toEqual(moved);
+      await stripeSends('D', 'completed', 'paid', true);
+      await stripeSends('D', 'completed', 'paid');
+      await stripeSends('D', 'async_payment_failed', 'unpaid');
+      expect(await where('D')).toEqual(moved);
+      expect(await prisma.notification.count({ where: { user_id: u.H, body: FLAGGED_JOIN_ALERT_BODY } })).toBe(1);
+    });
   });
 });

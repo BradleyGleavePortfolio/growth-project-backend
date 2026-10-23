@@ -237,6 +237,10 @@ export class PurchaseFanoutService {
       // HOUSE-JOIN-BE — a client whose plan ended bought TGP's house coach's
       // package through the renewal door: now that it is paid, they move.
       const cancelled = await moveToHouseCoachTx(tx, ctx.clientId, ctx.coachId, this.sessions);
+      // b#1131 LO B2 (owner 61a): the move made the house coach the client's
+      // coach, so a flagged consultation alerts them once (a replay moves
+      // nothing: cancelled is null).
+      if (cancelled) await alertCoachOfFlaggedJoinTx(tx, ctx.clientId, ctx.coachId);
       if (cancelled?.length) this.pendingMoveCancels.set(purchase.id, { clientId: ctx.clientId, cancelled });
     }
 

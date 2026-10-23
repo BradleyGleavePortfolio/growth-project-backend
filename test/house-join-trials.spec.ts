@@ -4,6 +4,7 @@
 // the same 404 as any other cross-coach package, while a paid house package
 // stays on the door. The live-DB proof of all three checkout paths is in
 // test/rls/house-join-rls.spec.ts; this spec pins the rule itself.
+import { Logger } from '@nestjs/common';
 import type { CoachPackage } from '@prisma/client';
 import { ClientPackagesController } from '../src/packages/packages.controller';
 import { freeTrialPackage, houseJoinToBuy } from '../src/checkout/plan-renewal/house-join';
@@ -79,9 +80,11 @@ describe('HOUSE-SERVER — no free trials through the house door (#166-6)', () =
       getById: jest.fn(async (id: string) => rows.find((r) => r.id === id) ?? null),
     };
     const trials = { offersForClient: jest.fn(async () => new Map()) };
+    const db = makeFakePrisma();
+    db._users.push({ id: HOUSE, role: 'coach' });
     return new ClientPackagesController(
       stub<ConstructorParameters<typeof ClientPackagesController>[0]>(packages),
-      stub<ConstructorParameters<typeof ClientPackagesController>[1]>(makeFakePrisma()),
+      stub<ConstructorParameters<typeof ClientPackagesController>[1]>(db),
       stub<ConstructorParameters<typeof ClientPackagesController>[2]>(trials),
     );
   }
@@ -111,9 +114,28 @@ describe('HOUSE-SERVER — no free trials through the house door (#166-6)', () =
     await expect(controller.detail(req, PAID.id)).resolves.toMatchObject({ id: PAID.id });
   });
 
+  /** A database whose house account has `role`. */
+  const houseIs = (role: string) =>
+    stub<Parameters<typeof houseJoinToBuy>[0]>({ user: { findUnique: async () => ({ role }) } });
+
   it('houseJoinToBuy (every checkout path): null for a free-trial package, the coach left for a paid one', async () => {
-    const db = stub<Parameters<typeof houseJoinToBuy>[0]>({});
+    const db = houseIs('coach');
     await expect(houseJoinToBuy(db, CLIENT, TRIAL)).resolves.toBeNull();
     await expect(houseJoinToBuy(db, CLIENT, PAID)).resolves.toBe(COACH);
+  });
+
+  it('b#1131 LO N3: the door is closed, with one log line, unless the house account is a coach', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      expect(await Promise.all(['owner', 'student', 'sub_coach'].map((r) => houseJoinToBuy(houseIs(r), CLIENT, PAID))))
+        .toEqual([null, null, null]);
+      expect(warn).toHaveBeenCalledTimes(3);
+      expect(warn).toHaveBeenCalledWith('house join closed: HOUSE_COACH_USER_ID role is owner, not coach');
+      warn.mockClear();
+      await expect(houseJoinToBuy(houseIs('coach'), CLIENT, PAID)).resolves.toBe(COACH);
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
