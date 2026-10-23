@@ -640,10 +640,10 @@ export class CheckoutWebhookHandlerService {
     prefetched?: CheckoutWebhookPrefetch,
   ): Promise<CheckoutWebhookResult> {
     switch (event.type) {
-      case 'checkout.session.completed':
       // b#1131 B2 (OPERATOR RULING 6353458098): a delayed payment that settled
       // activates the purchase its completion held, once (event-id dedup and
       // CHECKOUT_NEVER_REACTIVATES).
+      case 'checkout.session.completed':
       case 'checkout.session.async_payment_succeeded':
         return this.applyCheckoutCompleted(event, tx, prefetched);
       case 'checkout.session.async_payment_failed':
