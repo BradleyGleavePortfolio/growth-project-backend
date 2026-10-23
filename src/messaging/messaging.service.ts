@@ -1301,7 +1301,7 @@ export class MessagingService {
         // assigned clients only.
         threadCoachId = headCoachId;
         const ids = await this.subCoachScope.getAuthorizedClientIds(coachId);
-        if (ids.length === 0) return { total: 0, by_client: {} };
+        if (ids.length === 0) return { total: 0, by_client: {}, closed_client_ids: [] };
         clientFilter = { in: ids };
       }
     }
@@ -1317,8 +1317,9 @@ export class MessagingService {
     // is absent (legacy unit-test DI) we fall back to the prior
     // `NOT: { sender_id: coachId }` behaviour so those tests are unchanged.
     let senderFilter: Prisma.CoachMessageWhereInput;
+    let clientIds: string[] = [];
     if (this.subCoachScope) {
-      const clientIds =
+      clientIds =
         clientFilter?.in ??
         (await this.subCoachScope.getAuthorizedClientIds(coachId));
       senderFilter = { sender_id: { in: clientIds } };
@@ -1359,7 +1360,9 @@ export class MessagingService {
       }
       total += g._count._all;
     }
-    return { total, by_client };
+    // FR-1141 (LO-872 B1): the roster clients in a block either way, ids only,
+    // so the coach's list leaves them out too ("Dissapear"); unblock clears it.
+    return { total, by_client, closed_client_ids: clientIds.filter((id) => blockedIds.has(id)).sort() };
   }
 
   async unreadCountForClient(clientId: string) {
