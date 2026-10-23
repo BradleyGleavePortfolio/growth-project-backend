@@ -24,6 +24,7 @@ import { EmailTemplateKey } from '../email/email.types';
 // StorefrontModule (legacy tests, half-built deploys).
 import { NotificationKind } from '../notifications/notification-kind';
 import { NotificationsService } from '../notifications/notifications.service';
+import { describeFailure } from '../observability/log-pii';
 import { GUEST_CHECKOUT_METADATA_KEY, GuestCheckoutService } from '../storefront/guest-checkout.service';
 
 // PR-2 P0-c — deep link the coach taps from the COACH_ALERT inbox to
@@ -723,7 +724,7 @@ export class BillingService {
         );
       } catch (err) {
         this.logger.warn(
-          `guest conversion after commit failed pi=${guestConversion.paymentIntentId}: ${(err as Error).message}`,
+          `guest conversion after commit failed pi=${guestConversion.paymentIntentId}: ${describeFailure(err)}`,
         );
       }
     }
