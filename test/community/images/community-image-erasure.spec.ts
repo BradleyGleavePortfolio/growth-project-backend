@@ -30,7 +30,8 @@ const COHORT = '33333333-3333-4333-8333-333333333333';
 const MEMBER = '55555555-5555-4555-8555-555555555555';
 const MSG = '77777777-7777-4777-8777-777777777777';
 const REPORTER = '99999999-9999-4999-8999-999999999999';
-const IMAGE_KEY = `${MEMBER}/${COHORT}-1790000000000-0123456789abcdef-0123456789abcdef0123456789abcdef.jpg`;
+const UPLOAD_KEY = `${MEMBER}/${COHORT}-1790000000000-0123456789abcdef-0123456789abcdef0123456789abcdef.jpg`;
+const IMAGE_KEY = UPLOAD_KEY.replace(/\.jpg$/, '.sent.jpg');
 const VOICE_KEY = `${MEMBER}/1700000000000-0123456789abcdef.m4a`;
 
 function fakeStore(bucket: string) {
@@ -81,7 +82,7 @@ describe('photo erasure through the voice erasure path (SC-BE3)', () => {
     expect(db.table('communityVoiceErasure')[0]).toMatchObject({ completed_at: null, last_error: 'store_not_wired' });
   });
 
-  it('a coach hiding a reported photo records its erasure in the action and removes the object', async () => {
+  it('a coach hiding a reported photo records the erasure of both its objects in the action and removes them', async () => {
     process.env.FEATURE_COMMUNITY_API = 'true';
     const prisma = stub<PrismaService>(db);
     const coach = stub<User>(db.seed('user', { id: COACH, role: 'coach', coach_id: null }));
@@ -126,10 +127,10 @@ describe('photo erasure through the voice erasure path (SC-BE3)', () => {
     await svc.act(coach, String(report.id), 'hide', undefined);
     expect(db.table('communityMessage')[0].deleted_at).toBeInstanceOf(Date);
     expect(db.table('communityVoiceErasure')).toEqual([
-      expect.objectContaining({ kind: 'image_object', target: IMAGE_KEY, reason: 'moderation' }),
+      expect.objectContaining({ kind: 'image_object', target: IMAGE_KEY, reason: 'moderation', completed_at: expect.any(Date) }),
+      expect.objectContaining({ kind: 'image_object', target: UPLOAD_KEY, reason: 'moderation', completed_at: expect.any(Date) }),
     ]);
-    expect(images.removeObjects).toHaveBeenCalledWith([IMAGE_KEY]);
-    expect(db.table('communityVoiceErasure')[0].completed_at).toBeInstanceOf(Date);
+    expect(images.removeObjects.mock.calls).toEqual([[[IMAGE_KEY]], [[UPLOAD_KEY]]]);
     delete process.env.FEATURE_COMMUNITY_API;
   });
 });

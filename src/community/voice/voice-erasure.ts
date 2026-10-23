@@ -39,9 +39,12 @@ import { CommunityImageStore } from '../images/community-image-store';
 
 // SC-BE3: 'image_object' (one photo) and 'image_folder' (a person's photo
 // folder, account erasure) are space chat photos, erased from their own bucket
-// (CommunityImageStore) through this same durable work table.
-export type VoiceErasureKind = 'object' | 'owner_folder' | 'image_object' | 'image_folder';
-export type VoiceErasureReason = 'author_delete' | 'moderation' | 'account_deletion';
+// (CommunityImageStore) through this same durable work table. FX-1139:
+// 'image_upload' is one photo upload object, due when its upload link dies
+// (reason 'upload_expiry'); a separate kind, so a delete's 'image_object' row
+// for the same key never re-times it.
+export type VoiceErasureKind = 'object' | 'owner_folder' | 'image_object' | 'image_folder' | 'image_upload';
+export type VoiceErasureReason = 'author_delete' | 'moderation' | 'account_deletion' | 'upload_expiry';
 
 export interface VoiceErasureTarget {
   kind: VoiceErasureKind;
@@ -72,8 +75,8 @@ export interface VoiceErasureStores {
   images?: VoiceErasureStorage;
 }
 
-const KINDS: readonly string[] = ['object', 'owner_folder', 'image_object', 'image_folder'];
-const isImageKind = (k: string): boolean => k === 'image_object' || k === 'image_folder';
+const KINDS: readonly string[] = ['object', 'owner_folder', 'image_object', 'image_folder', 'image_upload'];
+const isImageKind = (k: string): boolean => k.startsWith('image_');
 const asKind = (k: string): VoiceErasureKind => (KINDS.includes(k) ? (k as VoiceErasureKind) : 'object');
 
 type ErasureDb = Pick<Prisma.TransactionClient, 'communityVoiceErasure'>;
@@ -142,7 +145,7 @@ async function verifyOne(
   storage: VoiceErasureStorage,
   row: VoiceErasureRow,
 ): Promise<{ done: true; note: string | null } | { done: false; error: string }> {
-  if (row.kind === 'object' || row.kind === 'image_object') {
+  if (row.kind !== 'owner_folder' && row.kind !== 'image_folder') {
     const canonical = storage.isStoreKey
       ? storage.isStoreKey(row.target)
       : isSignableVoiceKey(storage.bucket(), row.target);

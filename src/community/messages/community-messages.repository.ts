@@ -6,6 +6,7 @@ import type { PlanContextTag } from '../plan-context/plan-context.dto';
 import { bannedAmong } from '../community-ban';
 import { fullNamesFor, rowsWithSpaceAccess } from '../community-space-access';
 import { bytesToPeaks } from '../voice/community-voice.dto';
+import { imageErasureTargets, sentImageKey } from '../images/community-image-store';
 import {
   attemptVoiceErasures,
   recordVoiceErasures,
@@ -299,6 +300,8 @@ export class CommunityMessagesRepository {
     body: string;
     parent?: { id: string; at: Date } | null;
     image: { key: string; width: number; height: number; sizeBytes: number };
+    /** FX-1139: copies the upload to its sent key; runs after the rows, so a reused key never copies. */
+    publish: () => Promise<void>;
   }): Promise<CommunityMessage> {
     return this.prisma.$transaction(async (tx) => {
       const m = await tx.communityMessage.create({
@@ -320,15 +323,16 @@ export class CommunityMessagesRepository {
           message_id: m.id,
           cohort_id: params.cohortId,
           author_id: params.senderId,
-          storage_key: params.image.key,
+          storage_key: sentImageKey(params.image.key),
           width: params.image.width,
           height: params.image.height,
           size_bytes: params.image.sizeBytes,
           mime: 'image/jpeg',
         },
       });
+      await params.publish();
       return m;
-    });
+    }, { timeout: 15_000 });
   }
 
   /** The photo rows behind these image messages. */
@@ -353,7 +357,7 @@ export class CommunityMessagesRepository {
   ): Promise<{ deleted: CommunityMessage; work: VoiceErasureRow[] }> {
     return this.prisma.$transaction(async (tx) => {
       const image = await tx.communityMessageImage.findUnique({ where: { message_id: message.id } });
-      const work = image ? await recordVoiceErasures(tx, [{ kind: 'image_object', target: image.storage_key }], reason) : [];
+      const work = image ? await recordVoiceErasures(tx, imageErasureTargets(image.storage_key), reason) : [];
       return { deleted: await this.softDelete(message, tx), work };
     });
   }

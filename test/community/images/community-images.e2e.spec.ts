@@ -2,6 +2,7 @@
  * SC-BE3: photos in the space chat. DB-free: the upload route, the send check,
  * the list rows and the delete erasure run on the real controller, service,
  * repository and photo store over a fake Prisma and a fake storage client.
+ * FX-1139: the reported-photo queue item is in community-image-erasure.spec.ts.
  * Live RLS: test/rls/community-message-images-rls.spec.ts.
  */
 import { ForbiddenException, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
@@ -13,7 +14,10 @@ import {
   CommunityImageStore,
   isPublishableImageKey,
   mintImageKey,
+  sentImageKey,
 } from '../../../src/community/images/community-image-store';
+import { VoiceErasureService } from '../../../src/community/voice/voice-erasure';
+import type { VoiceUploadProvider } from '../../../src/community/voice/voice-upload.provider';
 import { CommunityMessagesService } from '../../../src/community/messages/community-messages.service';
 import { CommunityMessagesRepository } from '../../../src/community/messages/community-messages.repository';
 import { CreateMessageDto, ImageUploadUrlDto } from '../../../src/community/dto/community-message.dto';
@@ -38,6 +42,10 @@ const ME = 'aaaaaaaa-0000-4000-8000-000000000001';
 const MATE = 'aaaaaaaa-0000-4000-8000-000000000002';
 const BANNED = 'aaaaaaaa-0000-4000-8000-000000000003';
 const MB = 1024 * 1024;
+const HOUR = 3600 * 1000;
+/** A signed upload link's token, as Supabase mints it: a JWT whose exp is 2 hours out. */
+const LINK_EXP_MS = Math.floor(Date.now() / 1000 + 7200) * 1000;
+const LINK_TOKEN = `h.${Buffer.from(JSON.stringify({ exp: LINK_EXP_MS / 1000 })).toString('base64url')}.s`;
 
 const me = stub<User>({ id: ME, role: 'client' });
 const cohorts: Record<string, { id: string; workspace_id: string; kind: string }> = {
@@ -55,9 +63,15 @@ function fakeStorage(objects: Map<string, Obj>) {
   const removed: string[][] = [];
   const from = (bucket: string) => ({
     createSignedUploadUrl: async (key: string) => ({
-      data: { signedUrl: `https://s.test/upload/${bucket}/${key}?token=u`, token: 'u', path: key },
+      data: { signedUrl: `https://s.test/upload/${bucket}/${key}?token=${LINK_TOKEN}`, token: LINK_TOKEN, path: key },
       error: null,
     }),
+    copy: async (src: string, dst: string) => {
+      const o = objects.get(src);
+      if (!o || objects.has(dst)) return { data: null, error: { message: 'copy refused' } };
+      objects.set(dst, { ...o });
+      return { data: { path: dst }, error: null };
+    },
     createSignedUrl: async (key: string) => ({ data: { signedUrl: `https://s.test/sign/${bucket}/${key}?t=1` }, error: null }),
     info: async (key: string) => {
       const o = objects.get(key);
@@ -85,7 +99,14 @@ function world(opts: { banned?: string[]; access?: (cohortId: string) => boolean
   const images: Array<Record<string, unknown>> = [];
   const erasures: Array<Record<string, unknown>> = [];
   const prisma = {
-    $transaction: async <T>(fn: (tx: unknown) => Promise<T>) => fn(prisma),
+    $transaction: async <T>(fn: (tx: unknown) => Promise<T>) => {
+      const [m, i] = [messages.length, images.length];
+      return fn(prisma).catch((e: unknown) => {
+        messages.length = m; // a rolled-back send leaves nothing
+        images.length = i;
+        throw e;
+      });
+    },
     communityMessage: {
       create: async ({ data }: { data: Record<string, unknown> }) => {
         const at = new Date(Date.UTC(2026, 9, 1, 0, messages.length));
@@ -125,6 +146,8 @@ function world(opts: { banned?: string[]; access?: (cohortId: string) => boolean
         (opts.banned ?? []).filter((u) => where.user_id.in.includes(u)).map((user_id) => ({ user_id })),
     },
     communityVoiceErasure: {
+      findMany: async ({ where }: { where: { next_attempt_at: { lte: Date } } }) =>
+        erasures.filter((e) => !e.completed_at && (e.next_attempt_at as Date) <= where.next_attempt_at.lte),
       updateMany: async ({ where, data }: { where: { id?: string }; data: Record<string, unknown> }) => {
         const hit = erasures.filter((e) => where.id !== undefined && e.id === where.id && !e.completed_at);
         for (const e of hit) Object.assign(e, data);
@@ -161,8 +184,9 @@ function world(opts: { banned?: string[]; access?: (cohortId: string) => boolean
     stub<CommunityNotificationsService>({ pushEnabled: () => false }),
     store,
   );
-  const controller = new CommunityImagesController(access, store);
-  return { service, controller, store, objects, removed, messages, images, erasures };
+  const controller = new CommunityImagesController(access, store, stub<PrismaService>(prisma));
+  const cron = new VoiceErasureService(stub<PrismaService>(prisma), stub<VoiceUploadProvider>({}), store);
+  return { service, controller, cron, store, objects, removed, messages, images, erasures };
 }
 
 const req = stub<AuthedRequest>({ user: me });
@@ -191,6 +215,14 @@ describe('POST /community/cohorts/:cohortId/images/upload-url (SC-BE3)', () => {
     expect(isPublishableImageKey(out.key, ME, FOREIGN_SPACE)).toBe(false);
     expect(Date.parse(out.expires_at)).toBeGreaterThan(Date.now());
     expect((await controller.uploadUrl(req, SPACE, dto)).key).not.toBe(out.key);
+    expect(out).not.toHaveProperty('sweep_at');
+  });
+
+  it('records the upload object erasure before the link leaves, due 5 minutes after the link token expires (FX-1139)', async () => {
+    const w = world();
+    const { key } = await w.controller.uploadUrl(req, SPACE, dto);
+    expect(w.erasures).toEqual([expect.objectContaining({ kind: 'image_upload', target: key, reason: 'upload_expiry' })]);
+    expect((w.erasures[0].next_attempt_at as Date).getTime()).toBe(LINK_EXP_MS + 5 * 60 * 1000);
   });
 
   it('refuses a non-member, a space of another workspace and a missing space alike (403)', async () => {
@@ -232,10 +264,13 @@ describe('POST messages kind image (SC-BE3)', () => {
     const key = await uploaded(w);
     const sent = await w.service.send(me, SPACE, 'after the long run', undefined, undefined, { key, width: 1200, height: 900 });
     expect(sent.message).toMatchObject({ kind: 'image', body: 'after the long run' });
-    expect(sent.message.image).toMatchObject({ width: 1200, height: 900, url: expect.stringContaining(key) });
-    expect(w.images).toEqual([expect.objectContaining({ storage_key: key, size_bytes: MB, author_id: ME, cohort_id: SPACE })]);
+    expect(sent.message.image).toMatchObject({ width: 1200, height: 900, url: expect.stringContaining(sentImageKey(key)) });
+    expect(w.images).toEqual([
+      expect.objectContaining({ storage_key: sentImageKey(key), size_bytes: MB, author_id: ME, cohort_id: SPACE }),
+    ]);
+    expect(w.objects.get(sentImageKey(key))).toEqual(w.objects.get(key));
     const listed = await w.service.list(me, SPACE, {});
-    expect(listed.messages[0].image?.url).toContain(key);
+    expect(listed.messages[0].image?.url).toContain(sentImageKey(key));
     expect(Date.parse(listed.messages[0].image?.expires_at ?? '')).toBeGreaterThan(Date.now());
   });
 
@@ -245,6 +280,8 @@ describe('POST messages kind image (SC-BE3)', () => {
     expect(await code(send(mintImageKey(MATE, SPACE)))).toBe('community.image.key_invalid');
     expect(await code(send(mintImageKey(ME, FOREIGN_SPACE)))).toBe('community.image.key_invalid');
     expect(await code(send(`${ME}/../x.jpg`))).toBe('community.image.key_invalid');
+    expect(await code(send(mintImageKey(ME, SPACE, Date.now() - 11 * 60 * 1000)))).toBe('community.image.key_invalid');
+    expect(await code(send(sentImageKey(mintImageKey(ME, SPACE))))).toBe('community.image.key_invalid');
     expect(await code(send(mintImageKey(ME, SPACE)))).toBe('community.image.missing');
     expect(await code(send(await uploaded(w, { contentType: 'image/png' })))).toBe('community.image.not_jpeg');
     expect(await code(send(await uploaded(w, { head: [0x89, 0x50, 0x4e] })))).toBe('community.image.not_jpeg');
@@ -274,15 +311,39 @@ describe('POST messages kind image (SC-BE3)', () => {
     await expect(w.service.getOne(me, 'eeeeeeee-0000-4000-8000-0000000000b1')).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it('delete records the object erasure, removes the object and verifies it is gone', async () => {
+  it('delete erases the sent copy and the upload, and verifies both are gone', async () => {
     const w = world();
     const key = await uploaded(w);
     const sent = await w.service.send(me, SPACE, '', undefined, undefined, { key, width: 1, height: 1 });
     const out = await w.service.remove(me, sent.message.id);
     expect(out.message.image).toBeNull();
-    expect(w.erasures).toEqual([expect.objectContaining({ kind: 'image_object', target: key, reason: 'author_delete' })]);
-    expect(w.removed).toEqual([[key]]);
+    expect(w.erasures.slice(1)).toEqual([
+      expect.objectContaining({ kind: 'image_object', target: sentImageKey(key), reason: 'author_delete', completed_at: expect.any(Date) }),
+      expect.objectContaining({ kind: 'image_object', target: key, reason: 'author_delete', completed_at: expect.any(Date) }),
+    ]);
+    expect(w.removed).toEqual([[sentImageKey(key)], [key]]);
+    expect(w.objects.size).toBe(0);
+  });
+
+  it('a replayed upload link after a delete never re-publishes and is erased once the link is dead (FX-1139)', async () => {
+    const w = world();
+    const key = await uploaded(w);
+    const sent = await w.service.send(me, SPACE, '', undefined, undefined, { key, width: 1, height: 1 });
+    await w.service.remove(me, sent.message.id);
+    w.objects.set(key, { size: MB, contentType: 'image/jpeg', head: JPEG }); // the still-live link, used again
+    expect(await code(w.service.send(me, SPACE, '', undefined, undefined, { key, width: 1, height: 1 }))).toBe('community.image.key_used');
+    expect(w.objects.has(sentImageKey(key))).toBe(false);
+    expect((await w.service.list(me, SPACE, {})).messages).toEqual([]);
+    expect(await w.cron.retryDue(new Date(Date.now() + HOUR))).toEqual({ completed: 0, pending: 0 });
+    expect(w.objects.has(key)).toBe(true);
+    expect(await w.cron.retryDue(new Date(LINK_EXP_MS + 6 * 60 * 1000))).toEqual({ completed: 1, pending: 0 });
+    expect(w.objects.size).toBe(0);
+  });
+
+  it('an upload never sent is erased once its link is dead (FX-1139)', async () => {
+    const w = world();
+    const key = await uploaded(w);
+    expect(await w.cron.retryDue(new Date(LINK_EXP_MS + 6 * 60 * 1000))).toEqual({ completed: 1, pending: 0 });
     expect(w.objects.has(key)).toBe(false);
-    expect(w.erasures[0].completed_at).toEqual(expect.any(Date));
   });
 });

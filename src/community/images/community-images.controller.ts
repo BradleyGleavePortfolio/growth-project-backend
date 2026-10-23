@@ -16,6 +16,8 @@ import { JwtAuthGuard } from '../../auth/auth.guard';
 import { RolesGuard } from '../../auth/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { THROTTLER_ROUTE_LIMITS } from '../../throttler/throttler.config';
+import { PrismaService } from '../../prisma.service';
+import { recordVoiceErasures } from '../voice/voice-erasure';
 import { CommunityAccessService } from '../community-access.service';
 import { CommunityFeatureFlagGuard } from '../community-feature-flag.guard';
 import { ImageUploadUrlDto } from '../dto/community-message.dto';
@@ -26,7 +28,8 @@ import { CommunityImageStore, communityImagesEnabled } from './community-image-s
  * off is 404 (the route does not exist). A space the caller cannot open, a
  * missing one and a ban all read 403 alike, so the answer never says whether a
  * space exists. The DTO allows JPEG up to 10 MB; the bucket enforces both again
- * and the send route checks the stored object.
+ * and the send route checks the stored object. FX-1139: the upload object's
+ * erasure is recorded, due when the link dies, before the link is returned.
  */
 @ApiTags('community')
 @Controller('community')
@@ -34,6 +37,7 @@ export class CommunityImagesController {
   constructor(
     private readonly access: CommunityAccessService,
     private readonly store: CommunityImageStore,
+    private readonly prisma: PrismaService,
   ) {}
 
   @Post('cohorts/:cohortId/images/upload-url')
@@ -50,6 +54,8 @@ export class CommunityImagesController {
     if (!cohort || !(await this.access.canAccessCohort(cohort, req.user))) {
       throw new ForbiddenException({ error: 'forbidden', code: 'community.image.no_access' });
     }
-    return this.store.signUpload(req.user.id, cohort.id);
+    const { sweep_at, ...link } = await this.store.signUpload(req.user.id, cohort.id);
+    await recordVoiceErasures(this.prisma, [{ kind: 'image_upload', target: link.key }], 'upload_expiry', sweep_at);
+    return link;
   }
 }

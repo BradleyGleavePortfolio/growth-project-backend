@@ -2,7 +2,7 @@
  * SC-BE3 live RLS: community_message_images and the community-images objects,
  * across two workspaces, as a role that does not bypass row security. Every 0
  * follows a control read of 1 by the same caller on a row it may see.
- * Migration 20270502008500_community_message_images.
+ * Migration 20270502009200_community_message_images.
  */
 import { randomUUID } from 'crypto';
 import { readFileSync } from 'fs';
@@ -15,7 +15,7 @@ if (!DB_URL && process.env.CI === 'true') {
   throw new Error('community-message-images-rls: CI=true but no TEST_DATABASE_URL; refusing to skip.');
 }
 const MIGRATION = readFileSync(
-  join(__dirname, '../../prisma/migrations/20270502008500_community_message_images/migration.sql'),
+  join(__dirname, '../../prisma/migrations/20270502009200_community_message_images/migration.sql'),
   'utf8',
 );
 const BUCKET_BLOCK = /DO \$community_images_bucket\$[\s\S]*?\$community_images_bucket\$;/.exec(MIGRATION)?.[0] ?? '';

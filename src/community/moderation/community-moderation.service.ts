@@ -24,7 +24,7 @@ import { CommunityModerationRepository } from './community-moderation.repository
 import { PrismaService } from '../../prisma.service';
 import { assertDmParticipantIfDm } from '../safety/community-safety.service';
 import { VoiceUploadProvider } from '../voice/voice-upload.provider';
-import { CommunityImageStore } from '../images/community-image-store';
+import { CommunityImageStore, imageErasureTargets } from '../images/community-image-store';
 import { ReportAlertService } from '../../report-alerts/report-alert.service';
 import { WIN_NOT_FOUND, winModerationWorkspaceId } from '../community-wins.policy';
 import { recordWorkspaceBan } from '../community-ban';
@@ -927,7 +927,7 @@ export class CommunityModerationService {
       if (msg?.kind === 'voice') return this.hideTarget(tx, 'voice_note', msg.id);
       // SC-BE3: a photo's object erasure is recorded before the soft delete.
       const image = msg?.kind === 'image' ? await tx.communityMessageImage.findUnique({ where: { message_id: msg.id } }) : null;
-      const work = image ? await recordVoiceErasures(tx, [{ kind: 'image_object', target: image.storage_key }], 'moderation') : [];
+      const work = image ? await recordVoiceErasures(tx, imageErasureTargets(image.storage_key), 'moderation') : [];
       if (msg && !msg.deleted_at) {
         await this.messagesRepo.softDelete({ id: msg.id, created_at: msg.created_at }, tx);
       }

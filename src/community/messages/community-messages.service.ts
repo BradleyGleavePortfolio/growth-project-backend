@@ -149,8 +149,9 @@ export class CommunityMessagesService {
 
   /**
    * SC-BE3: write a photo message. Flag off is 422. The key must be one this
-   * server minted for this sender in this space (24 h); the object must be at
-   * that key, JPEG and within 10 MB, else 422. Storage down is 503.
+   * server minted for this sender in this space (10 minutes); the object must
+   * be at that key, JPEG and within 10 MB, else 422. Storage down is 503.
+   * FX-1139: the rows and the copy to the sent key commit together.
    */
   private async createImage(
     user: User,
@@ -161,8 +162,9 @@ export class CommunityMessagesService {
   ): Promise<CommunityMessage> {
     if (!communityImagesEnabled()) throw IMAGE_REJECTED('community.image.disabled');
     if (!isPublishableImageKey(image.key, user.id, cohort.id)) throw IMAGE_REJECTED('community.image.key_invalid');
-    if (!this.images) throw new ServiceUnavailableException({ error: 'unavailable', code: 'community.image.storage_unavailable' });
-    const { result, size } = await this.images.check(image.key, user.id);
+    const images = this.images;
+    if (!images) throw new ServiceUnavailableException({ error: 'unavailable', code: 'community.image.storage_unavailable' });
+    const { result, size } = await images.check(image.key, user.id);
     if (result === 'unavailable') {
       throw new ServiceUnavailableException({ error: 'unavailable', code: 'community.image.storage_unavailable' });
     }
@@ -175,6 +177,7 @@ export class CommunityMessagesService {
         body,
         parent,
         image: { key: image.key, width: image.width, height: image.height, sizeBytes: size },
+        publish: () => images.publish(image.key),
       });
     } catch (e) {
       if ((e as { code?: string }).code === 'P2002') throw IMAGE_REJECTED('community.image.key_used');
@@ -532,7 +535,8 @@ export class CommunityMessagesService {
       },
       { distinctId: updated.sender_id, channelKind: 'cohort' },
     );
-    return CommunityMessageResponseSchema.parse({ message: this.view(updated) });
+    // FX-1139 (C-2): a live photo keeps its `image` on the edit answer, as on GET.
+    return CommunityMessageResponseSchema.parse({ message: this.view(updated, undefined, undefined, await this.imagesOf([updated])) });
   }
 
   async remove(user: User, messageId: string): Promise<CommunityMessageResponse> {
@@ -569,7 +573,11 @@ export class CommunityMessagesService {
   /** SC-BE3: delete a photo message and erase its object (the voice erasure path and cron). */
   private async removeImage(m: CommunityMessage, isAuthor: boolean): Promise<CommunityMessageResponse> {
     const { deleted, work } = await this.repo.softDeleteImage(m, isAuthor ? 'author_delete' : 'moderation');
-    if (work.length > 0) await this.repo.attemptImageErasure(this.images, work, this.logger).catch(() => undefined);
+    if (work.length > 0) {
+      await this.repo
+        .attemptImageErasure(this.images, work, this.logger)
+        .catch((e: unknown) => this.logger.warn(`community image erasure left to the cron: ${String(e)}`));
+    }
     return CommunityMessageResponseSchema.parse({ message: this.view(deleted) });
   }
 }
