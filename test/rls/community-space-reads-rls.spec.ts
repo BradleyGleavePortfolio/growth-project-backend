@@ -123,22 +123,28 @@ const DENIED = '42501';
 
   it('unread_count leaves out own messages, blocked people both ways and a banned author, and drops on read', async () => {
     expect(await unread('O', 'mem')).toBe(0);
-    await say('O', 'mem');
+    const fromO = await say('O', 'mem');
     expect(await unread('O', 'mem')).toBe(0); // own
     const fromV = await say('V', 'mem');
+    const fromA = await say('A', 'mem'); // a message O has not read yet, before Z's
     const fromZ = await say('Z', 'mem');
-    expect(await unread('O', 'mem')).toBe(2); // control: V and Z count
+    expect(await unread('O', 'mem')).toBe(3); // control: V, A and Z count
     const vSees = await unread('V', 'mem'); // control: counts O's two messages
     await prisma.userBlock.create({ data: { blocker_id: id.O, blocked_id: id.V } });
-    expect(await unread('O', 'mem')).toBe(1); // O blocks V
+    expect(await unread('O', 'mem')).toBe(2); // O blocks V
     expect(await unread('V', 'mem')).toBe((vSees ?? 0) - 2); // the other way: V stops counting O's two
     expect(await status(routes.markRead(req('O'), space.mem, { message_id: fromV }))).toBe(404);
+    expect(await status(routes.markRead(req('V'), space.mem, { message_id: fromA }))).toBe(200); // control: V moves a line
+    expect(await status(routes.markRead(req('V'), space.mem, { message_id: fromO }))).toBe(404); // the other way too
     await prisma.communityWorkspaceBan.create({ data: { workspace_id: ws.A, user_id: id.Z } });
-    expect(await unread('O', 'mem')).toBe(0); // Z banned
-    expect(await status(routes.markRead(req('O'), space.mem, { message_id: fromZ }))).toBe(404); // nor the read line
+    expect(await unread('O', 'mem')).toBe(1); // Z banned: only A's message is left
+    const line = await routes.getRead(req('O'), space.mem);
+    expect(await status(routes.markRead(req('O'), space.mem, { message_id: fromZ }))).toBe(404); // Z's later message
+    expect(await routes.getRead(req('O'), space.mem)).toEqual(line); // cannot move the read line (LS-1137 B1)
+    expect(await unread('O', 'mem')).toBe(1); // nor clear A's message
     expect(await status(routes.getRead(req('Z'), space.mem))).toBe(404); // a ban closes the routes too
     const last = await say('A', 'mem');
-    expect(await unread('O', 'mem')).toBe(1);
+    expect(await unread('O', 'mem')).toBe(2);
     await routes.markRead(req('O'), space.mem, { message_id: last });
     expect(await unread('O', 'mem')).toBe(0);
     expect(await unread('X', 'bmem')).toBe(0);
@@ -190,6 +196,9 @@ const DENIED = '42501';
     expect(await at('N', 'ann')).toEqual({ mode: 'all', default_mode: 'all', effective_mode: 'all', silenced_until: null });
     expect(await at('O', 'mem')).toEqual({ mode: 'mute_low', default_mode: 'mute_low', effective_mode: 'mute_low', silenced_until: null });
     expect(await at('N', 'big')).toMatchObject({ default_mode: 'mute_low' }); // a coach-only chat is not Announcements
+    await prisma.communityCohort.update({ where: { id: space.ann }, data: { posting_policy: 'all' } });
+    expect(await at('N', 'ann')).toMatchObject({ mode: 'all', default_mode: 'all' }); // who may post does not change it
+    await prisma.communityCohort.update({ where: { id: space.ann }, data: { posting_policy: 'coach' } });
     expect((await routes.setMode(req('O'), space.mem, { mode: 'all' })).effective_mode).toBe('all');
     const quiet = await routes.silence(req('O'), space.mem, { hours: 8 });
     expect([quiet.mode, quiet.effective_mode]).toEqual(['all', 'mute_all']);
@@ -207,6 +216,10 @@ const DENIED = '42501';
   });
 
   it('row security: own rows only; a row only for a space the writer can read now', async () => {
+    const own = (k: Key, s: Space, sql: string) => as(k, (tx) => tx.$executeRawUnsafe(
+      `${sql} WHERE "user_id" = $1 AND "cohort_id" = $2::uuid`, id[k], space[s]));
+    const touch = 'UPDATE "community_space_reads" SET "updated_at" = now()';
+    const drop = 'DELETE FROM "community_space_reads"';
     expect(await readRows('O', 'O')).toBe(1); // control: O reads O's row
     expect(await readRows('V', 'O')).toBe(0);
     expect(await readRows('X', 'O')).toBe(0);
@@ -218,5 +231,12 @@ const DENIED = '42501';
     const moved = await as('V', (tx) => tx.$executeRawUnsafe(
       `UPDATE "community_space_reads" SET "last_read_at" = now() WHERE "user_id" = $1`, id.O));
     expect(moved).toBe(0);
+    expect(await own('N', 'big', touch)).toBe(1); // control: N changes and deletes N's own row
+    expect(await own('N', 'big', drop)).toBe(1);
+    await prisma.communitySpaceRead.create({ data: { user_id: id.Z, cohort_id: space.mem } }); // the server kept Z's row
+    expect(await readRows('Z', 'Z')).toBe(1); // Z, banned, still reads their own row
+    expect(await own('Z', 'mem', touch)).toBe(0); // but cannot change it (LS-1137 C1)
+    expect(await own('Z', 'mem', drop)).toBe(0); // or delete it
+    expect(await prisma.communitySpaceRead.count({ where: { user_id: id.Z, cohort_id: space.mem } })).toBe(1);
   });
 });
