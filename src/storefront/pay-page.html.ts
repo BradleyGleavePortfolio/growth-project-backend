@@ -27,16 +27,14 @@ export const PAY_PAGE_COPY = {
   failed:
     'The payment did not start, so nothing was charged. Check your connection, then pay again.',
   needName: 'Add your name, then pay again.',
-  // GUEST-ELIGIBILITY (owner #169-8, #170-2): the email step, the code step
-  // for an existing TGP email, "Hey {N}, Welcome Back!" and its summary, and
-  // the new buyer's confirm-and-download state. Wording: PR table GE-W*.
+  // GUEST-ELIGIBILITY (owner #169-8, #170-2): the code step for an existing
+  // TGP email, "Hey {N}, Welcome Back!" and its summary, and the new buyer's
+  // confirm-and-download state. Wording: PR table GE-W*.
   next: 'Continue',
   codeTo: 'This email has a TGP Fitness account, so we emailed a 6-digit code to',
   code: 'Code',
   resend: 'Send a new code',
   otherEmail: 'Use a different email',
-  payingAs: 'Paying as',
-  change: 'Change',
   hey: 'Hey {N}, Welcome Back!',
   back: 'Welcome Back!',
   appChangeH: 'How your app will change',
@@ -148,10 +146,6 @@ ${p.coach.bio?.trim() ? `<figure class="quote"><blockquote>${esc(p.coach.bio.tri
 ${included.length ? `<section id="inc0">${incList}</section>` : ''}
 ${billing}
 <p class="due"><span>${PAY_PAGE_COPY.dueToday}</span><strong>${usd(p.due_today_cents)}</strong></p>
-<form id="f1" class="card" novalidate>
-<label for="em">${PAY_PAGE_COPY.email}</label><input id="em" type="email" autocomplete="email" required maxlength="254" autocapitalize="off" spellcheck="false">
-<p id="m1" class="msg" role="alert"></p><button id="b1" type="submit">${PAY_PAGE_COPY.next}</button>
-</form>
 <form id="f2" class="card" hidden novalidate>
 <p class="lead">${PAY_PAGE_COPY.codeTo} <strong id="to"></strong>.</p>
 <label for="cd">${PAY_PAGE_COPY.code}</label><input id="cd" class="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required>
@@ -163,11 +157,11 @@ ${billing}
 <div data-k="no_coach"><h2>${PAY_PAGE_COPY.appChangeH}</h2><p>${PAY_PAGE_COPY.appChange(c)}</p></div>
 <div data-k="same_coach"><h2>${PAY_PAGE_COPY.oneCoachH}</h2><p>${PAY_PAGE_COPY.oneCoach(c)}</p><h2>${PAY_PAGE_COPY.nextH}</h2><p>${PAY_PAGE_COPY.nextSteps}</p></div>
 </div></section>
-<form id="pay" class="card" hidden>
-<p class="who"><span>${PAY_PAGE_COPY.payingAs}</span><strong id="as"></strong></p><p class="links"><button id="chg" type="button" class="link">${PAY_PAGE_COPY.change}</button></p>
+<form id="pay" class="card">
 <div id="express"></div><p class="or" id="or" hidden>${PAY_PAGE_COPY.orCard}</p>
 <label for="nm">${PAY_PAGE_COPY.name}</label><input id="nm" autocomplete="name" required minlength="2" maxlength="120">
 <label for="ph">${PAY_PAGE_COPY.phone}</label><input id="ph" type="tel" inputmode="tel" autocomplete="tel" required maxlength="32">
+<label for="em">${PAY_PAGE_COPY.email}</label><input id="em" type="email" autocomplete="email" required maxlength="254" autocapitalize="off" spellcheck="false">
 <div id="card"></div><p id="msg" class="msg" role="alert"></p>
 <button id="go" type="submit">${t.cta}</button>
 </form>
@@ -239,84 +233,83 @@ button:disabled{background:#E0D9CE;color:#524E47;cursor:progress}
 button[aria-busy=true]::after{content:"";display:inline-block;width:1em;height:1em;margin-left:.5em;vertical-align:-.15em;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:s .8s linear infinite}
 @keyframes s{to{transform:rotate(360deg)}}@media (prefers-reduced-motion:reduce){button[aria-busy=true]::after{animation:none}}
 .foot{margin:1rem .25rem 0;font-size:.8125rem;color:var(--muted);text-align:center}
-form.card+form.card,.back{margin-top:1rem}.lead{margin:0;overflow-wrap:anywhere}.code{font-size:1.25rem;letter-spacing:.3em}
+.back{margin-top:1rem}.lead{margin:0;overflow-wrap:anywhere}.code{font-size:1.25rem;letter-spacing:.3em}
 .links{display:flex;flex-wrap:wrap;gap:0 1.5rem;margin:0}button.link{margin:0;min-height:2.75rem;padding:.5rem 0;background:none;color:var(--forest);text-decoration:underline;text-underline-offset:.2em}
 .hey{margin:1.5rem 0;font:500 1.625rem/1.25 var(--serif);text-align:center;outline:0;transition:opacity .6s}.hey.out{opacity:0}.sum{outline:0}.sum>div{margin:0 0 1.25rem}.sum p{margin:0}.sum h2{margin-top:1.25rem}
 .who{margin:0}.who span,.who strong{display:block}.who span{font-size:.875rem;color:var(--muted)}
-#as,#le{min-width:0;overflow-wrap:anywhere}.btn{display:flex;align-items:center;justify-content:center;min-height:3.25rem;margin:1.25rem 0;border-radius:.75rem;background:var(--forest);color:var(--on);font-weight:600;text-decoration:none}
+#le{min-width:0;overflow-wrap:anywhere}.btn{display:flex;align-items:center;justify-content:center;min-height:3.25rem;margin:1.25rem 0;border-radius:.75rem;background:var(--forest);color:var(--on);font-weight:600;text-decoration:none}
 @media (prefers-reduced-motion:reduce){.hey{transition:none}}.state{margin:0;font:500 1.375rem/1.35 var(--serif)}[hidden]{display:none!important}`;
 
-// Static browser script: reads only #cfg, never interpolated. The email
-// comes first (GUEST-ELIGIBILITY, owner #170-2): POST check-email; an
-// existing TGP email gets the code step (POST verify-code), then "Hey {N},
-// Welcome Back!" fades to its summary (#169-8) and the payment form opens with
-// the proof (buyer_token); a new email goes straight to payment. A refusal
-// (another coach: #SWITCH-V1; a coach account) stops before payment. Same
-// payment flow for the wallet buttons (their billing contact carries the
-// buyer's name and phone; the email is always the checked one) and the card
-// form: elements.submit(), POST checkout (idempotency key kept per tab and
-// email), then stripe.confirmPayment. Every failed attempt goes through say(),
-// which drops the key: the server treats a failed attempt's key as spent, and
-// nothing was charged on it.
+// Static browser script: reads only #cfg, never interpolated. One payment
+// form (name, phone, email, card or wallet: GC-PHONE). Same flow for the
+// wallet buttons (their billing contact carries the buyer's name, phone and
+// email) and the card form: elements.submit(), POST checkout (idempotency key
+// kept per tab and email), then stripe.confirmPayment. A new email pays at
+// once, with no check (owner #170-2). An email with a TGP account gets 403
+// BUYER_CODE_REQUIRED before any PaymentIntent exists; the page then sends the
+// code (POST check-email) and shows the code step (POST verify-code), then
+// "Hey {N}, Welcome Back!" fades to its summary (#169-8) over the same payment
+// form, and the next tap carries the proof (buyer_token). A refusal (another
+// coach: #SWITCH-V1; a coach account) shows on the code step and the payment
+// form stays closed. Every failed attempt goes through say(), which drops the
+// key: the server treats a failed attempt's key as spent, and nothing was
+// charged on it. The code-step nodes are read only when that step opens.
 const CLIENT_JS = `(function(){
 var c=JSON.parse(document.getElementById('cfg').textContent),$=function(i){return document.getElementById(i)};
-var f=$('pay'),b=$('go'),m=$('msg'),nm=$('nm'),ph=$('ph'),em=$('em'),K='tgp-pay:'+c.token,E='',T=null,on=0;
-var f1=$('f1'),b1=$('b1'),m1=$('m1'),f2=$('f2'),b2=$('b2'),m2=$('m2'),cd=$('cd'),rs=$('rs'),s3=$('s3'),hey=$('hey'),sum=$('sum');
+var f=$('pay'),b=$('go'),m=$('msg'),nm=$('nm'),ph=$('ph'),em=$('em'),K='tgp-pay:'+c.token,E='',T=null,S=null;
 var api='/api/v1/packages/public/join/'+encodeURIComponent(c.token)+'/checkout';
 function wait(n,v){n.disabled=v;n.setAttribute('aria-busy',String(v))}
 function busy(v){wait(b,v)}
 function txt(d,t){return d&&d.message?[].concat(d.message).join(' '):t}
 function say(t){m.textContent=t||c.copy.failed;busy(false);try{sessionStorage.removeItem(K)}catch(_){}}
 addEventListener('pageshow',function(e){if(e.persisted)busy(false)});
-if(!window.Stripe){b1.disabled=true;m1.textContent=c.copy.failed;return}
+if(!window.Stripe){b.disabled=true;m.textContent=c.copy.failed;return}
 var stripe=Stripe(c.pk);
 var el=stripe.elements({mode:c.mode,amount:c.amount,currency:'usd',onBehalfOf:c.obo,paymentMethodTypes:['card'],
 appearance:{theme:'stripe',variables:{colorPrimary:'#2C4A36',colorText:'#1A1A18',colorTextSecondary:'#2C2C2C',colorDanger:'#B91C1C',colorBackground:'#ffffff',borderRadius:'12px',fontSizeBase:'16px'},rules:{'.Input':{border:'1px solid #DCD5CC',boxShadow:'none'}}}});
 var pe=el.create('payment',{fields:{billingDetails:{name:'never',email:'never'}},wallets:{applePay:'never',googlePay:'never',link:'never'}});
-pe.on('loaderror',function(){b.disabled=true;m.textContent=c.copy.failed});
-var x=el.create('expressCheckout',{emailRequired:false,phoneNumberRequired:true,billingAddressRequired:true,buttonHeight:48,paymentMethods:{link:'never',paypal:'never',amazonPay:'never'}});
+pe.on('loaderror',function(){b.disabled=true;m.textContent=c.copy.failed});pe.mount('#card');
+var x=el.create('expressCheckout',{emailRequired:true,phoneNumberRequired:true,billingAddressRequired:true,buttonHeight:48,paymentMethods:{link:'never',paypal:'never',amazonPay:'never'}});
 x.on('ready',function(e){if(e.availablePaymentMethods)$('or').hidden=false;else $('express').hidden=true});
 x.on('loaderror',function(){$('express').hidden=true});
-function view(a,k,w,p){f1.hidden=!a;f2.hidden=!k;s3.hidden=!w;f.hidden=!p;if(p&&!on){on=1;pe.mount('#card');x.mount('#express')}}
+x.mount('#express');
 async function post(p,body){var r=null,d=null;
 try{r=await fetch(api+p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});d=await r.json()}catch(_){}
 return{ok:!!(r&&r.ok),d:d||{}}}
-async function check(e){wait(b1,true);m1.textContent='';var r=await post('/check-email',{guest_email:e});wait(b1,false);
-if(!r.ok){m1.textContent=txt(r.d,c.copy.checkFailed);return}
-E=e;T=null;$('as').textContent=e;
-if(r.d.account==='existing'){$('to').textContent=e;cd.value='';m2.textContent='';view(0,1,0,0);cd.focus()}else{view(0,0,0,1);nm.focus()}}
-f1.addEventListener('submit',function(ev){ev.preventDefault();var e=em.value.trim();
-if(!e||!em.checkValidity()){if(em.reportValidity)em.reportValidity();return}check(e)});
-f2.addEventListener('submit',async function(ev){ev.preventDefault();var k=cd.value.replace(/\\s/g,'');
-if(!/^[0-9]{6}$/.test(k)){m2.textContent=c.copy.badCode;cd.focus();return}
-wait(b2,true);var r=await post('/verify-code',{guest_email:E,code:k});wait(b2,false);
-if(!r.ok||!r.d.buyer_token){m2.textContent=txt(r.d,c.copy.checkFailed);
-if(r.d.error==='BUYER_HAS_COACH'||r.d.error==='BUYER_NOT_CLIENT'){b2.hidden=true;rs.hidden=true;cd.disabled=true}return}
-T=r.d.buyer_token;welcome(r.d.first_name,r.d.summary)});
-rs.addEventListener('click',async function(){m2.textContent='';var r=await post('/check-email',{guest_email:E});m2.textContent=r.ok?c.copy.resent:txt(r.d,c.copy.checkFailed)});
-function again(){E='';T=null;b2.hidden=false;rs.hidden=false;cd.disabled=false;sum.hidden=true;hey.hidden=false;hey.className='hey';
-var t=$('inc0');if(t)t.hidden=false;view(1,0,0,0);em.focus()}
-$('ch').addEventListener('click',again);$('chg').addEventListener('click',again);
+function step(){if(S)return S;S={f2:$('f2'),b2:$('b2'),m2:$('m2'),cd:$('cd'),rs:$('rs'),s3:$('s3'),hey:$('hey'),sum:$('sum'),inc:$('inc0')};
+S.f2.addEventListener('submit',verify);S.rs.addEventListener('click',resend);$('ch').addEventListener('click',again);return S}
+function view(k,w,p){var s=step();s.f2.hidden=!k;s.s3.hidden=!w;f.hidden=!p}
+async function code(e){var r=await post('/check-email',{guest_email:e});
+if(!r.ok||r.d.account!=='existing'){say(txt(r.d,c.copy.checkFailed));return}
+var s=step();E=e;T=null;$('to').textContent=e;s.cd.value='';s.cd.disabled=false;s.m2.textContent='';s.b2.hidden=false;s.rs.hidden=false;
+s.sum.hidden=true;s.hey.hidden=false;s.hey.className='hey';if(s.inc)s.inc.hidden=false;view(1,0,0);s.cd.focus()}
+async function verify(ev){ev.preventDefault();var s=step(),k=s.cd.value.replace(/\\s/g,'');
+if(!/^[0-9]{6}$/.test(k)){s.m2.textContent=c.copy.badCode;s.cd.focus();return}
+wait(s.b2,true);var r=await post('/verify-code',{guest_email:E,code:k});wait(s.b2,false);
+if(!r.ok||!r.d.buyer_token){s.m2.textContent=txt(r.d,c.copy.checkFailed);
+if(r.d.error==='BUYER_HAS_COACH'||r.d.error==='BUYER_NOT_CLIENT'){s.b2.hidden=true;s.rs.hidden=true;s.cd.disabled=true}return}
+T=r.d.buyer_token;welcome(r.d.first_name,r.d.summary)}
+async function resend(){var s=step();s.m2.textContent='';var r=await post('/check-email',{guest_email:E});s.m2.textContent=r.ok?c.copy.resent:txt(r.d,c.copy.checkFailed)}
+function again(){E='';T=null;view(0,0,1);em.focus();if(em.select)em.select()}
 var still=!!(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches);
-function welcome(n,k){hey.textContent=n?c.copy.hey.split('{N}').join(n):c.copy.back;view(0,0,1,0);hey.focus();
-setTimeout(function(){hey.className='hey out';setTimeout(function(){hey.hidden=true;
-var ns=sum.querySelectorAll('[data-k]'),i;for(i=0;i<ns.length;i++)ns[i].hidden=ns[i].getAttribute('data-k')!==k;
-var t=$('inc0');if(t)t.hidden=true;sum.hidden=false;view(0,0,1,1);sum.focus()},still?0:600)},still?1200:1600)}
+function welcome(n,k){var s=step();s.hey.textContent=n?c.copy.hey.split('{N}').join(n):c.copy.back;view(0,1,0);s.hey.focus();
+setTimeout(function(){s.hey.className='hey out';setTimeout(function(){s.hey.hidden=true;
+var ns=s.sum.querySelectorAll('[data-k]'),i;for(i=0;i<ns.length;i++)ns[i].hidden=ns[i].getAttribute('data-k')!==k;
+if(s.inc)s.inc.hidden=true;s.sum.hidden=false;view(0,1,1);s.sum.focus()},still?0:600)},still?1200:1600)}
 function key(e){var h=0,s=null,i;for(i=0;i<e.length;i++)h=(h*31+e.charCodeAt(i))|0;
 try{s=JSON.parse(sessionStorage.getItem(K))}catch(_){}
 if(!s||s.h!==h){s={k:crypto.randomUUID(),h:h};try{sessionStorage.setItem(K,JSON.stringify(s))}catch(_){}}return s.k}
-async function pay(name,phone){var email=E;busy(true);m.textContent='';
+async function pay(name,phone,email){busy(true);m.textContent='';
 var r=await post(c.lp?'?lp='+encodeURIComponent(c.lp):'',{guest_name:name,guest_phone:phone,guest_email:email,idempotency_key:key(email),buyer_token:T||undefined}),d=r.d;
-if(!r.ok||!d.client_secret){say(r.ok?c.copy.failed:txt(d,c.copy.failed));
-if(d.error==='BUYER_CODE_REQUIRED')check(email).then(function(){m2.textContent=txt(d,'')});return false}
+if(!r.ok||!d.client_secret){say(r.ok?c.copy.failed:txt(d,c.copy.failed));if(d.error==='BUYER_CODE_REQUIRED'){m.textContent='';await code(email)}return false}
 var res=await stripe.confirmPayment({elements:el,clientSecret:d.client_secret,confirmParams:{return_url:location.origin+'/p/'+encodeURIComponent(c.token)+'/done',payment_method_data:{billing_details:{name:name,phone:phone,email:email}}}});
 if(res.error){say(res.error.message);return false}return true}
-x.on('confirm',async function(e){var bd=e.billingDetails||{},name=(bd.name||nm.value).trim(),phone=(bd.phone||ph.value).trim();
+x.on('confirm',async function(e){var bd=e.billingDetails||{},name=(bd.name||nm.value).trim(),phone=(bd.phone||ph.value).trim(),email=(bd.email||em.value).trim();
 if(name.length<2){e.paymentFailed({reason:'fail'});say(c.copy.needName);nm.focus();return}
 var s=await el.submit();if(s.error){e.paymentFailed({reason:'fail'});say(s.error.message);return}
-if(!(await pay(name,phone)))e.paymentFailed({reason:'fail'})});
+if(!(await pay(name,phone,email)))e.paymentFailed({reason:'fail'})});
 f.addEventListener('submit',async function(ev){ev.preventDefault();busy(true);
-var s=await el.submit();if(s.error){say(s.error.message);return}await pay(nm.value.trim(),ph.value.trim())});
+var s=await el.submit();if(s.error){say(s.error.message);return}await pay(nm.value.trim(),ph.value.trim(),em.value.trim())});
 })();`;
 
 // The confirm state's script: reads only the URL fragment Supabase adds after
