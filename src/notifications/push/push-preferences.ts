@@ -7,6 +7,21 @@
 // mapping and the SAME rule the enqueue gate uses, so a switch turned off
 // (or "mute all") while a push waits suppresses it.
 
+// DUNNING-KIND-FIX: kinds with no column of their own keep their own name as the prefix, so only `muted`
+// stops them (src/notifications/README.md defaults tables). On the 'digest' default (in-app and push off)
+// a default user lost the payment blocker row, the meal plan row and five community inbox rows.
+const NO_COLUMN_KINDS: ReadonlySet<string> = new Set([
+  'dunning_blocker',
+  'meal_plan_assigned',
+  'coach_client_moved',
+  'community_dm_received',
+  'community_post_replied',
+  'community_event_starting_soon',
+  'community_challenge_milestone',
+  'community_moderation_action_against_me',
+  'community_membership_changed',
+]);
+
 /**
  * Maps a NotificationKind value to the base preferences key prefix.
  * E.g. 'milestone_reached' -> 'milestone'
@@ -45,6 +60,7 @@ export function notificationPrefsPrefix(kind: string): string {
   // are FALSE, so every assignment push AND its notification-centre row
   // were dropped before enqueue for a client with default preferences.
   if (kind.startsWith('workout_assigned')) return 'workout_reminder';
+  if (NO_COLUMN_KINDS.has(kind)) return kind;
   // PR-15A — COACH_NEW_PURCHASE routes to the dedicated
   // coach_new_purchase_* prefs columns (migration
   // 20261208000000_pr15_coach_new_purchase_prefs); defaults push+inapp
