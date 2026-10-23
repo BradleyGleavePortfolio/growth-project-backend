@@ -184,7 +184,8 @@ const DAY = PLAN_RENEWAL_DAY_MS;
       dedupe_key: `plan_renewal:${a.id}:0` }]);
     // J's Day 0 is first seen at 21:00 in Tokyo: quiet hours would hold it to Day 1, so it is skipped, not sent with Day 1.
     expect([(await row('J')).pushed_step, pushesTo('J')]).toEqual([0, []]);
-    const house = { id: u.H, first_name: 'Hal' };
+    // FX-860: the house coach alone carries full_name; the client's own coach stays first-name only (toEqual).
+    const house = { id: u.H, first_name: 'Hal', full_name: 'Hal House' };
     expect(await view('A')).toEqual({ state: 'ended', ended_at: at(-HOUR).toISOString(), popup_due: true, popup_step: 0,
       banner_due: true, coach: { id: u.K, first_name: 'Kim' }, house_coach: house });
     // The house coach is never offered to the house coach's own client.

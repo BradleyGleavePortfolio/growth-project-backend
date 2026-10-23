@@ -16,6 +16,11 @@ export interface PlanRenewalPerson {
   first_name: string | null;
 }
 
+/** TGP's house coach also carries the full name (owner W-168-HC: "Bradley Gleave" on the house pages). */
+export interface PlanRenewalHouseCoach extends PlanRenewalPerson {
+  full_name: string | null;
+}
+
 /** The `renewal` block of GET /v1/checkout/entitlement (CONTRACT comment on b#1127). */
 export interface PlanRenewalView {
   state: 'none' | 'ended' | 'revoked';
@@ -25,7 +30,7 @@ export interface PlanRenewalView {
   /** Home's "Renew now" banner (local days 0 to 29 while the state is ended). */
   banner_due: boolean;
   coach: PlanRenewalPerson | null;
-  house_coach: PlanRenewalPerson | null;
+  house_coach: PlanRenewalHouseCoach | null;
 }
 
 export const NO_RENEWAL: PlanRenewalView = {
@@ -159,15 +164,20 @@ export async function latestPlanEnd(db: Db, clientUserId: string, coachUserId: s
   return latest;
 }
 
-/** TGP's house coach (HOUSE_COACH_USER_ID), never offered to that coach's own client or when unset or not a coach. */
-export async function planRenewalHouseCoach(db: Db, coachUserId: string): Promise<PlanRenewalPerson | null> {
+/**
+ * TGP's house coach (HOUSE_COACH_USER_ID), never offered to that coach's own client or when unset or not a coach.
+ * Only this coach gets full_name (his name is on the house pages); the client's own coach stays first-name only.
+ */
+export async function planRenewalHouseCoach(db: Db, coachUserId: string): Promise<PlanRenewalHouseCoach | null> {
   const id = houseCoachUserId();
   if (!id || id === coachUserId) return null;
   const house = await db.user.findFirst({
     where: { id, role: { in: ['coach', 'owner'] }, deleted_at: null },
     select: { name: true },
   });
-  return house ? { id, first_name: firstNameOf(house.name) } : null;
+  if (!house) return null;
+  const full = house.name.trim().replace(/\s+/g, ' ').slice(0, 120);
+  return { id, first_name: firstNameOf(house.name), full_name: full || null };
 }
 
 /** The renewal block for the signed-in user and their CURRENT coach, the row behind "ended" and its local day. */
