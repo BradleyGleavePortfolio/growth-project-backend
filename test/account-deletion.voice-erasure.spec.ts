@@ -130,6 +130,9 @@ function recordingPrisma(
   return prisma;
 }
 
+// An unsent upload and a sent copy in the person's community-images folder (canonical names).
+const PHOTO = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb-1790000000000-0123456789abcdef-0123456789abcdef0123456789abcdef';
+
 function storageClient(
   opts: { failRemove?: boolean; failRemoveIn?: string; keepObjects?: boolean; log?: Call[]; txState?: TxState } = {},
 ) {
@@ -139,7 +142,7 @@ function storageClient(
   // photo removal in community-images from a voice removal in voice-notes.
   const folders: Record<string, string[]> = {
     'voice-notes': ['orphan-upload.m4a', 'note-a.m4a'],
-    'community-images': ['photo.jpg', 'photo.sent.jpg'],
+    'community-images': [`${PHOTO}.jpg`, `${PHOTO}.sent.jpg`],
   };
   const removedIn: Record<string, string[]> = {};
   const bucketOf = (name: string) => ({
@@ -268,9 +271,9 @@ describe('account deletion erases community voice recordings (B-610-5 composed w
     // FX-1139 (Sol C2): the photos go from community-images, and only there.
     expect(client.storage.from).toHaveBeenCalledWith('community-images');
     expect(removedIn['community-images']).toEqual(
-      expect.arrayContaining([`${USER_ID}/photo.jpg`, `${USER_ID}/photo.sent.jpg`]),
+      expect.arrayContaining([`${USER_ID}/${PHOTO}.jpg`, `${USER_ID}/${PHOTO}.sent.jpg`]),
     );
-    expect(removedIn['voice-notes']).not.toContain(`${USER_ID}/photo.jpg`);
+    expect(removedIn['voice-notes']).not.toContain(`${USER_ID}/${PHOTO}.jpg`);
 
     // After commit each work row is completed only after verification.
     const completions = calls.filter(
@@ -320,7 +323,7 @@ describe('account deletion erases community voice recordings (B-610-5 composed w
     await expect(service.adminForceDelete(USER_ID, admin)).resolves.toEqual({
       message: `User ${USER_ID} has been permanently deleted.`,
     });
-    expect(removedIn['community-images']).toEqual(expect.arrayContaining([`${USER_ID}/photo.jpg`]));
+    expect(removedIn['community-images']).toEqual(expect.arrayContaining([`${USER_ID}/${PHOTO}.jpg`]));
     const completions = calls.filter(
       (c) =>
         c.delegate === 'communityVoiceErasure' &&
