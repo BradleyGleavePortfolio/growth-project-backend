@@ -14,7 +14,6 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import type { CommunityCohort, User } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { CommunityAccessService } from '../community-access.service';
-import { isBannedFromWorkspace } from '../community-ban';
 import { placeOf } from '../community-space-access';
 import { CommunitySafetyService } from '../safety/community-safety.service';
 
@@ -72,8 +71,8 @@ interface SpaceRow {
  *   the coach's clients, joining the coach (and a package space: their first purchase that opens it); else (the
  *   coach, or an account older than coach_joined_at) the space's own start.
  * - n: plain chat messages after it, capped at UNREAD_CAP, leaving out their own, deleted ones, those of anyone
- *   they block or who blocks them, of an author banned from the workspace, and of an author who left the
- *   coach's community (C6-WINS-MOVE, app.community_author_stays).
+ *   they block or who blocks them, and of an author who left the coach's community or is banned from it: the
+ *   chat list's own rule (C6-WINS-MOVE app.community_author_stays, #168-4 app.community_author_unbanned).
  * - their notification row.
  */
 async function spaceRows(prisma: PrismaService, userId: string, cohortIds: string[]): Promise<SpaceRow[]> {
@@ -88,9 +87,8 @@ async function spaceRows(prisma: PrismaService, userId: string, cohortIds: strin
           AND NOT EXISTS (SELECT 1 FROM "UserBlock" b
             WHERE (b."blocker_id" = ${userId} AND b."blocked_id" = m."sender_id")
                OR (b."blocker_id" = m."sender_id" AND b."blocked_id" = ${userId}))
-          AND NOT EXISTS (SELECT 1 FROM "community_workspace_bans" x
-            WHERE x."workspace_id" = m."workspace_id" AND x."user_id" = m."sender_id" AND x."lifted_at" IS NULL)
           AND app.community_author_stays(m."workspace_id", m."cohort_id", m."sender_id")
+          AND app.community_author_unbanned(m."workspace_id", m."sender_id")
         LIMIT ${UNREAD_CAP}) t) AS "n"
     FROM "community_cohorts" c
     LEFT JOIN "community_space_reads" r ON r."cohort_id" = c."id" AND r."user_id" = ${userId}
@@ -162,10 +160,8 @@ export class CommunitySpaceReadsService {
       select: { id: true, workspace_id: true, cohort_id: true, sender_id: true },
     });
     if (!m) throw new NotFoundException(MESSAGE_NOT_FOUND);
+    // With the place, the block either way, an author gone from the community and (#168-4) a banned author.
     await this.safety.assertVisibleTo(user.id, m.sender_id, MESSAGE_NOT_FOUND, placeOf(m));
-    if (await isBannedFromWorkspace(this.prisma, m.workspace_id, m.sender_id)) {
-      throw new NotFoundException(MESSAGE_NOT_FOUND);
-    }
     // The message's own stored time (microseconds), so the unread count compares like with like.
     await this.prisma.$executeRaw`
       INSERT INTO "community_space_reads" ("user_id", "cohort_id", "last_read_at", "last_read_message_id", "updated_at")
