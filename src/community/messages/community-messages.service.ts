@@ -36,6 +36,8 @@ import {
   IMAGE_READ_TTL_SEC,
   isPublishableImageKey,
 } from '../images/community-image-store';
+import { AiEgressService } from '../../ai-egress/ai-egress.service';
+import { assertPhotoAllowed } from '../images/community-photo-check';
 
 /** SC-BE3: a photo message as the send route takes it. */
 export interface ImageSend {
@@ -89,6 +91,10 @@ export class CommunityMessagesService {
     // SC-BE3: photo storage (optional so the positional test constructions
     // keep working; a photo send without it is 503).
     @Optional() private readonly images?: CommunityImageStore,
+    // PHOTO-CHECK-BE: the photo check's egress. The server always has it (the
+    // AI egress module is global; pinned in community-photo-check.e2e.spec.ts);
+    // only b#1139's hand-built test services leave it out.
+    @Optional() private readonly egress?: AiEgressService,
   ) {}
 
   private view(
@@ -158,6 +164,7 @@ export class CommunityMessagesService {
       throw new ServiceUnavailableException({ error: 'unavailable', code: 'community.image.storage_unavailable' });
     }
     if (result !== 'ok') throw IMAGE_REJECTED(`community.image.${result}`);
+    if (this.egress) await assertPhotoAllowed(this.egress, images, image.key, user.id, size, body);
     try {
       return await this.repo.createImageMessage({
         workspaceId: cohort.workspace_id,
