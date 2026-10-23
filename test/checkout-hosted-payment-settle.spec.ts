@@ -55,7 +55,8 @@ function harness(status = 'pending') {
         return { count: 1 };
       }),
     },
-    purchaseFanout: { upsert: jest.fn(async ({ create }: any) => create) },
+    // The fan-out is a spy here: no purchase in this harness was ever fanned out.
+    purchaseFanout: { findUnique: jest.fn(async () => null), upsert: jest.fn(async ({ create }: any) => create) },
   };
   const fanout = new PurchaseFanoutService();
   const entitled = jest.spyOn(fanout, 'onPurchaseEntitled').mockResolvedValue(undefined);
