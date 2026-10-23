@@ -405,24 +405,8 @@ describe('committed exception file (.github/audit-exceptions.json)', () => {
   const committed = JSON.parse(
     fs.readFileSync(join(ROOT, '.github', 'audit-exceptions.json'), 'utf8'),
   );
-  it('holds exactly the one OR-164-1 braces entry, capped at 3.0.3 and expiring 2026-11-20', () => {
+  it('holds no exceptions: the braces advisory GHSA-vfj7-8cjw-p6xm was withdrawn on 2026-10-23, so the OR-164-1 entry is deleted', () => {
     expect(committed.schema).toBe(1);
-    expect(committed.exceptions).toHaveLength(1);
-    const [entry] = committed.exceptions;
-    expect(Object.keys(entry).sort()).toEqual([
-      'expires',
-      'ghsa',
-      'max_version',
-      'owner_ruling',
-      'package',
-      'reason',
-    ]);
-    expect(entry).toMatchObject({
-      ghsa: 'GHSA-vfj7-8cjw-p6xm',
-      package: 'braces',
-      max_version: '3.0.3',
-      expires: '2026-11-20',
-    });
-    expect(entry.owner_ruling).toMatch(/^OR-164-1\b/);
+    expect(committed.exceptions).toEqual([]);
   });
 });

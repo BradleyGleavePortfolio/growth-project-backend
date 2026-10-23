@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { PrismaService } from '../prisma.service';
 import { DUNNING_V2_CADENCE_DAYS } from '../checkout/dunning-v2/dunning-v2.cadence';
 import { movedAwayClientIds } from '../checkout/moved-client-money';
+import { movedAwayDates } from '../checkout/plan-renewal/switch-tell';
 
 // S-COACH (agent 111) — TGP Money read model for the coach Money page.
 //
@@ -170,6 +171,13 @@ export interface MoneyChargeDto {
   /** Amount the bank took back on lost disputes (0 when none). */
   charged_back_cents: number;
   created_at: string;
+  /**
+   * SWITCH-TELL-BE: when this charge's client moved to another coach (the
+   * quiet "Moved to another coach · {date}" line), from the coach's own
+   * move notification. Null otherwise, and for a client who moved by any
+   * other route (no notification, no date).
+   */
+  moved_away_at: string | null;
 }
 
 export interface MoneyChargeBreakdownDto {
@@ -811,7 +819,12 @@ function displayName(u: { name?: string | null } | null | undefined): string {
 
 // CONTRACT-1: a charge to a client who moved away keeps the name, date and amount, never a link,
 // the package or its cadence; billing_type stays (owner exception "#MONEY-BT - option 1").
-function unlinkMoved(charge: MoneyChargeDto, moved: ReadonlySet<string>): MoneyChargeDto {
+// SWITCH-TELL-BE: plus the move's date when the move told this coach.
+function unlinkMoved(
+  charge: MoneyChargeDto,
+  moved: ReadonlySet<string>,
+  movedAt: ReadonlyMap<string, Date>,
+): MoneyChargeDto {
   if (!moved.has(charge.client.id)) return charge;
   return {
     ...charge,
@@ -819,6 +832,7 @@ function unlinkMoved(charge: MoneyChargeDto, moved: ReadonlySet<string>): MoneyC
     package: { id: '', name: '' },
     billing_interval: null,
     billing_interval_count: null,
+    moved_away_at: movedAt.get(charge.client.id)?.toISOString() ?? null,
   };
 }
 
@@ -1566,8 +1580,9 @@ export class CoachMoneyService {
     const hasMore = rows.length > limit;
     const page = hasMore ? rows.slice(0, limit) : rows;
     const moved = await movedAwayClientIds(this.prisma, coachId, page.map((r) => r.client?.id));
+    const movedAt = await movedAwayDates(this.prisma, coachId, moved);
     return {
-      charges: page.map((r) => unlinkMoved(this.toCharge(r), moved)),
+      charges: page.map((r) => unlinkMoved(this.toCharge(r), moved, movedAt)),
       next_cursor: hasMore ? page[page.length - 1].id : null,
     };
   }
@@ -1598,8 +1613,9 @@ export class CoachMoneyService {
     const t = foldTotals(coachId, slices, []);
     const settled = slices.some((s) => s.kind === 'destination');
     const moved = await movedAwayClientIds(this.prisma, coachId, [row.client?.id]);
+    const movedAt = await movedAwayDates(this.prisma, coachId, moved);
     return {
-      charge: unlinkMoved(this.toCharge(row), moved),
+      charge: unlinkMoved(this.toCharge(row), moved, movedAt),
       breakdown: {
         price_cents: settled ? t.gross_cents : row.amount_cents,
         processing_cents: t.processing_cents,
@@ -1700,6 +1716,7 @@ export class CoachMoneyService {
       refunded_cents: refunded,
       charged_back_cents: chargedBackCents,
       created_at: r.created_at.toISOString(),
+      moved_away_at: null,
     };
   }
 

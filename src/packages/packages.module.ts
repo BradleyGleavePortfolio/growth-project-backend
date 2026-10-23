@@ -12,6 +12,7 @@ import { DripDispatcherCron } from './drip-dispatcher.cron';
 import { DripTriggerService } from './drip-trigger.service';
 import { MilestoneService } from './milestone.service';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { SchedulingModule } from '../scheduling/scheduling.module';
 import { TrialNoticeService } from './trials/trial-notice.service';
 import { TrialUsageService } from './trials/trial-usage.service';
 import { TrialCheckoutCapability } from './trials/trial-checkout-capability';
@@ -40,8 +41,10 @@ import { TrialCheckoutCapability } from './trials/trial-checkout-capability';
 // NotificationsService (mirrors PR-2's transfer.failed pattern in
 // billing.service.ts:1115). NotificationsModule has no inbound edge to
 // PackagesModule, so this does not create a cycle.
+// HOUSE-JOIN-BE — SchedulingModule (imports only NotificationsModule) gives
+// the fan-out the move rule that ends the former coach's upcoming sessions.
 @Module({
-  imports: [NotificationsModule],
+  imports: [NotificationsModule, SchedulingModule],
   controllers: [
     CoachPackagesController,
     ClientPackagesController,
