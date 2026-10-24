@@ -40,6 +40,9 @@ at the read path. All delivery is gated behind `FEATURE_COMMUNITY_PUSH`.
 | `community_moderation_action_against_me` | on     | on   | on    | SYSTEM       | Actioned member |
 | `community_membership_changed`           | on     | off  | off   | SYSTEM       | Member          |
 
+`notificationPrefsPrefix` files `community_message_received` (every space chat push) under `community_message`,
+a prefix with no column: only `muted` and the space's own setting stop it. The other six still fall to `digest`.
+
 Lock-screen privacy: when enabled, the push `body` is a fixed safe string
 (`COMMUNITY_PUSH_BODIES[kind].privacyOn`) that never contains user names,
 message excerpts, cohort names, or event titles. The richer privacy-off body

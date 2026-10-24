@@ -34,6 +34,7 @@ import { AnalyticsService } from '../../analytics/analytics.service';
 import { PrismaService } from '../../prisma.service';
 import { readersNow } from '../community-space-access';
 import {
+  COMMUNITY_BROADCAST_EVENTS,
   COMMUNITY_REALTIME_CHANNELS,
   COMMUNITY_TELEMETRY_EVENTS,
   CommunityBroadcastEventName,
@@ -60,6 +61,13 @@ export class CommunityRealtimeService {
     private readonly analytics: AnalyticsService,
     private readonly prisma: PrismaService,
   ) {}
+
+  /** SC-PUSH: the space push listens at the one point every stored space message passes. */
+  private spaceMessageStored?: (messageId: string) => Promise<void>;
+
+  onSpaceMessageStored(listener: (messageId: string) => Promise<void>): void {
+    this.spaceMessageStored = listener;
+  }
 
   /** Realtime flag — read per call, never cached. */
   private realtimeEnabled(): boolean {
@@ -89,6 +97,11 @@ export class CommunityRealtimeService {
     payload: CommunityBroadcastPayload,
     meta: { distinctId: string; channelKind: CommunityChannelKind },
   ): Promise<void> {
+    // SC-PUSH: every stored space message (text, voice, image) passes here; the push has its own switch.
+    const storedId = (payload as { id?: unknown }).id;
+    if (event === COMMUNITY_BROADCAST_EVENTS.messageCreated && 'cohortId' in audience && audience.cohortId && typeof storedId === 'string') {
+      void this.spaceMessageStored?.(storedId);
+    }
     // Kill switch: when the flag is off, the server never touches Supabase
     // Realtime. Mobile's 60s REST poll continues to carry the floor.
     if (!this.realtimeEnabled()) return;
