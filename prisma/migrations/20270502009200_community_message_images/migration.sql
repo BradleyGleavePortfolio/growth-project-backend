@@ -48,6 +48,21 @@ REVOKE ALL ON TABLE "community_message_images" FROM anon;
 
 CREATE POLICY "community_message_images_read" ON "community_message_images" FOR SELECT TO public
   USING (app.community_can_access("cohort_id", app.current_user_id()));
+-- FR-1139 (Opus C1): RESTRICTIVE, as community_voice_notes_author_stays: a client
+-- who moves takes their photos out of the former coach's space. The table has no
+-- workspace column, so the space's workspace is read past row security (no space: false).
+CREATE FUNCTION app.community_space_author_stays(p_space_id uuid, p_author_id text)
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public
+AS $fn$
+  SELECT coalesce((SELECT app.community_author_stays(c."workspace_id", c."id", p_author_id)
+                   FROM public."community_cohorts" c WHERE c."id" = p_space_id), false)
+$fn$;
+ALTER FUNCTION app.community_space_author_stays(uuid, text) OWNER TO postgres;
+REVOKE ALL ON FUNCTION app.community_space_author_stays(uuid, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION app.community_space_author_stays(uuid, text) FROM anon;
+GRANT EXECUTE ON FUNCTION app.community_space_author_stays(uuid, text) TO authenticated, service_role;
+CREATE POLICY "community_message_images_author_stays" ON "community_message_images" AS RESTRICTIVE FOR SELECT TO public
+  USING ("author_id" = app.current_user_id() OR app.community_space_author_stays("cohort_id", "author_id"));
 COMMENT ON TABLE "community_message_images" IS
   '20270502009200: the photo behind a kind image space chat message; the object is at storage_key in the private community-images bucket.';
 

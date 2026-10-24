@@ -2,7 +2,8 @@
  * SC-BE3 live RLS: community_message_images and the community-images objects,
  * across two workspaces, as a role that does not bypass row security. Every 0
  * follows a control read of 1 by the same caller on a row it may see.
- * Migration 20270502009200_community_message_images.
+ * Migration 20270502009200_community_message_images (FR-1139: rows are the
+ * server's to write; a moved client's photos leave with them).
  */
 import { randomUUID } from 'crypto';
 import { readFileSync } from 'fs';
@@ -147,6 +148,23 @@ const ROLE = (k: Key) => (k === 'A' || k === 'B' ? 'coach' : 'student');
       data: { message_id: spare.mine, cohort_id: space.A, author_id: id.O, storage_key: `${id.O}/${spare.mine}.jpg`, width: 4, height: 3, size_bytes: 100, mime: 'image/jpeg' },
     });
     expect(await rows('O', spare.mine)).toBe(1); // control: the server's write is the one that lands
+  });
+
+  it("FR-1139 (Opus C1): a client who moves takes their photos out of the former coach's space", async () => {
+    const mate = randomUUID();
+    await prisma.$executeRawUnsafe(`INSERT INTO "community_memberships" ("id", "workspace_id", "cohort_id", "user_id", "role", "status", "updated_at")
+      VALUES ($1::uuid, $2::uuid, $3::uuid, $4, 'student', 'active', now())`, mate, ws.A, space.A, id.N); // N joins as a teammate
+    const coachOfO = (coach: string) => prisma.$executeRaw`UPDATE "User" SET "coach_id" = ${coach} WHERE "id" = ${id.O}`;
+    try {
+      expect([await rows('A', photo.A), await rows('N', photo.A)]).toEqual([1, 1]); // control: the coach and a teammate
+      await coachOfO(id.B);
+      expect([await rows('A', photo.A), await rows('N', photo.A)]).toEqual([0, 0]);
+      expect(await rows('X', photo.B)).toBe(1); // another space's photo is untouched
+    } finally {
+      await coachOfO(id.A);
+      await prisma.$executeRawUnsafe(`DELETE FROM "community_memberships" WHERE "id" = $1::uuid`, mate);
+    }
+    expect(await rows('A', photo.A)).toBe(1);
   });
 
   it('no storage schema: the bucket block is a no-op', async () => {

@@ -120,6 +120,16 @@ export const MessageAckEnvelopeSchema = z
 
 export type MessageAckEnvelope = z.infer<typeof MessageAckEnvelopeSchema>;
 
+/** SC-BE3: a photo with a short-lived signed read URL (null when storage cannot sign it). */
+const ChatImageSchema = z
+  .object({
+    url: z.string().nullable(),
+    width: z.number().int(),
+    height: z.number().int(),
+    expires_at: z.string().datetime(),
+  })
+  .strict();
+
 export const CommunityMessageSchema = z
   .object({
     id: z.guid(),
@@ -173,22 +183,15 @@ export const CommunityMessageSchema = z
         sender_name: z.string().nullable(),
         snippet: z.string().nullable(),
         voice_duration_ms: z.number().int().nullable(),
+        // FR-1139 (Opus C2): on a live quoted photo only, the photo as on its own row.
+        image: ChatImageSchema.nullable().optional(),
       })
       .strict()
       .nullable()
       .optional(),
     // SC-BE3: on a live kind 'image' row, its photo with a short-lived signed
     // read URL (null when storage cannot sign it), else null.
-    image: z
-      .object({
-        url: z.string().nullable(),
-        width: z.number().int(),
-        height: z.number().int(),
-        expires_at: z.string().datetime(),
-      })
-      .strict()
-      .nullable()
-      .optional(),
+    image: ChatImageSchema.nullable().optional(),
   })
   .strict();
 

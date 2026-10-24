@@ -143,6 +143,7 @@ export class CommunityMessagesService {
    * server minted for this sender in this space (10 minutes); the object must
    * be at that key, JPEG and within 10 MB, else 422. Storage down is 503.
    * FX-1139: the rows and the copy to the sent key commit together.
+   * FR-1139 (Sol C): a validated plan tag is stored, as on a text message.
    */
   private async createImage(
     user: User,
@@ -150,6 +151,7 @@ export class CommunityMessagesService {
     body: string,
     parent: { id: string; at: Date } | null,
     image: ImageSend,
+    planContext: PlanContextTag | null,
   ): Promise<CommunityMessage> {
     if (!communityImagesEnabled()) throw IMAGE_REJECTED('community.image.disabled');
     if (!isPublishableImageKey(image.key, user.id, cohort.id)) throw IMAGE_REJECTED('community.image.key_invalid');
@@ -166,6 +168,7 @@ export class CommunityMessagesService {
         cohortId: cohort.id,
         senderId: user.id,
         body,
+        planContext,
         parent,
         image: { key: image.key, width: image.width, height: image.height, sizeBytes: size },
         publish: () => images.publish(image.key),
@@ -190,6 +193,7 @@ export class CommunityMessagesService {
     const parents = new Map(
       (await this.safety.filterBlocked(user.id, live, (p) => p.sender_id, placeOf)).map((p) => [p.id, p]),
     );
+    const parentImages = await this.imagesOf([...parents.values()]); // FR-1139 (Opus C2): a quoted photo, signed
     const name = (m: CommunityMessage) =>
       memberName(x.people.get(m.sender_id)?.name, x.fullName(m.cohort_id, m.sender_id));
     return (m) => {
@@ -212,6 +216,7 @@ export class CommunityMessagesService {
                 sender_name: name(p),
                 snippet: voice ? null : Array.from(p.body ?? '').slice(0, QUOTE_CHARS).join(''),
                 voice_duration_ms: voice ? p.voice_duration_ms : null,
+                ...(p.kind === 'image' ? { image: parentImages.get(p.id) ?? null } : {}),
               }
             : { id: m.parent_message_id, ...GONE },
       };
@@ -354,7 +359,7 @@ export class CommunityMessagesService {
     // (flag-off drops it; malformed → 422; missing entity → 422; foreign → 403).
     const planContext = await this.resolveIncomingPlanContext(user, planContextRaw);
     const created = image
-      ? await this.createImage(user, cohort, body, parent, image)
+      ? await this.createImage(user, cohort, body, parent, image, planContext)
       : await this.repo.createCohortMessage({
           workspaceId: cohort.workspace_id,
           cohortId: cohort.id,
