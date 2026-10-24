@@ -227,26 +227,54 @@ describe('B-939-1 stored briefs after a client moves (owner decision 4)', () => 
     expect(out.summary?.action_items).toEqual(KEPT_ONLY.action_items);
   });
 
-  // FR-1141 (Sol B3): a brief saved before a block, either way, with one of its clients still holds
-  // that chat's count and narrative. Today's is written again; history keeps its day; unblock restores.
+  // FR-1141R4 (Sol B1): a brief saved before a block, either way, with one of its clients still holds that
+  // chat. While the block stands, Today answers from a fresh build without it (no AI call) and writes
+  // nothing; history keeps only its day. Lifting the block brings the saved brief back, today and in history.
   it.each([
     ['the client blocked the coach', { blocker_id: 'kept', blocked_id: 'S' }],
     ['the coach blocked the client', { blocker_id: 'S', blocked_id: 'kept' }],
-  ])('%s after the brief was saved: rewritten today, withheld in history, back on unblock', async (_label, pair) => {
+  ])('%s after the brief was saved: saved brief kept, block-safe answer, back on unblock', async (_label, pair) => {
     const block = { ...pair, created_at: new Date(KEPT_ONLY.generated_at.getTime() + 60_000) };
-    const { prisma, svc } = stored(KEPT_ONLY);
-    prisma.userBlock.findMany.mockResolvedValue([block]);
-    const out = await svc.generateBrief('S', 'America/Los_Angeles', '2026-10-10');
-    expect(prisma.coachBrief.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'generating' }) }));
-    expect(out.summary?.narrative).not.toBe(KEPT_ONLY.narrative);
-    expect(JSON.stringify(out)).not.toContain('Can we move my session');
+    const { prisma, svc } = wire();
+    prisma.teamSubCoachAssignment.findFirst.mockResolvedValue({ id: 'team-S' });
+    // The stored row, as the database holds it: every write changes it.
+    let row: Record<string, unknown> = { ...KEPT_ONLY };
+    const saved = JSON.stringify(KEPT_ONLY);
+    const save = async ({ data }: { data: object }) => (row = { ...row, ...data });
+    prisma.coachBrief.findUnique.mockImplementation(async () => row);
+    prisma.coachBrief.findMany.mockImplementation(async () => [row]);
     prisma.coachBrief.count.mockResolvedValue(1);
-    prisma.coachBrief.findMany.mockResolvedValue([KEPT_ONLY]);
+    prisma.coachBrief.create.mockImplementation(save);
+    prisma.coachBrief.update.mockImplementation(save);
+    prisma.coachBrief.updateMany.mockImplementation(async (args: { data: object }) => {
+      await save(args);
+      return { count: 1 };
+    });
+    const ai = jest.spyOn(svc, 'callClaude');
+    prisma.userBlock.findMany.mockResolvedValue([block]);
+
+    const today = await svc.generateBrief('S', 'America/Los_Angeles', '2026-10-10');
+    expect(today).toMatchObject({ id: 'b-kept', status: 'generated' });
+    expect(today.summary?.generated_by).toBe('fallback');
+    expect(today.summary?.narrative).not.toBe(KEPT_ONLY.narrative);
+    expect(today.summary?.brief_context).toMatchObject({ unread_messages: 0 });
+    expect(JSON.stringify(today)).not.toContain('Can we move my session');
     const blocked = await svc.getBriefHistory('S', 1, 20);
     expect(blocked.items.map((i) => [i.id, i.status, i.summary?.narrative ?? null])).toEqual([['b-kept', 'generated', null]]);
+    expect(ai).not.toHaveBeenCalled();
+    expect(prisma.coachBrief.create).not.toHaveBeenCalled();
+    expect(prisma.coachBrief.update).not.toHaveBeenCalled();
+    expect(prisma.coachBrief.updateMany).not.toHaveBeenCalled();
+    expect(JSON.stringify(row)).toBe(saved);
+
     prisma.userBlock.findMany.mockResolvedValue([]);
+    const back = await svc.generateBrief('S', 'America/Los_Angeles', '2026-10-10');
+    expect(back.summary?.narrative).toBe(KEPT_ONLY.narrative);
+    expect(back.summary?.action_items).toEqual(KEPT_ONLY.action_items);
     const lifted = await svc.getBriefHistory('S', 1, 20);
-    expect(lifted.items.map((i) => i.summary?.narrative ?? null)).toEqual([KEPT_ONLY.narrative]);
+    expect(lifted.items.map((i) => [i.id, i.summary?.narrative ?? null])).toEqual([['b-kept', KEPT_ONLY.narrative]]);
+    expect(lifted.items[0].summary?.action_items).toEqual(KEPT_ONLY.action_items);
+    expect(JSON.stringify(row)).toBe(saved);
   });
 
   it('history: a brief naming the moved client keeps its day and status, not its content', async () => {
