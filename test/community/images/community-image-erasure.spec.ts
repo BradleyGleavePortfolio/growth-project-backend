@@ -144,6 +144,23 @@ describe('photo erasure through the voice erasure path (SC-BE3)', () => {
     expect((await svc.listFlagged(coach, {})).items[0]).toMatchObject({ removed: true, image: null });
   });
 
+  it("FR-1139 (Sol B2): the queue signs only a message's own photo, never a row naming another message or space", async () => {
+    const { svc, coach, images } = reportedPhoto();
+    const OTHER = '66666666-6666-4666-8666-666666666666';
+    db.seed('user', { id: OTHER, role: 'student', coach_id: COACH });
+    const [photo] = db.table('communityMessage');
+    const [text, theirs] = ['88888888-8888-4888-8888-0000000000d1', '88888888-8888-4888-8888-0000000000d2'];
+    for (const [id, kind] of [[text, 'text'], [theirs, 'image']]) {
+      db.seed('communityMessage', { ...photo, id, kind, sender_id: OTHER, body: 'hi' });
+      db.seed('communityMessageImage', { message_id: id, cohort_id: COHORT, author_id: MEMBER, storage_key: `${MEMBER}/${id}.sent.jpg`, width: 1, height: 1 });
+      db.seed('communityModerationAction', { workspace_id: WS, target_type: 'message', target_id: id, status: 'open', reported_by_id: REPORTER, reason: 'other', created_at: new Date() });
+    }
+    db.table('communityMessageImage')[0].cohort_id = '44444444-4444-4444-8444-444444444444'; // MEMBER's own row, naming another space
+    const { items } = await svc.listFlagged(coach, {});
+    expect(Object.fromEntries(items.map((i) => [i.target_id, 'image' in i ? i.image : 'no key']))).toEqual({ [MSG]: 'no key', [text]: 'no key', [theirs]: 'no key' });
+    expect(images.createSignedDownload).not.toHaveBeenCalled();
+  });
+
   it('a coach hiding a reported photo records the erasure of both objects in the action and removes them', async () => {
     const { svc, coach, report, images } = reportedPhoto();
     await svc.act(coach, String(report.id), 'hide', undefined);

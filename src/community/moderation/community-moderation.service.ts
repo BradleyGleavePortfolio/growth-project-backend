@@ -24,7 +24,7 @@ import { CommunityModerationRepository } from './community-moderation.repository
 import { PrismaService } from '../../prisma.service';
 import { assertDmParticipantIfDm } from '../safety/community-safety.service';
 import { VoiceUploadProvider } from '../voice/voice-upload.provider';
-import { CommunityImageStore, imageErasureTargets } from '../images/community-image-store';
+import { CommunityImageStore, imageErasureTargets, isOwnImage } from '../images/community-image-store';
 import { ReportAlertService } from '../../report-alerts/report-alert.service';
 import { WIN_NOT_FOUND, winModerationWorkspaceId } from '../community-wins.policy';
 import { recordWorkspaceBan } from '../community-ban';
@@ -772,6 +772,7 @@ export class CommunityModerationService {
         where: { id: { in: idsOf('message') } },
         select: {
           id: true,
+          kind: true,
           body: true,
           sender_id: true,
           cohort_id: true,
@@ -796,7 +797,7 @@ export class CommunityModerationService {
       }),
       this.prisma.communityMessageImage.findMany({
         where: { message_id: { in: idsOf('message') } },
-        select: { message_id: true, storage_key: true, author_id: true, width: true, height: true },
+        select: { message_id: true, cohort_id: true, storage_key: true, author_id: true, width: true, height: true },
       }),
     ]);
     const photoById = new Map(photos.map((i) => [i.message_id, i]));
@@ -896,7 +897,8 @@ export class CommunityModerationService {
             }
             // FX-1139: a reported photo comes with the photo itself (signed for the queue's 15 minutes).
             const photo = photoById.get(m.id);
-            if (photo) {
+            // FR-1139 (Sol B2): only the message's own photo (a photo message, its sender, its space).
+            if (photo && isOwnImage(m, photo)) {
               image = m.deleted_at
                 ? null
                 : {
