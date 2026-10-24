@@ -8,7 +8,13 @@ import { Public } from '../common/decorators/public.decorator';
 import { THROTTLER_NAMES, THROTTLER_ROUTE_LIMITS } from '../throttler/throttler.config';
 import { StorefrontService } from './storefront.service';
 import { STOREFRONT_JOIN_SKIP_THROTTLERS, storefrontJoinIpTracker } from './storefront-public.controller';
-import { PAY_PAGE_COPY, renderPayPage, renderPayPageState } from './pay-page.html';
+import {
+  APP_STORE_URL_DEFAULT,
+  PAY_PAGE_COPY,
+  renderConfirmedPage,
+  renderPayPage,
+  renderPayPageState,
+} from './pay-page.html';
 
 // Same shape the guest checkout accepts for `?lp=` (landing page id).
 const LANDING_PAGE_ID = /^[a-z0-9]{20,40}$/i;
@@ -62,6 +68,7 @@ export class PayPageController {
   async payPage(
     @Param('token') token: string,
     @Query('lp') lp: unknown,
+    @Query('confirmed') confirmed: unknown,
     @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
@@ -69,6 +76,14 @@ export class PayPageController {
       throw new NotFoundException(`Cannot ${req.method} ${req.originalUrl}`);
     }
     const nonce = randomBytes(16).toString('base64');
+    // GUEST-ELIGIBILITY (owner #170-2) — the new buyer's confirm link lands
+    // here: app download + login email. No package lookup (the link must
+    // still work if the coach later stops selling it).
+    if (confirmed === '1') {
+      const store = this.config.get<string>('APP_STORE_URL') ?? APP_STORE_URL_DEFAULT;
+      res.status(200).set(payPageHeaders(nonce)).type('html').send(renderConfirmedPage(nonce, store));
+      return;
+    }
     let status = 200;
     let html: string;
     try {
