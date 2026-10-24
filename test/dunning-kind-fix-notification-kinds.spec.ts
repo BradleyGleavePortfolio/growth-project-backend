@@ -292,21 +292,20 @@ describe('MUTE-PAY: Mute all never stops an in-app row or a money notice; it mut
     expect(muteAllStops(mutedAllOn, kind, 'inapp')).toBe(false);
   });
 
-  describe.each(defaultStates)('%s', (state, prefs) => {
-    it.each(ALL_KINDS)('%s: Mute all changes no row, only a non-money push', async (kind) => {
-      for (const channel of ['inapp', 'push'] as const) {
-        const input = { user_id: `mute-same-${state}-${kind}-${channel}`, kind, body: 'Mute all', channel };
-        const open = await notifications(prefs).svc.createNotification(input);
-        const muted = await notifications({ ...(prefs ?? {}), muted: true }).svc.createNotification({
-          ...input,
-          user_id: `${input.user_id}-muted`,
-        });
-        expect([kind, channel, muted === null]).toEqual([kind, channel, open === null]);
-      }
-      const mutedPrefs = { ...(prefs ?? {}), muted: true };
-      const pushOpen = pushAllowedByPreferences(prefs, kind);
-      expect([kind, pushAllowedByPreferences(mutedPrefs, kind)]).toEqual([kind, pushOpen && isMoney(kind)]);
-    });
+  // On the saved schema defaults (a row exists, so Mute all can be on), Mute all changes no row.
+  it.each(ALL_KINDS)('%s: on the saved defaults Mute all changes no row, only a non-money push', async (kind) => {
+    const mutedDefaults = { ...savedDefaults, muted: true };
+    for (const channel of ['inapp', 'push'] as const) {
+      const input = { user_id: `mute-same-${kind}-${channel}`, kind, body: 'Mute all', channel };
+      const open = await notifications(savedDefaults).svc.createNotification(input);
+      const muted = await notifications(mutedDefaults).svc.createNotification({
+        ...input,
+        user_id: `${input.user_id}-muted`,
+      });
+      expect([kind, channel, muted === null]).toEqual([kind, channel, open === null]);
+    }
+    const pushOpen = pushAllowedByPreferences(savedDefaults, kind);
+    expect([kind, pushAllowedByPreferences(mutedDefaults, kind)]).toEqual([kind, pushOpen && isMoney(kind)]);
   });
 
   it('enqueue: a muted user gets every money push and no other push', async () => {
