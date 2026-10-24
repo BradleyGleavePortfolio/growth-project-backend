@@ -50,12 +50,18 @@ export type CoachAlertType =
   // except on the crisis alert, which points at nothing they wrote.
   | 'roman_urgent_reply'
   | 'roman_eating_disorder_reply'
-  | 'roman_crisis_reply';
+  | 'roman_crisis_reply'
+  // FR-1152 (#172-5 op 2): a space chat photo or caption the photo check
+  // refused for self-harm intent or instructions; the same alert a crisis
+  // message raises. The row holds no photo, caption, category or payload.
+  | 'community_photo_safety';
 
+/** Every safety alert type (the name is historic: not all come from Roman). */
 export const ROMAN_SAFETY_ALERT_TYPES: readonly string[] = [
   'roman_urgent_reply',
   'roman_eating_disorder_reply',
   'roman_crisis_reply',
+  'community_photo_safety',
 ];
 
 /**

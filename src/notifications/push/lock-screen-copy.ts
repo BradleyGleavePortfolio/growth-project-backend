@@ -124,6 +124,8 @@ export const SAFETY_ALERT_PUSH_BODY: Readonly<Record<string, string>> = {
   roman_urgent_reply: 'Urgent safety alert for one of your clients. Open TGP to see details.',
   roman_eating_disorder_reply: 'Safety alert for one of your clients. Open TGP to see details.',
   roman_crisis_reply: 'Urgent safety alert for one of your clients. Open TGP to see details.',
+  // FR-1152 (#172-5): the photo safety alert reuses the approved urgent line.
+  community_photo_safety: 'Urgent safety alert for one of your clients. Open TGP to see details.',
 };
 
 // Owner 57d: the coach's inbox row for the same alerts (no name, no message).
@@ -131,6 +133,7 @@ export const SAFETY_ALERT_INBOX_BODY: Readonly<Record<string, string>> = {
   roman_urgent_reply: 'Urgent safety alert for one of your clients. Tap to see details.',
   roman_eating_disorder_reply: 'Safety alert for one of your clients. Tap to see details.',
   roman_crisis_reply: 'Urgent safety alert for one of your clients. Tap to see details.',
+  community_photo_safety: 'Urgent safety alert for one of your clients. Tap to see details.',
 };
 
 /** The mobile route a safety alert's push and inbox row open: that one alert. */

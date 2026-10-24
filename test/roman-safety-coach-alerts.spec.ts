@@ -55,6 +55,8 @@ describe('the lock-screen push', () => {
       roman_urgent_reply: URGENT_PUSH,
       roman_eating_disorder_reply: ED_PUSH,
       roman_crisis_reply: URGENT_PUSH,
+      // FR-1152 (#172-5): the space chat photo safety alert, the same line.
+      community_photo_safety: URGENT_PUSH,
     });
   });
 });
