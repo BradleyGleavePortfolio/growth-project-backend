@@ -6,10 +6,10 @@
 --    policy compares "kind"::text), so the file is safe in one run.
 -- 2. community_message_images: the photo behind one kind 'image' message.
 --    RLS on and forced. A row is readable by whoever app.community_can_access
---    lets into its space (that rule already refuses a ban) and insertable only
---    by its author there. No update or delete policy: the server's
---    service-role connection deletes rows (account erasure) and anon has no
---    rights. Live proof: test/rls/community-message-images-rls.spec.ts.
+--    lets into its space (that rule already refuses a ban). No insert, update
+--    or delete policy: only the server's service-role connection writes rows,
+--    each with its own image message (FX-1139 B2, as voice notes), and anon
+--    has no rights. Live proof: test/rls/community-message-images-rls.spec.ts.
 -- 3. community_messages_space_takes_insert counts an image message with a
 --    parent as a reply, exactly as text and voice (20270502009000 text, with
 --    'image' added).
@@ -48,8 +48,6 @@ REVOKE ALL ON TABLE "community_message_images" FROM anon;
 
 CREATE POLICY "community_message_images_read" ON "community_message_images" FOR SELECT TO public
   USING (app.community_can_access("cohort_id", app.current_user_id()));
-CREATE POLICY "community_message_images_insert_own" ON "community_message_images" FOR INSERT TO public
-  WITH CHECK ("author_id" = app.current_user_id() AND app.community_can_access("cohort_id", app.current_user_id()));
 COMMENT ON TABLE "community_message_images" IS
   '20270502009200: the photo behind a kind image space chat message; the object is at storage_key in the private community-images bucket.';
 

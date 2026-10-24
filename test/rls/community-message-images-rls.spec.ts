@@ -50,6 +50,7 @@ const ROLE = (k: Key) => (k === 'A' || k === 'B' ? 'coach' : 'student');
   const ws = fresh(['A', 'B'] as const);
   const space = fresh(['A', 'B'] as const);
   const photo = fresh(['A', 'B'] as const);
+  const spare = fresh(['mine', 'text', 'coach'] as const); // space A: O's photo message with no row, O's text, the coach's text
   const run = randomUUID().slice(0, 8);
   const as = <T>(k: Key | 'anon', query: (tx: Prisma.TransactionClient) => Promise<T>) =>
     prisma.$transaction(async (tx: Prisma.TransactionClient) => {
@@ -64,12 +65,12 @@ const ROLE = (k: Key) => (k === 'A' || k === 'B' ? 'coach' : 'student');
   const count = (k: Key | 'anon', sql: string, ...params: unknown[]) =>
     as(k, (tx) => tx.$queryRawUnsafe<{ n: number }[]>(sql, ...params)).then((r) => r[0].n);
   const rows = (k: Key, m: string) => count(k, `SELECT count(*)::int AS "n" FROM "community_message_images" WHERE "message_id" = $1::uuid`, m);
-  const insert = (k: Key, s: 'A' | 'B', author: Key) =>
+  const insert = (k: Key, s: 'A' | 'B', author: Key, message: string = randomUUID()) =>
     as(k, (tx) =>
       tx.$executeRawUnsafe(
         `INSERT INTO "community_message_images" ("message_id", "cohort_id", "author_id", "storage_key", "width", "height", "size_bytes", "mime")
          VALUES ($1::uuid, $2::uuid, $3, $4, 4, 3, 100, 'image/jpeg')`,
-        randomUUID(), space[s], id[author], `${id[author]}/${randomUUID()}.jpg`,
+        message, space[s], id[author], `${id[author]}/${randomUUID()}.jpg`,
       ),
     ).catch((e: { code?: string; meta?: { code?: string } }) => String(e.code === 'P2010' ? e.meta?.code : e.code));
   const objects = (k: Key | 'anon', bucket: string) =>
@@ -102,6 +103,9 @@ const ROLE = (k: Key) => (k === 'A' || k === 'B' ? 'coach' : 'student');
         data: { message_id: m.id, cohort_id: space[c], author_id: id[member], storage_key: `${id[member]}/${m.id}.jpg`, width: 4, height: 3, size_bytes: 100, mime: 'image/jpeg' },
       });
     }
+    for (const [k, sender, kind] of [['mine', 'O', 'image'], ['text', 'O', 'text'], ['coach', 'A', 'text']] as const) {
+      spare[k] = (await prisma.communityMessage.create({ data: { workspace_id: ws.A, cohort_id: space.A, scope: 'cohort', kind, sender_id: id[sender], body: 'x' } })).id;
+    }
   });
   afterAll(async () => {
     try {
@@ -128,12 +132,21 @@ const ROLE = (k: Key) => (k === 'A' || k === 'B' ? 'coach' : 'student');
     expect(await count('anon', `SELECT count(*)::int AS "n" FROM "community_message_images"`).catch((e: { meta?: { code?: string } }) => e.meta?.code)).toBe('42501');
   });
 
-  it('a photo row is written only by its author, in a space they can open', async () => {
-    expect(await insert('O', 'A', 'O')).toBe(1);
+  it('FX-1139 B2: no member writes a photo row; the server writes it with its own photo message', async () => {
+    expect(await insert('O', 'A', 'O', spare.mine)).toBe('42501'); // even O's own photo message
+    expect(await insert('O', 'A', 'O', spare.coach)).toBe('42501'); // another member's message
+    expect(await insert('O', 'A', 'O', spare.text)).toBe('42501'); // a text message
+    expect(await insert('O', 'B', 'O', spare.mine)).toBe('42501'); // another space
+    expect(await insert('O', 'A', 'O')).toBe('42501'); // an id that does not exist
     expect(await insert('O', 'A', 'N')).toBe('42501'); // someone else as author
-    expect(await insert('X', 'B', 'X')).toBe(1);
+    expect(await insert('X', 'B', 'X')).toBe('42501');
     expect(await insert('X', 'A', 'X')).toBe('42501'); // another workspace
     expect(await insert('N', 'A', 'N')).toBe('42501'); // not in the space
+    expect(await rows('O', spare.mine)).toBe(0);
+    await prisma.communityMessageImage.create({
+      data: { message_id: spare.mine, cohort_id: space.A, author_id: id.O, storage_key: `${id.O}/${spare.mine}.jpg`, width: 4, height: 3, size_bytes: 100, mime: 'image/jpeg' },
+    });
+    expect(await rows('O', spare.mine)).toBe(1); // control: the server's write is the one that lands
   });
 
   it('no storage schema: the bucket block is a no-op', async () => {
