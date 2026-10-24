@@ -82,6 +82,35 @@ describe('AiEgressService.openAiModerationCreate (PHOTO-CHECK-BE)', () => {
     expect(calls).toBe(1);
   });
 
+  // FR-1152 (Sol B2): the headers arrive in time, then the body never ends.
+  const stalledBody = (status: number) =>
+    new Response(new ReadableStream({ start: (c) => c.enqueue(new TextEncoder().encode('{"id":"modr-1",')) }), {
+      status,
+      headers: { 'content-type': 'application/json' },
+    });
+  it.each([200, 500])('gives up at the deadline when a %i answer body stalls after its headers', async (status) => {
+    const t = transport(() => stalledBody(status));
+    const started = Date.now();
+    await expect(
+      egressWithGrants().egress.openAiModerationCreate(createOpenAiModerationClient('k', { fetch: t.fetchImpl }), PARAMS, 50),
+    ).rejects.toThrow();
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(t.calls).toHaveLength(1); // still never a retry
+  });
+
+  it('the deadline aborts the request it gave up on', async () => {
+    let signal: AbortSignal | undefined;
+    const t = transport(() => stalledBody(200));
+    const spy = async (url: unknown, init: RequestInit = {}): Promise<Response> => {
+      signal = init.signal ?? undefined;
+      return t.fetchImpl(String(url), init);
+    };
+    await expect(
+      egressWithGrants().egress.openAiModerationCreate(createOpenAiModerationClient('k', { fetch: spy as typeof fetch }), PARAMS, 50),
+    ).rejects.toThrow();
+    expect(signal?.aborted).toBe(true);
+  });
+
   it('refuses a forged handle and sends nothing', async () => {
     const forged = Object.create(OpenAiModerationHandle.prototype) as OpenAiModerationHandle;
     await expect(egressWithGrants().egress.openAiModerationCreate(forged, PARAMS, 5_000)).rejects.toBeInstanceOf(
