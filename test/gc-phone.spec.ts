@@ -102,7 +102,13 @@ describe('GC-PHONE: the phone the buyer gives at checkout', () => {
       due_today_cents: 14900,
       recurring: null,
     };
-    const html = renderPayPage(pkg, { token: 'tokAAAAAAAAAAAAAAAAAA', lp: null, onBehalfOf: 'acct_x', nonce: 'n0' });
+    const html = renderPayPage(pkg, {
+      token: 'tokAAAAAAAAAAAAAAAAAA',
+      lp: null,
+      onBehalfOf: 'acct_x',
+      nonce: 'n0',
+      returnUrl: 'https://app.trygrowthproject.com/p/tokAAAAAAAAAAAAAAAAAA/done',
+    });
 
     it('asks for the phone between name and email, as a phone field', () => {
       const form = /<form id="pay"[\s\S]*?<\/form>/.exec(html)?.[0] ?? '';

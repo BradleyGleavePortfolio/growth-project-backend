@@ -5,8 +5,13 @@ import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { randomBytes } from 'crypto';
 import type { Request, Response } from 'express';
 import { Public } from '../common/decorators/public.decorator';
+import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
+import { PrismaService } from '../prisma.service';
 import { THROTTLER_NAMES, THROTTLER_ROUTE_LIMITS } from '../throttler/throttler.config';
 import { StorefrontService } from './storefront.service';
+import { payDoneUrl } from './storefront-links';
+import { PAY_DONE_REFRESH_SECONDS, readPayDone } from './pay-done';
+import { renderPayDonePage } from './pay-done.html';
 import { STOREFRONT_JOIN_SKIP_THROTTLERS, storefrontJoinIpTracker } from './storefront-public.controller';
 import {
   APP_STORE_URL_DEFAULT,
@@ -52,6 +57,8 @@ export class PayPageController {
   constructor(
     private readonly storefront: StorefrontService,
     private readonly config: ConfigService,
+    private readonly prisma: PrismaService,
+    private readonly stripe: StripeConnectApiService,
   ) {}
 
   @Public()
@@ -89,7 +96,8 @@ export class PayPageController {
     try {
       const { data, onBehalfOf } = await this.storefront.loadPublicPackage(token);
       const landing = typeof lp === 'string' && LANDING_PAGE_ID.test(lp) ? lp : null;
-      html = renderPayPage(data, { token, lp: landing, onBehalfOf, nonce });
+      const returnUrl = payDoneUrl(this.config.get<string>('STOREFRONT_BASE_URL'), token, landing);
+      html = renderPayPage(data, { token, lp: landing, onBehalfOf, nonce, returnUrl });
     } catch (err) {
       // Only the share-link 404s become a page; anything else (503 with no
       // publishable key) keeps the API's JSON error.
@@ -100,5 +108,43 @@ export class PayPageController {
       html = renderPayPageState(notReady ? PAY_PAGE_COPY.notReady : PAY_PAGE_COPY.notOffered, nonce);
     }
     res.status(status).set(payPageHeaders(nonce)).type('html').send(html);
+  }
+
+  // GC-2 — Stripe's return_url for every buyer (card or wallet): the result
+  // of the payment, read from Stripe (pay-done.ts). Same switch, throttles and
+  // headers as GET /p/:token. Read-only, so reloading or opening it twice is
+  // safe. Registered before LandingPagesModule's p/:coachSlug/:pageSlug
+  // (StorefrontModule comes first in AppModule), so /p/<token>/done lands here.
+  @Public()
+  @SkipThrottle(STOREFRONT_JOIN_SKIP_THROTTLERS)
+  @Throttle({
+    [THROTTLER_NAMES.DEFAULT]: { ttl: 60_000, limit: 20 },
+    [THROTTLER_NAMES.STOREFRONT_JOIN_IP]: {
+      ttl: 60_000,
+      limit: THROTTLER_ROUTE_LIMITS.STOREFRONT_JOIN_IP_PER_MIN,
+      getTracker: (req: Record<string, unknown>) => storefrontJoinIpTracker(req),
+    },
+  })
+  @Get(':token/done')
+  async payDone(
+    @Param('token') token: string,
+    @Query() query: Record<string, unknown>,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    if (this.config.get<string>('GUEST_PAY_PAGE_ENABLED') !== 'true') {
+      throw new NotFoundException(`Cannot ${req.method} ${req.originalUrl}`);
+    }
+    const nonce = randomBytes(16).toString('base64');
+    const { view, refresh } = await readPayDone(
+      { db: this.prisma, stripe: this.stripe, storefrontBase: this.config.get<string>('STOREFRONT_BASE_URL') },
+      token,
+      query,
+    );
+    const status = view.kind === 'unknown' ? 404 : view.kind === 'unavailable' ? 503 : 200;
+    const store = this.config.get<string>('APP_STORE_URL') ?? APP_STORE_URL_DEFAULT;
+    res.status(status).set(payPageHeaders(nonce));
+    if (refresh) res.set('Refresh', `${PAY_DONE_REFRESH_SECONDS}; url=${refresh}`);
+    res.type('html').send(renderPayDonePage(view, nonce, store));
   }
 }
