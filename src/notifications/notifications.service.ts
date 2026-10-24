@@ -30,7 +30,11 @@ import { EnqueueResult, PushDeliveryService } from './push/push-delivery.service
 import { PushContext, lockScreenCopy, safetyAlertTap } from './push/lock-screen-copy';
 import { currentCoachInbox } from './current-coach-inbox';
 import { resolveRecipientTimeZone } from './recipient-timezone';
-import { notificationPrefsPrefix, pushAllowedByPreferences } from './push/push-preferences';
+import {
+  muteAllStops,
+  notificationPrefsPrefix,
+  pushAllowedByPreferences,
+} from './push/push-preferences';
 import { RomanCopyPayload } from '../roman/voice/voice-policy.constants';
 import { describeFailure } from '../observability/log-pii';
 
@@ -446,9 +450,11 @@ export class NotificationsService implements OnModuleInit {
    * Write one notification row. Called by every emitter.
    *
    * Before writing, the method checks the user's NotificationPreferences to
-   * see if the channel for this kind is enabled. If not, or if `muted` is
-   * true, the write is skipped. This is the single enforcement point so
-   * individual emitters do not need to repeat preference lookups.
+   * see if the channel for this kind is enabled. If not, the write is
+   * skipped. MUTE-PAY (owner #171-3): `muted` ("Mute all notifications")
+   * never skips a row: every row is listed in the inbox. This is the single
+   * enforcement point so individual emitters do not need to repeat
+   * preference lookups.
    *
    * Returns the created row, or null if suppressed by preferences.
    *
@@ -467,7 +473,8 @@ export class NotificationsService implements OnModuleInit {
    * The preference gate createNotification applies, without writing: lets a
    * caller tell "the user turned this off" (done, nothing to retry) from a
    * suppressed push (rate limit), which createNotification reports the same
-   * way (null).
+   * way (null). 'muted' is the delivery answer only (muteAllStops: a push or
+   * email of a non-money kind); createNotification still writes that row.
    */
   async channelGate(
     userId: string,
@@ -481,9 +488,10 @@ export class NotificationsService implements OnModuleInit {
     prefs: Awaited<ReturnType<NotificationsService['getPreferences']>>,
     kind: NotificationKindValue,
     channel: 'push' | 'email' | 'inapp',
+    row = false,
   ): NotificationChannelGate {
-    // Global mute short-circuit.
-    if ((prefs as Record<string, unknown>).muted) return 'muted';
+    // MUTE-PAY: Mute all never stops a row, an in-app notice or a money kind.
+    if (!row && muteAllStops(prefs as Record<string, unknown>, kind, channel)) return 'muted';
     // Per-kind channel gate.
     const enabledKey = `${this._kindToPrefsPrefix(kind)}_${channel}` as keyof typeof prefs;
     return prefs[enabledKey] === false ? 'off' : 'enabled';
@@ -494,8 +502,8 @@ export class NotificationsService implements OnModuleInit {
     const prefs = await this.getPreferences(input.user_id, tx);
     const channel = input.channel ?? 'inapp';
 
-    // Global mute and per-kind channel gate (shared with channelGate).
-    if (this.gateFrom(prefs, input.kind, channel) !== 'enabled') {
+    // Per-kind channel gate (shared with channelGate); Mute all never stops a row.
+    if (this.gateFrom(prefs, input.kind, channel, true) !== 'enabled') {
       return null;
     }
 
@@ -554,9 +562,9 @@ export class NotificationsService implements OnModuleInit {
    * The inbox row is written separately with `createNotification({ channel:
    * 'inapp' })`; this call writes NO inbox row, so each event is one inbox
    * item. It queues one PushOutbox row (B-NOTIF-5) and returns at once: the
-   * request never waits on Expo (B-648-6). Gated by the same preferences as
-   * the row (`muted`, `<kind>_push`). Quiet hours (OR-113-5) are applied in
-   * the recipient's zone. The lock screen gets quiet copy
+   * request never waits on Expo (B-648-6). Gated by `<kind>_push` and by
+   * `muted` unless the kind is money (pushAllowedByPreferences). Quiet hours
+   * (OR-113-5) are applied in the recipient's zone. The lock screen gets quiet copy
    * (lock-screen-copy.ts: no health details, no message text); `data`
    * carries only tap routing (the screen, the deep link and ids).
    *

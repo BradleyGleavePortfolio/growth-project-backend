@@ -42,13 +42,13 @@ import { planRenewalPushStillDue } from '../../checkout/plan-renewal/plan-renewa
 //     and the row is closed (at most once). A lost CAS is never reported as sent.
 //   - Every decision is re-made at the moment of sending, not only at
 //     enqueue (B-648-9, B-648-10): the recipient's current preferences
-//     (`muted`, `<kind>_push`), quiet hours in the recipient's CURRENT zone,
-//     and the burst cap. A push whose switch was turned off while it waited
-//     is suppressed; one that would now land inside quiet hours waits for
-//     08:00 local again, without spending a provider retry attempt. The
-//     switches and the device token are read once more after every other
-//     read, so a mute or sign-out committed during preparation stops the
-//     send (Sol B-648-9, round 5).
+//     (`muted` unless the kind is money, `<kind>_push`), quiet hours in the
+//     recipient's CURRENT zone, and the burst cap. A push whose switch was
+//     turned off while it waited is suppressed; one that would now land
+//     inside quiet hours waits for 08:00 local again, without spending a
+//     provider retry attempt. The switches and the device token are read
+//     once more after every other read, so a mute or sign-out committed
+//     during preparation stops the send (Sol B-648-9, round 5).
 //   - Lock screen (B-692-1): title and body come only from the per-kind
 //     templates (lock-screen-copy.ts), rendered at the moment of sending; the
 //     Android channel is one the app creates (push-channels.ts, B-693-1).
@@ -497,7 +497,8 @@ export class PushDeliveryService {
         }
       }
 
-      // B-648-9: the recipient's CURRENT switches, the same rule as enqueue.
+      // B-648-9: the recipient's CURRENT switches, the same rule as enqueue
+      // (MUTE-PAY: a money kind passes muted).
       const prefs = await this.prisma.notificationPreferences.findUnique({
         where: { user_id: row.user_id },
       });

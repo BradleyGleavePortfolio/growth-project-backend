@@ -152,12 +152,13 @@ describe('RENEWAL-BE app notifications', () => {
     expect(quietHoursFor({ kind: NotificationKind.PLAN_RENEWAL, timeZone: 'Asia/Tokyo', now: late }).deferred).toBe(false);
   });
 
-  it('the client\'s "plan renewal reminders" switch (default on) and the global mute both stop it', () => {
+  it('the client\'s "plan renewal reminders" switch (default on) stops it; Mute all does not (money, MUTE-PAY)', () => {
     expect(notificationPrefsPrefix(NotificationKind.PLAN_RENEWAL)).toBe('plan_renewal');
     expect(pushAllowedByPreferences({ plan_renewal_push: true }, NotificationKind.PLAN_RENEWAL)).toBe(true);
     expect(pushAllowedByPreferences({}, NotificationKind.PLAN_RENEWAL)).toBe(true);
     expect(pushAllowedByPreferences({ plan_renewal_push: false }, NotificationKind.PLAN_RENEWAL)).toBe(false);
-    expect(pushAllowedByPreferences({ plan_renewal_push: true, muted: true }, NotificationKind.PLAN_RENEWAL)).toBe(false);
+    expect(pushAllowedByPreferences({ plan_renewal_push: true, muted: true }, NotificationKind.PLAN_RENEWAL)).toBe(true);
+    expect(pushAllowedByPreferences({ plan_renewal_push: false, muted: true }, NotificationKind.PLAN_RENEWAL)).toBe(false);
     // Turning renewal reminders off leaves every other kind alone.
     expect(pushAllowedByPreferences({ plan_renewal_push: false }, NotificationKind.MESSAGE_RECEIVED)).toBe(true);
   });

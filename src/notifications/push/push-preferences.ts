@@ -5,11 +5,14 @@
 // burst cap, a provider retry). The worker re-reads the recipient's current
 // preferences right before it hands the push to Expo, through the SAME
 // mapping and the SAME rule the enqueue gate uses, so a switch turned off
-// (or "mute all") while a push waits suppresses it.
+// (or "mute all", for a kind it mutes) while a push waits suppresses it.
+
+import { MONEY_NOTIFICATION_KINDS } from '../notification-kind';
 
 // DUNNING-KIND-FIX: kinds with no column of their own keep their own name as the prefix, so only `muted`
-// stops them (src/notifications/README.md defaults tables). On the 'digest' default (in-app and push off)
-// a default user lost the payment blocker row, the meal plan row and five community inbox rows.
+// stops them, and only their non-money pushes (muteAllStops; src/notifications/README.md defaults tables).
+// On the 'digest' default (in-app and push off) a default user lost the payment blocker row, the meal plan
+// row and five community inbox rows.
 const NO_COLUMN_KINDS: ReadonlySet<string> = new Set([
   'dunning_blocker',
   'meal_plan_assigned',
@@ -92,16 +95,30 @@ export function notificationPrefsPrefix(kind: string): string {
 }
 
 /**
+ * MUTE-PAY (owner #171-3): whether "Mute all notifications" (`muted`) stops
+ * this kind on this channel. Never an in-app row, never a money kind
+ * (MONEY_NOTIFICATION_KINDS) on any channel; every other push and email, yes.
+ */
+export function muteAllStops(
+  prefs: Record<string, unknown> | null | undefined,
+  kind: string,
+  channel: 'push' | 'email' | 'inapp',
+): boolean {
+  return prefs?.muted === true && channel !== 'inapp' && !MONEY_NOTIFICATION_KINDS.has(kind);
+}
+
+/**
  * True when the recipient's preferences allow a device push of this kind.
  * Same rule as the enqueue gate: no preferences row means the defaults
- * (allowed); `muted` blocks everything; `<prefix>_push === false` blocks the
- * kind. A kind without a column (first payment) is never blocked by it.
+ * (allowed); `muted` blocks every push but a money kind's (muteAllStops);
+ * `<prefix>_push === false` blocks the kind. A kind without a column (first
+ * payment) is never blocked by it.
  */
 export function pushAllowedByPreferences(
   prefs: Record<string, unknown> | null | undefined,
   kind: string,
 ): boolean {
   if (!prefs) return true;
-  if (prefs.muted === true) return false;
+  if (muteAllStops(prefs, kind, 'push')) return false;
   return prefs[`${notificationPrefsPrefix(kind)}_push`] !== false;
 }
