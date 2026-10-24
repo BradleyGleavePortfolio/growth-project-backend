@@ -13,6 +13,7 @@ import {
   CommunitySafetyService,
 } from '../safety/community-safety.service';
 import { reactionKindForEmoji } from './community-emoji.allowlist';
+import { placeOf } from '../community-space-access';
 import {
   CommunityReactionState,
   CommunityReactionStateSchema,
@@ -102,7 +103,7 @@ export class CommunityReactionsService {
         : await this.access.canAccessWorkspace(post.workspace_id, user);
       if (!open) throw new NotFoundException(NOT_FOUND);
       // Two-way block: content the caller cannot see cannot be reacted to.
-      await this.safety.assertVisibleTo(user.id, post.author_id, NOT_FOUND);
+      await this.safety.assertVisibleTo(user.id, post.author_id, NOT_FOUND, placeOf(post)); // #168-4: banned author too
       return {
         workspaceId: post.workspace_id,
         targetType: 'post',
@@ -143,7 +144,7 @@ export class CommunityReactionsService {
       });
     }
     // Two-way block: content the caller cannot see cannot be reacted to.
-    await this.safety.assertVisibleTo(user.id, msg.sender_id, NOT_FOUND);
+    await this.safety.assertVisibleTo(user.id, msg.sender_id, NOT_FOUND, placeOf(msg)); // #168-4: banned author too
 
     return {
       workspaceId: msg.workspace_id,

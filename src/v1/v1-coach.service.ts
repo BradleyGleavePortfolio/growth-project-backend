@@ -9,6 +9,7 @@ import { SupabaseService } from '../supabase/supabase.service';
 import { AuditService, AuditAction } from '../audit/audit.service';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { ConsentScope, ConsentService } from '../consent/consent.service';
+import { assertPairOpen, inBlockWith } from '../messaging/block-pair';
 
 // V1 BFF service for the coach console. Returns enriched payloads documented
 // in tgp-coach-console/INTEGRATION_NOTES.md. OWNER callers bypass the coach
@@ -282,6 +283,9 @@ export class V1CoachService {
       }
     }
 
+    // FX-1141 (Sol B2, 10-23 "Dissapear"): a chat in a block either way
+    // leaves the list (no row, no words, no unread); unblock brings it back.
+    for (const id of await inBlockWith(this.prisma, caller.id, [...byClient.keys()])) byClient.delete(id);
     if (byClient.size === 0) return [];
 
     const clientIds = Array.from(byClient.keys());
@@ -379,8 +383,10 @@ export class V1CoachService {
     });
     if (!client) throw new NotFoundException('Client not found');
     const threadCoachId = client.coach_id ?? coachId;
+    // FX-1141 (Sol B2): a chat in a block either way opens empty, no draft.
+    const closed = (await inBlockWith(this.prisma, caller.id, [clientId])).size > 0;
 
-    const messages = await this.prisma.coachMessage.findMany({
+    const messages = closed ? [] : await this.prisma.coachMessage.findMany({
       where: { coach_id: threadCoachId, client_id: clientId },
       orderBy: { created_at: 'asc' },
       select: {
@@ -405,7 +411,7 @@ export class V1CoachService {
         metadata: { message_count: messages.length },
       });
     }
-    const draft = await this.prisma.messageDraft.findUnique({
+    const draft = closed ? null : await this.prisma.messageDraft.findUnique({
       where: {
         MessageDraft_coach_client_key: {
           coach_id: threadCoachId,
@@ -460,6 +466,8 @@ export class V1CoachService {
     // the message still has a legitimate row in the table.
     const threadCoachId = client.coach_id ?? coachId;
     const senderId = caller.id;
+    // FX-1141 (Sol B1): no message across a block either way (403, no row).
+    await assertPairOpen(this.prisma, senderId, clientId);
 
     const created = await this.prisma.coachMessage.create({
       data: {
@@ -554,6 +562,8 @@ export class V1CoachService {
       };
     }
 
+    // FX-1141 (Sol B1): no draft words across a block (clearing stays open).
+    await assertPairOpen(this.prisma, caller.id, clientId);
     const draft = await this.prisma.messageDraft.upsert({
       where: {
         MessageDraft_coach_client_key: {
@@ -593,6 +603,8 @@ export class V1CoachService {
     });
     if (!client) throw new NotFoundException('Client not found');
     const threadCoachId = client.coach_id ?? coachId;
+    // FX-1141: a closed chat resumes with no composer, so no draft either.
+    if ((await inBlockWith(this.prisma, caller.id, [clientId])).size > 0) return null;
     const draft = await this.prisma.messageDraft.findUnique({
       where: {
         MessageDraft_coach_client_key: {

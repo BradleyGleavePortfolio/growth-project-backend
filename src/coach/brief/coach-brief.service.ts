@@ -39,6 +39,7 @@ import { describeFailure } from '../../observability/log-pii';
 import { usableTimeZone } from '../../notifications/local-time';
 import { ConsentScope, ConsentService } from '../../consent/consent.service';
 import { coachSharingCheck } from '../../consent/coach-sharing-gate';
+import { inBlockWith } from '../../messaging/block-pair';
 
 /**
  * Sentinel error surfaced by `markBriefRead` when the briefId either does
@@ -1196,8 +1197,16 @@ export class CoachBriefService {
       string,
       { client_id: string; client_name: string; message_preview: string; occurred_at: Date }
     >();
+    // FX-1141 (Opus B2): a chat in a block either way gives no brief row, no
+    // preview and no count, and its words never reach the brief's prompt.
+    const blockedPairs = await inBlockWith(
+      this.prisma,
+      coachId,
+      unreadMessagesRaw.flatMap((m) => (m.client_id ? [m.client_id] : [])),
+    );
     for (const m of unreadMessagesRaw) {
       if (!m.client_id || threadByClient.has(m.client_id)) continue;
+      if (blockedPairs.has(m.client_id)) continue;
       // Only the thread with the client's current coach (owner decision 4).
       if (m.coach_id !== m.client?.coach_id) continue;
       threadByClient.set(m.client_id, {
@@ -2248,6 +2257,9 @@ export class CoachBriefService {
    * delegated by a head coach who still has them. A row stored before the
    * scope list cannot show whose data it holds, so it counts as stale.
    * Archiving is the coach's own choice, not a move, so it is not checked.
+   * FR-1141 (Sol B3): so is a brief written before a block, either way,
+   * between this coach and one of its clients: its count and narrative still
+   * hold that chat. Lifting the block shows it again.
    */
   private async briefsWithMovedClients(
     coachId: string,
@@ -2255,6 +2267,7 @@ export class CoachBriefService {
       id: string;
       brief_mode: string | null;
       brief_context: Prisma.JsonValue | null;
+      generated_at: Date | null;
     }>,
   ): Promise<Set<string>> {
     const builtFrom = new Map<string, { delegated: boolean; ids: string[] }>();
@@ -2294,6 +2307,17 @@ export class CoachBriefService {
       const stillTheirs = new Set(current.map((u) => u.id));
       for (const [briefId, n] of ofMode) {
         if (n.ids.some((id) => !stillTheirs.has(id))) stale.add(briefId);
+      }
+    }
+    const scoped = Array.from(new Set(Array.from(builtFrom.values()).flatMap((n) => n.ids)));
+    if (scoped.length > 0) {
+      const blocks = await this.prisma.userBlock.findMany({
+        where: { OR: [{ blocker_id: coachId, blocked_id: { in: scoped } }, { blocked_id: coachId, blocker_id: { in: scoped } }] },
+        select: { blocker_id: true, blocked_id: true, created_at: true },
+      });
+      const since = new Map(blocks.map((b) => [b.blocker_id === coachId ? b.blocked_id : b.blocker_id, b.created_at]));
+      for (const r of rows) {
+        if (builtFrom.get(r.id)?.ids.some((id) => writtenBefore(r, since.get(id) ?? null))) stale.add(r.id);
       }
     }
     return stale;
@@ -2340,11 +2364,13 @@ export class CoachBriefService {
     });
     // The same text the item's detail was cut from (aggregateSoloContext, buildActionItems).
     const inThread = new Set(found.map((m) => `${m.client_id}\n${briefPreview(m).slice(0, 80)}`));
+    // FX-1141 (Opus B2): a stored brief drops the row of a chat now in a block.
+    const blocked = await inBlockWith(this.prisma, coachId, asked.map((m) => m.client_id));
     return (items) =>
       Array.isArray(items)
         ? items.filter((i) => {
             const m = messageItem(i);
-            return !m || inThread.has(`${m.client_id}\n${m.detail}`);
+            return !m || (!blocked.has(m.client_id) && inThread.has(`${m.client_id}\n${m.detail}`));
           })
         : items;
   }

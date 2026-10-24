@@ -252,8 +252,12 @@ export class CommunityDmsService {
       userId: user.id,
       limit: this.parsePage(query.limit),
     });
-    const visible = await this.safety.filterBlocked(user.id, rows, (m) =>
-      m.sender_id === user.id ? m.recipient_user_id : m.sender_id,
+    // #168-4: the other member's place in this community too (left, or banned).
+    const visible = await this.safety.filterBlocked(
+      user.id,
+      rows,
+      (m) => (m.sender_id === user.id ? m.recipient_user_id : m.sender_id),
+      (m) => [m.workspace_id, null],
     );
     return CommunityDmThreadListResponseSchema.parse({
       threads: visible.map((m) => ({

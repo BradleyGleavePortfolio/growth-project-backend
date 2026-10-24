@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ForbiddenException,
+  HttpStatus,
   Injectable,
   Logger,
   NotFoundException,
@@ -45,6 +46,8 @@ import {
   MWB_LIVE_CREATE_CAPABILITIES,
 } from './mwb-live-create.feature';
 import { ROMAN_MESSAGE_CAPABILITIES, ROMAN_MESSAGE_SOURCE } from './roman-message-draft';
+import { inBlockWith } from '../../messaging/block-pair';
+import { MESSAGING_ERRORS, messagingError } from '../../messaging/messaging-errors';
 import { AuditService } from '../../audit/audit.service';
 import { CoachAIBudgetService } from '../../ai-credits/coach-ai-budget.service';
 import { CoachAiBudgetExhaustedException } from '../../ai-credits/budget-exhausted.exception';
@@ -223,6 +226,17 @@ export class AiGatewayService {
     // before any provider call, budget read or draft.
     if (ROMAN_MESSAGE_CAPABILITIES.has(req.capability) && req.proposedActionPayload !== undefined) {
       throw new BadRequestException({ error: 'AI_DRAFT_PAYLOAD_SERVER_WRITTEN', capability: req.capability });
+    }
+
+    // #168-4: Roman never drafts a message or a notification to one person
+    // across a block (either way, requester or tenant coach): the messaging
+    // 403 code, before any budget read, provider call, debit or draft.
+    if (ROMAN_MESSAGE_CAPABILITIES.has(req.capability) || req.capability === SEND_NOTIFICATION_CAPABILITY) {
+      for (const coach of new Set([req.requester.id, req.tenantCoachId ?? req.requester.id])) {
+        if ((await inBlockWith(this.prisma, coach, namedClientIds(req))).size > 0) {
+          throw messagingError(HttpStatus.FORBIDDEN, MESSAGING_ERRORS.BLOCKED);
+        }
+      }
     }
 
     // B-AIBSUB-126 — Ask AI is not offered to sub-coaches at launch (the

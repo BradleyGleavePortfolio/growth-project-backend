@@ -71,10 +71,12 @@ export class CommunityCoachInboxRepository {
     cohortIds: string[];
     limit: number;
     after: { createdAt: Date; id: string } | null;
+    /** #168-4: the coach reading; authors in a block with them stay out. */
+    viewerId?: string;
   }): Promise<MessageWithSender[]> {
     const { cohortIds, limit, after } = params;
     if (cohortIds.length === 0) return [];
-    const left = await authorsWhoLeft(this.prisma, cohortIds);
+    const left = await authorsWhoLeft(this.prisma, cohortIds, params.viewerId);
     return this.prisma.communityMessage.findMany({
       where: {
         ...(left.length > 0 ? { NOT: left.map(([s, a]) => ({ cohort_id: s, sender_id: a })) } : {}),
@@ -115,10 +117,11 @@ export class CommunityCoachInboxRepository {
     cohortIds: string[];
     limit: number;
     after: { createdAt: Date; id: string } | null;
+    viewerId?: string;
   }): Promise<PostWithAuthor[]> {
     const { cohortIds, limit, after } = params;
     if (cohortIds.length === 0) return [];
-    const left = await authorsWhoLeft(this.prisma, cohortIds);
+    const left = await authorsWhoLeft(this.prisma, cohortIds, params.viewerId);
     const candidates = await this.prisma.communityPost.findMany({
       where: {
         ...(left.length > 0 ? { NOT: left.map(([s, a]) => ({ cohort_id: s, author_id: a })) } : {}),

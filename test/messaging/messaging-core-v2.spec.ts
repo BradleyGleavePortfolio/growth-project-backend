@@ -146,6 +146,7 @@ function build(opts: { blocked?: string[]; eitherBlocked?: boolean } = {}) {
       })),
     },
     conversationReview: { upsert: jest.fn(), findUnique: jest.fn() },
+    userBlock: { findMany: jest.fn().mockResolvedValue([]) }, // #168-4: who blocked the caller
     $queryRaw: jest.fn().mockResolvedValue([]),
     $transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
   };
@@ -582,14 +583,14 @@ describe('message pins', () => {
     expect(t.prisma.coachMessage.updateMany).not.toHaveBeenCalled();
   });
 
-  it('the pins bar hides pins authored by someone the caller blocked', async () => {
+  it('#168-4: the pins bar is empty when the caller blocked the other party (the thread is closed)', async () => {
     const t = build({ blocked: [COACH] });
     t.prisma.coachMessage.findMany.mockResolvedValueOnce([
       row({ id: 'a', sender_id: COACH, pinned_at: new Date() }),
       row({ id: 'b', sender_id: CLIENT, pinned_at: new Date() }),
     ]);
     const out = await t.actions.listPins(thread);
-    expect(out.items.map((i) => i.id)).toEqual(['b']);
+    expect(out.items).toEqual([]);
   });
 
   it('a message authored by a blocked party is not addressable (404)', async () => {
@@ -781,7 +782,7 @@ describe('unified inbox', () => {
     expect(out.total_unread).toBe(2);
   });
 
-  it('coach: pinned threads first; blocked threads hide the preview and unread', async () => {
+  it('coach: pinned threads first; a blocked thread leaves the list (10-23 "Dissapear")', async () => {
     const t = build({ blocked: [OTHER_CLIENT] });
     t.prisma.$queryRaw.mockResolvedValueOnce(lastRows());
     t.prisma.coachThreadState.findMany.mockResolvedValueOnce([
@@ -789,12 +790,7 @@ describe('unified inbox', () => {
     ]);
     const out = await t.inbox.inboxForCoach(COACH, {});
     expect(out.items[0]).toMatchObject({ client_id: CLIENT, pinned: true, muted: true });
-    expect(out.items[1]).toMatchObject({
-      client_id: OTHER_CLIENT,
-      blocked_by_me: true,
-      last_message: null,
-      unread_count: 0,
-    });
+    expect(out.items.map((i) => i.client_id)).toEqual([CLIENT]);
   });
 
   it('tenancy: the query is bound to the scope (head coach namespace, authorized clients only)', async () => {

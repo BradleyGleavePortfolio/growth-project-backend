@@ -39,6 +39,7 @@ import { messagingError, MESSAGING_ERRORS } from './messaging-errors';
 import { isRomanMessageDraft } from '../ai/gateway/roman-message-draft';
 import { THREAD_UPDATED_EVENT, type ThreadUpdateKind } from './messaging-realtime';
 import { SHARE_CARD_TYPE, shareCardOf } from './share-card';
+import { assertPairOpen, type ConversationClosed } from './block-pair';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
@@ -431,6 +432,32 @@ export class MessagingService {
     return this.safety.getBlockedIdsFor(callerId);
   }
 
+  /**
+   * #168-4: a block closes the conversation both ways. `mine` is who the
+   * caller blocked; `hidden` adds who blocked the caller. Two indexed reads,
+   * once per request (empty when the optional dep is absent).
+   */
+  async blockSets(callerId: string): Promise<{ mine: Set<string>; hidden: Set<string> }> {
+    if (!this.safety) return { mine: new Set(), hidden: new Set() };
+    const [mine, theirs] = await Promise.all([
+      this.safety.getBlockedIdsFor(callerId),
+      this.prisma.userBlock.findMany({ where: { blocked_id: callerId }, select: { blocker_id: true } }),
+    ]);
+    return { mine: new Set(mine), hidden: new Set([...mine, ...theirs.map((r) => r.blocker_id)]) };
+  }
+
+  /** Everyone in a block with `callerId`, either direction. */
+  async hiddenIdsFor(callerId: string): Promise<Set<string>> {
+    return (await this.blockSets(callerId)).hidden;
+  }
+
+  /** FX-1141: how the pair is closed for the caller, or null while open. */
+  async closedFor(callerId: string, otherId: string): Promise<ConversationClosed | null> {
+    const { mine, hidden } = await this.blockSets(callerId);
+    if (mine.has(otherId)) return 'blocked_by_you';
+    return hidden.has(otherId) ? 'blocked_by_them' : null;
+  }
+
   /** True when either side of the pair has blocked the other. */
   async isEitherSideBlocked(a: string, b: string): Promise<boolean> {
     if (!this.safety) return false;
@@ -674,12 +701,18 @@ export class MessagingService {
     rows: Awaited<ReturnType<MessagingService['listThread']>>,
   ) {
     if (!isMessagingCoreV2Enabled()) return rows;
-    const blocked = new Set(await this.blockedIdsFor(callerId));
+    const blocked = await this.hiddenIdsFor(callerId);
     return rows.map((r) => this.serializeMessage(r, blocked));
   }
 
-  async listThreadForCoach(coachId: string, clientId: string, opts: ListOpts) {
+  async listThreadForCoach(
+    coachId: string,
+    clientId: string,
+    opts: ListOpts,
+    onClosed?: (state: ConversationClosed) => void,
+  ) {
     const client = await this.assertClientOfCoach(coachId, clientId);
+    await this.tellClosed(coachId, clientId, onClosed);
     // For sub-coaches, the thread's coach_id is the head coach's id —
     // returned in client.coach_id by assertClientOfCoach.
     const threadCoachId = client.coach_id ?? coachId;
@@ -688,23 +721,34 @@ export class MessagingService {
     return this.serializeThreadPage(coachId, visible);
   }
 
-  async listThreadForClient(clientId: string, opts: ListOpts) {
+  async listThreadForClient(
+    clientId: string,
+    opts: ListOpts,
+    onClosed?: (state: ConversationClosed) => void,
+  ) {
     const coachId = await this.requireClientCoachId(clientId);
+    await this.tellClosed(clientId, coachId, onClosed);
     const rows = await this.listThread(coachId, clientId, opts);
     const visible = await this.filterBlockedAuthors(clientId, coachId, rows);
     return this.serializeThreadPage(clientId, visible);
   }
 
+  /** FX-1141: the thread GET's closed signal (header), only when asked. */
+  private async tellClosed(
+    callerId: string,
+    otherId: string,
+    onClosed?: (state: ConversationClosed) => void,
+  ): Promise<void> {
+    if (!onClosed) return;
+    const state = await this.closedFor(callerId, otherId);
+    if (state) onClosed(state);
+  }
+
   /**
-   * Drop messages authored by the other party in the thread when the caller
-   * has blocked them. We only filter the *other* party's messages — the
-   * caller still wants to see what they themselves wrote. This is the
-   * server-side mirror of the mobile filterOutBlocked filter (defence in
-   * depth, Engineering Rule 1 — never rely solely on the client).
-   *
-   * One round-trip: we look up the caller's blocklist once and apply it
-   * in-memory. The mobile thread page is ≤ 100 messages so the filter cost
-   * is negligible.
+   * #168-4: a block either way (the caller blocked the other party, or the
+   * other party blocked the caller) closes the thread: the page is empty for
+   * both people until unblock. A sub-coach in a block with the caller loses
+   * their own rows. The block sets are read once per page (blockSets).
    */
   private async filterBlockedAuthors<T extends { sender_id: string | null }>(
     callerId: string,
@@ -712,14 +756,13 @@ export class MessagingService {
     rows: T[],
   ): Promise<T[]> {
     if (!otherPartyId || rows.length === 0) return rows;
-    if (!this.safety) return rows; // Optional dep absent in legacy unit-test DI.
-    const blocked = await this.safety.getBlockedIdsFor(callerId);
-    if (blocked.length === 0) return rows;
-    if (!blocked.includes(otherPartyId)) return rows;
-    // Caller has blocked the other party — strip every message they
-    // authored. The caller's own messages still render so they can see
-    // what they last said before blocking.
-    return rows.filter((m) => m.sender_id !== otherPartyId);
+    const hidden = await this.hiddenIdsFor(callerId);
+    if (hidden.size === 0) return rows;
+    // #168-4: a block either way closes the whole thread for both people
+    // ("hide ALL messaging entirely"), own history included, until unblock.
+    if (hidden.has(otherPartyId)) return [];
+    // A sub-coach in a block with the caller (either way): their rows go.
+    return rows.filter((m) => !m.sender_id || m.sender_id === callerId || !hidden.has(m.sender_id));
   }
 
   /**
@@ -1034,6 +1077,24 @@ export class MessagingService {
     return this.voiceUploadProvider().createSignedUpload(userId, request);
   }
 
+  /**
+   * FX-1141 (B5): a coaching voice upload is a write in the thread, so no
+   * upload URL is issued across a block either way (403 messaging.blocked,
+   * storage untouched). `otherId` null: the client's current coach.
+   */
+  async createThreadVoiceUpload(
+    userId: string,
+    otherId: string | null,
+    request: SignedVoiceUploadRequest,
+  ): Promise<SignedVoiceUploadResponse> {
+    const other =
+      otherId ??
+      (await this.prisma.user.findUnique({ where: { id: userId }, select: { coach_id: true } }))
+        ?.coach_id;
+    if (other) await assertPairOpen(this.prisma, userId, other);
+    return this.createVoiceUpload(userId, request);
+  }
+
   // ---- read markers ----
 
   // Mark every message from the *other* party in this thread as read. We only
@@ -1281,9 +1342,7 @@ export class MessagingService {
     // once per call; map to a Set for O(1) per-row testing. `safety` is
     // optional in legacy unit-test DI; when absent we fall back to the
     // pre-existing un-filtered count.
-    const blockedIds = this.safety
-      ? new Set(await this.safety.getBlockedIdsFor(coachId))
-      : new Set<string>();
+    const blockedIds = await this.hiddenIdsFor(coachId); // #168-4: either way
     const by_client: Record<string, number> = {};
     let total = 0;
     for (const g of groups) {
@@ -1314,12 +1373,8 @@ export class MessagingService {
     // unread count so the bell never reflects messages the user has chosen
     // not to see. Cheap indexed lookup; runs once per call. Falls back to
     // an empty blocklist when the optional dep is absent (legacy DI).
-    if (this.safety) {
-      const blockedIds = await this.safety.getBlockedIdsFor(clientId);
-      if (blockedIds.includes(coachId)) {
-        return { total: 0 };
-      }
-    }
+    const hidden = await this.hiddenIdsFor(clientId); // #168-4: either way
+    if (hidden.has(coachId)) return { total: 0 };
     // Count any non-client sender — sub-coach messages live under the head
     // coach's thread with sender_id = subCoachId, so a coach_id-only filter
     // would miss them.
@@ -1327,7 +1382,7 @@ export class MessagingService {
       where: {
         coach_id: coachId,
         client_id: clientId,
-        sender_id: { not: clientId },
+        sender_id: hidden.size ? { not: clientId, notIn: [...hidden] } : { not: clientId },
         read_at: null,
         // A3-MSG-CORE: a message deleted for everyone never counts as unread.
         ...(isMessagingCoreV2Enabled() ? { deleted_at: null } : {}),

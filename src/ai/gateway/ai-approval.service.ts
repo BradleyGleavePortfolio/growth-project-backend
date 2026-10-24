@@ -13,6 +13,8 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { AuditService } from '../../audit/audit.service';
+import { inBlockWith } from '../../messaging/block-pair';
+import { ROMAN_MESSAGE_CAPABILITIES } from './roman-message-draft';
 import { Prisma } from '@prisma/client';
 import { CapabilityMaterializerRegistry } from './materialisers/capability-materialiser.registry';
 import { WORKOUT_BUILDER_MODEL_DIFF_SOURCE } from './ai-gateway.service';
@@ -170,7 +172,10 @@ export class AiApprovalService {
     return { items: coachId ? await this.keepOnRoster(coachId, items) : items, total, next_cursor };
   }
 
-  private async keepOnRoster<T extends { subject_user_id: string | null; payload: Prisma.JsonValue }>(coachId: string, drafts: T[]) {
+  private async keepOnRoster<T extends { capability: string; subject_user_id: string | null; payload: Prisma.JsonValue }>(
+    coachId: string,
+    drafts: T[],
+  ) {
     // The tenant was stamped when the draft was made; a client who has since
     // moved to another coach takes their drafts with them (same rule as decide),
     // whether the draft names them as its subject or in its payload.
@@ -181,7 +186,13 @@ export class AiApprovalService {
       select: { id: true },
     });
     const onRoster = new Set(roster.map((u) => u.id));
-    return drafts.filter((d) => clientsOf(d).every((id) => onRoster.has(id)));
+    // FX-1141 (Sol B2): a message draft for a client in a block with this
+    // coach, either way, leaves the queue (no stored words, no approve).
+    const words = (d: T) => ROMAN_MESSAGE_CAPABILITIES.has(d.capability) || d.capability === 'draft.send_notification';
+    const blocked = await inBlockWith(this.prisma, coachId, drafts.filter(words).flatMap(clientsOf));
+    return drafts.filter(
+      (d) => clientsOf(d).every((id) => onRoster.has(id)) && !(words(d) && clientsOf(d).some((id) => blocked.has(id))),
+    );
   }
 
   async getById(id: string) {

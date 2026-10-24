@@ -61,6 +61,7 @@ describe('NEST-TOKENS-134: MessagingService receives MessagesSafetyService and V
           useValue: {
             user: { findUnique: jest.fn().mockResolvedValue({ coach_id: 'coach-1' }) },
             coachMessage: { count: jest.fn().mockResolvedValue(3) },
+            userBlock: { findMany: jest.fn().mockResolvedValue([]) },
           },
         },
         { provide: SupabaseService, useValue: {} },

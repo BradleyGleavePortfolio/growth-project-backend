@@ -82,6 +82,7 @@ function fixture() {
     $transaction: jest.fn(),
     $executeRaw: jest.fn(),
     $queryRaw: jest.fn(),
+    userBlock: { findMany: jest.fn().mockResolvedValue([]) }, // #168-4: who blocked the caller
   };
   const dep = <T extends object>(cls: { prototype: T }, impl: object): T =>
     Object.assign(Object.create(cls.prototype) as T, impl);
