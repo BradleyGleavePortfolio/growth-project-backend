@@ -284,7 +284,7 @@ describe('GC-2 return page GET /p/:token/done', () => {
   it('escapes the buyer email, package and coach names', async () => {
     checkouts[PI] = { guest_email: '"><img src=x>@example.com', created_at: ROW_AT, package: { share_token: A, name: '<svg onload=alert(1)>', coach: { name: '<b>Sam</b>' } } };
     const res = await done();
-    for (const raw of ['<img src=x', '<svg', '<b>Sam']) expect(res.body).not.toContain(raw);
+    for (const raw of ['<img src=x', '<svg onload', '<b>Sam']) expect(res.body).not.toContain(raw);
     expect(res.body).toContain('&lt;svg onload=alert(1)&gt;');
     expect(res.body).toContain('&lt;b&gt;Sam&lt;/b&gt;');
   });

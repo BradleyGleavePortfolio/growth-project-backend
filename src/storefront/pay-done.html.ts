@@ -51,7 +51,7 @@ const EXTRA_CSS = `.tick{display:block;width:3.5rem;height:3.5rem;margin:.5rem 0
 @keyframes d{from{stroke-dashoffset:40}}.wait{display:block;width:2.5rem;height:2.5rem;margin:.5rem 0 1rem;border:3px solid var(--line);border-top-color:var(--forest);border-radius:50%;animation:s 1s linear infinite}
 .done p{margin:.5rem 0 0}.done h2{margin-top:1.5rem}.steps{margin:0;padding:0;list-style:none;counter-reset:n}
 .steps li{position:relative;padding:.25rem 0 .75rem 2.25rem;counter-increment:n;overflow-wrap:anywhere}.steps li::before{content:counter(n);position:absolute;left:0;top:.125rem;width:1.5rem;height:1.5rem;border-radius:50%;border:1px solid var(--gold);color:var(--forest);display:grid;place-items:center;font:600 .8125rem/1 var(--serif)}
-.steps .btn{margin:.75rem 0 0}.done .who{margin-top:1rem}.done .who strong{overflow-wrap:anywhere}a.link{display:inline-block;margin-top:1rem;min-height:2.75rem;padding:.5rem 0;color:var(--forest);text-decoration:underline;text-underline-offset:.2em}
+.done .btn{padding:.5rem 1rem;text-align:center}.steps .btn{margin:.75rem 0 0}.done .who{margin-top:1rem}.done .who strong{overflow-wrap:anywhere}a.link{display:inline-block;margin-top:1rem;min-height:2.75rem;padding:.5rem 0;color:var(--forest);text-decoration:underline;text-underline-offset:.2em}
 @media (prefers-reduced-motion:reduce){.tick path,.wait{animation:none}}`;
 
 function store(appStoreUrl: string): string {
