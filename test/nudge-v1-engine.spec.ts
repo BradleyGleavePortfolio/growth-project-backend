@@ -198,16 +198,12 @@ describe('NudgeEngineService — five gates', () => {
     expect(notifs.createNotification).toHaveBeenCalledTimes(1);
     expect(notifs.pushToUser).not.toHaveBeenCalled();
     expect(logs[0].status).toBe('sent');
-  });
 
-  it('suppressed_muted when global mute is on and the in-app switch is off too', async () => {
-    const { prisma, logs } = makeFakePrisma();
-    const svc = new NudgeEngineService(prisma as any, fakeNotifications(MUTED_NO_INAPP) as any);
-
-    const out = await svc.process(baseCandidate(), NOON_LA_UTC);
-
-    expect(out).toEqual({ status: NudgeStatus.SUPPRESSED_MUTED, channels: [] });
-    expect(logs[0].status).toBe('suppressed_muted');
+    // Mute all on and the in-app switch off too: no channel is left, so suppressed_muted.
+    notifs.getPreferences.mockResolvedValue(MUTED_NO_INAPP);
+    const out2 = await svc.process(baseCandidate({ user_id: 'user-2' }), NOON_LA_UTC);
+    expect(out2).toMatchObject({ status: NudgeStatus.SUPPRESSED_MUTED, channels: [] });
+    expect(logs[1].status).toBe('suppressed_muted');
   });
 
   it('suppresses when per-trigger opt-out flips all channels off', async () => {

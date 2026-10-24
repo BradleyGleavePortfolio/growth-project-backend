@@ -678,7 +678,8 @@ describe('the coach phone receives the safety push line', () => {
         coachId: 'coach-1',
         alertId,
         alertType,
-        severity: 'critical',
+        // FR-1154: the severity Roman writes (roman.service.ts); urgency is read from it.
+        severity: alertType === 'roman_eating_disorder_reply' ? 'warning' : 'critical',
         message,
         clientUserId: 'client-1',
       });
