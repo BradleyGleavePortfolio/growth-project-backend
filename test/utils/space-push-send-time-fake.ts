@@ -22,7 +22,14 @@ export function spaceAtSendTime(db: { $queryRaw: (sql: TemplateStringsArray, ...
     shut: new Set<string>(),
     reads: {} as Record<string, { notify_mode: string | null; silenced_until: Date | null }>,
     unread: 1,
+    /** Sol B1 (FR-1138R5), app.community_author_stays: each client's coach now (the workspace's coach is 'coach').
+     * A client on another coach has left the community, except in a public space or with a helper row there. */
+    coachOf: { sam: 'coach' } as Record<string, string>,
+    publicSpaces: new Set<string>(),
+    helpers: new Set<string>(),
   };
+  const stays = (w: string, c: string, a: string) =>
+    (!(a in s.coachOf) || s.coachOf[a] === 'coach' || s.publicSpaces.has(c) || s.helpers.has(a)) && !s.bans.has(`${w}:${a}`);
   const matches = (m: Msg, w: Where) =>
     Object.entries(w).every(([k, v]) => (k === 'deleted_at' ? !m.deleted_at : (m as Record<string, unknown>)[k] === v || !(k in m)));
   const blocked = (o: { blocker_id: string; blocked_id: string }) =>
@@ -53,6 +60,11 @@ export function spaceAtSendTime(db: { $queryRaw: (sql: TemplateStringsArray, ...
       }
       if (text.includes('community_space_reads')) {
         return (v[v.length - 1] as string[]).map((c) => ({ c, n: s.unread }));
+      }
+      if (text.includes('community_author_stays')) {
+        // rowsByAuthorsWhoStay: [workspaces, spaces, authors]; the 0-based places that still read.
+        const [ws, spaces, authors] = v as [string[], string[], string[]];
+        return authors.flatMap((a, n) => (stays(ws[n], spaces[n], a) ? [{ n }] : []));
       }
       return db.$queryRaw(sql, ...v);
     }),

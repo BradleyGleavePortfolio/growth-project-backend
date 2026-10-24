@@ -23,11 +23,19 @@ class Clocked extends PushDeliveryService {
   }
 }
 let log: jest.SpyInstance;
+const was = process.env.FEATURE_COMMUNITY_SPACE_PUSH;
 beforeAll(() => {
   ['warn', 'error'].forEach((l) => jest.spyOn(Logger.prototype, l as 'warn').mockImplementation(() => undefined));
   log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
 });
-beforeEach(() => log.mockClear());
+beforeEach(() => {
+  log.mockClear();
+  process.env.FEATURE_COMMUNITY_SPACE_PUSH = 'true';
+});
+afterAll(() => {
+  if (was === undefined) delete process.env.FEATURE_COMMUNITY_SPACE_PUSH;
+  else process.env.FEATURE_COMMUNITY_SPACE_PUSH = was;
+});
 
 // m1 a message, m2 a reply to ana's p1, m3 a High alert, m4 a later message; all by sam.
 const MSG = { id: 'm1', workspace_id: 'w', cohort_id: 'c1', sender_id: 'sam', parent_message_id: null as string | null, high_alert: false };
@@ -102,6 +110,54 @@ it.each([
   expect(row('bo', 'm1')).toMatchObject({ status: 'dropped', result_code: 'obsolete' });
   expect(sent()).toEqual([]);
   expect(log).toHaveBeenCalledWith(expect.stringContaining(`reason=space-${reason}`));
+});
+
+// Sol B1 (FR-1138R5): the sender moves to another coach before 08:00 (POST /sub-coaches/:id/reassign-client), so
+// what they wrote in this space that is not public no longer reads here (app.community_author_stays, the rule
+// GET .../messages/:id and the unread count ask): what waited is dropped, never sent.
+it.each([
+  ['reply', 'm2', 'ana'],
+  ['unread', 'm1', 'bo'],
+] as const)('%s held overnight, then its sender moves to another coach: dropped, never sent', async (kind, id, who) => {
+  const { at, delivery, queue, row, sent } = world();
+  await queue(who, kind, id);
+  await delivery.drain();
+  expect(row(who, id)?.status).toBe('pending');
+  at.s.coachOf.sam = 'coach-b';
+  clock = MORNING;
+  await delivery.drain();
+  expect(row(who, id)).toMatchObject({ status: 'dropped', result_code: 'obsolete' });
+  expect(sent()).toEqual([]);
+  expect(log).toHaveBeenCalledWith(expect.stringContaining('reason=space-sender-left'));
+});
+
+it.each([
+  ['stays with the coach', (_s: S): void => undefined],
+  ['moves, but the space is public', (s: S): void => void s.publicSpaces.add('c1')],
+  ['moves, but holds a helper row there', (s: S): void => void s.helpers.add('sam')],
+] as const)('held reply, then its sender %s: it goes at 08:00, the place asked', async (what, exception) => {
+  const { at, delivery, queue, row, sent } = world();
+  await queue('ana', 'reply', 'm2');
+  await delivery.drain();
+  if (what.startsWith('moves')) at.s.coachOf.sam = 'coach-b';
+  exception(at.s);
+  clock = MORNING;
+  await delivery.drain();
+  expect(row('ana', 'm2')?.status).toBe('sent');
+  expect(sent()).toEqual([token('a')]);
+  expect(at.db.$queryRaw).toHaveBeenCalledWith(expect.arrayContaining([expect.stringContaining('community_author_stays')]), ['w'], ['c1'], ['sam']);
+});
+
+it('Sol C2 (FR-1138R5): the space switch turned off before 08:00 drops what waited', async () => {
+  const { delivery, queue, row, sent } = world();
+  await queue('ana', 'reply', 'm2');
+  await delivery.drain();
+  delete process.env.FEATURE_COMMUNITY_SPACE_PUSH;
+  clock = MORNING;
+  await delivery.drain();
+  expect(row('ana', 'm2')).toMatchObject({ status: 'dropped', result_code: 'obsolete' });
+  expect(sent()).toEqual([]);
+  expect(log).toHaveBeenCalledWith(expect.stringContaining('reason=space-switched-off'));
 });
 
 it('the send step reads the same rows as enqueue: a chat message of that space by that sender', async () => {
