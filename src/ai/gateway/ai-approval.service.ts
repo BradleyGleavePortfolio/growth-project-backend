@@ -72,6 +72,19 @@ export function payloadClientIds(payload: unknown): string[] {
 }
 
 /**
+ * FR-1141R4 (Opus C-2): a materialiser's send refused because the two are in a
+ * block, either way: 403 `messaging.blocked` (messagingError) or `BLOCKED`
+ * (sendAsCoach). Nothing was sent, so it is not a materialisation failure.
+ */
+export function isBlockRefusal(err: unknown): boolean {
+  if (!(err instanceof HttpException) || err.getStatus() !== 403) return false;
+  const body = err.getResponse();
+  if (typeof body !== 'object' || body === null) return false;
+  const { code, error } = body as { code?: unknown; error?: unknown };
+  return code === 'messaging.blocked' || error === 'messaging.blocked' || error === 'BLOCKED';
+}
+
+/**
  * B-AIB2-126 — true when the gateway marked this live-create draft model-written (the AI workout builder). Only the gateway
  * can add the marker (it strips caller provenance with that source). No payload hash: JSONB reorders keys on the way back.
  */
@@ -430,7 +443,8 @@ export class AiApprovalService {
           // COPILOT-BE: a Copilot change's expected refusals (consent off 403, not his client 404, bad change and the
           // calorie floor / hold 400s, plan changed 409) reach the phone as they are; nothing was applied.
           const refusal = draft.capability === CLIENT_PATH_CHANGE && err instanceof HttpException && err.getStatus() < 500;
-          if (err instanceof ConflictException || refusal) {
+          // FR-1141R4 (Opus C-2): so does a send a block refused (403, as it is), for every capability.
+          if (err instanceof ConflictException || refusal || isBlockRefusal(err)) {
             // Don't audit-log the race state as a materialisation failure
             // — it's a benign concurrency outcome and the winner will
             // record the success. Re-throw so the caller sees a 409.
