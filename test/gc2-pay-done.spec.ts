@@ -181,8 +181,16 @@ describe('GC-2 return page GET /p/:token/done', () => {
     expect(res.body).toContain(PAY_DONE_COPY.paidH);
     expect(res.body).toContain(words(PAY_DONE_COPY.paidLine('$149.00', 'Monthly coaching', 'Sam')));
     expect(res.body).toContain(words(PAY_DONE_COPY.stepEmail(EMAIL)));
-    expect(res.body).toContain(PAY_DONE_COPY.stepApp);
-    expect(res.body).toContain(words(PAY_PAGE_COPY.setPassword));
+    // WEB-BUYER-FLOW (#172-7 op 1): confirm the email, set the password on
+    // the page that opens, then download the app and log in.
+    const steps = /<ol class="steps">([\s\S]*?)<\/ol>/.exec(res.body)?.[1] ?? '';
+    const items = [...steps.matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => m[1]);
+    expect(items).toHaveLength(3);
+    expect(items[0]).toContain(words(PAY_DONE_COPY.stepEmail(EMAIL)));
+    expect(items[1]).toBe(PAY_DONE_COPY.stepPassword);
+    expect(items[2]).toContain(PAY_DONE_COPY.stepApp);
+    expect(items[2]).toContain('<a class="btn"');
+    expect(res.body).not.toContain(words(PAY_PAGE_COPY.setPassword));
     expect(res.body).toContain(`<a class="btn" href="https://apps.apple.com/app/id6765847915">${PAY_PAGE_COPY.appStore}</a>`);
     expect(res.body).not.toContain(PAY_DONE_COPY.existingNext);
     expect(retrieve).toHaveBeenCalledWith(PI);

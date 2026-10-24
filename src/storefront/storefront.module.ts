@@ -18,6 +18,8 @@ import { GuestCheckoutService } from './guest-checkout.service';
 import { LostWebhookReconcileService } from './lost-webhook-reconcile.service';
 import { StorefrontPublicController } from './storefront-public.controller';
 import { PayPageController } from './pay-page.controller';
+import { BuyerPasswordController } from './buyer-password.controller';
+import { BuyerPasswordService } from './buyer-password.service';
 import { StorefrontService } from './storefront.service';
 import { ThankYouService } from './thank-you.service';
 
@@ -56,9 +58,11 @@ import { ThankYouService } from './thank-you.service';
     // price-creation logic the in-app path does — never duplicated.
     CheckoutModule,
   ],
-  controllers: [StorefrontPublicController, PayPageController],
+  controllers: [StorefrontPublicController, PayPageController, BuyerPasswordController],
   providers: [
     StorefrontService,
+    // WEB-BUYER-FLOW — the confirm page's set-password route (#172-7).
+    BuyerPasswordService,
     GuestCheckoutService,
     GuestCheckoutReconciliationService,
     GuestCheckoutPiiScrubService,
