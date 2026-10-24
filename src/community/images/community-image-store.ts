@@ -49,6 +49,12 @@ const SWEEP_MARGIN_MS = 5 * 60 * 1000;
 /** FX-1139: the published copy of an upload. */
 export const sentImageKey = (uploadKey: string): string => uploadKey.replace(/\.jpg$/, '.sent.jpg');
 
+/** FX-1139 B2: a photo row is a message's own only if the message is a photo by its author, in its space. */
+export const isOwnImage = (
+  m: { kind: string; sender_id: string; cohort_id: string | null } | undefined,
+  i: { author_id: string; cohort_id: string },
+): boolean => m?.kind === 'image' && m.sender_id === i.author_id && m.cohort_id === i.cohort_id;
+
 /** FX-1139: every object a photo message leaves (its sent copy and its upload), for delete, Hide and erasure. */
 export const imageErasureTargets = (sentKey: string): VoiceErasureTarget[] => [
   { kind: 'image_object', target: sentKey },

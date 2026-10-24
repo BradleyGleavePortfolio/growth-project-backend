@@ -34,6 +34,7 @@ import {
   CommunityImageStore,
   communityImagesEnabled,
   IMAGE_READ_TTL_SEC,
+  isOwnImage,
   isPublishableImageKey,
 } from '../images/community-image-store';
 import { AiEgressService } from '../../ai-egress/ai-egress.service';
@@ -129,10 +130,11 @@ export class CommunityMessagesService {
 
   /** SC-BE3: this page's live photos, each with a short-lived signed read URL. */
   private async imagesOf(rows: CommunityMessage[]): Promise<Map<string, ChatImage>> {
-    const ids = rows.filter((m) => m.kind === 'image' && !m.deleted_at).map((m) => m.id);
-    if (ids.length === 0) return new Map();
+    const live = new Map(rows.filter((m) => m.kind === 'image' && !m.deleted_at).map((m) => [m.id, m]));
+    if (live.size === 0) return new Map();
     const expires_at = new Date(Date.now() + IMAGE_READ_TTL_SEC * 1000).toISOString();
-    const found = await this.repo.imagesFor(ids);
+    // FX-1139 B2: only the message's own photo (its sender, its space) is signed.
+    const found = (await this.repo.imagesFor([...live.keys()])).filter((i) => isOwnImage(live.get(i.message_id), i));
     const sign = async (key: string, owner: string) =>
       (await this.images?.createSignedDownload(key, IMAGE_READ_TTL_SEC, owner)) ?? null;
     return new Map(
