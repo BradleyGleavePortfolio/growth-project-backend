@@ -10,6 +10,8 @@ import { PushDeliveryService } from '../../../src/notifications/push/push-delive
 import { pushOutboxWorld } from '../../utils/push-outbox-fake';
 import { spaceAtSendTime } from '../../utils/space-push-send-time-fake';
 
+type S = ReturnType<typeof spaceAtSendTime>['s'];
+
 const K = NotificationKind.COMMUNITY_MESSAGE_RECEIVED;
 const NIGHT = new Date('2026-10-24T06:00:00Z'); // 23:00 in Los Angeles: quiet hours, held to 08:00
 const MORNING = new Date('2026-10-24T15:30:00Z'); // 08:30 there
@@ -71,7 +73,9 @@ it.each([
     await queue(who, kind, id);
     await queue(other, otherKind, id);
     await delivery.drain();
-    expect([row(who, id)?.status, row(who, id)?.result_code]).toEqual(['pending', 'quiet-deferred']);
+    expect(row(who, id)?.status).toBe('pending'); // held to 08:00
+    expect(row(who, id)?.not_before.getTime() ?? 0).toBeGreaterThan(NIGHT.getTime());
+    expect(sent()).toEqual([]);
     at.s.blocks.push(reverse ? { blocker_id: 'sam', blocked_id: who } : { blocker_id: who, blocked_id: 'sam' });
     clock = MORNING;
     await delivery.drain();
@@ -83,11 +87,11 @@ it.each([
 });
 
 it.each([
-  ['the reader banned from the community (the space shuts them out)', (s: ReturnType<typeof world>['at']['s']) => s.shut.add('bo'), 'no-access'],
-  ['the sender banned from the community', (s: ReturnType<typeof world>['at']['s']) => s.bans.add('w:sam'), 'sender-banned'],
-  ['the message deleted', (s: ReturnType<typeof world>['at']['s']) => void (s.messages[0].deleted_at = NIGHT), 'message-gone'],
-  ['Mute all switched on', (s: ReturnType<typeof world>['at']['s']) => void (s.reads.bo = { notify_mode: 'mute_all', silenced_until: null }), 'not-planned'],
-  ['the space read since (nothing unread)', (s: ReturnType<typeof world>['at']['s']) => void (s.unread = 0), 'not-planned'],
+  ['the reader banned from the community (the space shuts them out)', (s: S): void => void s.shut.add('bo'), 'no-access'],
+  ['the sender banned from the community', (s: S): void => void s.bans.add('w:sam'), 'sender-banned'],
+  ['the message deleted', (s: S): void => void (s.messages[0].deleted_at = NIGHT), 'message-gone'],
+  ['Mute all switched on', (s: S): void => void (s.reads.bo = { notify_mode: 'mute_all', silenced_until: null }), 'not-planned'],
+  ['the space read since (nothing unread)', (s: S): void => void (s.unread = 0), 'not-planned'],
 ] as const)('held overnight, then %s: dropped, never sent', async (_what, change, reason) => {
   const { at, delivery, queue, row, sent } = world();
   await queue('bo', 'unread', 'm1');
