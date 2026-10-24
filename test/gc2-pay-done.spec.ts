@@ -356,6 +356,9 @@ describe('GC-2 return page GET /p/:token/done', () => {
     };
 
     it('a guest whose payment was fully refunded or disputed (the guest row says so)', async () => {
+      checkouts[PI].status = 'paid';
+      expect((await done()).body).toContain(PAY_DONE_COPY.paidH);
+      // The same URL reloaded after the refund webhook.
       checkouts[PI].status = 'refunded';
       expectNotPaid(await done(), PAY_DONE_COPY.refundedH, PAY_DONE_COPY.refunded);
       checkouts[PI].status = 'disputed';
@@ -368,7 +371,10 @@ describe('GC-2 return page GET /p/:token/done', () => {
 
     it('a converted buyer: the purchase the conversion made says refunded or disputed', async () => {
       checkouts[PI] = { ...checkouts[PI], status: 'converted', created_user_id: 'user-1' };
-      purchases = [{ client_user_id: 'user-1', package_id: `pkg-${A}`, stripe_payment_intent_id: PI, status: 'disputed' }];
+      purchases = [{ client_user_id: 'user-1', package_id: `pkg-${A}`, stripe_payment_intent_id: PI, status: 'active' }];
+      expect((await done()).body).toContain(PAY_DONE_COPY.paidH);
+      // The same URL reloaded after the dispute webhook.
+      purchases[0].status = 'disputed';
       expectNotPaid(await done(), PAY_DONE_COPY.disputedH, PAY_DONE_COPY.disputed);
       expect(purchaseFindFirst).toHaveBeenCalledWith({
         where: { client_user_id: 'user-1', package_id: `pkg-${A}`, stripe_payment_intent_id: PI },
