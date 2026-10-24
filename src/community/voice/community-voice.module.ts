@@ -10,6 +10,8 @@ import { CommunityVoiceService } from './community-voice.service';
 import { CommunitySafetyService } from '../safety/community-safety.service';
 import { VoiceErasureService } from './voice-erasure';
 import { VoiceUploadProvider } from './voice-upload.provider';
+import { CommunityImageStore } from '../images/community-image-store';
+import { CommunityImagesController } from '../images/community-images.controller';
 
 /**
  * v3-3 community voice-notes module — audio attachments into cohort /
@@ -44,7 +46,8 @@ import { VoiceUploadProvider } from './voice-upload.provider';
  */
 @Module({
   imports: [AuthModule, CommunityRealtimeModule],
-  controllers: [CommunityVoiceController],
+  // SC-BE3: photos in the space chat share the voice storage and erasure path.
+  controllers: [CommunityVoiceController, CommunityImagesController],
   providers: [
     CommunityVoiceService,
     CommunitySafetyService,
@@ -55,9 +58,10 @@ import { VoiceUploadProvider } from './voice-upload.provider';
     VoiceUploadProvider,
     // B-610-5 round 5: retries open recording erasures until verified.
     VoiceErasureService,
+    CommunityImageStore,
   ],
   // VoiceUploadProvider: the moderation queue signs short-lived playback
   // links for reported voice notes.
-  exports: [CommunityVoiceService, VoiceUploadProvider],
+  exports: [CommunityVoiceService, VoiceUploadProvider, CommunityImageStore],
 })
 export class CommunityVoiceModule {}

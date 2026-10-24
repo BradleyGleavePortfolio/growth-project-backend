@@ -1419,6 +1419,12 @@ switches:
     auto_flip_on_in_prod: true
     owner: community
     description: "Community schema-readiness master switch (v1-1). Read via process.env[FEATURE_COMMUNITY_SCHEMA_ENV]; ON unless explicitly 'false'."
+  - name: FEATURE_COMMUNITY_IMAGES
+    tier: feature
+    prod_default: OFF
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "Photos in the space chat (SC-BE3). Read via process.env[FEATURE_COMMUNITY_IMAGES]; default OFF until the owner turns it on."
   - name: FEATURE_COMMUNITY_VOICE_NOTES
     tier: feature
     prod_default: OFF
