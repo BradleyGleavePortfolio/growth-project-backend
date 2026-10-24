@@ -2,7 +2,7 @@ import { timingSafeEqual } from 'crypto';
 import type { PrismaService } from '../prisma.service';
 import type { StripeConnectApiService } from '../connect/stripe-connect-api.service';
 import { SHARE_TOKEN_REGEX } from '../share-link/share-link.service';
-import type { PayDoneView } from './pay-done.html';
+import { payKeyTag, type PayDoneView } from './pay-done.html';
 import { payPageUrl } from './storefront-links';
 
 // GC-2 — read-only: which state /p/:token/done shows. Stripe's query alone is
@@ -12,9 +12,14 @@ import { payPageUrl } from './storefront-links';
 // created, claimed, converted or charged here; the webhook and the lost-webhook
 // reconciler stay the only writers. No sale-readiness gates: a buyer who paid
 // still sees the result if the coach stops selling the package afterwards.
+// FR-1155: our row, not Stripe's intent, says whether a paid payment was later
+// refunded or disputed (B1); an expired checkout nobody paid for opens nothing
+// (B3); a failed or cancelled return lets the pay page start a fresh attempt (B2).
 
 const PI_ID = /^pi_[A-Za-z0-9]{8,64}$/;
 const LANDING_PAGE_ID = /^[a-z0-9]{20,40}$/i;
+/** Not paid for: the claim refuses these once expires_at passes (guest-checkout.service.ts). */
+const UNCLAIMED = new Set(['pending', 'failed']);
 /** Confirming: checks again every 3 s, 5 times (~15 s), then says what to do. */
 export const PAY_DONE_REFRESH_SECONDS = 3;
 export const PAY_DONE_MAX_CHECKS = 5;
@@ -28,7 +33,7 @@ export interface PayDoneQuery {
 }
 
 export interface PayDoneDeps {
-  db: Pick<PrismaService, 'guestCheckout' | 'user'>;
+  db: Pick<PrismaService, 'guestCheckout' | 'user' | 'clientPurchase'>;
   stripe: Pick<StripeConnectApiService, 'retrievePaymentIntent'>;
   storefrontBase: string | undefined;
 }
@@ -63,10 +68,17 @@ export async function readPayDone(
     select: {
       guest_email: true,
       created_at: true,
+      status: true,
+      expires_at: true,
+      idempotency_key: true,
+      created_user_id: true,
+      package_id: true,
       package: { select: { share_token: true, name: true, coach: { select: { name: true } } } },
     },
   });
   if (!row || row.package.share_token !== token) return none;
+  // B3 — the link of an expired checkout nobody paid for: the same 404, before Stripe.
+  if (UNCLAIMED.has(row.status) && !(row.expires_at.getTime() > Date.now())) return none;
 
   let pi: Awaited<ReturnType<PayDoneDeps['stripe']['retrievePaymentIntent']>>;
   try {
@@ -84,6 +96,8 @@ export async function readPayDone(
   const status = str(pi.status);
 
   if (status === 'succeeded') {
+    const after = await afterPayment(deps, row, piId);
+    if (after) return { view: after === 'refunded' ? { kind: 'refunded' } : { kind: 'disputed' }, refresh: null };
     // Existing buyer: an account with this email from before this checkout.
     // A new buyer's account is made by the conversion, after the row.
     const user = await deps.db.user.findFirst({
@@ -118,9 +132,34 @@ export async function readPayDone(
       refresh: again ? at(done + 1) : null,
     };
   }
-  if (status === 'canceled') return { view: { kind: 'cancelled', payUrl }, refresh: null };
+  // B2 — this attempt's key is spent: the page drops it from the pay page's tab
+  // storage (only if it is still this attempt's key), so Try again starts afresh.
+  const spent = { token, tag: payKeyTag(row.idempotency_key) };
+  if (status === 'canceled') return { view: { kind: 'cancelled', payUrl, spent }, refresh: null };
   // requires_payment_method / requires_confirmation / requires_action: not paid.
   const err = pi.last_payment_error as { message?: unknown } | null | undefined;
   const reason = typeof err?.message === 'string' && err.message.trim() ? err.message.trim().slice(0, 300) : null;
-  return { view: { kind: 'failed', reason, payUrl }, refresh: null };
+  return { view: { kind: 'failed', reason, payUrl, spent }, refresh: null };
+}
+
+// B1 — Stripe's intent stays succeeded after a refund or a dispute. A full
+// refund sets the guest row to refunded (guest-checkout.service.ts
+// handleChargeRefunded; for a converted buyer refund-dispute-handler.service.ts
+// mirrors it); a guest dispute sets the row to disputed; a converted buyer's
+// dispute is on their ClientPurchase only (looked up as the conversion wrote
+// it). A partial refund changes neither, so that payment still shows as paid.
+async function afterPayment(
+  deps: PayDoneDeps,
+  row: { status: string; created_user_id: string | null; package_id: string },
+  piId: string,
+): Promise<'refunded' | 'disputed' | null> {
+  if (row.status === 'refunded') return 'refunded';
+  const purchase = row.created_user_id
+    ? await deps.db.clientPurchase.findFirst({
+        where: { client_user_id: row.created_user_id, package_id: row.package_id, stripe_payment_intent_id: piId },
+        select: { status: true },
+      })
+    : null;
+  if (purchase?.status === 'refunded') return 'refunded';
+  return row.status === 'disputed' || purchase?.status === 'disputed' ? 'disputed' : null;
 }

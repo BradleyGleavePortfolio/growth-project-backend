@@ -7,6 +7,8 @@
  * confirming and its self-refresh, failed with the reason, cancelled), the
  * ownership checks (token, client secret, intent id), Stripe being down,
  * escaping, that the page only reads, and the one return_url helper.
+ * FR-1155: refunded and disputed payments (guest row and converted purchase),
+ * expired checkouts nobody paid for, and the failed/cancelled spent-key script.
  */
 import 'reflect-metadata';
 import * as fs from 'node:fs';
@@ -34,6 +36,7 @@ const SECRET = `${PI}_secret_good1234`;
 const EMAIL = 'jo.buyer@example.com';
 const LP = 'clp0000000000000000000001';
 const ROW_AT = new Date('2026-10-24T12:00:00Z');
+const KEY = '1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed';
 
 type Res = { status: number; headers: http.IncomingHttpHeaders; body: string };
 type Pi = { id: string; client_secret: string; status: string; amount: number; last_payment_error: { message?: string } | null };
@@ -82,7 +85,18 @@ describe('GC-2 return page GET /p/:token/done', () => {
   let app: INestApplication;
   let base = '';
   const env: Record<string, string | undefined> = {};
-  let checkouts: Record<string, { guest_email: string; created_at: Date; package: { share_token: string; name: string; coach: { name: string } } }> = {};
+  type Row = {
+    guest_email: string;
+    created_at: Date;
+    status?: string;
+    expires_at?: Date;
+    idempotency_key?: string;
+    created_user_id?: string | null;
+    package_id?: string;
+    package: { share_token: string; name: string; coach: { name: string } };
+  };
+  let checkouts: Record<string, Row> = {};
+  let purchases: Array<{ client_user_id: string; package_id: string; stripe_payment_intent_id: string; status: string }> = [];
   let users: Array<{ email: string; created_at: Date }> = [];
   let pis: Record<string, Pi> = {};
   let stripeDown = false;
@@ -94,6 +108,13 @@ describe('GC-2 return page GET /p/:token/done', () => {
   const findFirst = jest.fn(async ({ where }: { where: { email: { equals: string } } }) =>
     users.find((u) => u.email.toLowerCase() === where.email.equals.toLowerCase()) ?? null,
   );
+  type PurchaseWhere = { client_user_id: string; package_id: string; stripe_payment_intent_id: string };
+  const purchaseFindFirst = jest.fn(async ({ where }: { where: PurchaseWhere }) => {
+    const p = purchases.find(
+      (x) => x.client_user_id === where.client_user_id && x.package_id === where.package_id && x.stripe_payment_intent_id === where.stripe_payment_intent_id,
+    );
+    return p ? { status: p.status } : null;
+  });
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -106,6 +127,7 @@ describe('GC-2 return page GET /p/:token/done', () => {
           useValue: {
             guestCheckout: { findUnique },
             user: { findFirst },
+            clientPurchase: { findFirst: purchaseFindFirst },
             coachPackage: { findUnique: jest.fn(async ({ where }: { where: { share_token: string } }) => (where.share_token === A ? pkg(A) : null)) },
           },
         },
@@ -131,7 +153,19 @@ describe('GC-2 return page GET /p/:token/done', () => {
     env.STRIPE_PUBLISHABLE_KEY = 'pk_test_gc2';
     env.STOREFRONT_BASE_URL = undefined;
     env.APP_STORE_URL = undefined;
-    checkouts = { [PI]: { guest_email: EMAIL, created_at: ROW_AT, package: { share_token: A, name: 'Monthly coaching', coach: { name: 'Sam' } } } };
+    checkouts = {
+      [PI]: {
+        guest_email: EMAIL,
+        created_at: ROW_AT,
+        status: 'pending',
+        expires_at: new Date(Date.now() + 86_400_000),
+        idempotency_key: KEY,
+        created_user_id: null,
+        package_id: `pkg-${A}`,
+        package: { share_token: A, name: 'Monthly coaching', coach: { name: 'Sam' } },
+      },
+    };
+    purchases = [];
     users = [];
     pis = { [PI]: { id: PI, client_secret: SECRET, status: 'succeeded', amount: 14900, last_payment_error: null } };
   });
@@ -307,6 +341,120 @@ describe('GC-2 return page GET /p/:token/done', () => {
     expect(page).not.toContain("'/done'");
     expect(payDoneUrl(undefined, 'a/b c')).toBe('https://app.trygrowthproject.com/p/a%2Fb%20c/done');
     expect(payDoneUrl('https://x.example.com', A, null)).toBe(`https://x.example.com/p/${A}/done`);
+  });
+
+  describe('FR-1155 B1: a refund or a dispute after paying never says "Payment received"', () => {
+    const expectNotPaid = (res: Res, heading: string, line: string) => {
+      expect(res.status).toBe(200);
+      expect(res.body).toContain(heading);
+      expect(res.body).toContain(words(line));
+      expect(res.body).not.toContain(PAY_DONE_COPY.paidH);
+      expect(res.body).not.toContain(words(PAY_DONE_COPY.stepEmail(EMAIL)));
+      expect(res.body).not.toContain(PAY_PAGE_COPY.appStore);
+      expect(res.body).not.toMatch(/<script/i);
+      expect(res.headers.refresh).toBeUndefined();
+    };
+
+    it('a guest whose payment was fully refunded or disputed (the guest row says so)', async () => {
+      checkouts[PI].status = 'refunded';
+      expectNotPaid(await done(), PAY_DONE_COPY.refundedH, PAY_DONE_COPY.refunded);
+      checkouts[PI].status = 'disputed';
+      expectNotPaid(await done(), PAY_DONE_COPY.disputedH, PAY_DONE_COPY.disputed);
+      // Even long after the 24 h link expiry: a paid row keeps its page.
+      checkouts[PI].expires_at = new Date('2026-01-01');
+      expectNotPaid(await done(), PAY_DONE_COPY.disputedH, PAY_DONE_COPY.disputed);
+      expect(purchaseFindFirst).not.toHaveBeenCalled();
+    });
+
+    it('a converted buyer: the purchase the conversion made says refunded or disputed', async () => {
+      checkouts[PI] = { ...checkouts[PI], status: 'converted', created_user_id: 'user-1' };
+      purchases = [{ client_user_id: 'user-1', package_id: `pkg-${A}`, stripe_payment_intent_id: PI, status: 'disputed' }];
+      expectNotPaid(await done(), PAY_DONE_COPY.disputedH, PAY_DONE_COPY.disputed);
+      expect(purchaseFindFirst).toHaveBeenCalledWith({
+        where: { client_user_id: 'user-1', package_id: `pkg-${A}`, stripe_payment_intent_id: PI },
+        select: { status: true },
+      });
+      purchases[0].status = 'refunded';
+      expectNotPaid(await done(), PAY_DONE_COPY.refundedH, PAY_DONE_COPY.refunded);
+      // A refund wins over an open dispute on the guest row.
+      checkouts[PI].status = 'disputed';
+      expectNotPaid(await done(), PAY_DONE_COPY.refundedH, PAY_DONE_COPY.refunded);
+    });
+
+    it('a partial refund, a won dispute or another purchase: still paid', async () => {
+      checkouts[PI] = { ...checkouts[PI], status: 'converted', created_user_id: 'user-1' };
+      purchases = [
+        { client_user_id: 'user-1', package_id: `pkg-${A}`, stripe_payment_intent_id: PI, status: 'active' },
+        { client_user_id: 'user-1', package_id: `pkg-${A}`, stripe_payment_intent_id: 'pi_3OtherAAAAAAAAAAA', status: 'refunded' },
+        { client_user_id: 'user-2', package_id: `pkg-${A}`, stripe_payment_intent_id: PI, status: 'disputed' },
+      ];
+      for (const status of ['paid', 'converted']) {
+        checkouts[PI].status = status;
+        const res = await done();
+        expect(res.body).toContain(PAY_DONE_COPY.paidH);
+        expect(res.body).not.toContain(PAY_DONE_COPY.refundedH);
+        expect(res.body).not.toContain(PAY_DONE_COPY.disputedH);
+      }
+    });
+  });
+
+  describe('FR-1155 B3: the link of an expired checkout nobody paid for opens nothing', () => {
+    it.each([
+      ['pending', 'succeeded'],
+      ['pending', 'processing'],
+      ['failed', 'succeeded'],
+      ['failed', 'processing'],
+      ['failed', 'requires_payment_method'],
+    ])('a %s row past expires_at with a %s intent: the same 404, Stripe is never asked', async (status, piStatus) => {
+      checkouts[PI] = { ...checkouts[PI], status, expires_at: new Date(Date.now() - 1000) };
+      pis[PI].status = piStatus;
+      const res = await done();
+      expect(res.status).toBe(404);
+      expect(res.body).toContain(words(PAY_DONE_COPY.unknown));
+      for (const secret of [EMAIL, 'Monthly coaching', 'Sam', PAY_DONE_COPY.confirmingH, PAY_DONE_COPY.failedH]) {
+        expect(res.body).not.toContain(secret);
+      }
+      expect(retrieve).not.toHaveBeenCalled();
+      expect(findFirst).not.toHaveBeenCalled();
+    });
+
+    it('a paid, converted or held row past expires_at keeps its page; a live pending row still shows', async () => {
+      for (const status of ['paid', 'converted', 'conversion_failed_retryable', 'conversion_failed_terminal']) {
+        checkouts[PI] = { ...checkouts[PI], status, expires_at: new Date('2026-01-01') };
+        const res = await done();
+        expect([status, res.status]).toEqual([status, 200]);
+        expect(res.body).toContain(PAY_DONE_COPY.paidH);
+      }
+      checkouts[PI] = { ...checkouts[PI], status: 'pending', expires_at: new Date(Date.now() + 60_000) };
+      pis[PI].status = 'processing';
+      expect((await done()).body).toContain(PAY_DONE_COPY.confirmingH);
+    });
+  });
+
+  describe('FR-1155 B2: a failed or cancelled return drops that attempt\'s spent key', () => {
+    const scripts = (html: string) => [...html.matchAll(/<script nonce="([^"]+)">([\s\S]*?)<\/script>/g)];
+
+    it.each(['requires_payment_method', 'canceled'])('%s: one script under the page nonce, naming this tab entry and a tag, never the key', async (piStatus) => {
+      pis[PI].status = piStatus;
+      const res = await done();
+      const found = scripts(res.body);
+      expect(found).toHaveLength(1);
+      expect(String(res.headers['content-security-policy'])).toContain(`'nonce-${found[0][1]}'`);
+      expect(found[0][2]).toContain(`"tgp-pay:${A}"`);
+      expect(found[0][2]).toContain('sessionStorage.removeItem(K)');
+      expect(res.body).not.toContain(KEY);
+    });
+
+    it('paid, confirming, refunded and the 404 carry no script: a live attempt keeps its key', async () => {
+      for (const piStatus of ['succeeded', 'processing']) {
+        pis[PI].status = piStatus;
+        expect((await done()).body).not.toMatch(/<script/i);
+      }
+      checkouts[PI].status = 'refunded';
+      pis[PI].status = 'succeeded';
+      expect((await done()).body).not.toMatch(/<script/i);
+      expect((await done('', B)).body).not.toMatch(/<script/i);
+    });
   });
 
   it('/p/<token>/done is answered here, not by the landing route: StorefrontModule is imported before LandingPagesModule', () => {
