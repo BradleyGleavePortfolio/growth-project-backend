@@ -10,7 +10,9 @@ export const PAY_DONE_COPY = {
   paidH: 'Payment received',
   paidLine: (amount: string, pkg: string, coach: string) => `You paid ${amount} for ${pkg} with ${coach}.`,
   stepEmail: (email: string) => `Open the email we're sending to ${email} and tap Confirm my email.`,
-  stepApp: 'Download the TGP Fitness app.',
+  // WEB-BUYER-FLOW (#172-7 op 1): password on the confirm page, then the app.
+  stepPassword: 'Set a password on the page that opens.',
+  stepApp: 'Download the TGP Fitness app and log in with that email and password.',
   existingNext: 'Open the TGP Fitness app and log in as usual. The package shows under Your plans.',
   confirmingH: 'Confirming your payment',
   confirming: 'This usually takes a few seconds. This page checks again by itself.',
@@ -72,7 +74,7 @@ function body(v: PayDoneView, appStoreUrl: string): string {
           : '';
       const next =
         v.buyer === 'new'
-          ? `<ol class="steps"><li>${esc(PAY_DONE_COPY.stepEmail(v.email))}</li><li>${PAY_DONE_COPY.stepApp}${store(appStoreUrl)}</li><li>${esc(PAY_PAGE_COPY.setPassword)}</li></ol>`
+          ? `<ol class="steps"><li>${esc(PAY_DONE_COPY.stepEmail(v.email))}</li><li>${PAY_DONE_COPY.stepPassword}</li><li>${PAY_DONE_COPY.stepApp}${store(appStoreUrl)}</li></ol>`
           : `<p>${PAY_DONE_COPY.existingNext}</p>${store(appStoreUrl)}`;
       return `<section id="paid">${TICK}<h1 class="state">${PAY_DONE_COPY.paidH}</h1>${line}<h2>${PAY_PAGE_COPY.nextH}</h2>${next}${who}</section>`;
     }
