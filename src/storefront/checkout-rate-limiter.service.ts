@@ -37,6 +37,9 @@ export const RATE_LIMIT_SCOPES = {
   Resume: 'resume',
   SendRecoveryLink: 'send-recovery-link',
   ResumeJwt: 'resume-jwt',
+  // GUEST-ELIGIBILITY — the email check and the code check (per IP).
+  CheckEmail: 'check-email',
+  VerifyCode: 'verify-code',
 } as const;
 
 export type RateLimitScope =
@@ -119,6 +122,8 @@ export class CheckoutIpRateLimiterService implements OnModuleInit {
       case RATE_LIMIT_SCOPES.Resume:
       case RATE_LIMIT_SCOPES.SendRecoveryLink:
       case RATE_LIMIT_SCOPES.ResumeJwt:
+      case RATE_LIMIT_SCOPES.CheckEmail:
+      case RATE_LIMIT_SCOPES.VerifyCode:
         break;
       default: {
         const _exhaustive: never = options.scope;
