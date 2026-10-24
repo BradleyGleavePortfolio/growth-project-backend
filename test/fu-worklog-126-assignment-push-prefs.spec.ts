@@ -64,9 +64,9 @@ describe('workout_assigned through the real notification gates', () => {
     expect(delivery.enqueue).not.toHaveBeenCalled();
   });
 
-  it('respects mute all', async () => {
+  it('respects mute all: the in-app row stays, the push is muted (MUTE-PAY, owner #171-3)', async () => {
     const { svc, delivery } = service({ muted: true });
-    expect(await svc.createNotification({ ...input, channel: 'inapp' })).toBeNull();
+    expect(await svc.createNotification({ ...input, channel: 'inapp' })).not.toBeNull();
     expect(await svc.sendPush(input)).toBeNull();
     expect(delivery.enqueue).not.toHaveBeenCalled();
   });

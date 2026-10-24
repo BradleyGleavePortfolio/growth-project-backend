@@ -7,6 +7,7 @@ import { EmailTemplateKey } from '../../email/email.types';
 import { NotificationKind } from '../../notifications/notification-kind';
 import { formatClock } from '../../notifications/local-time';
 import { NotificationsService } from '../../notifications/notifications.service';
+import { MUTE_ALL_PASS, pushAllowedByPreferences } from '../../notifications/push/push-preferences';
 import { resolveRecipientTimeZoneWithSource } from '../../notifications/recipient-timezone';
 import { PrismaService } from '../../prisma.service';
 import {
@@ -718,15 +719,22 @@ export class TrialNoticeService {
     if (!lease) return;
     let status: 'delivered' | 'no_token' | 'suppressed' | 'pending' | 'failed';
     let error: string | null = null;
-    // B-656-4 — the client's preferences at delivery time (a mute set after
-    // the notice was recorded still applies).
+    // B-656-4 — the client's preferences at delivery time (a switch turned off
+    // after the notice was recorded still applies).
     const prefs = await this.notifications.getPreferences(notice.client_user_id);
     // B-672-1 / B-672-3 — the preference read may have used up the lease, run
     // past the trial end or outlived the purchase truth: the copy is built now.
     const ready = await this.admit(notice, 'push', lease, clock);
     if (!ready) return;
     let sent: Bounded<PushOutcome> | null = null;
-    if ((prefs as Record<string, unknown>).muted === true) {
+    // FR-1154 (owner #171-3): a trial-ending notice is money, so Mute all never
+    // stops it; the shared push rule still applies a switch of its own.
+    const prefsAllow = pushAllowedByPreferences(
+      prefs as Record<string, unknown>,
+      NotificationKind.TRIAL_ENDING,
+      MUTE_ALL_PASS,
+    );
+    if (!prefsAllow) {
       status = 'suppressed';
     } else {
       sent = await this.bounded(`${notice.id}:push`, (signal) =>

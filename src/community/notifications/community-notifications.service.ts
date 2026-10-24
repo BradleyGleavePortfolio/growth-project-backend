@@ -170,18 +170,14 @@ export class CommunityNotificationsService {
 
     try {
       // 2b) Global "Mute all notifications" — the recipient's own switch wins
-      // over the community defaults table. Only the global mute is honoured
-      // here: community kinds have no per-kind preference columns and the core
+      // over the community defaults table for the push only (step 5b): the
+      // inbox row is still written (FR-1154, owner #171-3: Mute all never
+      // stops anything in-app). Only the global mute is honoured here:
+      // community kinds have no per-kind preference columns and the core
       // gate maps them onto `digest`, whose push default is false, so treating
       // the gate's 'off' as a skip would silence every community push.
-      const gate = await this.notifications.channelGate(recipientId, kind, 'push');
-      if (gate === 'muted') {
-        this.track(recipientId, COMMUNITY_TELEMETRY_EVENTS.pushSkipped, {
-          kind,
-          reason: 'muted' satisfies SkipReason,
-        });
-        return;
-      }
+      const muted =
+        (await this.notifications.channelGate(recipientId, kind, 'push')) === 'muted';
 
       // 3) Replay guard: if a notification row with this idempotency key
       // already exists for this recipient+kind, do not double-push.
@@ -234,6 +230,15 @@ export class CommunityNotificationsService {
           target_id: targetId,
         },
       });
+
+      // 5b) Muted: the row above stands, the push does not go.
+      if (muted) {
+        this.track(recipientId, COMMUNITY_TELEMETRY_EVENTS.pushSkipped, {
+          kind,
+          reason: 'muted' satisfies SkipReason,
+        });
+        return;
+      }
 
       // 6) Deliver via the EXISTING Expo transport. data carries IDs + enum
       // only — never user text.

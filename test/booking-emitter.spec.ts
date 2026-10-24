@@ -47,7 +47,8 @@ class FakeNotifications {
 
   createNotification = jest.fn(async (input: CreateNotificationInput) => {
     if (this.failInapp) throw new TypeError('db down');
-    if (this.prefs[input.user_id]?.muted === true) return null;
+    // MUTE-PAY (owner #171-3): Mute all never stops an in-app row (the real core gate).
+    if (this.prefs[input.user_id]?.booking_inapp === false) return null;
     this.rows.push(input);
     return { id: `notif-${this.rows.length}` };
   });
@@ -228,7 +229,7 @@ describe('BookingEmitter delivery', () => {
     expect(fake.sendPush).not.toHaveBeenCalled();
   });
 
-  it('muted recipient: nothing written, nothing pushed', async () => {
+  it('muted recipient: the in-app row is written, nothing pushed (MUTE-PAY)', async () => {
     const { fake, emitter } = build();
     fake.prefs['client-1'] = { muted: true };
     const outcome = await emitter.emitCancelled({
@@ -239,8 +240,8 @@ describe('BookingEmitter delivery', () => {
       scheduledAt: SCHEDULED_AT,
       cancelReason: null,
     });
-    expect(outcome).toEqual({ inapp: 'suppressed', push: 'disabled', notificationId: null });
-    expect(fake.rows).toHaveLength(0);
+    expect(outcome).toEqual({ inapp: 'written', push: 'disabled', notificationId: 'notif-1' });
+    expect(fake.rows).toHaveLength(1);
     expect(fake.sendPush).not.toHaveBeenCalled();
   });
 

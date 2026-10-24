@@ -304,7 +304,9 @@ export class DunningV2Dispatcher {
     {
       // The blocker flag is a durable in-app notification the client reads on
       // session start; the mobile client renders the modal from it (§8.2).
-      await this.notifications.createNotification({
+      // MUTE-PAY: "shown" and 'sent' follow the row really written; Mute all
+      // never stops it (owner #171-3), so null is only a switch that is off.
+      const row = await this.notifications.createNotification({
         user_id: ctx.clientUserId,
         kind: NotificationKind.DUNNING_BLOCKER,
         body: blocker.body.slice(0, 160),
@@ -318,6 +320,7 @@ export class DunningV2Dispatcher {
         deep_link: 'tgp://billing/update',
         channel: 'inapp',
       });
+      if (!row) return { status: 'skipped', error: 'inapp_not_written' };
     }
     this.telemetry.blockerShown(ctx.clientUserId, day);
     return { status: 'sent' };
@@ -360,6 +363,8 @@ export class DunningV2Dispatcher {
             message: inappBody,
             severity: 'warning',
             clientUserId: ctx.clientUserId,
+            // FR-1154 (owner #171-3): a payment alert; its push passes Mute all.
+            money: true,
           },
           { inapp: want.alert, push: want.push },
           { title: 'Payment', body: pushBody },

@@ -27,8 +27,8 @@ describe('SWITCH-TELL-BE — the former coach is told, the new coach is never na
   });
 
   it('writes one in-app row for the former coach: no link, payload only the client id', async () => {
-    // No preference row, and an explicit muted: false: the same visible row as before FX-1132.
-    for (const stored of [null, { muted: false }]) {
+    // FR-1154 (owner #171-3): Mute all never stops an in-app row: muted or not, the same visible row.
+    for (const stored of [null, { muted: false }, { muted: true }]) {
       const create = jest.fn(async (_args: unknown) => ({}));
       const tx = stub<Prisma.TransactionClient>({
         user: { findUnique: jest.fn(async () => ({ name: 'Ann Client' })) },
@@ -51,42 +51,6 @@ describe('SWITCH-TELL-BE — the former coach is told, the new coach is never na
         ],
       ]);
     }
-  });
-
-  it('FX-1132: a coach with "Mute all notifications" on gets the row hidden from list and badge, kept for Money', async () => {
-    // The LS-SWITCH probe's case: the stored preference is muted: true.
-    let preferenceReads = 0;
-    const rows: Array<Record<string, unknown>> = [];
-    const findUnique = jest.fn(async (_args: unknown) => {
-      preferenceReads++;
-      return { user_id: FORMER, muted: true };
-    });
-    const tx = stub<Prisma.TransactionClient>({
-      user: { findUnique: jest.fn(async () => ({ name: 'Sam Lee' })) },
-      notificationPreferences: { findUnique },
-      notification: {
-        create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
-          rows.push(data);
-          return data;
-        }),
-      },
-    });
-    await tellFormerCoachTx(tx, CLIENT, FORMER);
-    expect(preferenceReads).toBe(1);
-    expect(findUnique).toHaveBeenCalledWith({ where: { user_id: FORMER }, select: { muted: true } });
-    // One row (Money's date), in-app only, hidden: the list and unread count read inbox_hidden: false only.
-    expect(rows).toEqual([
-      {
-        user_id: FORMER,
-        kind: NotificationKind.COACH_CLIENT_MOVED,
-        channel: 'inapp',
-        deep_link: null,
-        body: 'Sam Lee has moved to another coach.',
-        payload: { client_id: CLIENT },
-        inbox_hidden: true,
-      },
-    ]);
-    expect(rows.filter((r) => r.inbox_hidden !== true)).toHaveLength(0);
   });
 
   it("Money's date is the latest move notification per client, read from the coach's own rows", async () => {
