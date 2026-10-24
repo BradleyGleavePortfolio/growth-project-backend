@@ -67,6 +67,8 @@ export interface PayPageContext {
   lp: string | null;
   onBehalfOf: string;
   nonce: string;
+  /** GC-2 — Stripe's return_url, from payDoneUrl (storefront-links.ts). */
+  returnUrl: string;
 }
 
 const usd = (cents: number) =>
@@ -126,6 +128,7 @@ export function renderPayPage(p: PublicPackageData, ctx: PayPageContext): string
     obo: ctx.onBehalfOf,
     mode: p.recurring ? 'subscription' : 'payment',
     amount: p.due_today_cents,
+    ret: ctx.returnUrl,
     copy: {
       failed: PAY_PAGE_COPY.failed,
       needName: PAY_PAGE_COPY.needName,
@@ -197,7 +200,7 @@ export function renderConfirmedPage(nonce: string, appStoreUrl: string): string 
   );
 }
 
-function doc(title: string, nonce: string, body: string): string {
+export function doc(title: string, nonce: string, body: string): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#2C4A36"><title>${esc(title)}</title><style nonce="${nonce}">${CSS}</style></head>
@@ -302,7 +305,7 @@ if(!s||s.h!==h){s={k:crypto.randomUUID(),h:h};try{sessionStorage.setItem(K,JSON.
 async function pay(name,phone,email){busy(true);m.textContent='';
 var r=await post(c.lp?'?lp='+encodeURIComponent(c.lp):'',{guest_name:name,guest_phone:phone,guest_email:email,idempotency_key:key(email),buyer_token:T||undefined}),d=r.d;
 if(!r.ok||!d.client_secret){say(r.ok?c.copy.failed:txt(d,c.copy.failed));if(d.error==='BUYER_CODE_REQUIRED'){m.textContent='';await code(email)}return false}
-var res=await stripe.confirmPayment({elements:el,clientSecret:d.client_secret,confirmParams:{return_url:location.origin+'/p/'+encodeURIComponent(c.token)+'/done',payment_method_data:{billing_details:{name:name,phone:phone,email:email}}}});
+var res=await stripe.confirmPayment({elements:el,clientSecret:d.client_secret,confirmParams:{return_url:c.ret,payment_method_data:{billing_details:{name:name,phone:phone,email:email}}}});
 if(res.error){say(res.error.message);return false}return true}
 x.on('confirm',async function(e){var bd=e.billingDetails||{},name=(bd.name||nm.value).trim(),phone=(bd.phone||ph.value).trim(),email=(bd.email||em.value).trim();
 if(name.length<2){e.paymentFailed({reason:'fail'});say(c.copy.needName);nm.focus();return}
