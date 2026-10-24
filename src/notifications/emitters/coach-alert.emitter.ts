@@ -8,6 +8,7 @@ import {
   SAFETY_ALERT_PUSH_BODY,
   safetyAlertTap,
 } from '../push/lock-screen-copy';
+import { MUTE_ALL_PASS } from '../push/push-preferences';
 
 export interface CoachAlertNotificationPayload {
   /** The coach user ID to notify. */
@@ -22,12 +23,14 @@ export interface CoachAlertNotificationPayload {
   severity: string;
   /** Client user ID for deep-link routing. */
   clientUserId?: string;
+  /** FR-1154 (owner #171-3): a money alert (the Day 7 payment alert); its push passes Mute all. */
+  money?: true;
 }
 
 export type CoachAlertTransport = 'sent' | 'skipped' | 'failed';
 
 export interface CoachAlertDelivery {
-  /** The durable in-app feed row ('skipped' when muted or not asked for). */
+  /** The durable in-app feed row ('skipped' when its switch is off or not asked for). */
   inapp: CoachAlertTransport;
   /** The device push, queued in the push outbox (skipped when not asked for). */
   push: CoachAlertTransport;
@@ -70,14 +73,17 @@ export class CoachAlertEmitter {
     // the client's message.
     const safety = Object.prototype.hasOwnProperty.call(SAFETY_ALERT_PUSH_BODY, alertType);
     // Owner 57q: the urgent and crisis alerts' pushes go out at once, even in
-    // quiet hours; the eating-disorder one waits until 08:00. Each safety push
-    // has its own dedupe key: one push per alert, never folded into another
-    // push for the same client and never taken over by one while it waits.
-    const urgent = alertType === 'roman_urgent_reply' || alertType === 'roman_crisis_reply';
+    // quiet hours; the eating-disorder one waits until 08:00. FR-1154: read
+    // from the alert's severity ('critical'; eating-disorder is 'warning'), so
+    // a new safety type cannot lose its sound. Each safety push has its own
+    // dedupe key: one push per alert, never folded into another push for the
+    // same client and never taken over by one while it waits. A safety push
+    // passes Mute all by its context (owner #168-18; muteAllStops).
+    const urgent = safety && severity === 'critical';
     const out: CoachAlertDelivery = { inapp: 'skipped', push: 'skipped' };
     if (only.inapp !== false) {
       try {
-        // null: the coach muted this kind (a preference, not a failure).
+        // null: the coach turned this kind's in-app switch off (not a failure).
         const created = await this.notifications.createNotification({
           user_id: coachId,
           kind: NotificationKind.COACH_ALERT,
@@ -113,7 +119,9 @@ export class CoachAlertEmitter {
           deep_link: deepLink,
           ...(safety
             ? { context: { safetyAlert: alertType, alertId }, dedupe_key: `coach_alert:${alertId}` }
-            : {}),
+            : payload.money
+              ? { context: MUTE_ALL_PASS }
+              : {}),
           ...(urgent ? { urgent: true } : {}),
         });
         out.push = queued ? 'sent' : 'skipped';

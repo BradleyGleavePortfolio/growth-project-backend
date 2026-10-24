@@ -498,11 +498,12 @@ export class PushDeliveryService {
       }
 
       // B-648-9: the recipient's CURRENT switches, the same rule as enqueue
-      // (MUTE-PAY: a money kind passes muted).
+      // (MUTE-PAY, FR-1154: a money kind, a safety alert or a stored
+      // MUTE_ALL_PASS passes muted).
       const prefs = await this.prisma.notificationPreferences.findUnique({
         where: { user_id: row.user_id },
       });
-      if (!pushAllowedByPreferences(prefs as Record<string, unknown> | null, row.kind)) {
+      if (!pushAllowedByPreferences(prefs as Record<string, unknown> | null, row.kind, row.context)) {
         return await this.finish(row, 'dropped', 'preference-off');
       }
 
@@ -570,7 +571,7 @@ export class PushDeliveryService {
           select: { expo_push_token: true },
         }),
       ]);
-      if (!pushAllowedByPreferences(prefsAtSend as Record<string, unknown> | null, row.kind)) {
+      if (!pushAllowedByPreferences(prefsAtSend as Record<string, unknown> | null, row.kind, row.context)) {
         return await this.finish(row, 'dropped', 'preference-off');
       }
       const to = userAtSend?.expo_push_token ?? null;

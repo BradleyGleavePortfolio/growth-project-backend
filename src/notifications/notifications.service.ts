@@ -31,6 +31,7 @@ import { PushContext, lockScreenCopy, safetyAlertTap } from './push/lock-screen-
 import { currentCoachInbox } from './current-coach-inbox';
 import { resolveRecipientTimeZone } from './recipient-timezone';
 import {
+  MuteAllPass,
   muteAllStops,
   notificationPrefsPrefix,
   pushAllowedByPreferences,
@@ -474,14 +475,16 @@ export class NotificationsService implements OnModuleInit {
    * caller tell "the user turned this off" (done, nothing to retry) from a
    * suppressed push (rate limit), which createNotification reports the same
    * way (null). 'muted' is the delivery answer only (muteAllStops: a push or
-   * email of a non-money kind); createNotification still writes that row.
+   * email of a non-money kind); createNotification still writes that row. A
+   * money sender on a shared kind passes MUTE_ALL_PASS as `context` (FR-1154).
    */
   async channelGate(
     userId: string,
     kind: NotificationKindValue,
     channel: 'push' | 'email' | 'inapp',
+    context?: MuteAllPass,
   ): Promise<NotificationChannelGate> {
-    return this.gateFrom(await this.getPreferences(userId), kind, channel);
+    return this.gateFrom(await this.getPreferences(userId), kind, channel, false, context);
   }
 
   private gateFrom(
@@ -489,9 +492,10 @@ export class NotificationsService implements OnModuleInit {
     kind: NotificationKindValue,
     channel: 'push' | 'email' | 'inapp',
     row = false,
+    context?: MuteAllPass,
   ): NotificationChannelGate {
-    // MUTE-PAY: Mute all never stops a row, an in-app notice or a money kind.
-    if (!row && muteAllStops(prefs as Record<string, unknown>, kind, channel)) return 'muted';
+    // MUTE-PAY: Mute all never stops a row, an in-app notice or a money notice.
+    if (!row && muteAllStops(prefs as Record<string, unknown>, kind, channel, context)) return 'muted';
     // Per-kind channel gate.
     const enabledKey = `${this._kindToPrefsPrefix(kind)}_${channel}` as keyof typeof prefs;
     return prefs[enabledKey] === false ? 'off' : 'enabled';
@@ -563,7 +567,8 @@ export class NotificationsService implements OnModuleInit {
    * 'inapp' })`; this call writes NO inbox row, so each event is one inbox
    * item. It queues one PushOutbox row (B-NOTIF-5) and returns at once: the
    * request never waits on Expo (B-648-6). Gated by `<kind>_push` and by
-   * `muted` unless the kind is money (pushAllowedByPreferences). Quiet hours
+   * `muted` unless the kind is money, the context is a safety alert or carries
+   * MUTE_ALL_PASS (pushAllowedByPreferences; FR-1154). Quiet hours
    * (OR-113-5) are applied in the recipient's zone. The lock screen gets quiet copy
    * (lock-screen-copy.ts: no health details, no message text); `data`
    * carries only tap routing (the screen, the deep link and ids).
@@ -580,7 +585,7 @@ export class NotificationsService implements OnModuleInit {
       kind: NotificationKindValue;
       body: string;
       deep_link?: string;
-      context?: PushContext | null;
+      context?: (PushContext & MuteAllPass) | null;
       dedupe_key?: string | null;
       urgent?: boolean;
     },
@@ -590,7 +595,7 @@ export class NotificationsService implements OnModuleInit {
     try {
       const prefs = await this.getPreferences(input.user_id, tx);
       // Same rule the push worker re-checks right before sending (B-648-9).
-      if (!pushAllowedByPreferences(prefs as Record<string, unknown>, input.kind)) return null;
+      if (!pushAllowedByPreferences(prefs as Record<string, unknown>, input.kind, input.context)) return null;
       const copy = lockScreenCopy(input.kind, input.body, input.context);
       const timeZone =
         input.context?.timeZone ??

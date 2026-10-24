@@ -363,6 +363,8 @@ export class DunningV2Dispatcher {
             message: inappBody,
             severity: 'warning',
             clientUserId: ctx.clientUserId,
+            // FR-1154 (owner #171-3): a payment alert; its push passes Mute all.
+            money: true,
           },
           { inapp: want.alert, push: want.push },
           { title: 'Payment', body: pushBody },

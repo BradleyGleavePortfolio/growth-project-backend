@@ -149,6 +149,9 @@ const defaultPrefs = {
   nudge_inactive_email: true,
 };
 
+/** Mute all on and the missed-check-in in-app switch off: no channel is left. */
+const MUTED_NO_INAPP = { ...defaultPrefs, muted: true, nudge_missed_checkin_inapp: false };
+
 // Force "now" into a known mid-day local instant in LA so the quiet-hours
 // gate does not interfere unless a test explicitly targets it.
 // 2026-05-08 18:00:00 UTC = 11am LA local (PDT, UTC-7). Safely inside 8am–9pm.
@@ -183,17 +186,27 @@ describe('NudgeEngineService — five gates', () => {
     expect(logs[0].sent_at).toBeTruthy();
   });
 
-  it('suppresses when global mute is on', async () => {
+  it('FR-1154 (owner #171-3): global mute drops the push, never the in-app nudge', async () => {
     const { prisma, logs } = makeFakePrisma();
     const notifs = fakeNotifications({ ...defaultPrefs, muted: true });
     const svc = new NudgeEngineService(prisma as any, notifs as any);
 
     const out = await svc.process(baseCandidate(), NOON_LA_UTC);
 
-    expect(out.status).toBe(NudgeStatus.SUPPRESSED_MUTED);
-    expect(out.channels).toEqual([]);
-    expect(notifs.createNotification).not.toHaveBeenCalled();
+    expect(out.status).toBe(NudgeStatus.SENT);
+    expect(out.channels).toEqual(['inapp']);
+    expect(notifs.createNotification).toHaveBeenCalledTimes(1);
     expect(notifs.pushToUser).not.toHaveBeenCalled();
+    expect(logs[0].status).toBe('sent');
+  });
+
+  it('suppressed_muted when global mute is on and the in-app switch is off too', async () => {
+    const { prisma, logs } = makeFakePrisma();
+    const svc = new NudgeEngineService(prisma as any, fakeNotifications(MUTED_NO_INAPP) as any);
+
+    const out = await svc.process(baseCandidate(), NOON_LA_UTC);
+
+    expect(out).toEqual({ status: NudgeStatus.SUPPRESSED_MUTED, channels: [] });
     expect(logs[0].status).toBe('suppressed_muted');
   });
 
@@ -343,7 +356,7 @@ describe('NudgeEngineService — five gates', () => {
 
   it('writes exactly one NudgeLog row per process() — no silent drops', async () => {
     const { prisma, logs } = makeFakePrisma();
-    const notifs = fakeNotifications({ ...defaultPrefs, muted: true });
+    const notifs = fakeNotifications(MUTED_NO_INAPP);
     const svc = new NudgeEngineService(prisma as any, notifs as any);
 
     await svc.process(baseCandidate(), NOON_LA_UTC);
@@ -424,7 +437,7 @@ describe('NudgeEngineService — five gates', () => {
     // A muted user's row should leave cap_bucket null so a future
     // un-mute does not see a phantom "cap held" state.
     const { prisma, logs } = makeFakePrisma();
-    const notifs = fakeNotifications({ ...defaultPrefs, muted: true });
+    const notifs = fakeNotifications(MUTED_NO_INAPP);
     const svc = new NudgeEngineService(prisma as any, notifs as any);
 
     await svc.process(baseCandidate(), NOON_LA_UTC);

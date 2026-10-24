@@ -8,6 +8,7 @@
 // (or "mute all", for a kind it mutes) while a push waits suppresses it.
 
 import { MONEY_NOTIFICATION_KINDS } from '../notification-kind';
+import { SAFETY_ALERT_PUSH_BODY } from './lock-screen-copy';
 
 // DUNNING-KIND-FIX: kinds with no column of their own keep their own name as the prefix, so only `muted`
 // stops them, and only their non-money pushes (muteAllStops; src/notifications/README.md defaults tables).
@@ -95,30 +96,50 @@ export function notificationPrefsPrefix(kind: string): string {
 }
 
 /**
+ * FR-1154 (owner #171-3): the pass a money push of a shared kind (a payout notice or the Day 7 payment
+ * alert, both `coach_alert`) carries in its push context. A push context is stored with the outbox row,
+ * so the enqueue gate and both send-time re-checks read the same pass.
+ */
+export const MUTE_ALL_PASS = { passesMuteAll: true } as const;
+export type MuteAllPass = { passesMuteAll?: true };
+
+/** Owner #168-18 (a Roman safety alert, any SAFETY_ALERT_PUSH_BODY type) and owner #171-3 (MUTE_ALL_PASS). */
+function contextPassesMuteAll(context: unknown): boolean {
+  const c = (context ?? {}) as { passesMuteAll?: unknown; safetyAlert?: unknown };
+  if (c.passesMuteAll === true) return true;
+  const safety = c.safetyAlert;
+  return typeof safety === 'string' && Object.prototype.hasOwnProperty.call(SAFETY_ALERT_PUSH_BODY, safety);
+}
+
+/**
  * MUTE-PAY (owner #171-3): whether "Mute all notifications" (`muted`) stops
  * this kind on this channel. Never an in-app row, never a money kind
- * (MONEY_NOTIFICATION_KINDS) on any channel; every other push and email, yes.
+ * (MONEY_NOTIFICATION_KINDS) on any channel, never a push whose context is a
+ * safety alert or carries MUTE_ALL_PASS; every other push and email, yes.
  */
 export function muteAllStops(
   prefs: Record<string, unknown> | null | undefined,
   kind: string,
   channel: 'push' | 'email' | 'inapp',
+  context?: unknown,
 ): boolean {
-  return prefs?.muted === true && channel !== 'inapp' && !MONEY_NOTIFICATION_KINDS.has(kind);
+  if (prefs?.muted !== true || channel === 'inapp' || MONEY_NOTIFICATION_KINDS.has(kind)) return false;
+  return !contextPassesMuteAll(context);
 }
 
 /**
  * True when the recipient's preferences allow a device push of this kind.
  * Same rule as the enqueue gate: no preferences row means the defaults
- * (allowed); `muted` blocks every push but a money kind's (muteAllStops);
- * `<prefix>_push === false` blocks the kind. A kind without a column (first
- * payment) is never blocked by it.
+ * (allowed); `muted` blocks every push but a money or safety one (muteAllStops,
+ * with the push's stored context); `<prefix>_push === false` blocks the kind.
+ * A kind without a column (first payment) is never blocked by it.
  */
 export function pushAllowedByPreferences(
   prefs: Record<string, unknown> | null | undefined,
   kind: string,
+  context?: unknown,
 ): boolean {
   if (!prefs) return true;
-  if (muteAllStops(prefs, kind, 'push')) return false;
+  if (muteAllStops(prefs, kind, 'push', context)) return false;
   return prefs[`${notificationPrefsPrefix(kind)}_push`] !== false;
 }
