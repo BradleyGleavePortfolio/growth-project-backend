@@ -317,7 +317,8 @@ export class CommunityMessagesRepository {
           visibility: 'active',
           parent_message_id: params.parent?.id ?? null,
           parent_message_at: params.parent?.at ?? null,
-          plan_context_payload: params.planContext == null ? Prisma.JsonNull : (params.planContext as unknown as Prisma.InputJsonValue),
+          // FX-1156-R75: the zod-typed tag is already Prisma JSON, so it is stored with no cast.
+          plan_context_payload: params.planContext ?? Prisma.JsonNull,
         },
       });
       await tx.communityMessageImage.create({

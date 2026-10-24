@@ -377,6 +377,31 @@ describe('POST messages kind image (SC-BE3)', () => {
     expect(await code(w.service.send(me, SPACE, '', { type: 'workout' }, undefined, { key: await uploaded(w), width: 1, height: 1 }))).toBe('community.plan_context.malformed');
   });
 
+  it('FX-1156-R75: a photo stores every plan tag arm exactly as a text send stores it; untagged or flag-off stores null', async () => {
+    process.env.FEATURE_COMMUNITY_PLAN_TAGS = 'true';
+    const photo = async (w: ReturnType<typeof world>, tag?: object) =>
+      (await w.service.send(me, SPACE, '', tag, undefined, { key: await uploaded(w), width: 1, height: 1 })).message;
+    const stored = (w: ReturnType<typeof world>, id: string) => w.messages.find((m) => m.id === id)?.plan_context_payload;
+    const id = (n: number) => `cccccccc-0000-4000-8000-00000000000${n}`;
+    for (const tag of [
+      { type: 'workout', workout_plan_id: id(1), week_index: 3, day_index: 6, exercise_id: id(2) },
+      { type: 'meal', meal_plan_id: id(3), meal_id: 'breakfast-1' },
+      { type: 'package', package_id: id(4) },
+      { type: 'check_in', check_in_id: id(5) },
+    ]) {
+      const w = world();
+      const sent = await photo(w, tag);
+      const text = (await w.service.send(me, SPACE, 'same tag', tag)).message;
+      expect(stored(w, sent.id)).toEqual(tag);
+      expect(stored(w, sent.id)).toEqual(stored(w, text.id));
+      expect([sent.plan_context, (await w.service.getOne(me, sent.id)).message.plan_context]).toEqual([tag, tag]);
+    }
+    const w = world();
+    expect(stored(w, (await photo(w)).id)).toBeNull();
+    delete process.env.FEATURE_COMMUNITY_PLAN_TAGS;
+    expect(stored(w, (await photo(w, { type: 'package', package_id: id(4) })).id)).toBeNull();
+  });
+
   it('delete erases the sent copy and the upload, and verifies both are gone', async () => {
     const w = world();
     const key = await uploaded(w);
