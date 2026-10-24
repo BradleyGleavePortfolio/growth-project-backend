@@ -26,7 +26,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma } from '@prisma/client';
+import { Prisma, type CoachBrief } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { AiEgressService, AnthropicHandle } from '../../ai-egress/ai-egress.service';
 import {
@@ -1921,6 +1921,11 @@ export class CoachBriefService {
         ) {
           return this.generateBrief(coachId, timezone, briefDate, { force: true });
         }
+        // FR-1141R4 (Sol B1): a brief written before a block is never
+        // written again for it, because the block can be lifted.
+        if ((await this.briefsBeforeBlock(coachId, [existing])).size > 0) {
+          return this.blockSafeBrief(coachId, timezone, briefDate, existing);
+        }
         const shown = await this.ownThreadPreviews(coachId, [existing]);
         return this.toResponse({ ...existing, action_items: shown(existing.action_items) });
       }
@@ -2003,52 +2008,12 @@ export class CoachBriefService {
 
     // From here on we OWN the generating-row. Do the work and finalize.
     try {
-      const briefMode = await this.detectBriefMode(coachId);
-
-      let context: BriefContext | BriefContextHeadCoach;
-      let actionItems: ActionItem[] | HeadCoachActionItem[];
-      // R2b — what the AI may see (null = deterministic narrative only).
-      let aiInput: BriefAiInput | null;
-      let scopeClientIds: string[];
-
-      if (briefMode === 'head_coach') {
-        // P1-3: head-coach is business-only. No client scope queries,
-        // no per-client action items, no client_id in the response.
-        const headRes = await this.aggregateHeadCoachContext(
-          coachId,
-          timezone,
-          briefDate,
-        );
-        context = headRes.context;
-        actionItems = headRes.actionItems;
-        scopeClientIds = headRes.scopeClientIds;
-        // Business metrics only (headcounts, money totals): no client
-        // identifier and no health / activity field, pinned by the spec.
-        aiInput = { ctx: context, subject: noClientDataSubject('coach_business_metrics', coachId) };
-      } else {
-        const clientIds = await this.resolveClientScope(coachId, briefMode);
-        scopeClientIds = clientIds;
-        const agg = await this.aggregateSoloContext(
-          coachId,
-          clientIds,
-          timezone,
-          briefDate,
-          briefMode,
-        );
-        if (briefMode === 'sub_coach') {
-          agg.context.brief_mode = 'sub_coach';
-        }
-        context = agg.context;
-        actionItems = buildActionItems(agg);
-        aiInput = await this.buildSoloAiInput(
-          coachId,
-          clientIds,
-          agg.context,
-          timezone,
-          briefDate,
-          briefMode,
-        );
-      }
+      const { briefMode, context, actionItems, aiInput, scopeClientIds } = await this.buildBriefParts(
+        coachId,
+        timezone,
+        briefDate,
+        true,
+      );
 
       const { narrative, generated_by } = await this.callClaude(context, aiInput, coachId);
 
@@ -2212,10 +2177,12 @@ export class CoachBriefService {
     // B-872-SOL-130-1: a brief stored before a client turned off a Coach
     // sharing switch keeps its day and status in history, not its content.
     // B-939-1: so does a brief built from a client who has since moved away.
+    // FR-1141R4 (Sol B1): and one written before a block, until it is lifted.
     const withdrawnAt = await this.lastSharingWithdrawal(coachId);
     const builtFromMoved = await this.briefsWithMovedClients(coachId, rows);
+    const beforeBlock = await this.briefsBeforeBlock(coachId, rows);
     const withheld = (r: { id: string; generated_at: Date | null }) =>
-      writtenBefore(r, withdrawnAt) || builtFromMoved.has(r.id);
+      writtenBefore(r, withdrawnAt) || builtFromMoved.has(r.id) || beforeBlock.has(r.id);
     // Only a brief that is shown gets the thread check, so the old coach's
     // request never reads a moved client's messages.
     const shown = await this.ownThreadPreviews(coachId, rows.filter((r) => !withheld(r)));
@@ -2257,9 +2224,6 @@ export class CoachBriefService {
    * delegated by a head coach who still has them. A row stored before the
    * scope list cannot show whose data it holds, so it counts as stale.
    * Archiving is the coach's own choice, not a move, so it is not checked.
-   * FR-1141 (Sol B3): so is a brief written before a block, either way,
-   * between this coach and one of its clients: its count and narrative still
-   * hold that chat. Lifting the block shows it again.
    */
   private async briefsWithMovedClients(
     coachId: string,
@@ -2309,19 +2273,124 @@ export class CoachBriefService {
         if (n.ids.some((id) => !stillTheirs.has(id))) stale.add(briefId);
       }
     }
-    const scoped = Array.from(new Set(Array.from(builtFrom.values()).flatMap((n) => n.ids)));
-    if (scoped.length > 0) {
-      const blocks = await this.prisma.userBlock.findMany({
-        where: { OR: [{ blocker_id: coachId, blocked_id: { in: scoped } }, { blocked_id: coachId, blocker_id: { in: scoped } }] },
-        select: { blocker_id: true, blocked_id: true, created_at: true },
-      });
-      const since = new Map(blocks.map((b) => [b.blocker_id === coachId ? b.blocked_id : b.blocker_id, b.created_at]));
-      for (const r of rows) {
-        if (builtFrom.get(r.id)?.ids.some((id) => writtenBefore(r, since.get(id) ?? null))) stale.add(r.id);
-      }
-    }
     return stale;
   }
+
+  /**
+   * FR-1141 (Sol B3), FR-1141R4 (Sol B1): the ids of stored briefs written
+   * before a block, either way, between this coach and one of the clients
+   * they were built from: their counts and narrative may still hold that
+   * chat. Such a brief is not shown while the block stands and is never
+   * written again for it, so lifting the block shows it again, today and in
+   * history. A brief without a scope list is B-939-1's (written again).
+   */
+  private async briefsBeforeBlock(
+    coachId: string,
+    rows: ReadonlyArray<{ id: string; brief_context: Prisma.JsonValue | null; generated_at: Date | null }>,
+  ): Promise<Set<string>> {
+    const builtFrom = new Map<string, string[]>();
+    for (const r of rows) {
+      const ctx = r.brief_context;
+      const scope = ctx && typeof ctx === 'object' && !Array.isArray(ctx) ? ctx[BRIEF_SCOPE_KEY] : null;
+      if (Array.isArray(scope)) builtFrom.set(r.id, scope.filter((id): id is string => typeof id === 'string'));
+    }
+    const scoped = Array.from(new Set(Array.from(builtFrom.values()).flat()));
+    if (scoped.length === 0) return new Set();
+    const blocks = await this.prisma.userBlock.findMany({
+      where: { OR: [{ blocker_id: coachId, blocked_id: { in: scoped } }, { blocked_id: coachId, blocker_id: { in: scoped } }] },
+      select: { blocker_id: true, blocked_id: true, created_at: true },
+    });
+    const since = new Map(blocks.map((b) => [b.blocker_id === coachId ? b.blocked_id : b.blocker_id, b.created_at]));
+    return new Set(
+      rows.filter((r) => builtFrom.get(r.id)?.some((id) => writtenBefore(r, since.get(id) ?? null))).map((r) => r.id),
+    );
+  }
+
+  /**
+   * FR-1141R4 (Sol B1): today's answer while a block covers the saved brief.
+   * Built now from live data, which leaves the closed chat out, with the
+   * plain-text narrative (no AI call), and written nowhere: the saved brief
+   * stays as it is and comes back when the block is lifted. It keeps the
+   * saved brief's id, day and time, so marking it read still works.
+   */
+  private async blockSafeBrief(
+    coachId: string,
+    timezone: string,
+    briefDate: string,
+    saved: CoachBrief,
+  ): Promise<CoachBriefResponse> {
+    const { briefMode, context, actionItems } = await this.buildBriefParts(coachId, timezone, briefDate, false);
+    return this.toResponse({
+      ...saved,
+      narrative: buildFallbackNarrative(context),
+      brief_context: context as unknown as Prisma.JsonObject,
+      action_items: actionItems as unknown as Prisma.JsonArray,
+      generated_by: 'fallback',
+      brief_mode: briefMode,
+    });
+  }
+
+  /**
+   * The parts of today's brief, built from live data: mode, context, action
+   * items, the clients in scope and (when `ai`) what the AI may see. Both
+   * the generating path and the block-safe read (FR-1141R4) use it.
+   */
+  private async buildBriefParts(
+    coachId: string,
+    timezone: string,
+    briefDate: string,
+    ai: boolean,
+  ): Promise<{
+    briefMode: BriefMode;
+    context: BriefContext | BriefContextHeadCoach;
+    actionItems: ActionItem[] | HeadCoachActionItem[];
+    aiInput: BriefAiInput | null;
+    scopeClientIds: string[];
+  }> {
+    const briefMode = await this.detectBriefMode(coachId);
+
+    let context: BriefContext | BriefContextHeadCoach;
+    let actionItems: ActionItem[] | HeadCoachActionItem[];
+    // R2b — what the AI may see (null = deterministic narrative only).
+    let aiInput: BriefAiInput | null;
+    let scopeClientIds: string[];
+
+    if (briefMode === 'head_coach') {
+      // P1-3: head-coach is business-only. No client scope queries,
+      // no per-client action items, no client_id in the response.
+      const headRes = await this.aggregateHeadCoachContext(
+        coachId,
+        timezone,
+        briefDate,
+      );
+      context = headRes.context;
+      actionItems = headRes.actionItems;
+      scopeClientIds = headRes.scopeClientIds;
+      // Business metrics only (headcounts, money totals): no client
+      // identifier and no health / activity field, pinned by the spec.
+      aiInput = { ctx: context, subject: noClientDataSubject('coach_business_metrics', coachId) };
+    } else {
+      const clientIds = await this.resolveClientScope(coachId, briefMode);
+      scopeClientIds = clientIds;
+      const agg = await this.aggregateSoloContext(
+        coachId,
+        clientIds,
+        timezone,
+        briefDate,
+        briefMode,
+      );
+      if (briefMode === 'sub_coach') {
+        agg.context.brief_mode = 'sub_coach';
+      }
+      context = agg.context;
+      actionItems = buildActionItems(agg);
+      aiInput = ai
+        ? await this.buildSoloAiInput(coachId, clientIds, agg.context, timezone, briefDate, briefMode)
+        : null;
+    }
+    return { briefMode, context, actionItems, aiInput, scopeClientIds };
+  }
+
 
   /**
    * BRIEF4B (owner 4b): a stored brief shows an unread-message preview only

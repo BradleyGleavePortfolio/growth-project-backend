@@ -3,7 +3,14 @@ import { AuditService } from '../src/audit/audit.service';
 import { CapabilityMaterializerRegistry } from '../src/ai/gateway/materialisers/capability-materialiser.registry';
 import type { CapabilityMaterializer } from '../src/ai/gateway/materialisers/capability-materialiser.interface';
 import { CoachMessageMaterializer } from '../src/ai/gateway/materialisers/coach-message.materialiser';
-import { ConflictException, InternalServerErrorException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  HttpException,
+  HttpStatus,
+  InternalServerErrorException,
+} from '@nestjs/common';
+import { MESSAGING_ERRORS, messagingError } from '../src/messaging/messaging-errors';
 
 // PR AI-3 (PRODUCT-1) — integration coverage for AiApprovalService.decide
 // + CapabilityMaterializerRegistry. The unit specs cover each piece in
@@ -250,6 +257,39 @@ describe('AiApprovalService + CapabilityMaterializerRegistry (integration)', () 
     // And we wrote a materialise-failed audit so ops can spot patterns.
     const auditActions = prisma.auditLog.create.mock.calls.map((c: any) => c[0].data.action);
     expect(auditActions).toContain('ai.draft_materialise_failed');
+  });
+
+  // FR-1141R4 (Opus C-2): a send a block refused reaches the phone as the same 403, not a 500; nothing was
+  // sent and the draft stays pending. Any other 403 from a materialiser is still a materialisation failure.
+  it.each([
+    ['sendAsCoach BLOCKED', 403, () => new ForbiddenException({ error: 'BLOCKED', message: 'Messages cannot be sent to blocked users' })],
+    ['messaging.blocked', 403, () => messagingError(HttpStatus.FORBIDDEN, MESSAGING_ERRORS.BLOCKED)],
+    ['another 403', 500, () => new ForbiddenException('not yours')],
+  ])('materialiser refusal %s: approve answers %i, draft stays pending', async (_label, status, refusal) => {
+    const draft = {
+      id: 'd-coach-blocked',
+      status: 'pending',
+      capability: 'draft.coach_message',
+      requester_id: 'coach-1',
+      subject_user_id: 'client-1',
+      tenant_coach_id: 'coach-1',
+      payload: { clientId: 'client-1', body: 'hi' },
+    };
+    const prisma = buildPrisma([draft]);
+    const audit = new AuditService(prisma);
+    const coachMat = makeMaterializer('draft.coach_message', async () => {
+      throw refusal();
+    }, prisma);
+    const svc = new AiApprovalService(prisma, audit, new CapabilityMaterializerRegistry([coachMat]));
+
+    const err = await svc
+      .decide({ draftId: 'd-coach-blocked', decider: { id: 'owner-1', role: 'owner' }, decision: 'approved' })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(HttpException);
+    expect((err as HttpException).getStatus()).toBe(status);
+    expect(prisma.drafts[0].status).toBe('pending');
+    const auditActions = prisma.auditLog.create.mock.calls.map((c: any) => c[0].data.action);
+    expect(auditActions.includes('ai.draft_materialise_failed')).toBe(status === 500);
   });
 
   // -----------------------------------------------------------------

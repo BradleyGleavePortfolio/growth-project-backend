@@ -33,6 +33,7 @@ function makeMocks() {
         findUnique: jest.fn().mockResolvedValue({ name: 'Alex Carter', profile: null }),
         findFirst: jest.fn().mockResolvedValue({ id: CLIENT }),
       },
+      userBlock: { findMany: jest.fn().mockResolvedValue([]) },
     },
     gateway: {
       invoke: jest.fn().mockResolvedValue({
