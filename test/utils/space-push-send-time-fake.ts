@@ -16,7 +16,7 @@ export function spaceAtSendTime(db: { $queryRaw: (sql: TemplateStringsArray, ...
   const s = {
     messages: [] as Msg[],
     blocks: [] as Array<{ blocker_id: string; blocked_id: string }>,
-    /** active community bans: `${workspace}:${user}` */
+    /** active community bans: `${workspace}:${user}` (app.community_author_unbanned) */
     bans: new Set<string>(),
     /** people app.community_can_access refuses (not in the space, or banned from its community) */
     shut: new Set<string>(),
@@ -37,11 +37,6 @@ export function spaceAtSendTime(db: { $queryRaw: (sql: TemplateStringsArray, ...
   const overlay = {
     communityMessage: {
       findFirst: jest.fn(async ({ where }: { where: Where }) => s.messages.find((m) => matches(m, where)) ?? null),
-    },
-    communityWorkspaceBan: {
-      findFirst: jest.fn(async ({ where }: { where: { workspace_id: string; user_id: string } }) =>
-        s.bans.has(`${where.workspace_id}:${where.user_id}`) ? { id: 'ban' } : null,
-      ),
     },
     userBlock: {
       count: jest.fn(async ({ where }: { where: { OR: Array<{ blocker_id: string; blocked_id: string }> } }) =>

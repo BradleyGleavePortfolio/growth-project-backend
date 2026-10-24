@@ -1,7 +1,7 @@
 // Sol B-2 (FR-1138): a space push that waited (quiet hours, the burst cap, a retry) is planned again for its reader
-// at the moment of sending: a block either way, a ban, a deleted message or Mute all since enqueue drops it; an
-// unblock lets the next one go. Real chain sendPush -> outbox -> drain -> Expo (mocked); the send-time reads are
-// test/utils/space-push-send-time-fake.ts.
+// at the moment of sending: a block either way, a ban, the sender's move to another coach, a deleted message, Mute
+// all or the space switch off since enqueue drops it; an unblock lets the next one go. Real chain sendPush ->
+// outbox -> drain -> Expo (mocked); the send-time reads are test/utils/space-push-send-time-fake.ts.
 import { Logger } from '@nestjs/common';
 import type { SpacePushKind } from '../../../src/community/space-push/space-push-policy';
 import { NotificationKind } from '../../../src/notifications/notification-kind';
@@ -96,7 +96,7 @@ it.each([
 
 it.each([
   ['the reader banned from the community (the space shuts them out)', (s: S): void => void s.shut.add('bo'), 'no-access'],
-  ['the sender banned from the community', (s: S): void => void s.bans.add('w:sam'), 'sender-banned'],
+  ['the sender banned from the community (what they wrote no longer reads)', (s: S): void => void s.bans.add('w:sam'), 'sender-left'],
   ['the message deleted', (s: S): void => void (s.messages[0].deleted_at = NIGHT), 'message-gone'],
   ['Mute all switched on', (s: S): void => void (s.reads.bo = { notify_mode: 'mute_all', silenced_until: null }), 'not-planned'],
   ['the space read since (nothing unread)', (s: S): void => void (s.unread = 0), 'not-planned'],
