@@ -635,7 +635,8 @@ export class CheckoutRecoveryService implements OnModuleInit, OnModuleDestroy {
     if (!pkg) {
       throw new NotFoundException({
         error: 'PACKAGE_UNAVAILABLE',
-        message: 'This package is no longer available.',
+        message:
+          'This plan is no longer offered. Message the coach who shared this link for the current one.',
       });
     }
     return pkg;
