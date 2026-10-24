@@ -89,8 +89,10 @@ export const placeOf = (row: { workspace_id: string; cohort_id: string | null })
 
 /** C6-WINS-MOVE (owner: history follows the client): a client who moves to another coach, or to none,
  * leaves the former coach's community, so what they wrote in its Hall and in its spaces that are not public
- * no longer reads there. The row policies ask the same function. The viewer keeps their own rows. One
- * round trip. */
+ * no longer reads there. The row policies ask the same function. #168-4: a member banned from the community
+ * (community_workspace_bans, the moderation Ban) has left it too, so nothing they wrote there reads for anyone
+ * else; unban restores it (app.community_author_unbanned, 20270502008900, so this also runs under row
+ * security). The viewer keeps their own rows. One round trip. */
 export async function rowsByAuthorsWhoStay<T>(
   prisma: PrismaService,
   viewerId: string,
@@ -104,7 +106,8 @@ export async function rowsByAuthorsWhoStay<T>(
     SELECT (t."n" - 1)::int AS "n"
     FROM unnest(${ask.map(([, p]) => p[0])}::uuid[], ${ask.map(([, p]) => p[1] ?? '')}::text[],
                 ${ask.map(([, , a]) => a as string)}::text[]) WITH ORDINALITY AS t("w", "s", "a", "n")
-    WHERE app.community_author_stays(t."w", NULLIF(t."s", '')::uuid, t."a")`;
+    WHERE app.community_author_stays(t."w", NULLIF(t."s", '')::uuid, t."a")
+      AND app.community_author_unbanned(t."w", t."a")`;
   const gone = new Set(ask.map(([i]) => i));
   for (const k of kept) gone.delete(ask[k.n][0]);
   return gone.size === 0 ? rows : rows.filter((_, i) => !gone.has(i));
@@ -112,9 +115,13 @@ export async function rowsByAuthorsWhoStay<T>(
 
 /** C6-MOVED-PRIVILEGED-READS: the same rule for a list bounded by a limit, which must leave rows out in the
  * query itself (a filter after the limit would drop rows from the page). The [space, author] pairs of these
- * spaces' posts and chat whose author app.community_author_stays no longer keeps. One round trip; the rule is
- * asked once per pair. */
-export async function authorsWhoLeft(prisma: PrismaService, spaceIds: string[]): Promise<Array<[string, string]>> {
+ * spaces' posts and chat whose author app.community_author_stays no longer keeps, or (#168-4) whose author is
+ * banned from that community, or who is in a block with `viewerId` either way. One round trip. */
+export async function authorsWhoLeft(
+  prisma: PrismaService,
+  spaceIds: string[],
+  viewerId = '',
+): Promise<Array<[string, string]>> {
   if (spaceIds.length === 0) return [];
   const rows = await prisma.$queryRaw<{ s: string; a: string }[]>`
     WITH t AS MATERIALIZED (
@@ -122,6 +129,10 @@ export async function authorsWhoLeft(prisma: PrismaService, spaceIds: string[]):
         WHERE "cohort_id" = ANY(${spaceIds}::uuid[]) AND "deleted_at" IS NULL
       UNION SELECT "workspace_id", "cohort_id", "author_id" FROM "community_posts"
         WHERE "cohort_id" = ANY(${spaceIds}::uuid[]) AND "deleted_at" IS NULL)
-    SELECT t."s"::text AS "s", t."a" FROM t WHERE NOT app.community_author_stays(t."w", t."s", t."a")`;
+    SELECT t."s"::text AS "s", t."a" FROM t WHERE NOT app.community_author_stays(t."w", t."s", t."a")
+      OR NOT app.community_author_unbanned(t."w", t."a")
+      OR EXISTS (SELECT 1 FROM "UserBlock" ub
+                 WHERE (ub."blocker_id" = ${viewerId} AND ub."blocked_id" = t."a")
+                    OR (ub."blocker_id" = t."a" AND ub."blocked_id" = ${viewerId}))`;
   return rows.map((r) => [r.s, r.a]);
 }

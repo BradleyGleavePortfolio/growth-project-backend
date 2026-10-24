@@ -109,7 +109,8 @@ export class CommunitySearchService {
     // Apple 1.2: hide rows authored by anyone in a block relation with the
     // caller, either direction (two-way). Filtered
     // after the cursor page is cut (the cursor stays on the unfiltered page).
-    const visibleRows = await this.safety.filterBlocked(user.id, pageRows, (r) => r.author_id);
+    // #168-4: and rows by an author banned from this community.
+    const visibleRows = await this.safety.filterBlocked(user.id, pageRows, (r) => r.author_id, (r) => [workspaceId, r.cohort_id]);
     const results: SearchResultRow[] = visibleRows.map((r) => ({
       id: r.id,
       kind: r.kind,
