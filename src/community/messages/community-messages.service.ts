@@ -281,8 +281,9 @@ export class CommunityMessagesService {
     // v2-1: validate + authorize any attached plan-context tag BEFORE the write
     // (flag-off drops it; malformed → 422; missing entity → 422; foreign → 403).
     const planContext = await this.resolveIncomingPlanContext(user, planContextRaw);
-    // SC-PUSH: a High alert only from the space's coach, at most 3 there a day.
-    const alert = highAlert && this.spacePush ? await this.spacePush.highAlertAllowance(user.id, cohort) : null;
+    // SC-PUSH: a High alert only from the space's coach, at most 3 there a day. Opus C-6: with the space
+    // switch off it does nothing (no mark, no count against the 3, no reach).
+    const alert = highAlert && this.spacePush && spacePushOn() ? await this.spacePush.highAlertAllowance(user.id, cohort) : null;
     if (alert && alert.used_today >= alert.limit) {
       throw new HttpException({ code: 'community.high_alert.limit', limit: alert.limit }, HttpStatus.TOO_MANY_REQUESTS);
     }
