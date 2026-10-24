@@ -96,7 +96,10 @@ export class CommunitySpacePushService implements OnModuleInit {
           deep_link: `tgp://community/cohorts/${cohortId}${p.kind === 'unread' ? '' : `?message=${m.id}`}`,
           // Each message is its own outbox event, so the unread notification updates instead of being dropped.
           dedupe_key: `space-push:${m.id}:${p.userId}`,
-          context: { spacePush: { kind: p.kind, unread: p.unread, space: cohort.name, cohortId, ...(from ? { from } : {}) } },
+          // Sol B-2: the source ids let the send step plan this push again (space-push-still-due.ts).
+          context: {
+            spacePush: { kind: p.kind, unread: p.unread, space: cohort.name, cohortId, messageId: m.id, senderId: m.sender_id, ...(from ? { from } : {}) },
+          },
         });
       }
     } catch (err) {

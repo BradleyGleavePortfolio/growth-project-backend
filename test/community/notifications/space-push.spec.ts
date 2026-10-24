@@ -234,7 +234,7 @@ describe('SC-PUSH service', () => {
         expect.objectContaining({
           deep_link: 'tgp://community/cohorts/c1?message=m2',
           dedupe_key: 'space-push:m2:a',
-          context: { spacePush: { kind: 'reply', unread: 3, space: 'Team', cohortId: 'c1', from: 'Sam' } },
+          context: { spacePush: { kind: 'reply', unread: 3, space: 'Team', cohortId: 'c1', messageId: 'm2', senderId: S, from: 'Sam' } },
         }),
       ]);
       // Everyone else on All gets the unread notification, which opens the space at its read line; never the sender.
@@ -261,7 +261,7 @@ describe('SC-PUSH service', () => {
       prisma.user.findUnique.mockResolvedValue({ name: '  ' });
       prisma.$queryRaw.mockReset().mockResolvedValueOnce([{ id: S }, { id: 'a' }]).mockResolvedValue([{ c: 'c1', n: 1 }]);
       await svc.messageStored('m2');
-      expect(sendPush.mock.calls[0][0].context.spacePush).toEqual({ kind: 'reply', unread: 1, space: 'Team', cohortId: 'c1' });
+      expect(sendPush.mock.calls[0][0].context.spacePush).toEqual({ kind: 'reply', unread: 1, space: 'Team', cohortId: 'c1', messageId: 'm2', senderId: S });
     });
 
     it('mute modes: Mute low still gets the reply, Mute all (or a running silence) gets nothing', async () => {

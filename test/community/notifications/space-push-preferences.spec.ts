@@ -9,6 +9,7 @@ import { NotificationsService } from '../../../src/notifications/notifications.s
 import { PushDeliveryService } from '../../../src/notifications/push/push-delivery.service';
 import { notificationPrefsPrefix, pushAllowedByPreferences } from '../../../src/notifications/push/push-preferences';
 import { pushOutboxWorld } from '../../utils/push-outbox-fake';
+import { spaceAtSendTime } from '../../utils/space-push-send-time-fake';
 
 const NOW = new Date('2026-10-23T18:00:00Z'); // 11:00 in Los Angeles: no quiet hours
 const K = NotificationKind.COMMUNITY_MESSAGE_RECEIVED;
@@ -25,7 +26,8 @@ afterAll(() => void delete process.env.FEATURE_COMMUNITY_SPACE_PUSH);
 async function chain() {
   const w = pushOutboxWorld({ now: () => NOW, tokens: Object.fromEntries(PEOPLE.map((p, i) => [p, token('abcde'[i])])) });
   const send = jest.fn(async (m: Array<{ to: unknown }>) => m.map(() => ({ status: 'ok' as const, id: 't' })));
-  const delivery = new Clocked(Object.create(w.db), { send, getReceipts: jest.fn(async () => ({})) });
+  const at = spaceAtSendTime(w.db); // Sol B-2: the send step plans each space push again
+  const delivery = new Clocked(at.db as never, { send, getReceipts: jest.fn(async () => ({})) });
   delivery.autoDrain = false;
   const notifications = new NotificationsService(Object.create(w.db), undefined, undefined, delivery);
   const defaults = await notifications.getPreferences('saved'); // 'fresh' has no row; the rest save every default
@@ -46,6 +48,7 @@ async function chain() {
   const message = async (m: { id: string; parent_message_id?: string; high_alert?: boolean }) => {
     const row = { workspace_id: 'w', cohort_id: 'c1', sender_id: 'sender', parent_message_id: null, high_alert: false, ...m };
     findFirst.mockReset().mockResolvedValueOnce(row).mockResolvedValueOnce({ sender_id: 'fresh' });
+    at.s.messages.push(row, { ...row, id: 'p1', sender_id: 'fresh', parent_message_id: null, high_alert: false });
     queryRaw.mockReset().mockResolvedValueOnce(['sender', ...PEOPLE].map((id) => ({ id }))).mockResolvedValue([{ c: 'c1', n: 1 }]);
     await svc.messageStored(m.id);
     await Promise.all(queued.splice(0));

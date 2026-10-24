@@ -21,6 +21,7 @@ import { resolveRecipientTimeZone } from '../recipient-timezone';
 import { pushStillCurrent } from '../current-coach-inbox';
 import { planRenewalPushStillDue } from '../../checkout/plan-renewal/plan-renewal.state';
 import { asSpacePushContext, spacePushExpoFields } from '../../community/space-push/space-push-policy';
+import { spacePushDropReason } from '../../community/space-push/space-push-still-due';
 
 // Device delivery for inbox notifications (C-643-2), through a durable
 // outbox (B-NOTIF-5: B-648-1, B-648-6, C-648-4 / OR-113-5, C-648-5).
@@ -496,6 +497,15 @@ export class PushDeliveryService {
           session.start_at.getTime() !== at ||
           at <= this.now().getTime()
         ) {
+          return await this.finish(row, 'dropped', 'obsolete');
+        }
+      }
+      // Sol B-2 (FR-1138): a space push that waited is planned again for its reader now (a block, a ban, a
+      // deleted message or Mute all since enqueue drops it).
+      if (context?.spacePush) {
+        const why = await spacePushDropReason(this.prisma, row.user_id, context.spacePush, this.now());
+        if (why) {
+          this.logger.log(`push dropped: row=${row.id} kind=${row.kind} reason=space-${why}`);
           return await this.finish(row, 'dropped', 'obsolete');
         }
       }

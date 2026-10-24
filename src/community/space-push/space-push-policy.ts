@@ -65,6 +65,10 @@ export interface SpacePushContext {
   cohortId: string;
   /** reply only (#168-14): the sender as the person replied to sees them in the space; absent = "Someone". */
   from?: string;
+  /** Sol B-2: the message and its sender, planned again at the moment of sending (space-push-still-due.ts);
+   * a row without them is not sent. */
+  messageId?: string;
+  senderId?: string;
 }
 
 /** One id per (member, space): it goes only to that member's own device. */
@@ -108,5 +112,6 @@ export function asSpacePushContext(v: unknown): { spacePush: SpacePushContext } 
     return {};
   }
   const from = o.kind === 'reply' && typeof o.from === 'string' && o.from.trim() ? { from: o.from.trim() } : {};
-  return { spacePush: { kind: o.kind as SpacePushKind, unread: o.unread, space: o.space, cohortId: o.cohortId, ...from } };
+  const source = typeof o.messageId === 'string' && typeof o.senderId === 'string' ? { messageId: o.messageId, senderId: o.senderId } : {};
+  return { spacePush: { kind: o.kind as SpacePushKind, unread: o.unread, space: o.space, cohortId: o.cohortId, ...from, ...source } };
 }
