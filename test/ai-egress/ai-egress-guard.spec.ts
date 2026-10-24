@@ -6,7 +6,8 @@
  *     they cannot send anything), via import, require() or import();
  *   - constructs a provider client (`new Anthropic(`, `new OpenAI(`);
  *   - calls a provider request method directly (`.messages.create(`,
- *     `.messages.stream(`, `.chat.completions.create(`, `.responses.create(`);
+ *     `.messages.stream(`, `.chat.completions.create(`, `.responses.create(`,
+ *     `.moderations.create(`);
  *   - names a provider API host (raw HTTP to an AI provider).
  * Also fails if package.json gains an AI SDK this guard does not know about,
  * so a new SDK cannot slip in unguarded.
@@ -87,6 +88,8 @@ const RULES: Array<{ name: string; re: RegExp }> = [
   { name: 'provider-messages-call', re: /\.messages\s*\.\s*(?:create|stream)\s*\(/ },
   { name: 'provider-chat-completions-call', re: /\.completions\s*\.\s*create\s*\(/ },
   { name: 'provider-responses-call', re: /\.responses\s*\.\s*create\s*\(/ },
+  // FR-1152 (Opus N-4): the photo check's moderation send.
+  { name: 'provider-moderations-call', re: /\.moderations\s*\.\s*create\s*\(/ },
   {
     name: 'provider-host',
     re: /api\.anthropic\.com|api\.perplexity\.ai|api\.openai\.com|generativelanguage\.googleapis\.com|api\.mistral\.ai|api\.cohere\.(?:ai|com)|api\.groq\.com/,
@@ -137,8 +140,12 @@ describe('AI egress guard (R2b)', () => {
       ]),
     );
     expect(scanSource(service)).toEqual(
-      expect.arrayContaining(['provider-messages-call', 'provider-chat-completions-call']),
+      expect.arrayContaining(['provider-messages-call', 'provider-chat-completions-call', 'provider-moderations-call']),
     );
+    // The photo check's one moderation send: not consent-gated by design (a
+    // safety screen), but SDK retries are off and the request is bounded.
+    const moderation = service.match(/async openAiModerationCreate\([\s\S]*?\n {2}\}/)?.[0] ?? '';
+    expect(moderation).toMatch(/moderations\.create\(params, \{ maxRetries: 0, timeout: timeoutMs, signal: abort\.signal \}\)/);
     // Every send method goes through sendGated, which checks the subject
     // before EVERY attempt, and every SDK request forces SDK retries off.
     const sends =
@@ -178,6 +185,7 @@ describe('AI egress guard (R2b)', () => {
       ['const s = client.messages\n  .stream({ model });', 'provider-messages-call'],
       ['await px.chat.completions.create({ model });', 'provider-chat-completions-call'],
       ['await oa.responses.create({ model });', 'provider-responses-call'],
+      ['await oa.moderations.create({ model, input });', 'provider-moderations-call'],
       ["await fetch('https://api.anthropic.com/v1/messages');", 'provider-host'],
       ["const u = 'https://api.perplexity.ai';", 'provider-host'],
     ])('%s -> %s', (code, rule) => {

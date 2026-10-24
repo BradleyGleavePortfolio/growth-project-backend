@@ -204,6 +204,13 @@ Emergency kill, in order: `FEATURE_MWB_AI_LIVE_CREATE` unset (only the builder s
 
 **Community core (Wave A).** Flip `FEATURE_COMMUNITY_API` and the core set (`_POSTS`, `_MESSAGES`, `_PUSH`, `_REALTIME`, and `_VOICE_NOTES` once its audit and device pass are done) in one PR, after the community report/block lane (#610) is deployed. The preconditions reject surface flags without the API flag.
 
+**PHOTO_CHECK_OPENAI_API_KEY before FEATURE_COMMUNITY_IMAGES (PHOTO-CHECK-BE, #167-7 IMAGES op 1).** Every space chat photo is checked by OpenAI's moderation endpoint before it posts. The key is a provider key (listed under `excluded`, so the sync never touches it) and ships as its ghost value, unset; while it is unset every photo send is refused with `503 PHOTO_CHECK_UNAVAILABLE`, so the owner must add this key before FEATURE_COMMUNITY_IMAGES turns on:
+
+1. **OWNER TO-DO before v1 launch (#171-2):** the owner sets the real OpenAI API key as `PHOTO_CHECK_OPENAI_API_KEY` on Fly (`fly secrets set --stage`; its own OpenAI key, not `OPENAI_API_KEY`); the next deploy picks it up.
+2. Only then, in its own PR, `"FEATURE_COMMUNITY_IMAGES": "true"`. Device pass with the real key (the refusal numbers in `PHOTO_CHECK_RULES` are starting values, #172-3 op 2 "moderate tolerance"): a swimwear photo, a gym or boxing photo and a joking self-loathing caption all post; a refused photo gets `422 PHOTO_NOT_ALLOWED` and nothing posts; a refused caption gets `422 CAPTION_NOT_ALLOWED` and the photo stays picked; a self-harm refusal raises one `community_photo_safety` alert for the sender's coach (#172-5). Retune the numbers there if everyday photos are refused.
+
+Roll back the photos with `"FEATURE_COMMUNITY_IMAGES": "unset"`. Removing the key never lets a photo through unchecked: every send is refused until it is back.
+
 **Sign in with Apple (day 1): APPLE_AUDIENCES=com.growthproject.app and APPLE_NONCE_REQUIRED unset.** The native iOS sheet issues identity tokens whose audience is the bundle id `com.growthproject.app`, and the app sends no `raw_nonce`. Any other audience, or `APPLE_NONCE_REQUIRED=true`, fails every Apple sign-in (and the Apple re-auth for account deletion) with 401. Both values are public, so they live here, not in a secret.
 
 1. Merge the PR that declares both lines.

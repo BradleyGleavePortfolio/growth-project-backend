@@ -7,6 +7,7 @@ import {
   ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import type { CommunityCohort, CommunityMessage, User } from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
 import { CommunityRealtimeService } from '../realtime/community-realtime.service';
@@ -37,6 +38,10 @@ import {
   isOwnImage,
   isPublishableImageKey,
 } from '../images/community-image-store';
+import { AiEgressService } from '../../ai-egress/ai-egress.service';
+import { assertCaptionAllowed, assertPhotoAllowed } from '../images/community-photo-check';
+import { CoachAlertsService } from '../../coach/coach-alerts.service';
+import { SAFETY_ALERT_PUSH_BODY } from '../../notifications/push/lock-screen-copy';
 
 /** SC-BE3: a photo message as the send route takes it. */
 export interface ImageSend {
@@ -90,7 +95,47 @@ export class CommunityMessagesService {
     // SC-BE3: photo storage (optional so the positional test constructions
     // keep working; a photo send without it is 503).
     @Optional() private readonly images?: CommunityImageStore,
+    // PHOTO-CHECK-BE: the photo check's egress. The server always has it (the
+    // AI egress module is global; pinned in community-photo-check.e2e.spec.ts);
+    // only b#1139's hand-built test services leave it out.
+    @Optional() private readonly egress?: AiEgressService,
+    // FR-1152 (#172-5): finds CoachAlertsService (CoachModule, in AppModule)
+    // for the photo safety alert, without a community -> coach module import
+    // (pinned in community-photo-check.e2e.spec.ts).
+    @Optional() private readonly moduleRef?: ModuleRef,
   ) {}
+
+  /**
+   * #172-5 op 2: a photo or caption refused for self-harm intent or
+   * instructions "raises the same alert a crisis message does", as
+   * RomanService.alertCoachOfSafetyReply: one critical alert to the sender's
+   * current coach (users.coach_id, read fresh for this request), at most once
+   * per send or edit. The row holds no photo, caption or category: its message
+   * is the fixed push line. No coach, no alert; the refusal stands either way
+   * (a failed write is logged, never thrown). Rides FEATURE_COMMUNITY_IMAGES.
+   */
+  private async alertCoachOfPhotoSafety(user: User): Promise<void> {
+    if (!communityImagesEnabled() || user.role !== 'student' || !user.coach_id) return;
+    let alerts: CoachAlertsService | undefined;
+    try {
+      alerts = this.moduleRef?.get(CoachAlertsService, { strict: false });
+    } catch (err) {
+      this.logger.warn(`community.photo_safety_alert outcome=no_service ${describeFailure(err)}`);
+      return;
+    }
+    if (!alerts) return;
+    try {
+      await alerts.createAlert({
+        coachId: user.coach_id,
+        clientId: user.id,
+        alertType: 'community_photo_safety',
+        severity: 'critical',
+        message: SAFETY_ALERT_PUSH_BODY.community_photo_safety,
+      });
+    } catch (err) {
+      this.logger.warn(`community.photo_safety_alert outcome=failed ${describeFailure(err)}`);
+    }
+  }
 
   private view(
     m: CommunityMessage,
@@ -160,6 +205,11 @@ export class CommunityMessagesService {
       throw new ServiceUnavailableException({ error: 'unavailable', code: 'community.image.storage_unavailable' });
     }
     if (result !== 'ok') throw IMAGE_REJECTED(`community.image.${result}`);
+    if (this.egress) {
+      await assertPhotoAllowed(this.egress, images, image.key, user.id, size, body, () =>
+        this.alertCoachOfPhotoSafety(user),
+      );
+    }
     try {
       return await this.repo.createImageMessage({
         workspaceId: cohort.workspace_id,
@@ -519,6 +569,12 @@ export class CommunityMessagesService {
         error: 'forbidden',
         code: 'community.message.edit_window_closed',
       });
+    }
+    // FR-1152 (Sol B1): a photo's caption passes the photo check on every
+    // write, the edit as well as the send. Refused or unavailable: nothing is
+    // written, the old caption stays, the sent photo is never touched.
+    if (m.kind === 'image' && this.egress) {
+      await assertCaptionAllowed(this.egress, body, () => this.alertCoachOfPhotoSafety(user));
     }
     const updated = await this.repo.updateBody(m, body);
     void this.realtime.broadcastCommunityEvent(

@@ -202,6 +202,7 @@
   },
   "excluded": {
     "FEATURE_COMMUNITY_API_ALLOWLIST": "A list of user ids, not a closed-choice switch; not needed at launch because FEATURE_COMMUNITY_API opens community for everyone.",
+    "PHOTO_CHECK_OPENAI_API_KEY": "PHOTO-CHECK-BE: the automatic photo check's own OpenAI key (#167-7 IMAGES op 1). A provider key like ANTHROPIC_API_KEY, not a switch, so this manifest does not manage it. Unset on Fly today (its ghost value): every photo send is refused with 503 PHOTO_CHECK_UNAVAILABLE. OWNER TO-DO before v1 launch (#171-2): set the real OpenAI API key in the Fly settings, before FEATURE_COMMUNITY_IMAGES turns on (docs/runbooks/launch-flags.md).",
     "HOUSE_COACH_USER_ID": "RENEWAL-BE (b#1127): a user id, not a closed-choice switch. Unset on Fly today (the house coach choice is never offered); the owner sets it when the house coach account exists.",
     "FEATURE_BANK_PAYOUTS_V2": "Ledger: money paths wait for S-FEE.",
     "FEATURE_STRIPE_TREASURY_PAYOUTS": "Ledger: money paths wait for S-FEE.",

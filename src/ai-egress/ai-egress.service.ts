@@ -94,9 +94,15 @@ export interface PerplexityChatClient {
   chat: { completions: Pick<OpenAI['chat']['completions'], 'create'> };
 }
 
+/** The part of an OpenAI client the photo check uses (PHOTO-CHECK-BE). */
+export interface OpenAiModerationClient {
+  moderations: Pick<OpenAI['moderations'], 'create'>;
+}
+
 // Module-private: the only path from a handle back to its client.
 const anthropicClients = new WeakMap<AnthropicHandle, AnthropicMessagesClient>();
 const perplexityClients = new WeakMap<PerplexityHandle, PerplexityChatClient>();
+const moderationClients = new WeakMap<OpenAiModerationHandle, OpenAiModerationClient>();
 
 /**
  * Opaque capability to send to Anthropic. Has no properties and no methods:
@@ -122,6 +128,18 @@ export class PerplexityHandle {
   static bind(client: PerplexityChatClient): PerplexityHandle {
     const handle = new PerplexityHandle();
     perplexityClients.set(handle, client);
+    Object.freeze(handle);
+    return handle;
+  }
+}
+
+/** Opaque capability to send to OpenAI's moderation endpoint (the photo check only). */
+export class OpenAiModerationHandle {
+  declare private readonly nominal: 'openai-moderation';
+  private constructor() {}
+  static bind(client: OpenAiModerationClient): OpenAiModerationHandle {
+    const handle = new OpenAiModerationHandle();
+    moderationClients.set(handle, client);
     Object.freeze(handle);
     return handle;
   }
@@ -443,5 +461,52 @@ export class AiEgressService {
     return this.sendGated(subject, 'perplexity', surface, send, undefined, () =>
       client.chat.completions.create(params, { maxRetries: 0 }),
     );
+  }
+
+  /**
+   * PHOTO-CHECK-BE: the automatic photo check (#167-7 IMAGES op 1, "It's
+   * checked automatically"), OpenAI's moderation endpoint. ONE request: no
+   * retry here or in the SDK, and a hard deadline, because a member is waiting
+   * on the send. Every failure throws and the caller refuses the photo.
+   * FR-1152 (Sol B2): the deadline covers the whole answer. The SDK's own
+   * timeout ends once the headers arrive, so a body that stalls after them
+   * would hold the send; here one timer aborts the request and rejects at
+   * `timeoutMs` from the start, whether the headers or the body is late.
+   *
+   * Not box-2 gated, on purpose: this is a safety screen on a photo the member
+   * is posting for other people to see, not AI help with their own data, so it
+   * runs for every photo whatever the member's AI choice (a member who turned
+   * AI help off can still post photos, and every photo is still checked). It
+   * carries no client id and nothing about the member beyond the photo and its
+   * caption. OpenAI does not train on, or keep for abuse monitoring, what this
+   * endpoint receives (docs/privacy/vendor-deletion-and-backups.md).
+   */
+  async openAiModerationCreate(
+    handle: OpenAiModerationHandle,
+    params: OpenAI.ModerationCreateParams,
+    timeoutMs: number,
+  ): Promise<OpenAI.ModerationCreateResponse> {
+    const client = handle instanceof OpenAiModerationHandle ? moderationClients.get(handle) : undefined;
+    if (!client) {
+      this.logger.error('ai_egress.blocked surface=community.photo_check reason=unbound_handle');
+      throw new AiEgressPolicyException();
+    }
+    const abort = new AbortController();
+    let timer: NodeJS.Timeout | undefined;
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        abort.abort();
+        reject(new Error('ai_egress.moderation_deadline'));
+      }, timeoutMs);
+    });
+    try {
+      // Awaiting the SDK's promise reads and parses the body: the race covers it.
+      return await Promise.race([
+        client.moderations.create(params, { maxRetries: 0, timeout: timeoutMs, signal: abort.signal }),
+        deadline,
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 }

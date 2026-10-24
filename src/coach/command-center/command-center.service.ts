@@ -100,7 +100,8 @@ export type ActionQueueAlertType =
   | 'bloodwork_review'
   | 'roman_urgent_reply'
   | 'roman_eating_disorder_reply'
-  | 'roman_crisis_reply';
+  | 'roman_crisis_reply'
+  | 'community_photo_safety';
 
 export interface ActionQueueItem {
   alert_id: string;
@@ -131,7 +132,13 @@ const SAFETY_CARD_LINE: Partial<Record<string, (name: string) => string>> = {
   // ROMAN-CRISIS-ALERT, approved word for word: the first name only.
   roman_crisis_reply: (name) =>
     `Roman sent ${name.trim().split(/\s+/)[0] || name} a crisis safety reply. Please check in with them today.`,
+  // FR-1152 (#172-5): the first name only; never the photo, caption or why.
+  community_photo_safety: (name) =>
+    `Our safety check stopped a space chat photo from ${name.trim().split(/\s+/)[0] || name}. Please check in with them today.`,
 };
+
+/** Safety alerts that carry no quote: nothing the client wrote is shown. */
+const NO_QUOTE_SAFETY_TYPES: readonly string[] = ['roman_crisis_reply', 'community_photo_safety'];
 
 export interface ActionQueueResponse {
   items: ActionQueueItem[];
@@ -165,6 +172,8 @@ function mapAlertType(backendType: string): ActionQueueAlertType {
       return 'roman_eating_disorder_reply';
     case 'roman_crisis_reply':
       return 'roman_crisis_reply';
+    case 'community_photo_safety':
+      return 'community_photo_safety';
     default:
       // Unknown backend alert types are bucketed as high_churn_risk so
       // the mobile client still renders a row, but log a warning so we
@@ -997,7 +1006,7 @@ export class CommandCenterService {
       include: { client: { select: { name: true } } },
     });
     const quote = alert ? (await this.safetyQuotes([alert])).get(alert.id) : undefined;
-    if (!alert || (!quote && alert.alert_type !== 'roman_crisis_reply')) {
+    if (!alert || (!quote && !NO_QUOTE_SAFETY_TYPES.includes(alert.alert_type))) {
       throw new NotFoundException('Alert not found');
     }
     return queueItem(alert, quote);
@@ -1014,7 +1023,7 @@ export class CommandCenterService {
     const refs = new Map<string, Array<{ alertId: string; clientId: string }>>();
     for (const a of alerts) {
       const p = a.payload as { roman_message_id?: unknown } | null;
-      if (a.alert_type === 'roman_crisis_reply' || !SAFETY_CARD_LINE[a.alert_type]) continue;
+      if (NO_QUOTE_SAFETY_TYPES.includes(a.alert_type) || !SAFETY_CARD_LINE[a.alert_type]) continue;
       if (typeof p?.roman_message_id !== 'string') continue;
       refs.set(p.roman_message_id, [
         ...(refs.get(p.roman_message_id) ?? []),
