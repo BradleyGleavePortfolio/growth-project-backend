@@ -5,7 +5,10 @@ import { DunningEscalationClassifier } from '../src/checkout/dunning-v2/dunning-
 import { DispatchContext, DunningV2Dispatcher } from '../src/checkout/dunning-v2/dunning-v2.dispatcher';
 import { DunningV2Renderer } from '../src/checkout/dunning-v2/dunning-v2.renderer';
 import { CommunityNotificationsService } from '../src/community/notifications/community-notifications.service';
+import { PayoutNoticeService } from '../src/checkout/payout-notice.service';
+import type { EmailService } from '../src/email/email.service';
 import { CoachAlertEmitter } from '../src/notifications/emitters/coach-alert.emitter';
+import { FirstPaymentEmitter } from '../src/notifications/emitters/first-payment.emitter';
 import { NotificationsService } from '../src/notifications/notifications.service';
 import {
   MONEY_NOTIFICATION_KINDS,
@@ -13,12 +16,15 @@ import {
   NotificationKindValue,
 } from '../src/notifications/notification-kind';
 import { ExpoPushClient, PushDeliveryService } from '../src/notifications/push/push-delivery.service';
+import { SAFETY_ALERT_PUSH_BODY } from '../src/notifications/push/lock-screen-copy';
 import {
+  MUTE_ALL_PASS,
   muteAllStops,
   notificationPrefsPrefix,
   pushAllowedByPreferences,
 } from '../src/notifications/push/push-preferences';
 import { pushOutboxWorld } from './utils/push-outbox-fake';
+import { asPrisma, makeSettlementPrisma } from './utils/settlement-fakes';
 import { stub } from './utils/trial-fakes';
 
 // DUNNING-KIND-FIX: every kind goes through the REAL core gate (NotificationsService), for a user with no
@@ -417,5 +423,118 @@ describe('MUTE-PAY: Mute all never stops an in-app row or a money notice; it mut
       expect(out.results.client_blocker).toEqual({ status: 'skipped', error: 'inapp_not_written' });
       expect(telemetry.blockerShown).not.toHaveBeenCalled();
     });
+  });
+});
+
+// FR-1154 (owner #168-18, #171-3): a Roman safety alert push and every money sender's push pass Mute all
+// at enqueue and at both send-time re-checks (the coach is muted the whole time).
+describe('FR-1154: safety alerts and money senders reach a user with Mute all on', () => {
+  beforeAll(() => {
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+  });
+  afterAll(() => jest.restoreAllMocks());
+
+  const SAFETY = Object.keys(SAFETY_ALERT_PUSH_BODY) as Array<keyof typeof SAFETY_ALERT_PUSH_BODY>;
+  it.each(SAFETY)('%s: queued and sent to a muted coach; urgent only when its severity is critical', async (type) => {
+    const w = pushWorld();
+    const emitter = new CoachAlertEmitter(w.svc);
+    for (const severity of ['critical', 'warning', 'other']) {
+      const coachId = `coach-${severity}`;
+      w.prefs[coachId] = { muted: true };
+      w.tokens[coachId] = TOKEN;
+      // 'other': a non-safety alert to a muted coach is still muted.
+      const alertType = severity === 'other' ? 'streak_dropped' : type;
+      const message = SAFETY_ALERT_PUSH_BODY[type];
+      const out = await emitter.emit({ coachId, alertId: `a-${severity}`, alertType, severity, message }, { inapp: false });
+      expect([severity, out.push]).toEqual([severity, severity === 'other' ? 'skipped' : 'sent']);
+    }
+    await w.delivery.drain();
+    expect(w.rows.map((r) => [r.user_id, r.urgent, r.status, r.result_code])).toEqual([
+      ['coach-critical', true, 'sent', 'sent'],
+      ['coach-warning', false, 'sent', 'sent'],
+    ]);
+  });
+
+  // One row per money sender, each run with Mute all on; a sender that drops its MUTE_ALL_PASS (the payout
+  // notice and the Day 7 coach alert ride the coach_alert kind) fails here. The trial-ending push is a money
+  // kind; test/b-trials-3-fix-round.spec.ts (B-656-4) drives it with Mute all on.
+  const classifier = new DunningEscalationClassifier();
+  const day7 = [0, 1, 2, 3].find((i) => classifier.resolve({ stepIndex: i, isLateReversalCycle: false }).coachAllChannels);
+  const dunning = (svc: NotificationsService) =>
+    new DunningV2Dispatcher(
+      classifier,
+      new DunningV2Renderer(),
+      stub<ConstructorParameters<typeof DunningV2Dispatcher>[2]>({ attemptFailed: jest.fn(), notifySent: jest.fn(), coachNotified: jest.fn() }),
+      svc,
+      undefined,
+      new CoachAlertEmitter(svc),
+    );
+  const ctx = (): DispatchContext => ({
+    dunningStateId: 'ds-pay',
+    cycleKey: '1',
+    stepIndex: day7 ?? -1,
+    isLateReversalCycle: false,
+    clientUserId: 'client-pay',
+    coachUserId: 'coach-pay',
+    clientEmail: 'client@tgp.invalid',
+    coachEmail: 'coach@tgp.invalid',
+    tokens: { firstName: 'Avery', clientName: 'Avery Client', coachName: 'Morgan Coach', amount: '$150.00', lockoutDate: 'October 14' },
+    dunningDetailDeeplink: 'tgp://coach/clients/client-pay',
+  });
+  const delivered = { delivered: true, code: 'delivered' } as Awaited<ReturnType<NotificationsService['pushToUser']>>;
+  const MONEY_SENDERS: Array<[string, () => Promise<void>]> = [
+    ['payout notice: the push goes out', async () => {
+      const { svc, created } = notifications(mutedAllOn);
+      const push = jest.spyOn(svc, 'pushToUser').mockResolvedValue(delivered);
+      const { prisma } = makeSettlementPrisma();
+      await prisma.payoutAdjustmentNotice.create({
+        data: {
+          id: 'pan_1', idempotency_key: 'pan_key_1', payee_user_id: 'coach_1', settlement_id: 'cs_1',
+          stripe_charge_id: 'ch_1', purchase_id: 'cp_1', event: 'refund', title: 'A client was refunded',
+          body: 'A client got $1.00 back.', inapp_status: 'sent', email_status: 'sent',
+        },
+      });
+      await new PayoutNoticeService(asPrisma(prisma), svc, stub<EmailService>({})).dispatchForCharge('ch_1');
+      expect(push).toHaveBeenCalledTimes(1);
+      expect(created).toEqual([expect.objectContaining({ kind: NotificationKind.COACH_ALERT, channel: 'push' })]);
+    }],
+    ['dunning Day 7 coach alert: queued with the pass and sent', async () => {
+      const w = pushWorld();
+      w.prefs['coach-pay'] = { muted: true };
+      w.tokens['coach-pay'] = TOKEN;
+      const out = await dunning(w.svc).dispatchStepDetailed(ctx(), undefined, { channels: ['coach_push'] });
+      expect(out.results.coach_push).toEqual({ status: 'sent' });
+      await w.delivery.drain();
+      expect(w.rows.map((r) => [r.kind, r.context, r.status])).toEqual([[NotificationKind.COACH_ALERT, MUTE_ALL_PASS, 'sent']]);
+    }],
+    ['dunning Day 7 client payment push: goes out (pushToUser reads no Mute all)', async () => {
+      const { svc } = notifications(mutedAllOn);
+      const push = jest.spyOn(svc, 'pushToUser').mockResolvedValue(delivered);
+      const out = await dunning(svc).dispatchStepDetailed(ctx(), undefined, { channels: ['client_push'] });
+      expect(out.results.client_push).toEqual({ status: 'sent' });
+      expect(push).toHaveBeenCalledTimes(1);
+    }],
+    ['first payment: both rows written (it sends no device push)', async () => {
+      const { svc, created } = notifications(mutedAllOn);
+      const push = jest.spyOn(svc, 'sendPush');
+      await new FirstPaymentEmitter(svc).emit('coach-first', { amount: 4900, currency: 'usd', clientId: 'client-first' });
+      expect(created.map((r) => (r as { channel: string }).channel)).toEqual(['inapp', 'push']);
+      expect(push).not.toHaveBeenCalled();
+    }],
+  ];
+  it.each(MONEY_SENDERS)('%s with Mute all on', async (_name, run) => {
+    expect(day7).toBeDefined();
+    await run();
+  });
+
+  it('the pass is the only way a coach_alert push passes Mute all', async () => {
+    expect(pushAllowedByPreferences(mutedAllOn, NotificationKind.COACH_ALERT)).toBe(false);
+    expect(pushAllowedByPreferences(mutedAllOn, NotificationKind.COACH_ALERT, MUTE_ALL_PASS)).toBe(true);
+    expect(pushAllowedByPreferences(mutedAllOn, NotificationKind.COACH_ALERT, { passesMuteAll: 'yes' })).toBe(false);
+    expect(pushAllowedByPreferences(mutedAllOn, NotificationKind.COACH_ALERT, { safetyAlert: 'toString' })).toBe(false);
+    const { svc } = notifications(mutedAllOn);
+    expect(await svc.channelGate('coach-1', NotificationKind.COACH_ALERT, 'push', MUTE_ALL_PASS)).toBe('enabled');
+    expect(await svc.channelGate('coach-1', NotificationKind.COACH_ALERT, 'push')).toBe('muted');
   });
 });
