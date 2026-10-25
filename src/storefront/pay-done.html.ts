@@ -30,6 +30,8 @@ export const PAY_DONE_COPY = {
   refunded: 'The money goes back to the card or wallet you paid with.',
   disputedH: 'This payment is disputed',
   disputed: 'Your bank is reviewing a dispute on this payment. It decides the outcome and lets you know.',
+  // FR-1155R3 (agent 174), FR1155-W5 (needs owner): a dispute not known to be still under review.
+  disputedOutcome: 'A dispute was opened on this payment. Your bank decides the outcome and lets you know.',
   unknown: "We couldn't find this payment. If you paid, check your email: we send the next steps there.",
   unavailable: "We couldn't check your payment just now. Reload this page in a minute to see if it went through.",
 } as const;
@@ -47,7 +49,8 @@ export type PayDoneView =
   | { kind: 'failed'; reason: string | null; payUrl: string; spent: SpentKey }
   | { kind: 'cancelled'; payUrl: string; spent: SpentKey }
   | { kind: 'refunded' }
-  | { kind: 'disputed' }
+  /** open: the dispute row of this charge shows the bank still reviewing. */
+  | { kind: 'disputed'; open: boolean }
   | { kind: 'unknown' }
   | { kind: 'unavailable' };
 
@@ -119,7 +122,7 @@ function body(v: PayDoneView, appStoreUrl: string): string {
     case 'refunded':
       return `<section id="refunded"><h1 class="state">${PAY_DONE_COPY.refundedH}</h1><p>${PAY_DONE_COPY.refunded}</p></section>`;
     case 'disputed':
-      return `<section id="disputed"><h1 class="state">${PAY_DONE_COPY.disputedH}</h1><p>${PAY_DONE_COPY.disputed}</p></section>`;
+      return `<section id="disputed"><h1 class="state">${PAY_DONE_COPY.disputedH}</h1><p>${v.open ? PAY_DONE_COPY.disputed : PAY_DONE_COPY.disputedOutcome}</p></section>`;
     case 'unknown':
       return `<p class="state">${esc(PAY_DONE_COPY.unknown)}</p>`;
     case 'unavailable':
