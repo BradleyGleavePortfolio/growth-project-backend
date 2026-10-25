@@ -53,8 +53,9 @@ export { willChargeCard } from './trial-copy';
 //     stopped (B-TR2-117, below). Delivery is honestly at-least-once: a
 //     process that dies after the provider accepted the message but before
 //     the outcome write is retried after the lease expires;
-//   * push re-reads the client's notification preferences at delivery: a
-//     global mute records push_status 'suppressed' and sends nothing. The
+//   * push re-reads the client's notification preferences at delivery: its
+//     own switch off records push_status 'suppressed' (Mute all never stops
+//     this money notice, owner #171-3; FR-1154 below). The
 //     email is a billing notice about an upcoming card charge and is sent
 //     regardless of the push mute (B-656-4);
 //   * the copy says what will really happen: a card is charged only when the
@@ -432,7 +433,7 @@ export class TrialNoticeService {
       },
       await this.noticeZone(purchase.client_user_id, tx),
     );
-    // Global mute / per-kind prefs are enforced inside createNotification.
+    // Its own switch is enforced inside createNotification (Mute all never stops a row).
     await this.notifications.createNotification(
       {
         user_id: purchase.client_user_id,
