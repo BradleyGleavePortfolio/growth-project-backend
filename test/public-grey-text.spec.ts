@@ -12,6 +12,9 @@ import { renderDownloadErrorPage } from '../src/data-export/data-export.controll
 import { contrastOnPaper, contrastRatio } from './_fixtures/css-contrast';
 
 const GREY = '#2C2C2C';
+// Body text on the help and policy pages (owner 10-23).
+const BODY = ['p.intro', 'section p', 'section li'];
+const HELP_TABLE = 'table.intake th, table.intake td';
 const OLD_GREYS = /#(8A7F6E|6F6658|6B675F|6B6259)\b|color:#555\b/i;
 
 // renderValid never reads the code service.
@@ -41,8 +44,8 @@ describe('public pages: one small grey text colour, #2C2C2C (owner #168-13)', ()
 
   it('help, trust and the shared public layout use #2C2C2C at AA on the page paper', () => {
     const sels: Array<[string, string[]]> = [
-      ['help', ['nav.help-nav .nav-link', 'p.reviewed', 'p.footnote', 'footer.brand-footer', 'footer.brand-footer a']],
-      ['trust', ['nav.trust-nav .nav-link', 'p.reviewed', 'p.footnote', 'footer.brand-footer', 'footer.brand-footer a']],
+      ['help', ['nav.help-nav .nav-link', 'p.reviewed', 'p.footnote', 'footer.brand-footer', 'footer.brand-footer a', ...BODY, HELP_TABLE]],
+      ['trust', ['nav.trust-nav .nav-link', 'p.reviewed', 'p.footnote', 'footer.brand-footer', 'footer.brand-footer a', ...BODY]],
       ['signup', ['p.code-label', 'footer', 'footer a']],
     ];
     for (const [k, list] of sels) {
@@ -50,7 +53,23 @@ describe('public pages: one small grey text colour, #2C2C2C (owner #168-13)', ()
       for (const [sel, ratio] of Object.entries(contrastOnPaper(PAGES[k], list))) {
         expect([k, sel, ratio]).toEqual([k, sel, 13.18]);
       }
-      expect(PAGES[k].match(/#2C2C2C/g)).toHaveLength(list.length);
+      // help also draws the phone labels of the contact table in it (inside @media, checked below).
+      expect(PAGES[k].match(/#2C2C2C/g)).toHaveLength(list.length + (k === 'help' ? 1 : 0));
+    }
+  });
+
+  // COLOR-FOLLOWUPS (owner 10-23: "Make the help and policy page body text #2C2C2C? sure"):
+  // intro, section paragraphs, lists, contact-table cells and their phone labels left #3A332B.
+  it.each(['help', 'trust'])('%s body text is #2C2C2C, with no #3A332B left', (k) => {
+    const html = k === 'help' ? renderHelpPage('contact') : PAGES.trust;
+    expect(html).not.toMatch(/#3A332B/i);
+    const sels = k === 'help' ? [...BODY, HELP_TABLE] : BODY;
+    for (const [sel, ratio] of Object.entries(contrastOnPaper(html, sels))) {
+      expect([k, sel, ratio]).toEqual([k, sel, 13.18]);
+    }
+    if (k === 'help') {
+      expect(html).toMatch(/table\.intake td\[data-label\]::before \{[^}]*color: #2C2C2C;/);
+      expect(html).toContain('<table class="intake"');
     }
   });
 

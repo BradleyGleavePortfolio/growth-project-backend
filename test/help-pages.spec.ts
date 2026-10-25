@@ -328,7 +328,7 @@ describe('PublicPagesController help pages', () => {
   it('contact phone labels Type / Required / Notes meet AA contrast', () => {
     const html = renderHelpPage('contact');
     const label = /table\.intake td\[data-label\]::before \{[^}]*color: (#[0-9A-F]{6});/.exec(html)?.[1];
-    expect(label).toBe('#3A332B');
+    expect(label).toBe('#2C2C2C'); // owner 10-23: help body text #2C2C2C
     const lum = (hex: string) => {
       const [r, g, b] = [1, 3, 5].map((i) => {
         const c = parseInt(hex.slice(i, i + 2), 16) / 255;
