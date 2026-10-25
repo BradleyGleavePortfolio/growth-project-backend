@@ -44,6 +44,11 @@ const ROW_AT = new Date('2026-10-24T12:00:00Z');
 const KEY = '1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed';
 const CH = 'ch_3TestAAAAAAAAAAAA';
 
+/** A typed test double: only the members the code under test calls. */
+function stub<T>(value: unknown): T {
+  return value as T;
+}
+
 type Res = { status: number; headers: http.IncomingHttpHeaders; body: string };
 type Pi = { id: string; client_secret: string; status: string; amount: number; latest_charge: string | null; last_payment_error: { message?: string } | null };
 type Charge = { id: string; amount: number; amount_refunded: number; refunded: boolean; disputed: boolean; payment_intent: string };
@@ -120,6 +125,9 @@ describe('GC-2 return page GET /p/:token/done', () => {
     return { ...charges[id] };
   });
   const disputeFindFirst = jest.fn((args: unknown) => money.client().chargeDispute.findFirst(args));
+  // The buyer's purchase sits in the same store; its status is kept for access
+  // (paused, restarted, renewals), so the page must never read it for money.
+  const purchaseRead = jest.fn((args: unknown) => money.client().clientPurchase.findFirst(args));
   const findUnique = jest.fn(async ({ where }: { where: { stripe_payment_intent_id: string } }) => checkouts[where.stripe_payment_intent_id] ?? null);
   const findFirst = jest.fn(async ({ where }: { where: { email: { equals: string } } }) =>
     users.find((u) => u.email.toLowerCase() === where.email.equals.toLowerCase()) ?? null,
@@ -153,6 +161,7 @@ describe('GC-2 return page GET /p/:token/done', () => {
             guestCheckout: { findUnique },
             user: { findFirst },
             chargeDispute: { findFirst: disputeFindFirst },
+            clientPurchase: { findFirst: purchaseRead },
             coachPackage: { findUnique: jest.fn(async ({ where }: { where: { share_token: string } }) => (where.share_token === A ? pkg(A) : null)) },
           },
         },
@@ -397,17 +406,17 @@ describe('GC-2 return page GET /p/:token/done', () => {
       db.splitLedgerEntry = { findFirst: async () => null };
       const rd = new RefundDisputeHandlerService(
         db,
-        { retrieveCharge: async () => ({ id: CH, amount: 14900, payment_intent: PI }) } as never,
-        {} as never,
-        {} as never,
-        {} as never,
-        { createNotification: jest.fn(async () => ({})) } as never,
+        stub({ retrieveCharge: async () => ({ id: CH, amount: 14900, payment_intent: PI }) }),
+        stub({}),
+        stub({}),
+        stub({}),
+        stub({ createNotification: jest.fn(async () => ({})) }),
         undefined,
         undefined,
-        { purchaseIdForCharge: jest.fn(async () => purchaseId) } as never,
+        stub({ purchaseIdForCharge: jest.fn(async () => purchaseId) }),
         undefined,
       );
-      const internals = rd as unknown as Record<string, unknown>;
+      const internals = stub<Record<string, unknown>>(rd);
       internals.applyLedgerReversal = jest.fn(async () => undefined);
       internals.applyDisputeTransferReversalOnce = jest.fn(async () => 'nothing_owed');
       const deliver = (type: string, status: string) =>
@@ -508,7 +517,15 @@ describe('GC-2 return page GET /p/:token/done', () => {
       charges[CH].disputed = true;
       expect((await w.deliver('charge.dispute.created', 'needs_response')).claimed).toBe(false);
       // billing.service.ts then hands it to the guest writer, which marks the row.
-      const guest = new GuestCheckoutService(guestWriterDb as never, {} as never, {} as never, {} as never, { createNotification: jest.fn(async () => ({})) } as never, {} as never, {} as never);
+      const guest = new GuestCheckoutService(
+        stub(guestWriterDb),
+        stub({}),
+        stub({}),
+        stub({}),
+        stub({ createNotification: jest.fn(async () => ({})) }),
+        stub({}),
+        stub({}),
+      );
       expect((await guest.handleDisputeOpened(PI, 'fraudulent')).claimed).toBe(true);
       expect(checkouts[PI].status).toBe('disputed');
       expect(money.rows('chargeDispute')).toHaveLength(0);
@@ -522,7 +539,7 @@ describe('GC-2 return page GET /p/:token/done', () => {
       expectView(await done(), PAY_DONE_COPY.disputedH, PAY_DONE_COPY.disputedOutcome);
     });
 
-    it('an unconverted guest fully refunded: Stripe's charge says refunded (the guest writer marks the row too)', async () => {
+    it('an unconverted guest fully refunded: the charge says refunded (the guest writer marks the row too)', async () => {
       checkouts[PI] = { ...checkouts[PI], status: 'paid', created_user_id: null };
       await paid();
       Object.assign(checkouts[PI], { status: 'refunded' });

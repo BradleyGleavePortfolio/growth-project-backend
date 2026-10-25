@@ -20,6 +20,11 @@ const PI = 'pi_3TestAAAAAAAAAAAA';
 const SECRET = `${PI}_secret_good1234`;
 const EXPIRED = 'This checkout link has expired. Please request a new one.';
 
+/** A typed test double: only the members the code under test calls. */
+function stub<T>(value: unknown): T {
+  return value as T;
+}
+
 const pkg: PublicPackageData = {
   package_id: 'pkg-1',
   package_name: 'Monthly coaching',
@@ -99,7 +104,7 @@ async function payOnce(t: ReturnType<typeof tab>) {
 
 /** Stripe sends the tab back to /p/<token>/done; the page is read from our row and Stripe, then its script runs in the tab. */
 async function returnPage(t: ReturnType<typeof tab>, rowKey: string, piStatus: string, rowStatus = 'failed') {
-  const deps = {
+  const deps = stub<PayDoneDeps>({
     db: {
       guestCheckout: {
         findUnique: async () => ({
@@ -121,7 +126,7 @@ async function returnPage(t: ReturnType<typeof tab>, rowKey: string, piStatus: s
       retrieveCharge: async () => ({ id: 'ch_3RetryAAAAAAAAAAA', amount: 14900, amount_refunded: 0, refunded: false, disputed: false }),
     },
     storefrontBase: undefined,
-  } as unknown as PayDoneDeps;
+  });
   const { view } = await readPayDone(deps, A, { payment_intent: PI, payment_intent_client_secret: SECRET });
   const html = renderPayDonePage(view, 'n1', 'https://apps.apple.com/app/id6765847915');
   for (const m of html.matchAll(/<script nonce="n1">([\s\S]*?)<\/script>/g)) vm.runInNewContext(m[1], { sessionStorage: t.storage });

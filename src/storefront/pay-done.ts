@@ -167,7 +167,7 @@ async function moneyState(
   const chargeId = typeof latestCharge === 'string' ? latestCharge : str((latestCharge as { id?: unknown } | null)?.id);
   if (!chargeId) return 'unreadable';
   const [charge, dispute] = await Promise.all([
-    deps.stripe.retrieveCharge(chargeId).catch(() => null),
+    readCharge(deps, chargeId),
     deps.db.chargeDispute.findFirst({
       where: { stripe_charge_id: chargeId },
       orderBy: { created_at: 'desc' },
@@ -182,4 +182,14 @@ async function moneyState(
     return dispute.closed_at ? 'disputed' : 'disputed_open';
   }
   return charge.disputed === true ? 'disputed' : null;
+}
+
+// Like the intent read above: Stripe not answering is the 503 "can't check
+// right now" page, never a money state.
+async function readCharge(deps: PayDoneDeps, chargeId: string) {
+  try {
+    return await deps.stripe.retrieveCharge(chargeId);
+  } catch {
+    return null;
+  }
 }
