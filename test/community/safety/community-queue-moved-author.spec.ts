@@ -86,8 +86,9 @@ describe('QUEUE-MOVED-AUTHOR: the review queue drops a moved client\'s items', (
   const user = (id: string, role: string, coachId: string | null, name: string) =>
     stub<User>(db.seed('user', { id, role, coach_id: coachId, name }));
 
-  function report(workspaceId: string, targetType: string, targetId: string): string {
+  function report(workspaceId: string, targetType: string, targetId: string, at?: Date): string {
     const r = db.seed('communityModerationAction', {
+      ...(at ? { created_at: at } : {}),
       workspace_id: workspaceId,
       target_type: targetType,
       target_id: targetId,
@@ -230,5 +231,19 @@ describe('QUEUE-MOVED-AUTHOR: the review queue drops a moved client\'s items', (
     // Six reports in batches of two: three batches, one app.community_author_stays round trip each.
     expect(db.staysAsks() - before).toBe(3);
     expect(await ids(head)).toEqual(kept);
+  });
+
+  it('reports filed in the same instant page once each, in id order, with no repeats', async () => {
+    const at = new Date('2026-10-01T00:00:00.000Z');
+    report(WS_HEAD, 'message', message(WS_HEAD, PRIVATE, MOVER, 'old'), at);
+    const kept = [1, 2, 3].map((n) => {
+      const target = message(WS_HEAD, PRIVATE, STAYER, `kept ${n}`);
+      return { report: report(WS_HEAD, 'message', target, at), target };
+    });
+    await subCoaches.reassignClient(HEAD, SUB, { clientId: MOVER });
+    const inOrder = [...kept].sort((a, b) => (a.report < b.report ? -1 : 1)).map((k) => k.target);
+    expect(await ids(head, '1')).toEqual(inOrder.slice(0, 1));
+    expect(await ids(head, '2')).toEqual(inOrder.slice(0, 2));
+    expect(await ids(head)).toEqual(inOrder);
   });
 });

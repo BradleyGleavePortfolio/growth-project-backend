@@ -751,23 +751,27 @@ export class CommunityModerationService {
     const workspaceFilter = user.role === 'owner' ? {} : { workspace: { coach_id: user.id } };
     const limit = this.parsePage(query.limit);
     const rows: CommunityModerationAction[] = [];
-    for (let after: CommunityModerationAction | undefined; rows.length < limit; ) {
+    const seen: CommunityModerationAction[] = [];
+    for (let after: Date | undefined; rows.length < limit; ) {
+      // Prisma reads created_at to the millisecond and Postgres keeps microseconds, so the next batch starts
+      // at the last row's millisecond and leaves out the rows of that millisecond already read.
+      const ms = after?.getTime();
+      const tied = seen.filter((r) => r.created_at.getTime() === ms).map((r) => r.id);
       const batch = await this.prisma.communityModerationAction.findMany({
         where: {
           status: 'open',
           target_type: { in: QUEUE_TARGET_TYPES },
           ...workspaceFilter,
-          ...(after
-            ? { OR: [{ created_at: { gt: after.created_at } }, { created_at: after.created_at, id: { gt: after.id } }] }
-            : {}),
+          ...(after ? { created_at: { gte: after }, id: { notIn: tied } } : {}),
         },
         orderBy: [{ created_at: 'asc' }, { id: 'asc' }],
         take: limit,
       });
+      seen.push(...batch);
       const kept = user.role === 'coach' ? await this.reportsWhoseAuthorStays(user.id, batch) : batch;
       rows.push(...kept.slice(0, limit - rows.length));
       if (batch.length < limit) break;
-      after = batch[batch.length - 1];
+      after = batch[batch.length - 1].created_at;
     }
     if (rows.length === 0) return { items: [] };
     const idsOf = (t: CommunityModerationTargetType) =>
