@@ -738,21 +738,37 @@ export class CommunityModerationService {
    * can decide without another round trip. Voice notes carry a short-lived
    * playback link (`media`). Content of already-removed targets is shown as
    * "Removed" with `removed: true`.
+   *
+   * QUEUE-MOVED-AUTHOR: a coach's queue leaves out the reports whose author has
+   * left that community (reportsWhoseAuthorStays). The guard runs before the
+   * limit, one batch at a time in queue order, so reports left behind by a
+   * moved client never take the place of reports the coach can still work.
    */
   async listFlagged(user: User, query: { limit?: string }): Promise<{ items: FlaggedItemView[] }> {
     if (user.role !== 'coach' && user.role !== 'owner') {
       throw new ForbiddenException(FORBIDDEN);
     }
     const workspaceFilter = user.role === 'owner' ? {} : { workspace: { coach_id: user.id } };
-    const rows = await this.prisma.communityModerationAction.findMany({
-      where: {
-        status: 'open',
-        target_type: { in: QUEUE_TARGET_TYPES },
-        ...workspaceFilter,
-      },
-      orderBy: { created_at: 'asc' },
-      take: this.parsePage(query.limit),
-    });
+    const limit = this.parsePage(query.limit);
+    const rows: CommunityModerationAction[] = [];
+    for (let after: CommunityModerationAction | undefined; rows.length < limit; ) {
+      const batch = await this.prisma.communityModerationAction.findMany({
+        where: {
+          status: 'open',
+          target_type: { in: QUEUE_TARGET_TYPES },
+          ...workspaceFilter,
+          ...(after
+            ? { OR: [{ created_at: { gt: after.created_at } }, { created_at: after.created_at, id: { gt: after.id } }] }
+            : {}),
+        },
+        orderBy: [{ created_at: 'asc' }, { id: 'asc' }],
+        take: limit,
+      });
+      const kept = user.role === 'coach' ? await this.reportsWhoseAuthorStays(user.id, batch) : batch;
+      rows.push(...kept.slice(0, limit - rows.length));
+      if (batch.length < limit) break;
+      after = batch[batch.length - 1];
+    }
     if (rows.length === 0) return { items: [] };
     const idsOf = (t: CommunityModerationTargetType) =>
       rows.filter((r) => r.target_type === t).map((r) => r.target_id);
@@ -931,6 +947,57 @@ export class CommunityModerationService {
       }),
     );
     return { items };
+  }
+
+  /**
+   * QUEUE-MOVED-AUTHOR (owner 137-8 D4: when a client moves, the old coach
+   * loses everything at once): the reports of a batch whose author is still in
+   * that community for this coach. A post, chat or photo message, or voice note
+   * follows the shared rule the detail reads use, app.community_author_stays
+   * (20270502006400) at the row's place (placeOf), so a moved client's Hall and
+   * private-space rows leave and their public-space rows stay. A win follows
+   * the circle rule of resolveWinTarget. Unlike rowsByAuthorsWhoStay there is
+   * no ban check: the queue is where the coach judges a banned member's
+   * content (b#1146 CONTRACT). The coach's own rows and reports whose target
+   * row is gone stay. One round trip for the batch, never one per row.
+   */
+  private async reportsWhoseAuthorStays(
+    viewerId: string,
+    batch: CommunityModerationAction[],
+  ): Promise<CommunityModerationAction[]> {
+    const idsOf = (t: CommunityModerationTargetType) =>
+      batch.filter((r) => r.target_type === t).map((r) => r.target_id);
+    const where = (t: CommunityModerationTargetType) => ({ id: { in: idsOf(t) } });
+    const at = { id: true, workspace_id: true, cohort_id: true } as const;
+    const [posts, msgs, notes, wins] = await Promise.all([
+      this.prisma.communityPost.findMany({ where: where('post'), select: { ...at, author_id: true } }),
+      this.prisma.communityMessage.findMany({ where: where('message'), select: { ...at, sender_id: true } }),
+      this.prisma.communityVoiceNote.findMany({ where: where('voice_note'), select: { ...at, author_id: true } }),
+      this.prisma.communityWin.findMany({
+        where: where('win'),
+        select: { id: true, user_id: true, coach_id: true, user: { select: { role: true, coach_id: true } } },
+      }),
+    ]);
+    const gone = new Set<string>();
+    for (const w of wins) {
+      const authorCoach = w.user?.role === 'coach' ? w.user_id : (w.user?.coach_id ?? null);
+      if (w.user_id !== viewerId && (w.coach_id === null || authorCoach !== w.coach_id)) gone.add(`win:${w.id}`);
+    }
+    const ask = [
+      ...posts.map((p) => ({ key: `post:${p.id}`, place: placeOf(p), author: p.author_id })),
+      ...msgs.map((m) => ({ key: `message:${m.id}`, place: placeOf(m), author: m.sender_id })),
+      ...notes.map((n) => ({ key: `voice_note:${n.id}`, place: placeOf(n), author: n.author_id })),
+    ].filter((q) => q.author !== viewerId);
+    if (ask.length > 0) {
+      const stays = await this.prisma.$queryRaw<{ n: number }[]>`
+        SELECT (t."n" - 1)::int AS "n"
+        FROM unnest(${ask.map((q) => q.place[0])}::uuid[], ${ask.map((q) => q.place[1] ?? '')}::text[],
+                    ${ask.map((q) => q.author)}::text[]) WITH ORDINALITY AS t("w", "s", "a", "n")
+        WHERE app.community_author_stays(t."w", NULLIF(t."s", '')::uuid, t."a")`;
+      const kept = new Set(stays.map((s) => s.n));
+      for (const [n, q] of ask.entries()) if (!kept.has(n)) gone.add(q.key);
+    }
+    return gone.size === 0 ? batch : batch.filter((r) => !gone.has(`${r.target_type}:${r.target_id}`));
   }
 
   /**
