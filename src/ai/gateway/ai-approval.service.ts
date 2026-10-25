@@ -13,6 +13,8 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { AuditService } from '../../audit/audit.service';
+import { inBlockWith } from '../../messaging/block-pair';
+import { ROMAN_MESSAGE_CAPABILITIES } from './roman-message-draft';
 import { Prisma } from '@prisma/client';
 import { CapabilityMaterializerRegistry } from './materialisers/capability-materialiser.registry';
 import { WORKOUT_BUILDER_MODEL_DIFF_SOURCE } from './ai-gateway.service';
@@ -67,6 +69,19 @@ export function payloadClientIds(payload: unknown): string[] {
     if (typeof v === 'string' && v.length > 0) ids.add(v);
   }
   return [...ids];
+}
+
+/**
+ * FR-1141R4 (Opus C-2): a materialiser's send refused because the two are in a
+ * block, either way: 403 `messaging.blocked` (messagingError) or `BLOCKED`
+ * (sendAsCoach). Nothing was sent, so it is not a materialisation failure.
+ */
+export function isBlockRefusal(err: unknown): boolean {
+  if (!(err instanceof HttpException) || err.getStatus() !== 403) return false;
+  const body = err.getResponse();
+  if (typeof body !== 'object' || body === null) return false;
+  const { code, error } = body as { code?: unknown; error?: unknown };
+  return code === 'messaging.blocked' || error === 'messaging.blocked' || error === 'BLOCKED';
 }
 
 /**
@@ -170,7 +185,10 @@ export class AiApprovalService {
     return { items: coachId ? await this.keepOnRoster(coachId, items) : items, total, next_cursor };
   }
 
-  private async keepOnRoster<T extends { subject_user_id: string | null; payload: Prisma.JsonValue }>(coachId: string, drafts: T[]) {
+  private async keepOnRoster<T extends { capability: string; subject_user_id: string | null; payload: Prisma.JsonValue }>(
+    coachId: string,
+    drafts: T[],
+  ) {
     // The tenant was stamped when the draft was made; a client who has since
     // moved to another coach takes their drafts with them (same rule as decide),
     // whether the draft names them as its subject or in its payload.
@@ -181,7 +199,13 @@ export class AiApprovalService {
       select: { id: true },
     });
     const onRoster = new Set(roster.map((u) => u.id));
-    return drafts.filter((d) => clientsOf(d).every((id) => onRoster.has(id)));
+    // FX-1141 (Sol B2): a message draft for a client in a block with this
+    // coach, either way, leaves the queue (no stored words, no approve).
+    const words = (d: T) => ROMAN_MESSAGE_CAPABILITIES.has(d.capability) || d.capability === 'draft.send_notification';
+    const blocked = await inBlockWith(this.prisma, coachId, drafts.filter(words).flatMap(clientsOf));
+    return drafts.filter(
+      (d) => clientsOf(d).every((id) => onRoster.has(id)) && !(words(d) && clientsOf(d).some((id) => blocked.has(id))),
+    );
   }
 
   async getById(id: string) {
@@ -419,7 +443,8 @@ export class AiApprovalService {
           // COPILOT-BE: a Copilot change's expected refusals (consent off 403, not his client 404, bad change and the
           // calorie floor / hold 400s, plan changed 409) reach the phone as they are; nothing was applied.
           const refusal = draft.capability === CLIENT_PATH_CHANGE && err instanceof HttpException && err.getStatus() < 500;
-          if (err instanceof ConflictException || refusal) {
+          // FR-1141R4 (Opus C-2): so does a send a block refused (403, as it is), for every capability.
+          if (err instanceof ConflictException || refusal || isBlockRefusal(err)) {
             // Don't audit-log the race state as a materialisation failure
             // — it's a benign concurrency outcome and the winner will
             // record the success. Re-throw so the caller sees a 409.

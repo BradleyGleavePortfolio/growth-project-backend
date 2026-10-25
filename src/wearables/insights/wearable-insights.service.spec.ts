@@ -13,6 +13,7 @@ import {
   ClientInsight,
   EMPTY_OBSERVATION,
   EmptyInsightSchema,
+  emptyInsight,
   isEmptyInsight,
 } from './insight-output.schema';
 import type { ConsentService } from '../../consent/consent.service';
@@ -57,6 +58,7 @@ interface Mocks {
   prisma: {
     wearableSample: { findMany: jest.Mock };
     user: { findUnique: jest.Mock; findFirst: jest.Mock };
+    userBlock: { findMany: jest.Mock };
   };
   gateway: { invoke: jest.Mock };
   cache: {
@@ -92,6 +94,7 @@ function makeMocks(): Mocks {
         findUnique: jest.fn().mockResolvedValue({ name: 'Alex Carter', profile: null }),
         findFirst: jest.fn().mockResolvedValue({ id: CLIENT }),
       },
+      userBlock: { findMany: jest.fn().mockResolvedValue([]) },
     },
     gateway: {
       invoke: jest.fn(),
@@ -144,6 +147,33 @@ describe('WearableInsightsService', () => {
       expect(out).toEqual(cached);
       expect(mocks.gateway.invoke).not.toHaveBeenCalled();
       expect(mocks.cache.set).not.toHaveBeenCalled();
+    });
+  });
+
+  // FR-1141R4 (Opus B-1): the coach card drafts a message to the client, so a block either way gives
+  // the empty card: no cache read, no model call, no cache write. Unblock brings the card back.
+  describe('block between coach and client', () => {
+    it.each([
+      ['the client blocked the coach', { blocker_id: CLIENT, blocked_id: COACH }],
+      ['the coach blocked the client', { blocker_id: COACH, blocked_id: CLIENT }],
+    ])('%s: empty card with no draft and no model call; unblock restores', async (_label, block) => {
+      const mocks = makeMocks();
+      const cached = JSON.parse(validCoachJson()) as CoachInsight;
+      mocks.cache.get.mockResolvedValue(cached);
+      mocks.gateway.invoke.mockResolvedValue(gatewayReply(validCoachJson()));
+      mocks.prisma.userBlock.findMany.mockResolvedValue([block]);
+      const svc = build(mocks);
+
+      const out = await svc.generateForCoach(COACH, CLIENT, BUCKET);
+      expect(out).toEqual(emptyInsight());
+      expect(out).not.toHaveProperty('suggested_message_draft');
+      expect(mocks.cache.get).not.toHaveBeenCalled();
+      expect(mocks.cache.getEvenIfStale).not.toHaveBeenCalled();
+      expect(mocks.gateway.invoke).not.toHaveBeenCalled();
+      expect(mocks.cache.set).not.toHaveBeenCalled();
+
+      mocks.prisma.userBlock.findMany.mockResolvedValue([]);
+      await expect(svc.generateForCoach(COACH, CLIENT, BUCKET)).resolves.toEqual(cached);
     });
   });
 

@@ -228,14 +228,15 @@ export class AiGatewayService {
       throw new BadRequestException({ error: 'AI_DRAFT_PAYLOAD_SERVER_WRITTEN', capability: req.capability });
     }
 
-    // #168-4: Roman never drafts a message to one person across a block
-    // (either way): the messaging 403 code, before any draft or provider call.
-    if (
-      ROMAN_MESSAGE_CAPABILITIES.has(req.capability) &&
-      req.subjectUserId &&
-      (await inBlockWith(this.prisma, req.requester.id, [req.subjectUserId])).size > 0
-    ) {
-      throw messagingError(HttpStatus.FORBIDDEN, MESSAGING_ERRORS.BLOCKED);
+    // #168-4: Roman never drafts a message or a notification to one person
+    // across a block (either way, requester or tenant coach): the messaging
+    // 403 code, before any budget read, provider call, debit or draft.
+    if (ROMAN_MESSAGE_CAPABILITIES.has(req.capability) || req.capability === SEND_NOTIFICATION_CAPABILITY) {
+      for (const coach of new Set([req.requester.id, req.tenantCoachId ?? req.requester.id])) {
+        if ((await inBlockWith(this.prisma, coach, namedClientIds(req))).size > 0) {
+          throw messagingError(HttpStatus.FORBIDDEN, MESSAGING_ERRORS.BLOCKED);
+        }
+      }
     }
 
     // B-AIBSUB-126 — Ask AI is not offered to sub-coaches at launch (the

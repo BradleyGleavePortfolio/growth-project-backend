@@ -8,6 +8,7 @@ import { AiEgressService } from '../../ai-egress/ai-egress.service';
 import { isAiEgressRefusal } from '../../ai-egress/ai-consent-required.exception';
 import { clientDataSubject } from '../../ai-egress/ai-egress.types';
 import { AiGatewayService } from '../../ai/gateway/ai-gateway.service';
+import { inBlockWith } from '../../messaging/block-pair';
 import { InsightCacheService, INSIGHT_WINDOW_DAYS } from './insight-cache.service';
 import {
   CoachInsight,
@@ -134,6 +135,10 @@ export class WearableInsightsService {
     bucket: WearableMetricBucket,
     coachRole?: string,
   ): Promise<CoachInsightResponse> {
+    // FR-1141R4 (Opus B-1): the coach card drafts a message to the client, so
+    // while the two are in a block, either way, it is the empty card: no
+    // cache read, no model call. Unblock brings the card back.
+    if ((await inBlockWith(this.prisma, coachId, [clientId])).size > 0) return emptyInsight();
     return this.generate<CoachInsight>({
       weighIns: await seesWeight(this.consent, coachId, clientId, coachRole),
       audience: 'coach',

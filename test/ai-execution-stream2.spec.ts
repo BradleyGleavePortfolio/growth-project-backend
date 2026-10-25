@@ -187,6 +187,8 @@ function makePrismaMock(store: MiniStore, opts: MockOpts = {}): any {
         );
       }),
     },
+    // FX-1141: block rows read by the pair gate (none unless a test sets one).
+    userBlock: { findMany: jest.fn(async () => []) },
     // B-AIB1-125: SendNotificationMaterializer writes the materialised marker.
     aiActionDraft: {
       updateMany: jest.fn(async () => ({ count: 1 })),
@@ -662,6 +664,19 @@ describe('Stream 2 §4.2 — SendNotificationMaterializer', () => {
     const draft = happyDraft();
     draft.tenant_coach_id = null;
     await expect(m.materialize(draft)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(store.notifications).toHaveLength(0);
+  });
+
+  // FX-1141 (Sol B1): no coach notification across a block, either way.
+  it.each([
+    ['the client blocked the coach', { blocker_id: CLIENT_ID, blocked_id: COACH_ID }],
+    ['the coach blocked the client', { blocker_id: COACH_ID, blocked_id: CLIENT_ID }],
+  ])('%s: refuses with messaging.blocked, no row', async (_label, block) => {
+    const store = seedStore();
+    const prisma = makePrismaMock(store);
+    prisma.userBlock.findMany.mockResolvedValue([block]);
+    const m = new SendNotificationMaterializer(prisma);
+    await expect(m.materialize(happyDraft())).rejects.toMatchObject({ status: 403, response: { code: 'messaging.blocked' } });
     expect(store.notifications).toHaveLength(0);
   });
 
