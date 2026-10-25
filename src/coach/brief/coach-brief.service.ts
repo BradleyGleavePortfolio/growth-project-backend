@@ -2312,6 +2312,9 @@ export class CoachBriefService {
    * plain-text narrative (no AI call), and written nowhere: the saved brief
    * stays as it is and comes back when the block is lifted. It keeps the
    * saved brief's id, day and time, so marking it read still works.
+   * FX-1141-R75: the live parts are typed already, so they go into the
+   * summary as they are (no JSON round trip, no cast); none of the saved
+   * row's JSON is read for it.
    */
   private async blockSafeBrief(
     coachId: string,
@@ -2320,14 +2323,22 @@ export class CoachBriefService {
     saved: CoachBrief,
   ): Promise<CoachBriefResponse> {
     const { briefMode, context, actionItems } = await this.buildBriefParts(coachId, timezone, briefDate, false);
-    return this.toResponse({
+    const out = this.toResponse({
       ...saved,
-      narrative: buildFallbackNarrative(context),
-      brief_context: context as unknown as Prisma.JsonObject,
-      action_items: actionItems as unknown as Prisma.JsonArray,
-      generated_by: 'fallback',
+      narrative: null,
+      brief_context: null,
+      action_items: null,
       brief_mode: briefMode,
     });
+    const summary: BriefSummary = {
+      date: saved.brief_date,
+      brief_mode: briefMode,
+      narrative: buildFallbackNarrative(context),
+      brief_context: context,
+      action_items: actionItems,
+      generated_by: 'fallback',
+    };
+    return { ...out, summary: out.status === 'generated' ? summary : null };
   }
 
   /**

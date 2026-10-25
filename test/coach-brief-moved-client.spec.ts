@@ -6,7 +6,15 @@
 // sub-coach and head coach get no item, snippet or count for a moved client.
 // B-939-1: that includes a brief stored before the move, today and in history.
 
-import { CoachBriefService, buildActionItems } from '../src/coach/brief/coach-brief.service';
+import { Prisma } from '@prisma/client';
+import { CoachBriefService, buildActionItems, buildFallbackNarrative } from '../src/coach/brief/coach-brief.service';
+import type {
+  ActionItem,
+  BriefContext,
+  BriefContextHeadCoach,
+  BriefMode,
+  HeadCoachActionItem,
+} from '../src/coach/brief/coach-brief.types';
 import { asConfig, asPrismaService, makeMockConfig, makeMockPrisma } from './_fixtures/coach-brief-mocks';
 import { grantAllEgress } from './ai-egress/ai-egress.fakes';
 
@@ -266,6 +274,16 @@ describe('B-939-1 stored briefs after a client moves (owner decision 4)', () => 
     expect(prisma.coachBrief.update).not.toHaveBeenCalled();
     expect(prisma.coachBrief.updateMany).not.toHaveBeenCalled();
     expect(JSON.stringify(row)).toBe(saved);
+    // FX-1141-R75: the summary is today's live build, as built, with nothing from the saved row.
+    const live = await svc['buildBriefParts']('S', 'America/Los_Angeles', '2026-10-10', false);
+    expect(today.summary).toStrictEqual({
+      date: '2026-10-10',
+      brief_mode: live.briefMode,
+      narrative: buildFallbackNarrative(live.context),
+      brief_context: live.context,
+      action_items: live.actionItems,
+      generated_by: 'fallback',
+    });
 
     prisma.userBlock.findMany.mockResolvedValue([]);
     const back = await svc.generateBrief('S', 'America/Los_Angeles', '2026-10-10');
@@ -275,6 +293,93 @@ describe('B-939-1 stored briefs after a client moves (owner decision 4)', () => 
     expect(lifted.items.map((i) => [i.id, i.summary?.narrative ?? null])).toEqual([['b-kept', KEPT_ONLY.narrative]]);
     expect(lifted.items[0].summary?.action_items).toEqual(KEPT_ONLY.action_items);
     expect(JSON.stringify(row)).toBe(saved);
+  });
+
+  // FX-1141-R75: the block-safe answer takes today's live parts as they are, typed, with no cast. Its
+  // context and action items are exactly the live ones, for both shapes, and the whole answer is byte for
+  // byte the one the earlier mapping gave (the live parts as JSON, through toResponse).
+  type Parts = {
+    briefMode: BriefMode;
+    context: BriefContext | BriefContextHeadCoach;
+    actionItems: ActionItem[] | HeadCoachActionItem[];
+    aiInput: null;
+    scopeClientIds: string[];
+  };
+  const SUB: Parts = {
+    briefMode: 'sub_coach',
+    context: {
+      brief_mode: 'sub_coach', date: '2026-10-10', checked_in_today: 1, missed_checkin: 1,
+      workouts_completed_today: 2, workouts_approved_today: 0, paid_today_count: 1, revenue_today_cents: 4900,
+      renewals_upcoming_7d: 1, dunning_in_progress: 0, weight_logs_flagged: 0, unread_messages: 0,
+      checkins_to_review: 1, joined_last_24h: 0, coach_name: 'Sam Sub', coach_first_name: 'Sam', roster_size: 2,
+      not_shared: { check_ins: 0, weigh_ins: 1, workouts: 0 },
+    },
+    actionItems: [
+      {
+        type: 'checkin_review', client_id: 'other', client_name: 'Ola Other', detail: 'Check-in to review',
+        priority: 2, deep_link: 'tgp://coach/clients/other', check_in_id: 'ci-1', occurred_at: '2026-10-10T14:00:00.000Z',
+      },
+      { type: 'checkin_missing', client_id: 'other', client_name: 'Ola Other', detail: 'No check-in yet', priority: 3, deep_link: 'tgp://coach/clients/other' },
+    ],
+    aiInput: null,
+    scopeClientIds: ['kept', 'other'],
+  };
+  const HEAD: Parts = {
+    briefMode: 'head_coach',
+    context: {
+      brief_mode: 'head_coach', date: '2026-10-10', coach_name: 'Hana Head', coach_first_name: 'Hana', team_size: 1,
+      team_clients_total: 2, new_clients_last_24h: 0, total_revenue_today_cents: 4900, team_revenue_30d_cents: 98000,
+      mrr_projected_cents: 49000, paid_today_count: 1, dunning_in_progress: 1, dunning_amount_cents: 4900,
+      sub_coach_highlights: [{ coach_name: 'Sam Sub', new_clients_24h: 0, active_clients: 2 }],
+    },
+    actionItems: [{ type: 'dunning_queue', detail: 'One payment is retrying', priority: 1, deep_link: 'tgp://coach/money' }],
+    aiInput: null,
+    scopeClientIds: ['kept', 'other'],
+  };
+  const cases: Array<[string, typeof KEPT_ONLY, { blocker_id: string; blocked_id: string }, Parts]> = [
+    ['sub-coach brief', KEPT_ONLY, { blocker_id: 'kept', blocked_id: 'S' }, SUB],
+    ['head coach brief', { ...KEPT_ONLY, id: 'b-head', coach_id: 'H', brief_mode: 'head_coach' }, { blocker_id: 'H', blocked_id: 'kept' }, HEAD],
+  ];
+  it.each(cases)('%s saved before a block: Today returns the live context and action items unchanged', async (_label, row, pair, parts) => {
+    const { prisma, svc } = stored(row);
+    prisma.userBlock.findMany.mockResolvedValue([{ ...pair, created_at: new Date(row.generated_at.getTime() + 60_000) }]);
+    const build = jest.fn(async () => parts);
+    svc['buildBriefParts'] = build;
+
+    const out = await svc.generateBrief(row.coach_id, 'America/Los_Angeles', row.brief_date);
+
+    expect(build).toHaveBeenCalledWith(row.coach_id, 'America/Los_Angeles', row.brief_date, false);
+    expect(prisma.coachBrief.update).not.toHaveBeenCalled();
+    expect(prisma.coachBrief.updateMany).not.toHaveBeenCalled();
+    expect(out).toStrictEqual({
+      id: row.id,
+      coach_id: row.coach_id,
+      brief_date: row.brief_date,
+      status: 'generated',
+      brief_mode: parts.briefMode,
+      generated_at: row.generated_at.toISOString(),
+      summary: {
+        date: row.brief_date,
+        brief_mode: parts.briefMode,
+        narrative: buildFallbackNarrative(parts.context),
+        brief_context: parts.context,
+        action_items: parts.actionItems,
+        generated_by: 'fallback',
+      },
+      created_at: row.created_at.toISOString(),
+    });
+    expect(out.summary?.brief_context).not.toHaveProperty('scope_client_ids');
+    const json = (v: object): Prisma.JsonValue => JSON.parse(JSON.stringify(v));
+    const earlier = svc['toResponse']({
+      ...row,
+      narrative: buildFallbackNarrative(parts.context),
+      brief_context: json(parts.context),
+      action_items: json(parts.actionItems),
+      generated_by: 'fallback',
+      brief_mode: parts.briefMode,
+    });
+    expect(JSON.stringify(out)).toBe(JSON.stringify(earlier));
+    expect(JSON.stringify(out)).not.toContain(row.narrative);
   });
 
   it('history: a brief naming the moved client keeps its day and status, not its content', async () => {
