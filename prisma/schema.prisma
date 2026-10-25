@@ -7202,6 +7202,7 @@ enum CommunityMessageKind {
   text
   voice
   system
+  image // SC-BE3: a photo (community_message_images)
 }
 
 enum CommunityPostScope {
@@ -9221,4 +9222,25 @@ model CommunitySpaceRead {
   @@id([user_id, cohort_id])
   @@index([cohort_id])
   @@map("community_space_reads")
+}
+
+// SC-BE3 (agent 168): the photo behind a kind 'image' space chat message.
+// One row per message; the object is at `storage_key` in the private
+// community-images bucket (JPEG, 10 MB). RLS forced: a row is readable by
+// whoever can open the space, and insertable only by its author there.
+model CommunityMessageImage {
+  message_id  String   @id @db.Uuid
+  cohort_id   String   @db.Uuid
+  author_id   String
+  storage_key String   @unique @db.Text
+  width       Int
+  height      Int
+  size_bytes  Int
+  mime        String   @db.VarChar(40)
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@index([cohort_id, created_at])
+  @@index([author_id])
+  @@map("community_message_images")
 }

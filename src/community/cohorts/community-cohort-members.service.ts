@@ -243,41 +243,26 @@ export class CommunityCohortMembersService {
     // that another coach's client exists. The platform owner may override.
     const scope = await this.assignScope(cohort.workspace_id, user);
 
-    if (hasUserId) {
-      const target = await this.repo.findUserById(body.user_id as string, scope);
-      if (!target) throw new NotFoundException(USER_NOT_FOUND);
-      // Direct assign of a known user → active immediately (idempotent: an
-      // existing/removed row is revived to the requested role + active).
-      // This is the explicit reinstatement path: it lifts a durable community
-      // ban in this workspace (B-610-2) so access and membership agree.
-      await this.repo.liftWorkspaceBan(cohort.workspace_id, target.id, user.id);
-      const row = await this.repo.upsertMembership({
-        workspaceId: cohort.workspace_id,
-        cohortId: cohort.id,
-        userId: target.id,
-        role: prismaRole,
-        status: 'active',
-        joinedAt: new Date(),
-      });
-      return CohortMemberResponseSchema.parse({ member: this.coachView(row) });
-    }
-
-    // email path: if the email maps to an existing platform user, create a
-    // pending invite (status='invited', no joined_at). If no user exists yet,
-    // we cannot create a membership row (user_id is a required, FK-backed
-    // column) — surface a clear 404 so the coach uses the existing invite-codes
-    // onboarding flow first. (Decision documented in the PR body: cohort
-    // membership reuses the CommunityMembership row with status='invited'
-    // rather than the unrelated coach-roster invite-codes module.)
-    const target = await this.repo.findUserByEmail(body.email as string, scope);
+    // A coach adds a person by id or by email; both are the same act. There is
+    // no accept step anywhere (the phone has none, and an invited client could
+    // not even see the space), so the person is in at once, like adding someone
+    // to a Slack channel. The rule still decides access: a client who later
+    // moves to another coach loses a chosen-members space with their row.
+    const target = hasUserId
+      ? await this.repo.findUserById(body.user_id as string, scope)
+      : await this.repo.findUserByEmail(body.email as string, scope);
     if (!target) throw new NotFoundException(USER_NOT_FOUND);
+    // Idempotent: an existing or removed row is revived to the requested role
+    // and active. This is the explicit reinstatement path: it lifts a durable
+    // community ban in this workspace (B-610-2) so access and membership agree.
+    await this.repo.liftWorkspaceBan(cohort.workspace_id, target.id, user.id);
     const row = await this.repo.upsertMembership({
       workspaceId: cohort.workspace_id,
       cohortId: cohort.id,
       userId: target.id,
       role: prismaRole,
-      status: 'invited',
-      joinedAt: null,
+      status: 'active',
+      joinedAt: new Date(),
     });
     return CohortMemberResponseSchema.parse({ member: this.coachView(row) });
   }
@@ -302,7 +287,9 @@ export class CommunityCohortMembersService {
       throw new ForbiddenException(PROTECT_OWNER);
     }
 
-    // Idempotent: already removed is a no-op success.
+    // Idempotent: already removed is a no-op success. Removing only ever
+    // updates an existing row; it never creates or revives one (a person the
+    // rule lets in without a row has nothing to remove: 404 above).
     if (membership.status === 'removed') {
       return CohortMemberResponseSchema.parse({
         member: this.coachView(membership),

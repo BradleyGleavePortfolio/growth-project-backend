@@ -460,6 +460,13 @@ export class CoachAIService {
    */
   private async shareSafe(coachId: string, draft: AIDraft): Promise<AIDraft> {
     if (draft.type !== 'INSIGHT' || !this.consent) return draft;
+    // FR-1141 (Sol B4): an insight written before a block, either way, may quote that chat; it comes
+    // back without content while the block stands, and whole again once it is lifted.
+    const blocked = await this.prisma.userBlock.findFirst({
+      where: { created_at: { gt: draft.createdAt }, OR: [{ blocker_id: coachId, blocked_id: draft.clientId }, { blocker_id: draft.clientId, blocked_id: coachId }] },
+      select: { id: true },
+    });
+    if (blocked) return { ...draft, generatedPayload: null };
     const caller = await this.prisma.user.findUnique({ where: { id: coachId }, select: { role: true } });
     if (caller?.role === 'owner') return draft;
     const withdrawn = await this.prisma.clientCoachConsent.findFirst({

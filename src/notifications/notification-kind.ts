@@ -150,6 +150,10 @@ export const NotificationKind = {
   // and 7 of the renewal sequence). Push only, no inbox row; it opens Home.
   // Prefs: plan_renewal_push (default on).
   PLAN_RENEWAL: 'plan_renewal',
+  // SWITCH-TELL-BE: to the coach a client left when the client moved to TGP's
+  // house coach. In-app only (no push), no deep link; payload { client_id }.
+  // The new coach is never named. Its created_at is Money's moved_away_at.
+  COACH_CLIENT_MOVED: 'coach_client_moved',
 } as const;
 
 export type NotificationKindValue = (typeof NotificationKind)[keyof typeof NotificationKind];

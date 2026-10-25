@@ -65,7 +65,7 @@ export class MealPlanAssetResolver implements AssignableAssetResolver {
   async materialise(
     input: AssignableAssetMaterialiseInput,
   ): Promise<AssignableAssetMaterialiseResult> {
-    const acting = await this.scope.resolve(input.coachId, input.clientId);
+    const acting = await this.scope.resolve(input.coachId, input.clientId, input.tx);
     const db = input.tx ?? this.prisma;
 
     // Drip path (PR-10): use the schema-enforced unique to make the INSERT

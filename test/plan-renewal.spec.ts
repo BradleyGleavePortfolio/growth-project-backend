@@ -21,7 +21,7 @@ import {
 } from '../src/checkout/plan-renewal/plan-renewal.cadence';
 import { PlanRenewalAckDto, PlanRenewalController } from '../src/checkout/plan-renewal/plan-renewal.controller';
 import { PlanRenewalService } from '../src/checkout/plan-renewal/plan-renewal.service';
-import { NO_RENEWAL, planEndedAt } from '../src/checkout/plan-renewal/plan-renewal.state';
+import { NO_RENEWAL, planEndedAt, planRenewalHouseCoach } from '../src/checkout/plan-renewal/plan-renewal.state';
 import { ENV_RULES } from '../src/common/env-validation';
 import { NotificationKind } from '../src/notifications/notification-kind';
 import { lockScreenCopy } from '../src/notifications/push/lock-screen-copy';
@@ -73,6 +73,40 @@ describe('RENEWAL-BE cadence (owner #RENEWAL-PUSH)', () => {
     const rule = ENV_RULES.find((r) => r.name === 'HOUSE_COACH_USER_ID');
     // An inventory rule adds no validator (no boot change); an id that is not a live coach offers nothing.
     expect([rule?.tier, rule?.values, rule?.validate]).toEqual(['optional', undefined, undefined]);
+  });
+});
+
+describe('FX-860 the house coach full name (owner W-168-HC)', () => {
+  const HOUSE = '6f1c2b3a-0d4e-4f5a-8b6c-7d8e9f0a1b2c';
+  const house = async (row: { name: string } | null, clientCoachId = 'k') => {
+    const findFirst = jest.fn(async () => row);
+    const before = process.env.HOUSE_COACH_USER_ID;
+    process.env.HOUSE_COACH_USER_ID = HOUSE;
+    try {
+      return { view: await planRenewalHouseCoach(stub<PrismaService>({ user: { findFirst } }), clientCoachId), findFirst };
+    } finally {
+      if (before === undefined) delete process.env.HOUSE_COACH_USER_ID;
+      else process.env.HOUSE_COACH_USER_ID = before;
+    }
+  };
+
+  it('adds full_name next to first_name, spaces tidied; a one-word name is its own full name', async () => {
+    expect((await house({ name: '  Bradley   Gleave ' })).view)
+      .toEqual({ id: HOUSE, first_name: 'Bradley', full_name: 'Bradley Gleave' });
+    expect((await house({ name: 'Bradley' })).view).toEqual({ id: HOUSE, first_name: 'Bradley', full_name: 'Bradley' });
+    expect((await house({ name: '   ' })).view).toEqual({ id: HOUSE, first_name: null, full_name: null });
+    expect((await house({ name: `A ${'b'.repeat(200)}` })).view?.full_name).toHaveLength(120);
+  });
+
+  it('reads only a live coach, and never for the house coach\'s own client', async () => {
+    const live = await house({ name: 'Bradley Gleave' });
+    expect(live.findFirst).toHaveBeenCalledWith({
+      where: { id: HOUSE, role: { in: ['coach', 'owner'] }, deleted_at: null },
+      select: { name: true },
+    });
+    expect((await house(null)).view).toBeNull();
+    const own = await house({ name: 'Bradley Gleave' }, HOUSE);
+    expect([own.view, own.findFirst.mock.calls.length]).toEqual([null, 0]);
   });
 });
 

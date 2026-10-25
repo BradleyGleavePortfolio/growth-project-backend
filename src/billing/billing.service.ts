@@ -24,6 +24,7 @@ import { EmailTemplateKey } from '../email/email.types';
 // StorefrontModule (legacy tests, half-built deploys).
 import { NotificationKind } from '../notifications/notification-kind';
 import { NotificationsService } from '../notifications/notifications.service';
+import { describeFailure } from '../observability/log-pii';
 import { GUEST_CHECKOUT_METADATA_KEY, GuestCheckoutService } from '../storefront/guest-checkout.service';
 
 // PR-2 P0-c — deep link the coach taps from the COACH_ALERT inbox to
@@ -99,11 +100,12 @@ export class BillingService {
   // acknowledge an event whose side effects failed to commit.
   //
   // External handlers (CheckoutWebhookHandlerService, GuestCheckoutService)
-  // run inside the same try/catch — if they throw we propagate. They
-  // currently manage their own internal transactions; their writes
-  // commit when they return success. The dedup row commits last on
-  // success, so a partial external-handler failure cannot leave the
-  // dedup row claimed.
+  // run inside the same try/catch — if they throw we propagate. The dedup
+  // row commits last on success, so a partial external-handler failure
+  // cannot leave the dedup row claimed. GUEST-OUTER-TX — a guest payment is
+  // only claimed (pending→paid) inside the transaction; its account setup
+  // and delivery (Supabase, Stripe, email) run after the commit, and the
+  // committed `paid` row is the durable obligation the reconciler retries.
   // A276-P1-3 — pre-resolves the Stripe-hosted receipt_url for a
   // guest-checkout payment_intent.succeeded event BEFORE the outer
   // $transaction opens. Returns { id, chargeId, receiptUrl } when the
@@ -255,6 +257,16 @@ export class BillingService {
     // coach payout for it is settled post-commit (Stripe HTTP never runs
     // inside the tx); the settlement sweeper is the backstop.
     const guestSettlementPiRef: { value: string | null } = { value: null };
+    // GUEST-OUTER-TX — a guest payment this delivery claimed (pending→paid)
+    // inside the tx. Its account setup and delivery run after the commit:
+    // no Supabase or Stripe HTTP while the tx holds its connection. Dropped
+    // with the tx on rollback (the claim rolls back too; Stripe redelivers).
+    const guestConversionRef: {
+      value: {
+        paymentIntentId: string;
+        chargeInfo: { chargeId: string | null; receiptUrl: string | null; preResolveAttempted: boolean };
+      } | null;
+    } = { value: null };
 
     try {
       await this.prisma.$transaction(async (tx) => {
@@ -430,19 +442,15 @@ export class BillingService {
                 receiptUrl = pi.charges.data[0].receipt_url ?? null;
               }
               // A276-P1-3 — prefer the pre-resolved URL from the
-              // outside-tx Stripe lookup. handlePaymentSucceeded's
-              // resolveReceiptUrl short-circuits on a valid https URL
-              // so no Stripe HTTP call fires inside this transaction.
+              // outside-tx Stripe lookup; resolveReceiptUrl short-circuits
+              // on a valid https URL. GUEST-OUTER-TX — the claim below is
+              // DB-only; the receipt lookup and conversion run after commit.
               //
-              // A276-F2-P2-1 — also signal `preResolveAttempted` so the
-              // inner resolveReceiptUrl does NOT issue a SECOND Stripe
-              // HTTP call on the degraded path (preResolve returned a
-              // non-null record but receiptUrl was null because the
-              // outside-tx Stripe lookup failed). On a continuing Stripe
-              // outage that second attempt would also block while the
-              // outer $transaction holds its Postgres connection —
-              // exactly the in-tx HTTP anti-pattern P1-3 was meant to
-              // eliminate. With the flag set, the inner resolver returns
+              // A276-F2-P2-1 — also signal `preResolveAttempted` so
+              // resolveReceiptUrl does NOT issue a SECOND Stripe HTTP call
+              // on the degraded path (preResolve returned a non-null record
+              // but receiptUrl was null because the outside-tx Stripe
+              // lookup failed). With the flag set, the resolver returns
               // null immediately; the welcome email omits the receipt
               // line and a future backfill job can fill it in.
               let preResolveAttempted = false;
@@ -451,11 +459,11 @@ export class BillingService {
                 chargeId = chargeId ?? preResolved.chargeId;
                 preResolveAttempted = true;
               }
-              await this.guestCheckout.handlePaymentSucceeded(pi.id, {
-                chargeId,
-                receiptUrl,
-                preResolveAttempted,
-              });
+              const chargeInfo = { chargeId, receiptUrl, preResolveAttempted };
+              const claimed = await this.guestCheckout.handlePaymentSucceeded(pi.id, chargeInfo, tx);
+              if (claimed === true) {
+                guestConversionRef.value = { paymentIntentId: pi.id, chargeInfo };
+              }
               guestSettlementPiRef.value = pi.id;
             }
             break;
@@ -695,6 +703,30 @@ export class BillingService {
       typeof this.checkoutWebhooks.cancelTrialConflict === 'function'
     ) {
       await this.checkoutWebhooks.cancelTrialConflict(trialConflictSubscriptionId);
+    }
+
+    // GUEST-OUTER-TX — outer tx COMMITTED with the guest payment claimed
+    // `paid`: now create the account and deliver (Supabase, Stripe
+    // subscription read, then the conversion's own tx). Never throws; a
+    // failure is marked retryable, and a crash here leaves the `paid` row
+    // for GuestCheckoutReconciliationService. Runs before the settlement
+    // below, which needs the converted purchase.
+    const guestConversion = guestConversionRef.value;
+    if (
+      guestConversion !== null &&
+      this.guestCheckout &&
+      typeof this.guestCheckout.finishPaidCheckout === 'function'
+    ) {
+      try {
+        await this.guestCheckout.finishPaidCheckout(
+          guestConversion.paymentIntentId,
+          guestConversion.chargeInfo,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `guest conversion after commit failed pi=${guestConversion.paymentIntentId}: ${describeFailure(err)}`,
+        );
+      }
     }
 
     // PR-14 R2 P0-1 — BACKSTOP for recurring guest checkouts. The PI
