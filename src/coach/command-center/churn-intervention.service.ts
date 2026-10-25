@@ -49,6 +49,7 @@ import { PrismaService } from '../../prisma.service';
 import { isClientOf, lockClientsForDraftWrite } from '../moved-client-drafts';
 import { PtmService } from '../../ptm/ptm.service';
 import { NotificationsService } from '../../notifications/notifications.service';
+import { muteAllStops } from '../../notifications/push/push-preferences';
 import {
   COACH_AI_EFFORT,
   COACH_AI_MODEL,
@@ -702,8 +703,12 @@ export class ChurnInterventionService {
     }
 
     // Fire push AFTER the transaction commits. Failure cannot un-send
-    // the message; we log and move on.
-    if (this.notifications) {
+    // the message; we log and move on. FR-1154R3 (B-LS1154-2): an ordinary
+    // push, so Mute all stops it (the shared rule); the message stays sent.
+    if (
+      this.notifications &&
+      !(await this.muteAllStopsNudgePush(intervention.client_id, nudgeId))
+    ) {
       void this.notifications
         .pushToUser(intervention.client_id, 'Message from your coach', text.slice(0, 120), {
           type: 'coach_nudge',
@@ -722,6 +727,22 @@ export class ChurnInterventionService {
       sent_at: sentAt.toISOString(),
       nudge_id: nudgeId,
     };
+  }
+
+  /** FR-1154R3 (owner #171-3): Mute all stops this push; an unreadable switch sends none. */
+  private async muteAllStopsNudgePush(clientId: string, nudgeId: string): Promise<boolean> {
+    try {
+      const prefs = await this.prisma.notificationPreferences.findUnique({
+        where: { user_id: clientId },
+        select: { muted: true },
+      });
+      return muteAllStops(prefs, 'coach_nudge', 'push');
+    } catch (err) {
+      this.logger.warn(
+        `Push skipped for nudge=${nudgeId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return true;
+    }
   }
 
   // ── POST /churn-interventions/:id/dismiss ────────────────────────────

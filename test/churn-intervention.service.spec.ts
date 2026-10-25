@@ -54,6 +54,8 @@ function buildPrisma(initial: Partial<FakeRows> = {}): any {
   // throw, roll back any side-effects by snapshotting `rows` first.
   const fake: any = {
     rows,
+    // FR-1154R3: the send reads the client's Mute all switch (no row: not muted).
+    notificationPreferences: { findUnique: jest.fn(async () => null) },
     $transaction: jest.fn(async (opsOrFn: any) => {
       const snapshot = {
         interventions: rows.interventions.map((i) => ({ ...i })),
