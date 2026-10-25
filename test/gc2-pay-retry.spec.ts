@@ -114,9 +114,12 @@ async function returnPage(t: ReturnType<typeof tab>, rowKey: string, piStatus: s
         }),
       },
       user: { findFirst: async () => null },
-      clientPurchase: { findFirst: async () => null },
+      chargeDispute: { findFirst: async () => null },
     },
-    stripe: { retrievePaymentIntent: async () => ({ id: PI, client_secret: SECRET, status: piStatus, amount: 14900, last_payment_error: null }) },
+    stripe: {
+      retrievePaymentIntent: async () => ({ id: PI, client_secret: SECRET, status: piStatus, amount: 14900, latest_charge: 'ch_3RetryAAAAAAAAAAA', last_payment_error: null }),
+      retrieveCharge: async () => ({ id: 'ch_3RetryAAAAAAAAAAA', amount: 14900, amount_refunded: 0, refunded: false, disputed: false }),
+    },
     storefrontBase: undefined,
   } as unknown as PayDoneDeps;
   const { view } = await readPayDone(deps, A, { payment_intent: PI, payment_intent_client_secret: SECRET });
@@ -154,7 +157,8 @@ describe('FR-1155 B2: Try again after a failed or cancelled return is a fresh at
     for (const piStatus of ['processing', 'succeeded']) {
       const t = tab();
       const first = await payOnce(t);
-      await returnPage(t, first.key, piStatus, 'pending');
+      const back = await returnPage(t, first.key, piStatus, 'pending');
+      expect(back.view.kind).toBe(piStatus === 'succeeded' ? 'paid' : 'confirming');
       expect(t.m.has(`tgp-pay:${A}`)).toBe(true);
       expect((await payOnce(t)).key).toBe(first.key);
     }
