@@ -8,7 +8,9 @@ import { join } from 'path';
 import { NotificationKind } from '../../../src/notifications/notification-kind';
 import { lockScreenCopy } from '../../../src/notifications/push/lock-screen-copy';
 import { quietHoursFor } from '../../../src/notifications/push/push-quiet-hours';
-import { pushTapData } from '../../../src/notifications/notifications.service';
+import { pushTapData, type NotificationsService } from '../../../src/notifications/notifications.service';
+import type { PrismaService } from '../../../src/prisma.service';
+import type { CommunityRealtimeService } from '../../../src/community/realtime/community-realtime.service';
 import { CommunitySpacePushService } from '../../../src/community/space-push/community-space-push.service';
 import {
   HIGH_ALERT_DAILY_LIMIT,
@@ -22,6 +24,7 @@ import {
 } from '../../../src/community/space-push/space-push-policy';
 
 const S = 'sender';
+const stub = <T>(v: unknown): T => v as T;
 const r = (userId: string, effectiveMode: SpacePushReader['effectiveMode'], unread = 1): SpacePushReader => ({ userId, effectiveMode, unread });
 const readers = [r(S, 'all'), r('all1', 'all', 1), r('all5', 'all', 5), r('low', 'mute_low', 3), r('off', 'mute_all', 2)];
 
@@ -161,7 +164,11 @@ describe('SC-PUSH service', () => {
     communitySpaceRead: { findMany: jest.fn() },
     $queryRaw: jest.fn(),
   };
-  const svc = new CommunitySpacePushService(prisma as never, { sendPush } as never, realtime as never);
+  const svc = new CommunitySpacePushService(
+    stub<PrismaService>(prisma),
+    stub<NotificationsService>({ sendPush }),
+    stub<CommunityRealtimeService>(realtime),
+  );
 
   beforeEach(() => {
     jest.clearAllMocks();

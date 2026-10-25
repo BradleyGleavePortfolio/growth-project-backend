@@ -2,12 +2,14 @@
 // messageStored -> sendPush -> outbox -> drain -> Expo (mocked); only mute and the space's own setting stop it.
 import { Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import type { CommunityRealtimeService } from '../../../src/community/realtime/community-realtime.service';
 import { CommunitySpacePushService } from '../../../src/community/space-push/community-space-push.service';
 import { spacePushCopy } from '../../../src/community/space-push/space-push-policy';
 import { NotificationKind } from '../../../src/notifications/notification-kind';
 import { NotificationsService } from '../../../src/notifications/notifications.service';
 import { PushDeliveryService } from '../../../src/notifications/push/push-delivery.service';
 import { notificationPrefsPrefix, pushAllowedByPreferences } from '../../../src/notifications/push/push-preferences';
+import type { PrismaService } from '../../../src/prisma.service';
 import { pushOutboxWorld } from '../../utils/push-outbox-fake';
 import { spaceAtSendTime } from '../../utils/space-push-send-time-fake';
 
@@ -15,6 +17,7 @@ const NOW = new Date('2026-10-23T18:00:00Z'); // 11:00 in Los Angeles: no quiet 
 const K = NotificationKind.COMMUNITY_MESSAGE_RECEIVED;
 const token = (c: string) => `ExponentPushToken[${c.repeat(22)}]`;
 const PEOPLE = ['fresh', 'saved', 'muted', 'space-muted', 'silenced'];
+const stub = <T>(v: unknown): T => v as T;
 class Clocked extends PushDeliveryService {
   protected now(): Date {
     return new Date(NOW);
@@ -27,7 +30,7 @@ async function chain() {
   const w = pushOutboxWorld({ now: () => NOW, tokens: Object.fromEntries(PEOPLE.map((p, i) => [p, token('abcde'[i])])) });
   const send = jest.fn(async (m: Array<{ to: unknown }>) => m.map(() => ({ status: 'ok' as const, id: 't' })));
   const at = spaceAtSendTime(w.db); // Sol B-2: the send step plans each space push again
-  const delivery = new Clocked(at.db as never, { send, getReceipts: jest.fn(async () => ({})) });
+  const delivery = new Clocked(stub<PrismaService>(at.db), { send, getReceipts: jest.fn(async () => ({})) });
   delivery.autoDrain = false;
   const notifications = new NotificationsService(Object.create(w.db), undefined, undefined, delivery);
   const defaults = await notifications.getPreferences('saved'); // 'fresh' has no row; the rest save every default
@@ -44,7 +47,8 @@ async function chain() {
       { user_id: 'silenced', notify_mode: 'all', silenced_until: new Date(Date.now() + 3_600_000) }] },
     $queryRaw: queryRaw, // readersNow, then one unread count per reader on All
   };
-  const svc = new CommunitySpacePushService(prisma as never, notifications, { onSpaceMessageStored: jest.fn() } as never);
+  const realtime = stub<CommunityRealtimeService>({ onSpaceMessageStored: jest.fn() });
+  const svc = new CommunitySpacePushService(stub<PrismaService>(prisma), notifications, realtime);
   const message = async (m: { id: string; parent_message_id?: string; high_alert?: boolean }) => {
     const row = { workspace_id: 'w', cohort_id: 'c1', sender_id: 'sender', parent_message_id: null, high_alert: false, ...m };
     findFirst.mockReset().mockResolvedValueOnce(row).mockResolvedValueOnce({ sender_id: 'fresh' });

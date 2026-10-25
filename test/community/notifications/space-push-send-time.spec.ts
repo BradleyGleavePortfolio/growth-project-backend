@@ -7,10 +7,12 @@ import type { SpacePushKind } from '../../../src/community/space-push/space-push
 import { NotificationKind } from '../../../src/notifications/notification-kind';
 import { NotificationsService } from '../../../src/notifications/notifications.service';
 import { PushDeliveryService } from '../../../src/notifications/push/push-delivery.service';
+import type { PrismaService } from '../../../src/prisma.service';
 import { pushOutboxWorld } from '../../utils/push-outbox-fake';
 import { spaceAtSendTime } from '../../utils/space-push-send-time-fake';
 
 type S = ReturnType<typeof spaceAtSendTime>['s'];
+const stub = <T>(v: unknown): T => v as T;
 
 const K = NotificationKind.COMMUNITY_MESSAGE_RECEIVED;
 const NIGHT = new Date('2026-10-24T06:00:00Z'); // 23:00 in Los Angeles: quiet hours, held to 08:00
@@ -51,7 +53,7 @@ function world() {
     { ...MSG, id: 'm4' },
   );
   const send = jest.fn(async (m: Array<{ to: unknown }>) => m.map(() => ({ status: 'ok' as const, id: 't' })));
-  const delivery = new Clocked(at.db as never, { send, getReceipts: jest.fn(async () => ({})) });
+  const delivery = new Clocked(stub<PrismaService>(at.db), { send, getReceipts: jest.fn(async () => ({})) });
   delivery.autoDrain = false;
   const notifications = new NotificationsService(Object.create(w.db), undefined, undefined, delivery);
   const queue = (userId: string, kind: SpacePushKind, messageId: string, source = true) =>
