@@ -39,8 +39,12 @@ export interface InboxThreadView {
   muted: boolean;
   muted_until: string | null;
   pinned: boolean;
-  /** The caller blocked the other participant: preview hidden, unread 0. */
+  /**
+   * 10-23 "Dissapear": a chat in a block either way leaves both lists, so a
+   * listed row is never blocked or closed. Both stay false, kept for shape.
+   */
   blocked_by_me: boolean;
+  closed: boolean;
   last_activity_at: string | null;
 }
 
@@ -173,7 +177,7 @@ export class MessagingInboxService {
     if (last.length === 0) return { items: [], next_cursor: null, total_unread: 0 };
 
     const ids = last.map((r) => r.client_id);
-    const [unread, users, states, blockedList] = await Promise.all([
+    const [unread, users, states, blocks] = await Promise.all([
       this.messaging.unreadCountForCoach(coachId),
       this.prisma.user.findMany({
         where: { id: { in: ids } },
@@ -183,16 +187,18 @@ export class MessagingInboxService {
         where: { user_id: coachId, coach_id: threadCoachId, client_id: { in: ids } },
         select: { client_id: true, muted_until: true, pinned_at: true },
       }),
-      this.messaging.blockedIdsFor(coachId),
+      this.messaging.blockSets(coachId),
     ]);
     const names = new Map(users.map((u) => [u.id, u.name]));
     const stateBy = new Map(states.map((s) => [s.client_id, s]));
-    const blocked = new Set(blockedList);
+    const blocked = blocks.hidden;
     const now = Date.now();
 
-    const ranked: Ranked[] = last.map((row) => {
+    // 10-23 "Dissapear": a chat in a block either way leaves the list (no
+    // row, no name, no unread); unblock brings it back. A direct open still
+    // answers closed (thread GET header, send/edit/pin 403).
+    const ranked: Ranked[] = last.filter((row) => !blocked.has(row.client_id)).map((row) => {
       const state = stateBy.get(row.client_id);
-      const blockedByMe = blocked.has(row.client_id);
       const muted = !!state?.muted_until && state.muted_until.getTime() > now;
       const pinnedAt = state?.pinned_at ?? null;
       const view: InboxThreadView = {
@@ -205,15 +211,16 @@ export class MessagingInboxService {
           display_name: names.get(row.client_id)?.trim() || 'Client',
         },
         last_message:
-          blockedByMe || (row.sender_id !== null && blocked.has(row.sender_id))
+          row.sender_id !== null && blocked.has(row.sender_id)
             ? null
             : this.lastMessageView(row, coachId),
-        unread_count: blockedByMe ? 0 : (unread.by_client[row.client_id] ?? 0),
+        unread_count: unread.by_client[row.client_id] ?? 0,
         muted,
         muted_until: muted && state?.muted_until ? state.muted_until.toISOString() : null,
         pinned: pinnedAt !== null,
-        blocked_by_me: blockedByMe,
-        last_activity_at: blockedByMe ? null : row.created_at.toISOString(),
+        blocked_by_me: false,
+        closed: false,
+        last_activity_at: row.created_at.toISOString(),
       };
       return pinnedAt
         ? { group: 0, at: pinnedAt.getTime(), id: row.client_id, view }
@@ -259,7 +266,12 @@ export class MessagingInboxService {
     // B-710-2: messages from a sender the client blocked (e.g. an assigned
     // sub-coach) never become the preview or count as unread, so the preview
     // is the newest message from a sender the client still sees.
-    const blockedList = await this.messaging.blockedIdsFor(clientId);
+    // #168-4: either way (a sender who blocked the client is hidden too).
+    const blocks = await this.messaging.blockSets(clientId);
+    // 10-23 "Dissapear": the chat with a coach in a block either way leaves
+    // the client's list too (no row, unread 0); unblock brings it back.
+    if (blocks.hidden.has(coachId)) return { items: [], next_cursor: null, total_unread: 0 };
+    const blockedList = [...blocks.hidden];
     const visibleSender: Prisma.CoachMessageWhereInput =
       blockedList.length > 0
         ? { OR: [{ sender_id: null }, { sender_id: { notIn: blockedList } }] }
@@ -308,7 +320,6 @@ export class MessagingInboxService {
       newest && newest.sender_id !== null && blockedList.includes(newest.sender_id)
         ? null
         : newest;
-    const blockedByMe = blockedList.includes(coachId);
     const muted = !!state?.muted_until && state.muted_until.getTime() > Date.now();
     // A coach thread exists for every coached client, even before the first
     // message, so the inbox always offers a way to start the conversation.
@@ -318,16 +329,16 @@ export class MessagingInboxService {
       coach_id: coachId,
       client_id: clientId,
       counterpart: { user_id: coachId, display_name: coach?.name?.trim() || 'Your coach' },
-      last_message:
-        row && !blockedByMe
-          ? this.lastMessageView({ ...row, card_type: row.card?.card_type ?? null }, clientId)
-          : null,
-      unread_count: blockedByMe ? 0 : unreadTotal,
+      last_message: row
+        ? this.lastMessageView({ ...row, card_type: row.card?.card_type ?? null }, clientId)
+        : null,
+      unread_count: unreadTotal,
       muted,
       muted_until: muted && state?.muted_until ? state.muted_until.toISOString() : null,
       pinned: !!state?.pinned_at,
-      blocked_by_me: blockedByMe,
-      last_activity_at: row && !blockedByMe ? row.created_at.toISOString() : null,
+      blocked_by_me: false,
+      closed: false,
+      last_activity_at: row ? row.created_at.toISOString() : null,
     };
     return { items: [view], next_cursor: null, total_unread: view.unread_count };
   }

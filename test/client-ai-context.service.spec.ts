@@ -106,6 +106,7 @@ function makePrisma(opts: {
     communityWin: {
       findMany: jest.fn().mockResolvedValue([]),
     },
+    userBlock: { findMany: jest.fn().mockResolvedValue([]) },
   } as any;
 }
 
@@ -370,5 +371,24 @@ describe('ClientAIContextService.buildFresh', () => {
     // (3) leaderboard opt-in select (M1) — all on first build only.
     // Second build re-uses the cache and does not refetch.
     expect((prisma.user.findUnique as jest.Mock).mock.calls.length).toBeLessThanOrEqual(3);
+  });
+
+  it('FR-1141 (Sol B2): a block either way empties a warm entry of the thread words at once; unblock restores them', async () => {
+    const words = 'A distinct coach line about the deload week';
+    const blocks: Array<{ blocker_id: string; blocked_id: string }> = [];
+    const prisma = makePrisma({ lastMsg: { body: words, created_at: new Date(), sender_id: 'coach-1', coach_id: 'coach-1' } });
+    prisma.loggedFoodEntry.findMany = jest.fn().mockResolvedValue([]);
+    prisma.userBlock.findMany = jest.fn(async () => blocks);
+    const thread = prisma.coachMessage.findMany.getMockImplementation();
+    prisma.coachMessage.findMany = jest.fn(async (args: unknown) => (blocks.length ? [] : thread(args)));
+    const svc = new ClientAIContextService(prisma);
+    const said = async () => JSON.stringify((await svc.build('u1')).coach);
+    expect(await said()).toContain(words); // warm
+    for (const block of [{ blocker_id: 'u1', blocked_id: 'coach-1' }, { blocker_id: 'coach-1', blocked_id: 'u1' }]) {
+      blocks.splice(0, 1, block);
+      expect(await said()).not.toContain(words); // the very next read, inside the 30 s TTL
+      blocks.splice(0);
+      expect(await said()).toContain(words); // unblock brings them back at once
+    }
   });
 });

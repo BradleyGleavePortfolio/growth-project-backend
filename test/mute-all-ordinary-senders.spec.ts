@@ -153,6 +153,7 @@ async function churnIntervention(prefs: Prefs) {
       findFirst: jest.fn(async (a: { where: { id?: string } }) => (a.where.id ? intervention : null)),
     },
     notificationPreferences: { findUnique: jest.fn(async () => prefs) },
+    userBlock: { findMany: jest.fn(async () => []) },
     $transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
   };
   const svc = new ChurnInterventionService(

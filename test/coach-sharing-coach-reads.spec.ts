@@ -109,6 +109,7 @@ function makePrisma() {
     id, coach_id: COACH, client_id, alert_type, message: alert_type, created_at: ago(n * 60_000), acknowledged_at: null,
   });
   const t: Record<string, Row[]> = {
+    userBlock: [], // #168-4: no blocks
     user: ids.map((id) => ({ id, name: `Client ${id}`, role: 'student', coach_id: COACH, deleted_at: null })),
     clientCoachConsent: [
       ...FOUR.map((s) => grant('c1', s, false)),
@@ -388,6 +389,7 @@ describe('B-865-SOL-130-2: GET /v1/coach/me/threads and the churn draft follow t
         },
         user: { findMany: jest.fn(async () => users.map((u) => ({ id: u.id, name: u.name, profile: { avatar_url: null } }))) },
         checkIn: { groupBy: checkInGroupBy },
+        userBlock: { findMany: jest.fn(async () => []) },
       } },
       { provide: SupabaseService, useValue: {} },
       { provide: AuditService, useValue: { write: jest.fn() } },
@@ -431,6 +433,7 @@ describe('B-865-SOL-130-2: GET /v1/coach/me/threads and the churn draft follow t
         user: { findFirst: jest.fn(async (a: { where?: Where }) => users.find((u) => matches(u, a.where ?? {})) ?? null) },
         churnIntervention: { create: reads.claim },
         checkIn: { findFirst: reads.checkIn },
+        userBlock: { findMany: jest.fn(async () => []) },
       } },
       { provide: PtmService, useValue: { getLatestPrediction: reads.ptm } },
       { provide: ConfigService, useValue: { get: jest.fn() } },

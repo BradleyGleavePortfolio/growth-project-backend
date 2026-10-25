@@ -567,7 +567,9 @@ export class CommunityChallengesService {
     });
     // Two-way block: drop participants in a block relation with the caller
     // (cursor stays on the unfiltered page, as on every other list).
-    const visibleItems = await this.safety.filterBlocked(user.id, page.items, (p) => p.user_id);
+    // #168-4: and a participant banned from this community.
+    // FX-1141 (Sol B3): the challenge's own space, so a person who left it drops too.
+    const visibleItems = await this.safety.filterBlocked(user.id, page.items, (p) => p.user_id, () => [challenge.workspace_id, challenge.cohort_id]);
     // Every returned row is already opted in, so ranks are simply page-local
     // (1-based within the returned page).
     const rows: LeaderboardRowView[] = visibleItems.map((p, i) => ({
@@ -610,13 +612,15 @@ export class CommunityChallengesService {
     challengeId: string,
     query: { limit?: number; cursor?: string } = {},
   ): Promise<ChallengeCommentListResponse> {
-    await this.readableChallenge(user, challengeId);
+    const challenge = await this.readableChallenge(user, challengeId);
     const page = await this.repo.listComments({
       challengeId,
       limit: query.limit,
       cursor: query.cursor,
     });
-    const visible = await this.safety.filterBlocked(user.id, page.items, (m) => m.sender_id);
+    // #168-4: and comments by an author banned from this community.
+    // FX-1141 (Sol B3): placed in the challenge's own space (null = community-wide).
+    const visible = await this.safety.filterBlocked(user.id, page.items, (m) => m.sender_id, () => [challenge.workspace_id, challenge.cohort_id]);
     return ChallengeCommentListResponseSchema.parse({
       comments: visible.map((m) => this.commentView(m)),
       next_cursor: page.nextCursor,

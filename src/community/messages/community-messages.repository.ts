@@ -4,7 +4,7 @@ import type { CommunityMessage } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import type { PlanContextTag } from '../plan-context/plan-context.dto';
 import { bannedAmong } from '../community-ban';
-import { rowsWithSpaceAccess } from '../community-space-access';
+import { fullNamesFor, rowsWithSpaceAccess } from '../community-space-access';
 import { bytesToPeaks } from '../voice/community-voice.dto';
 
 /** A space's client messages still waiting on a coach reply (the coach inbox message arm). */
@@ -43,6 +43,31 @@ export interface ChatVoiceNote {
 export class CommunityMessagesRepository {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * SC-BE1: what a page of space chat rows needs for one viewer, in at most
+   * five reads: the reply parents it names (inside that space only), the coach,
+   * each person's name and avatar, and the voice note full-name rule.
+   */
+  async chatExtras(viewerId: string, workspaceId: string, cohortId: string, rows: CommunityMessage[]) {
+    const ids = [...new Set(rows.flatMap((m) => (m.parent_message_id ? [m.parent_message_id] : [])))];
+    const parents = ids.length
+      ? await this.prisma.communityMessage.findMany({
+          where: { id: { in: ids }, cohort_id: cohortId, scope: 'cohort' },
+        })
+      : [];
+    const named = [...rows, ...parents];
+    const [workspace, users, fullName] = await Promise.all([
+      this.prisma.communityWorkspace.findUnique({ where: { id: workspaceId }, select: { coach_id: true } }),
+      this.prisma.user.findMany({
+        where: { id: { in: [...new Set(named.map((m) => m.sender_id))] } },
+        select: { id: true, name: true, profile: { select: { avatar_url: true } } },
+      }),
+      fullNamesFor(this.prisma, viewerId, workspaceId, named.map((m) => [m.cohort_id, m.sender_id] as const)),
+    ]);
+    const people = new Map(users.map((u) => [u.id, u]));
+    return { parents, coachId: workspace?.coach_id ?? null, people, fullName };
+  }
+
   async createCohortMessage(params: {
     workspaceId: string;
     cohortId: string;
@@ -52,6 +77,8 @@ export class CommunityMessagesRepository {
     // (JsonB). Null/undefined writes a SQL NULL — the common, untagged case and
     // the only case when FEATURE_COMMUNITY_PLAN_TAGS is off (tag dropped on send).
     planContext?: PlanContextTag | null;
+    // SC-BE1: the thread's first message this reply answers, or none.
+    parent?: { id: string; at: Date } | null;
   }): Promise<CommunityMessage> {
     return this.prisma.communityMessage.create({
       data: {
@@ -62,6 +89,8 @@ export class CommunityMessagesRepository {
         sender_id: params.senderId,
         body: params.body,
         visibility: 'active',
+        parent_message_id: params.parent?.id ?? null,
+        parent_message_at: params.parent?.at ?? null,
         plan_context_payload:
           params.planContext == null
             ? Prisma.JsonNull

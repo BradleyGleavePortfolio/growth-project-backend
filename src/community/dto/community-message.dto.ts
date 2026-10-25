@@ -2,6 +2,7 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   MinLength,
 } from 'class-validator';
@@ -30,6 +31,12 @@ export class CreateMessageDto {
   @IsOptional()
   @IsObject()
   plan_context?: unknown;
+
+  // SC-BE1: a reply (press and hold, Reply). The plain message in the same space
+  // this one answers; a reply to a reply joins the first message's thread.
+  @IsOptional()
+  @IsUUID('4')
+  parent_message_id?: string;
 }
 
 /** PATCH /community/messages/:messageId — edit own message (5-min window). */
@@ -104,6 +111,31 @@ export const CommunityMessageSchema = z
       })
       .strict()
       .nullable(),
+    // SC-BE1: on the reads (list, get one) only, like `ack` absent elsewhere. Who
+    // sent the row (the voice note name rule) and, on a reply, a short quote of
+    // the message it answers, or `gone` with nothing else when that message was
+    // deleted or removed or its author is blocked or has left.
+    sender: z
+      .object({
+        id: z.guid(),
+        name: z.string(),
+        avatar_url: z.string().nullable(),
+        is_coach: z.boolean(),
+      })
+      .strict()
+      .optional(),
+    parent: z
+      .object({
+        id: z.guid(),
+        gone: z.boolean(),
+        kind: z.enum(['text', 'voice', 'system']).nullable(),
+        sender_name: z.string().nullable(),
+        snippet: z.string().nullable(),
+        voice_duration_ms: z.number().int().nullable(),
+      })
+      .strict()
+      .nullable()
+      .optional(),
   })
   .strict();
 

@@ -442,6 +442,7 @@ describe('owner 4: the current coach only', () => {
       const hits = (where: unknown) => inbox.filter((r) => whereMatches(r, where));
       const joined = () => rows.map((r) => ({ ...r, client: { name: 'Jane Doe', coach_id: users[0].coach_id } }));
       const prisma = {
+        userBlock: { findMany: jest.fn(async () => []) },
         coachAlert: {
           findMany: jest.fn(async ({ where }: { where: unknown }) => joined().filter((r) => matches(r, where))),
           count: jest.fn(async ({ where }: { where: unknown }) => joined().filter((r) => matches(r, where)).length),
@@ -571,6 +572,7 @@ describe('owner 4: the current coach only', () => {
         return { ...r, client: { name: c.name, coach_id: c.coach_id } };
       });
     const prisma = {
+      userBlock: { findMany: jest.fn(async () => []) },
       user: {
         findUnique: jest.fn(async ({ where }: { where: { id: string } }) =>
           users.find((u) => u.id === where.id) ?? null,

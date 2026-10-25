@@ -734,9 +734,13 @@ function matchField(value: unknown, cond: unknown): boolean {
   if (cond === null) return value === null || value === undefined;
   if (cond instanceof Date || typeof cond !== 'object') return cmp(value, cond) === 0;
   const c = cond as Record<string, unknown>;
+  // to-many `none` (the block filter): rows here carry no relation arrays, so none match.
+  if ('none' in c) return !Array.isArray(value) || !value.some((v) => matches(v as Row, c.none as Where));
   // relation filter (nested object without operator keys)
   const ops = ['gte', 'lte', 'lt', 'gt', 'in', 'not', 'equals'];
   if (!Object.keys(c).some((k) => ops.includes(k))) {
+    const onlyNone = Object.values(c).every((v) => v !== null && typeof v === 'object' && 'none' in v);
+    if (onlyNone && (value === null || value === undefined)) return true;
     return value !== null && typeof value === 'object' && matches(value as Row, c);
   }
   if ('equals' in c && cmp(value, c.equals) !== 0) return false;

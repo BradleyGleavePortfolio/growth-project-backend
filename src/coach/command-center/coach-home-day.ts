@@ -19,11 +19,13 @@
  *
  * Queries (all bounded by the roster and indexed): check-ins 1, client
  * messages today 1, coach replies today 1, nudges today 1, streak signals 1,
- * lifting bests 1, goal weights 1, client names 1 (only when there are wins).
+ * lifting bests 1, goal weights 1, client names 1 (only when there are wins),
+ * blocks 1 (#168-4: a client in a block with the coach gets no reach-out or win draft).
  */
 import type { PrismaService } from '../../prisma.service';
 import { sanitizePromptInput } from '../../ai/utils/sanitize-prompt-input';
 import { clientWeek } from '../client-week';
+import { inBlockWith } from '../../messaging/block-pair';
 
 /** The newest wins returned; `count` still counts every win this week. */
 export const HOME_WINS_MAX = 50;
@@ -385,15 +387,18 @@ export async function loadHomeDay(
   now: Date,
 ): Promise<CoachHomeDay> {
   const week = clientWeek(now, timeZone);
+  // #168-4: no reach-out or Roman win draft across a block (either way).
+  const blocked = await inBlockWith(prisma, scope.coachId, scope.clientIds);
+  const needsYou = scope.needsYou.filter((id) => !blocked.has(id));
   const [checkIns, contact, streaks, bests, goals] = await Promise.all([
     checkInRing(prisma, scope.habits, week.today, week.todayFrom, now),
-    contactRings(prisma, scope, week.todayFrom, now),
+    contactRings(prisma, { ...scope, needsYou }, week.todayFrom, now),
     streakWins(prisma, scope.habits, week.from, now),
     liftingWins(prisma, scope.workouts, week.start, week.today),
     goalWins(prisma, scope.weighIns, week.start, week.today),
   ]);
 
-  const facts = [...streaks, ...bests, ...goals].sort((a, b) =>
+  const facts = [...streaks, ...bests, ...goals].filter((w) => !blocked.has(w.client_id)).sort((a, b) =>
     a.at === b.at ? (a.id < b.id ? -1 : 1) : a.at < b.at ? 1 : -1,
   );
   const newest = facts.slice(0, HOME_WINS_MAX);

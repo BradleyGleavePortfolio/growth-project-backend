@@ -7,10 +7,10 @@ import { deriveGatewayDataSubject } from '../src/ai/gateway/ai-gateway.service';
 import { AiEgressService } from '../src/ai-egress/ai-egress.service';
 import { AiConsentRequiredException } from '../src/ai-egress/ai-consent-required.exception';
 import { clientDataSubject, noClientDataSubject } from '../src/ai-egress/ai-egress.types';
-import { egressWithGrants, grantAllEgress, withTx } from './ai-egress/ai-egress.fakes';
+import { egressWithGrants, fakeOf, grantAllEgress, withTx } from './ai-egress/ai-egress.fakes';
 
 function buildPrisma() {
-  const created = { audits: [] as any[], drafts: [] as any[] };
+  const created = { audits: [] as any[], drafts: [] as any[], blocks: [] as Array<{ blocker_id: string; blocked_id: string }> };
   // Each client's current coach.
   const roster: Record<string, string> = { 'client-1': 'coach-1', 'client-2': 'coach-1', 'client-3': 'head-1' };
   return withTx({
@@ -39,6 +39,8 @@ function buildPrisma() {
           .map((id) => ({ id })),
       ),
     },
+    // #168-4: person-to-person blocks (inBlockWith asks both directions in one query).
+    userBlock: { findMany: jest.fn(async () => created.blocks) },
     subCoachAssignment: {
       findMany: jest.fn(async ({ where }: any) =>
         where.sub_coach_id === 'sub-1' && where.client_id.in.includes('client-3')
@@ -185,6 +187,43 @@ describe('AiGatewayService', () => {
       expect(out.approvalDraftId).toBeNull();
     }
     expect(prisma.aiActionDraft.create).not.toHaveBeenCalled();
+  });
+
+  it('#168-4: Roman never drafts a message to one client across a block, either way', async () => {
+    process.env.AI_GATEWAY_REQUIRE_APPROVAL = 'draft.coach_message,draft.coach_wearable_message';
+    const { svc, prisma } = buildSvc();
+    const ask = { requester: { id: 'coach-1', role: 'coach' as const }, subjectUserId: 'client-1', tenantCoachId: 'coach-1', userMessage: 'Draft a reply.', systemPrompt: 'context' };
+    await expect(svc.invoke({ ...ask, capability: 'draft.coach_message' })).resolves.toBeDefined();
+    for (const block of [{ blocker_id: 'coach-1', blocked_id: 'client-1' }, { blocker_id: 'client-1', blocked_id: 'coach-1' }]) {
+      prisma.created.blocks.splice(0, 1, block);
+      for (const capability of ['draft.coach_message', 'draft.coach_wearable_message']) {
+        await expect(svc.invoke({ ...ask, capability })).rejects.toMatchObject({ status: 403, response: { code: 'messaging.blocked' } });
+      }
+    }
+    expect(prisma.aiActionDraft.create).not.toHaveBeenCalled();
+  });
+
+  it('FR-1141 (Sol B1): an Ask AI notification across a block stops before the budget, the provider, the debit and the draft', async () => {
+    const n = 'draft.send_notification';
+    Object.assign(process.env, { AI_GATEWAY_ENABLED: 'true', AI_GATEWAY_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'sk-ant-test', AI_GATEWAY_CAPABILITIES: n, AI_GATEWAY_REQUIRE_APPROVAL: n });
+    const clientId = '22222222-2222-2222-2222-222222222222';
+    const prisma = buildPrisma();
+    prisma.roster[clientId] = 'coach-1';
+    const budget = { resolveHeadCoachId: jest.fn(async (id: string) => id), recordUsage: jest.fn(async () => ({ recorded: true })),
+      canCharge: jest.fn(async () => ({ allowed: true, budget: { actual_used_cents: 0, total_actual_available_cents: 4000 } })) };
+    const complete = jest.fn(async () => ({ text: 'ok', enabled: true, provider: 'anthropic', model: 'm', promptTokenEstimate: 10, responseTokenEstimate: 5, meta: {} }));
+    const registry = new AiProviderRegistry(new StubProviderAdapter(), fakeOf({ name: 'anthropic', complete }));
+    const svc = new AiGatewayService(prisma, new AiGatewayConfig(), new AiRedactionService(), registry, grantAllEgress(), fakeOf<NonNullable<ConstructorParameters<typeof AiGatewayService>[5]>>(budget));
+    const ask = { capability: n, requester: { id: 'coach-1', role: 'coach' as const }, subjectUserId: clientId, tenantCoachId: 'coach-1',
+      userMessage: 'Draft a check-in nudge.', systemPrompt: 'context', proposedActionPayload: { clientId, kind: 'check_in', body: 'How is the week?' } };
+    for (const block of [{ blocker_id: 'coach-1', blocked_id: clientId }, { blocker_id: clientId, blocked_id: 'coach-1' }]) {
+      prisma.created.blocks.splice(0, 1, block);
+      await expect(svc.invoke(ask)).rejects.toMatchObject({ status: 403, response: { code: 'messaging.blocked' } });
+    }
+    for (const spy of [budget.canCharge, complete, budget.recordUsage, prisma.aiActionDraft.create]) expect(spy).not.toHaveBeenCalled();
+    prisma.created.blocks.splice(0); // unblock: admitted, drafted by the model and debited again
+    await expect(svc.invoke(ask)).resolves.toMatchObject({ approvalRequired: true });
+    for (const spy of [complete, budget.recordUsage, prisma.aiActionDraft.create]) expect(spy).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a draft invocation with a malformed payload BEFORE persisting the draft row (PR AI-3 PRODUCT-1)', async () => {
