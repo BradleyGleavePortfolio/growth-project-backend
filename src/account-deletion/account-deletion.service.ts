@@ -31,6 +31,7 @@ import { AccountDeletionBillingService } from './account-deletion.billing';
 import { AccountDeletionVendorsService, VendorWork } from './account-deletion.vendors';
 import { describeFailure } from '../observability/log-pii';
 import { VoiceUploadProvider } from '../community/voice/voice-upload.provider';
+import { CommunityImageStore } from '../community/images/community-image-store';
 import {
   VoiceErasureRow,
   attemptVoiceErasures,
@@ -790,6 +791,9 @@ export class AccountDeletionService {
           [
             ...objectTargets(voiceNotes.map((n) => n.storage_key)),
             { kind: 'owner_folder', target: userId },
+            // SC-BE3: their space chat photos, sent or never sent, are flat
+            // files in their `<uid>/` folder in community-images.
+            { kind: 'image_folder', target: userId },
           ],
           'account_deletion',
           now,
@@ -946,7 +950,7 @@ export class AccountDeletionService {
     try {
       const outcome = await attemptVoiceErasures(
         this.prisma,
-        new VoiceUploadProvider(this.supabase),
+        { voice: new VoiceUploadProvider(this.supabase), images: new CommunityImageStore(this.supabase) },
         work,
         this.logger,
       );

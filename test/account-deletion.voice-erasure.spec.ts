@@ -223,6 +223,7 @@ describe('account deletion erases community voice recordings (B-610-5 composed w
       KEY_A,
       KEY_B,
       USER_ID,
+      USER_ID, // SC-BE3: their community-images folder (kind image_folder)
     ]);
     expect(
       upserts.every(
@@ -264,7 +265,7 @@ describe('account deletion erases community voice recordings (B-610-5 composed w
         c.method === 'updateMany' &&
         (c.args as { data: { completed_at?: Date } }).data.completed_at instanceof Date,
     );
-    expect(completions).toHaveLength(3);
+    expect(completions).toHaveLength(4); // SC-BE3: + the photo folder
     expect(client.auth.admin.deleteUser).toHaveBeenCalled();
   });
 
@@ -314,7 +315,7 @@ describe('account deletion erases community voice recordings (B-610-5 composed w
         c.method === 'updateMany' &&
         (c.args as { where: { completed_at?: unknown } }).where.completed_at === null,
     );
-    expect(updates).toHaveLength(3);
+    expect(updates).toHaveLength(4); // SC-BE3: + the photo folder
     for (const u of updates) {
       const data = (u.args as { data: Record<string, unknown> }).data;
       expect(data.completed_at).toBeUndefined();
@@ -371,7 +372,7 @@ describe('account deletion erases community voice recordings (B-610-5 composed w
     const upserts = calls.filter(
       (c) => c.delegate === 'communityVoiceErasure' && c.method === 'upsert',
     );
-    expect(upserts).toHaveLength(3);
+    expect(upserts).toHaveLength(4); // SC-BE3: + the photo folder
     const tx = upserts[0].tx;
     expect(tx).toEqual(expect.any(Number));
     for (const u of upserts) expect(u.tx).toBe(tx);
