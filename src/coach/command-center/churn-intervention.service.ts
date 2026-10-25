@@ -737,10 +737,8 @@ export class ChurnInterventionService {
         select: { muted: true },
       });
       return muteAllStops(prefs, 'coach_nudge', 'push');
-    } catch (err) {
-      this.logger.warn(
-        `Push skipped for nudge=${nudgeId}: ${err instanceof Error ? err.message : String(err)}`,
-      );
+    } catch {
+      this.logger.warn(`Push skipped for nudge=${nudgeId}: preference read failed`);
       return true;
     }
   }
