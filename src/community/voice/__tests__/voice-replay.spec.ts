@@ -5,17 +5,17 @@
  * place (same space, same reply parent), gets that first note back (201, the
  * same body) instead of 409. Every access, ban, block and key gate runs first;
  * any other use of the key, or a first note since deleted or hidden, stays the
- * 409. Racing creates write one row (the note id comes from the key, so the
- * primary key admits one); the ping and telemetry run once.
+ * 409. Racing creates write one row; the ping and telemetry run once. The
+ * repository half (one row per key) is voice-replay-repository.spec.ts.
  */
+import { randomUUID } from 'crypto';
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import { Prisma, type CommunityVoiceNote } from '@prisma/client';
-import type { PrismaService } from '../../../prisma.service';
+import type { CommunityVoiceNote } from '@prisma/client';
 import type { CommunityAccessService } from '../../community-access.service';
 import type { AnalyticsService } from '../../../analytics/analytics.service';
 import type { CommunityRealtimeService } from '../../realtime/community-realtime.service';
 import { CommunityVoiceService } from '../community-voice.service';
-import { CommunityVoiceRepository, voiceNoteIdFor, type VoiceNoteSeed } from '../community-voice.repository';
+import type { CommunityVoiceRepository, VoiceNoteSeed } from '../community-voice.repository';
 import type { VoiceUploadProvider } from '../voice-upload.provider';
 import { mintVoiceKey } from '../voice-storage-key';
 import { makeUser } from './test-user.factory';
@@ -29,7 +29,6 @@ const COACH_ID = '55555555-5555-4555-8555-555555555555';
 const MEMBER_ID = '66666666-6666-4666-8666-666666666666';
 const OTHER_ID = '77777777-7777-4777-8777-777777777777';
 const PARENT_ID = '99999999-9999-4999-8999-999999999999';
-const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 const member = makeUser({ id: MEMBER_ID, role: 'student' });
 const other = makeUser({ id: OTHER_ID, role: 'student' });
@@ -83,7 +82,7 @@ describe('VOICE-IDEM-BE: the same voice create sent again posts once', () => {
         const hit = rows.find((r) => r.storage_key === seed.storageKey);
         if (hit) return { row: hit, replayed: true };
         const row: CommunityVoiceNote = {
-          id: voiceNoteIdFor(seed.storageKey), workspace_id: seed.workspaceId, cohort_id: seed.cohortId,
+          id: randomUUID(), workspace_id: seed.workspaceId, cohort_id: seed.cohortId,
           conversation_id: seed.conversationId, author_id: seed.authorId, storage_key: seed.storageKey,
           duration_ms: seed.durationMs, bytes: BigInt(seed.bytes), mime_type: seed.mimeType, waveform_peaks: null,
           created_at: AT, soft_deleted_at: null,
@@ -133,7 +132,7 @@ describe('VOICE-IDEM-BE: the same voice create sent again posts once', () => {
     const first = await service.create(member, WS, dto());
     const again = await service.create(member, WS, dto());
     expect(again).toEqual(first);
-    expect(again.voice_note.id).toBe(voiceNoteIdFor(key));
+    expect(again.voice_note.id).toBe(rows[0].id);
     expect(rows).toHaveLength(1);
     expect(repo.createVoiceNote).toHaveBeenCalledTimes(1);
     expect(statObject).toHaveBeenCalledTimes(1);
@@ -227,55 +226,5 @@ describe('VOICE-IDEM-BE: the same voice create sent again posts once', () => {
     await expect(service.create(member, WS, dto({ cohort_id: OTHER_SPACE }))).rejects.toBeInstanceOf(ConflictException);
     canAccessCohort.mockResolvedValue(false);
     await expect(service.create(member, WS, dto())).rejects.toBeInstanceOf(NotFoundException);
-  });
-});
-
-describe('VOICE-IDEM-BE: the repository writes one row per key', () => {
-  const seed = (storageKey: string): VoiceNoteSeed => ({
-    workspaceId: WS, cohortId: SPACE, conversationId: null, authorId: MEMBER_ID, storageKey, durationMs: 5000,
-    bytes: 1000, mimeType: 'audio/mp4', waveformPeaks: null, parent: null, answersClients: false,
-  });
-  const firstRow = { id: 'first', storage_key: 'k' };
-  const dup = () => new Prisma.PrismaClientKnownRequestError('Unique constraint failed on the fields: (`id`)',
-    { code: 'P2002', clientVersion: 'test' });
-
-  it('the note id comes from the storage key: stable, v4-shaped, distinct per key', () => {
-    const a = voiceNoteIdFor(`${MEMBER_ID}/1700000000000-0123456789abcdef-x.m4a`);
-    expect(a).toMatch(UUID_V4);
-    expect(voiceNoteIdFor(`${MEMBER_ID}/1700000000000-0123456789abcdef-x.m4a`)).toBe(a);
-    expect(voiceNoteIdFor(`${MEMBER_ID}/1700000000001-0123456789abcdef-x.m4a`)).not.toBe(a);
-  });
-
-  it('inserts the note and its chat message under that id', async () => {
-    const data: Array<Record<string, unknown>> = [];
-    const tx = {
-      communityVoiceNote: { create: async (a: { data: Record<string, unknown> }) => { data.push(a.data); return { ...a.data, created_at: AT }; } },
-      communityMessage: { create: async (a: { data: Record<string, unknown> }) => { data.push(a.data); return a.data; } },
-    };
-    const repo = new CommunityVoiceRepository(stub<PrismaService>({ $transaction: async (fn: (t: unknown) => unknown) => fn(tx) }));
-    const out = await repo.createVoiceNote(seed('k1'));
-    expect(out.replayed).toBe(false);
-    expect(data.map((d) => d.id)).toEqual([voiceNoteIdFor('k1'), voiceNoteIdFor('k1')]);
-  });
-
-  it('a create the primary key refuses (a racing create won) returns the winner and writes nothing', async () => {
-    const findFirst = jest.fn().mockResolvedValue(firstRow);
-    const repo = new CommunityVoiceRepository(stub<PrismaService>({
-      $transaction: jest.fn().mockRejectedValue(dup()), communityVoiceNote: { findFirst },
-    }));
-    expect(await repo.createVoiceNote(seed('k'))).toEqual({ row: firstRow, replayed: true });
-    expect(findFirst).toHaveBeenCalledWith({ where: { storage_key: 'k' } });
-  });
-
-  it('any other failure, or a refused insert with no row for the key, still throws', async () => {
-    const boom = new Error('db down');
-    const failing = new CommunityVoiceRepository(stub<PrismaService>({
-      $transaction: jest.fn().mockRejectedValue(boom), communityVoiceNote: { findFirst: jest.fn() },
-    }));
-    await expect(failing.createVoiceNote(seed('k'))).rejects.toBe(boom);
-    const orphan = new CommunityVoiceRepository(stub<PrismaService>({
-      $transaction: jest.fn().mockRejectedValue(dup()), communityVoiceNote: { findFirst: jest.fn().mockResolvedValue(null) },
-    }));
-    await expect(orphan.createVoiceNote(seed('k'))).rejects.toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
   });
 });
