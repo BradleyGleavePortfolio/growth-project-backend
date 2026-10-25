@@ -8,7 +8,7 @@
 import { ForbiddenException, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import type { CommunityMessage, User } from '@prisma/client';
+import { Prisma, type CommunityMessage, type User } from '@prisma/client';
 import { CommunityImagesController } from '../../../src/community/images/community-images.controller';
 import {
   CommunityImageStore,
@@ -121,7 +121,7 @@ function world(opts: { banned?: string[]; blocks?: Array<[string, string]>; acce
           deleted_at: null,
           plan_context_type: null,
           ...data,
-          plan_context_payload: null,
+          plan_context_payload: data.plan_context_payload === Prisma.JsonNull ? null : data.plan_context_payload,
         });
         messages.push(m);
         return m;
@@ -183,7 +183,7 @@ function world(opts: { banned?: string[]; blocks?: Array<[string, string]>; acce
     access,
     repo,
     stub<CommunityRealtimeService>({ channels: { cohort: () => 'c' }, cohortShard: () => 0, broadcastCommunityEvent: async () => undefined }),
-    stub<PlanContextService>({ validate: async () => null }),
+    stub<PlanContextService>({ validate: async (_u: User, tag: unknown) => tag }),
     safetyWithBlocks(opts.blocks ?? [], people),
     stub<CommunityNotificationsService>({ pushEnabled: () => false }),
     store,
@@ -203,6 +203,7 @@ beforeEach(() => {
 afterEach(() => {
   delete process.env.FEATURE_COMMUNITY_IMAGES;
   delete process.env.VOICE_KEY_SIGNING_SECRET;
+  delete process.env.FEATURE_COMMUNITY_PLAN_TAGS;
   jest.restoreAllMocks();
 });
 
@@ -343,6 +344,62 @@ describe('POST messages kind image (SC-BE3)', () => {
     expect(edited.message.body).toBe('new');
     expect(edited.message.image).toEqual({ url: expect.stringContaining(sentImageKey(key)), width: 4, height: 3, expires_at: expect.any(String) });
     expect((await w.service.getOne(me, sent.message.id)).message.image).toEqual({ ...edited.message.image, expires_at: expect.any(String) });
+  });
+
+  it("FR-1139 (Sol B2): the chat signs only a message's own photo, never a row naming another message or space", async () => {
+    const w = world();
+    await w.service.send(me, SPACE, 'mine', undefined, undefined, { key: await uploaded(w), width: 1, height: 1 });
+    const [text, theirs] = ['eeeeeeee-0000-4000-8000-0000000000d1', 'eeeeeeee-0000-4000-8000-0000000000d2'];
+    w.messages.push(stub<CommunityMessage>({ ...w.messages[0], id: text, kind: 'text', sender_id: MATE }));
+    w.messages.push(stub<CommunityMessage>({ ...w.messages[0], id: theirs, sender_id: MATE }));
+    for (const message_id of [text, theirs]) w.images.push({ ...w.images[0], message_id, storage_key: `${ME}/${message_id}.sent.jpg` });
+    w.images[0].cohort_id = SPACE_2; // my own row, naming another space
+    const listed = await w.service.list(me, SPACE, {});
+    expect(listed.messages.map((m) => [m.id, 'image' in m ? m.image : 'no key'])).toEqual([[theirs, null], [text, 'no key'], [w.messages[0].id, null]]);
+  });
+
+  it('FR-1139 (Opus C2): a reply quoting a photo carries that photo, signed', async () => {
+    const w = world();
+    const photo = (await w.service.send(me, SPACE, '', undefined, undefined, { key: await uploaded(w), width: 4, height: 3 })).message;
+    w.messages.push(stub<CommunityMessage>({ ...w.messages[0], id: 'eeeeeeee-0000-4000-8000-0000000000d3', kind: 'text', body: 'nice', parent_message_id: photo.id }));
+    const [reply] = (await w.service.list(me, SPACE, {})).messages;
+    expect(reply.parent).toMatchObject({ id: photo.id, kind: 'image', image: { url: expect.stringContaining('.sent.jpg'), width: 4, height: 3 } });
+    expect(reply.parent?.image?.url).toBe(photo.image?.url);
+  });
+
+  it('FR-1139 (Sol C): a photo keeps its plan tag, as a text message does', async () => {
+    process.env.FEATURE_COMMUNITY_PLAN_TAGS = 'true';
+    const w = world();
+    const tag = { type: 'workout', workout_plan_id: 'cccccccc-0000-4000-8000-000000000001', week_index: 2 };
+    const sent = await w.service.send(me, SPACE, '', tag, undefined, { key: await uploaded(w), width: 1, height: 1 });
+    expect(sent.message).toMatchObject({ kind: 'image', plan_context: tag });
+    expect((await w.service.list(me, SPACE, {})).messages[0].plan_context).toEqual(tag);
+    expect(await code(w.service.send(me, SPACE, '', { type: 'workout' }, undefined, { key: await uploaded(w), width: 1, height: 1 }))).toBe('community.plan_context.malformed');
+  });
+
+  it('FX-1156-R75: a photo stores every plan tag arm exactly as a text send stores it; untagged or flag-off stores null', async () => {
+    process.env.FEATURE_COMMUNITY_PLAN_TAGS = 'true';
+    const photo = async (w: ReturnType<typeof world>, tag?: object) =>
+      (await w.service.send(me, SPACE, '', tag, undefined, { key: await uploaded(w), width: 1, height: 1 })).message;
+    const stored = (w: ReturnType<typeof world>, id: string) => w.messages.find((m) => m.id === id)?.plan_context_payload;
+    const id = (n: number) => `cccccccc-0000-4000-8000-00000000000${n}`;
+    for (const tag of [
+      { type: 'workout', workout_plan_id: id(1), week_index: 3, day_index: 6, exercise_id: id(2) },
+      { type: 'meal', meal_plan_id: id(3), meal_id: 'breakfast-1' },
+      { type: 'package', package_id: id(4) },
+      { type: 'check_in', check_in_id: id(5) },
+    ]) {
+      const w = world();
+      const sent = await photo(w, tag);
+      const text = (await w.service.send(me, SPACE, 'same tag', tag)).message;
+      expect(stored(w, sent.id)).toEqual(tag);
+      expect(stored(w, sent.id)).toEqual(stored(w, text.id));
+      expect([sent.plan_context, (await w.service.getOne(me, sent.id)).message.plan_context]).toEqual([tag, tag]);
+    }
+    const w = world();
+    expect(stored(w, (await photo(w)).id)).toBeNull();
+    delete process.env.FEATURE_COMMUNITY_PLAN_TAGS;
+    expect(stored(w, (await photo(w, { type: 'package', package_id: id(4) })).id)).toBeNull();
   });
 
   it('delete erases the sent copy and the upload, and verifies both are gone', async () => {

@@ -298,6 +298,8 @@ export class CommunityMessagesRepository {
     cohortId: string;
     senderId: string;
     body: string;
+    /** FR-1139 (Sol C): the validated plan tag, stored as createCohortMessage stores it. */
+    planContext?: PlanContextTag | null;
     parent?: { id: string; at: Date } | null;
     image: { key: string; width: number; height: number; sizeBytes: number };
     /** FX-1139: copies the upload to its sent key; runs after the rows, so a reused key never copies. */
@@ -315,7 +317,8 @@ export class CommunityMessagesRepository {
           visibility: 'active',
           parent_message_id: params.parent?.id ?? null,
           parent_message_at: params.parent?.at ?? null,
-          plan_context_payload: Prisma.JsonNull,
+          // FX-1156-R75: the zod-typed tag is already Prisma JSON, so it is stored with no cast.
+          plan_context_payload: params.planContext ?? Prisma.JsonNull,
         },
       });
       await tx.communityMessageImage.create({
