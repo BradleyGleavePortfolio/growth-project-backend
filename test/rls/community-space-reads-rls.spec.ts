@@ -1,5 +1,5 @@
 // SC-BE2 (agent 168; fix round 2 FX-1137, agent 169): the space chat read line, unread counts and the
-// Community tab badge, live on the replayed migration chain (20270502009100). The real routes (controller +
+// Community tab badge, live on the replayed migration chain (20270502009300). The real routes (controller +
 // service + CommunitySafetyService), the real space list and GET /community/me; row reads and writes run as
 // role authenticated. Each "0" or refusal follows a control of 1.
 // Coach A: members-only space "mem" (clients O, V, Z), Announcements "ann" and a coach-only chat "big", both
