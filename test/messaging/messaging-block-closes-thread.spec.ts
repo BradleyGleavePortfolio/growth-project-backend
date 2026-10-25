@@ -133,6 +133,11 @@ describe('#168-4: a block closes the coaching 1:1 thread both ways', () => {
     const coach = await f.inbox.inboxForCoach(COACH, {});
     expect(coach.items).toEqual([]);
     expect(coach.total_unread).toBe(0);
+    // FR-1141 (LO-872 B1): ids only, so the phone leaves the client out of "Start a conversation" too.
+    expect(coach.closed_client_ids).toEqual([CLIENT]);
+    expect((await f.messaging.unreadCountForCoach(COACH)).closed_client_ids).toEqual([CLIENT]);
+    f.prisma.$queryRaw.mockResolvedValueOnce([]); // never messaged: still listed as closed
+    expect(await f.inbox.inboxForCoach(COACH, {})).toEqual({ items: [], next_cursor: null, total_unread: 0, closed_client_ids: [CLIENT] });
     expect(await f.messaging.unreadCountForClient(CLIENT)).toEqual({ total: 0 });
     // A direct open still answers closed, from each person's side.
     const clientSaw = jest.fn();
@@ -142,6 +147,14 @@ describe('#168-4: a block closes the coaching 1:1 thread both ways', () => {
     const byClient = blocks[0][0] === CLIENT;
     expect(clientSaw).toHaveBeenCalledWith(byClient ? 'blocked_by_you' : 'blocked_by_them');
     expect(coachSaw).toHaveBeenCalledWith(byClient ? 'blocked_by_them' : 'blocked_by_you');
+  });
+
+  it('FR-1141: closed_client_ids is empty with no block (unblock) and never names anyone off the roster', async () => {
+    for (const blocks of [[], [['33333333-3333-4333-8333-333333333333', COACH]]] as Array<Array<[string, string]>>) {
+      const f = fixture(blocks);
+      expect((await f.inbox.inboxForCoach(COACH, {})).closed_client_ids).toEqual([]);
+      expect((await f.messaging.unreadCountForCoach(COACH)).closed_client_ids).toEqual([]);
+    }
   });
 
   it('B5: no voice upload URL across a block, either side, either direction', async () => {
