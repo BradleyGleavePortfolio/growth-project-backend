@@ -4,7 +4,23 @@
  * byte in jpeg-fixtures.ts; the send check is in community-images.e2e.spec.ts.
  */
 import { carriesLocation, LOCATION_READ_BYTES } from '../../../src/community/images/image-location';
-import { CLEAN, exifApp1, JFIF, jpeg, LOCATED, SCAN, segment, SOI, tiff, xmpApp1, xmpPacket } from './jpeg-fixtures';
+import {
+  CLEAN,
+  exifApp1,
+  EXTENDED_GUID,
+  extendedXmpApp1,
+  HAS_EXTENDED_XMP,
+  JFIF,
+  jpeg,
+  LOCATED,
+  SCAN,
+  segment,
+  SOI,
+  SPLIT_GPS_CHUNKS,
+  tiff,
+  xmpApp1,
+  xmpPacket,
+} from './jpeg-fixtures';
 
 const located = (bytes: number[]) => carriesLocation(Uint8Array.from(bytes));
 
@@ -36,6 +52,20 @@ describe('carriesLocation (PHOTO-GPS)', () => {
     expect(located(jpeg(JFIF, xmpApp1(xmpPacket('xmp:CreatorTool="TGP"'))))).toBe(false);
     // XMP beside a clean EXIF still counts.
     expect(located(jpeg(JFIF, exifApp1(tiff('II')), xmpApp1(xmpPacket('exif:GPSLatitude="1,0N"'))))).toBe(true);
+  });
+
+  it('refuses ExtendedXMP, which it never reads: its chunks can split a GPS name (LS-1164 B1)', () => {
+    // The counterexample: no single segment names GPSLatitude; only the joined chunks do.
+    const gpsName = (seg: number[]) => /GPS(?:Latitude|Longitude)/.test(Buffer.from(seg).toString('latin1'));
+    expect([HAS_EXTENDED_XMP, ...SPLIT_GPS_CHUNKS].map(gpsName)).toEqual([false, false, false]);
+    expect(located(jpeg(JFIF, HAS_EXTENDED_XMP, ...SPLIT_GPS_CHUNKS))).toBe(true);
+    expect(located(jpeg(JFIF, ...SPLIT_GPS_CHUNKS))).toBe(true); // the chunks' signature alone
+    expect(located(jpeg(JFIF, SPLIT_GPS_CHUNKS[1], exifApp1(tiff('II'))))).toBe(true); // one chunk, after a clean EXIF
+    expect(located(jpeg(JFIF, HAS_EXTENDED_XMP))).toBe(true); // XMP that says it has ExtendedXMP, the chunks gone
+    expect(located(jpeg(JFIF, extendedXmpApp1(EXTENDED_GUID, 3, 0, 'abc')))).toBe(true); // a chunk with no GPS name
+    // Ordinary XMP stays clean, even with the note namespace declared; so does the signature text inside an XMP packet.
+    expect(located(jpeg(JFIF, xmpApp1(xmpPacket('xmlns:xmpNote="http://ns.adobe.com/xmp/note/" xmp:CreatorTool="TGP"'))))).toBe(false);
+    expect(located(jpeg(JFIF, xmpApp1(xmpPacket('xmp:Label="http://ns.adobe.com/xmp/extension/"'))))).toBe(false);
   });
 
   it('a truncated or malformed EXIF APP1 counts as a location', () => {

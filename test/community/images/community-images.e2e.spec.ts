@@ -488,9 +488,13 @@ describe('POST messages kind image (SC-BE3)', () => {
     });
 
     it('if the erase fails it still refuses, logs erase=deferred_to_link_expiry (no key), and the erasure row erases it at link death', async () => {
-      for (const failing of ['failed', 'threw'] as const) {
+      // FR-1164R: the second round sends LS-1164 B1's photo (a GPS name split across ExtendedXMP chunks).
+      for (const [failing, photo] of [
+        ['failed', 'GPS in EXIF, little endian'],
+        ['threw', 'a GPS name split across two ExtendedXMP chunks'],
+      ] as const) {
         const w = world();
-        const head = LOCATED['GPS in EXIF, little endian'];
+        const head = LOCATED[photo];
         const key = await uploaded(w, { head, size: head.length });
         const remove = jest.spyOn(w.store, 'removeObjects');
         if (failing === 'failed') remove.mockResolvedValueOnce({ removed: 0, failed: true });
