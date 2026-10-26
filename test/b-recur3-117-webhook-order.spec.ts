@@ -229,7 +229,7 @@ describe('B-680-3 / C-680-6: the first-payment notice is money collected, never 
     else process.env.FEATURE_ROMAN_FIRST_PAYMENT = flag;
   });
   function money(over: Record<string, unknown> = {}, alreadySent = false) {
-    const notifications: any = { createNotification: jest.fn(async () => undefined) };
+    const notifications: any = { createNotification: jest.fn(async () => undefined), sendPush: jest.fn(async () => null) };
     const h = harness(over, new CoachFirstPaymentService(new FirstPaymentEmitter(notifications)));
     const ledger = {
       findUnique: jest.fn(async () => (alreadySent ? { id: 'fp_1' } : null)),
@@ -246,6 +246,7 @@ describe('B-680-3 / C-680-6: the first-payment notice is money collected, never 
     expect(h.row().entitlement_active).toBe(true);
     expect(h.ledger.create).not.toHaveBeenCalled();
     expect(h.notifications.createNotification).not.toHaveBeenCalled();
+    expect(h.notifications.sendPush).not.toHaveBeenCalled();
   });
 
   it('(failed before) the first paid invoice after a trial records the amount Stripe collected', async () => {

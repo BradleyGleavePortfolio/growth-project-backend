@@ -66,7 +66,7 @@ function harness(over: Record<string, unknown> = {}, withMoney = false) {
     onPurchaseEntitled: jest.fn(async () => undefined),
     cancelPendingForPurchase: jest.fn(async () => 0),
   };
-  const notifications: any = { createNotification: jest.fn(async () => undefined) };
+  const notifications: any = { createNotification: jest.fn(async () => undefined), sendPush: jest.fn(async () => null) };
   const ledger = {
     findUnique: jest.fn(async () => null),
     create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'fp_r5', ...data })),

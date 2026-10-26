@@ -515,12 +515,18 @@ describe('FR-1154: safety alerts and money senders reach a user with Mute all on
       expect(out.results.client_push).toEqual({ status: 'sent' });
       expect(push).toHaveBeenCalledTimes(1);
     }],
-    ['first payment: both rows written (it sends no device push)', async () => {
+    ['first payment: both rows written and the push sent (OB1)', async () => {
       const { svc, created } = notifications(mutedAllOn);
       const push = jest.spyOn(svc, 'sendPush');
       await new FirstPaymentEmitter(svc).emit('coach-first', { amount: 4900, currency: 'usd', clientId: 'client-first' });
       expect(created.map((r) => (r as { channel: string }).channel)).toEqual(['inapp', 'push']);
-      expect(push).not.toHaveBeenCalled();
+      expect(push).toHaveBeenCalledTimes(1);
+      const w = pushWorld();
+      w.prefs['coach-first'] = { muted: true };
+      w.tokens['coach-first'] = TOKEN;
+      await new FirstPaymentEmitter(w.svc).emit('coach-first', { amount: 4900, currency: 'usd', clientId: 'client-first' });
+      await w.delivery.drain();
+      expect(w.rows.map((r) => [r.kind, r.status])).toEqual([[NotificationKind.FIRST_PAYMENT, 'sent']]);
     }],
   ];
   it.each(MONEY_SENDERS)('%s with Mute all on', async (_name, run) => {
