@@ -62,7 +62,7 @@ export class CommunityMessagesController {
       body.kind === 'image'
         ? { key: body.image_key ?? '', width: body.width ?? 0, height: body.height ?? 0 }
         : undefined;
-    return this.messages.send(req.user, cohortId, body.body ?? '', body.plan_context, body.parent_message_id, image);
+    return this.messages.send(req.user, cohortId, body.body ?? '', body.plan_context, body.parent_message_id, image, body.high_alert);
   }
 
   @Get('cohorts/:cohortId/messages')
