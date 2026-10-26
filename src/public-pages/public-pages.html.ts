@@ -319,15 +319,15 @@ function baseDocument(p: PageContent): string {
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 32px 20px; }
   main { max-width: 480px; width: 100%; text-align: left; }
   h1 { font-family: "Iowan Old Style", Georgia, serif; font-weight: 500; font-size: 36px; line-height: 1.15; letter-spacing: -0.01em; margin: 0 0 18px 0; }
-  p { font-size: 17px; line-height: 1.55; margin: 0 0 28px 0; color: #3A332B; }
+  p { font-size: 17px; line-height: 1.55; margin: 0 0 28px 0; color: #2C2C2C; }
   p.code-label { margin: 0 0 6px 0; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: #2C2C2C; }
   p.code { margin: 0 0 28px 0; font-family: "SF Mono", "Menlo", ui-monospace, monospace; font-size: 17px; color: #1F1B16; user-select: all; }
   a.cta { display: inline-block; padding: 14px 22px; border-radius: 12px; background: #1F1B16; color: #FBF8F3; text-decoration: none; font-weight: 500; font-size: 15px; }
-  a.cta:hover { background: #3A332B; }
+  a.cta:hover { background: #2C2C2C; }
   button.cta { display: inline-block; padding: 14px 22px; border: 0; border-radius: 12px; background: #1F1B16; color: #FBF8F3; font: inherit; font-weight: 500; font-size: 15px; cursor: pointer; }
   ul.links { list-style: none; padding: 0; margin: 28px 0 0 0; }
   ul.links li { margin: 0; font-size: 15px; }
-  ul.links a { display: inline-flex; align-items: center; min-height: 44px; color: #3A332B; }
+  ul.links a { display: inline-flex; align-items: center; min-height: 44px; color: #2C2C2C; }
   footer { margin-top: 40px; font-size: 13px; color: #2C2C2C; }
   footer a { display: inline-flex; align-items: center; min-height: 44px; color: #2C2C2C; text-decoration: underline; }
 </style>
