@@ -73,6 +73,7 @@ interface SpaceRow {
  * - n: plain chat messages after it, capped at UNREAD_CAP, leaving out their own, deleted ones, those of anyone
  *   they block or who blocks them, and of an author who left the coach's community or is banned from it: the
  *   chat list's own rule (C6-WINS-MOVE app.community_author_stays, #168-4 app.community_author_unbanned).
+ *   LEAVE-MUTE-BE (owner D2): none for a space they left, and none of the replies in a thread they muted or left.
  * - their notification row.
  */
 async function spaceRows(prisma: PrismaService, userId: string, cohortIds: string[]): Promise<SpaceRow[]> {
@@ -84,6 +85,9 @@ async function spaceRows(prisma: PrismaService, userId: string, cohortIds: strin
         SELECT 1 FROM "community_messages" m
         WHERE m."cohort_id" = c."id" AND m."scope" = 'cohort' AND m."plan_context_type" IS NULL
           AND m."deleted_at" IS NULL AND m."sender_id" <> ${userId} AND m."created_at" > j."since"
+          AND r."left_at" IS NULL
+          AND (m."parent_message_id" IS NULL OR NOT EXISTS (SELECT 1 FROM "community_thread_prefs" tp
+            WHERE tp."user_id" = ${userId} AND tp."thread_message_id" = m."parent_message_id"))
           AND NOT EXISTS (SELECT 1 FROM "UserBlock" b
             WHERE (b."blocker_id" = ${userId} AND b."blocked_id" = m."sender_id")
                OR (b."blocker_id" = m."sender_id" AND b."blocked_id" = ${userId}))

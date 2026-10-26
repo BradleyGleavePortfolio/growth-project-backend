@@ -538,6 +538,7 @@ model User {
   community_voice_note_listens       CommunityVoiceNoteListen[]
   community_voice_consent            CommunityVoiceConsent?
   community_space_reads              CommunitySpaceRead[]
+  community_thread_prefs             CommunityThreadPref[]
   community_workspace_bans           CommunityWorkspaceBan[]           @relation("CommunityWorkspaceBanUser")
   // A4 broadcasts, saved replies and client tags (additive back-relations;
   // migration 20270304000000_a4_broadcasts_cards_saved_replies).
@@ -7472,6 +7473,7 @@ model CommunityCohort {
   voice_notes CommunityVoiceNote[]
   packages    CommunityCohortPackage[]
   reads       CommunitySpaceRead[]
+  thread_prefs CommunityThreadPref[]
 
   @@unique([workspace_id, name])
   // Cohort list ordered for a workspace (coach + client surfaces).
@@ -9214,6 +9216,7 @@ model CommunitySpaceRead {
   last_read_message_id String?   @db.Uuid
   notify_mode          String?
   silenced_until       DateTime? @db.Timestamptz(6)
+  left_at              DateTime? @db.Timestamptz(6) // LEAVE-MUTE-BE: when they left the space (null = in it)
   updated_at           DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
   user   User            @relation(fields: [user_id], references: [id], onDelete: Cascade)
@@ -9222,6 +9225,24 @@ model CommunitySpaceRead {
   @@id([user_id, cohort_id])
   @@index([cohort_id])
   @@map("community_space_reads")
+}
+
+// LEAVE-MUTE-BE (agent 176, owner D2b): a person's muted or left thread, by its first message (no foreign key:
+// community_messages is partitioned on (id, created_at)). state 'muted' | 'left' (CHECK in 20270502009600).
+model CommunityThreadPref {
+  user_id           String
+  thread_message_id String   @db.Uuid
+  cohort_id         String   @db.Uuid
+  state             String
+  since             DateTime @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  user   User            @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  cohort CommunityCohort @relation(fields: [cohort_id], references: [id], onDelete: Cascade)
+
+  @@id([user_id, thread_message_id])
+  @@index([user_id, cohort_id])
+  @@map("community_thread_prefs")
 }
 
 // SC-BE3 (agent 168): the photo behind a kind 'image' space chat message.

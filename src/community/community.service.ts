@@ -7,6 +7,8 @@ import { memberName } from './member-display-name';
 import { fullNamesFor } from './community-space-access';
 import { isBannedFromWorkspace } from './community-ban';
 import { communityTabUnread, spaceUnreadCounts } from './space-reads/community-space-reads.service';
+import { leftSpaces } from './leave-mute/community-leave-mute.service';
+import { CommunityCohortListWithLeftSchema, type CommunityCohortListWithLeft } from './leave-mute/community-leave-mute.dto';
 import {
   WIN_NOT_FOUND,
   WIN_POSTING_REMOVED,
@@ -25,8 +27,6 @@ import {
   CommunityWorkspaceResponseSchema,
 } from './dto/community-workspace.dto';
 import {
-  CommunityCohortListResponse,
-  CommunityCohortListResponseSchema,
   CommunityCohortResponse,
   CommunityCohortResponseSchema,
 } from './dto/community-cohort.dto';
@@ -319,12 +319,16 @@ export class CommunityService {
 
   // ── GET /community/cohorts ────────────────────────────────────────────────
 
-  async getCohorts(user: User): Promise<CommunityCohortListResponse> {
+  /** LEAVE-MUTE-BE (owner D2): a space the caller left drops out; with includeLeft every row carries left_at
+   *  (null = in it), for "Spaces you left". */
+  async getCohorts(user: User, includeLeft = false): Promise<CommunityCohortListWithLeft> {
     const role = this.effectiveRole(user);
-    const cohorts = await this.repo.findCohortsForUser({
+    const readable = await this.repo.findCohortsForUser({
       userId: user.id,
       role: this.scopingRole(user),
     });
+    const left = await leftSpaces(this.prisma, user.id, readable.map((c) => c.id));
+    const cohorts = includeLeft ? readable : readable.filter((c) => !left.has(c.id));
     // SC-BE2: each space's unread badge (one round trip for the list).
     const unread = await spaceUnreadCounts(this.prisma, user.id, cohorts.map((c) => c.id));
 
@@ -340,10 +344,11 @@ export class CommunityService {
         member_count: await this.repo.cohortMemberCount(c),
         my_role: role,
         unread_count: unread.get(c.id) ?? 0,
+        ...(includeLeft ? { left_at: left.get(c.id)?.toISOString() ?? null } : {}),
       })),
     );
 
-    return CommunityCohortListResponseSchema.parse({
+    return CommunityCohortListWithLeftSchema.parse({
       feature_flag_state: 'enabled',
       cohorts: summaries,
     });
