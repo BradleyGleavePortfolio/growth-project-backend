@@ -144,6 +144,9 @@ export class CommunityMessagesService {
    * be at that key, JPEG and within 10 MB, else 422. Storage down is 503.
    * FX-1139: the rows and the copy to the sent key commit together.
    * FR-1139 (Sol C): a validated plan tag is stored, as on a text message.
+   * PHOTO-GPS: a photo that carries a location is 422 community.image.has_location,
+   * nothing is written and its upload is erased now; if that erase fails, the
+   * upload's erasure row (recorded when its link was signed) erases it at link death.
    */
   private async createImage(
     user: User,
@@ -160,6 +163,9 @@ export class CommunityMessagesService {
     const { result, size } = await images.check(image.key, user.id);
     if (result === 'unavailable') {
       throw new ServiceUnavailableException({ error: 'unavailable', code: 'community.image.storage_unavailable' });
+    }
+    if (result === 'has_location' && (await images.removeObjects([image.key]).catch(() => ({ failed: true }))).failed) {
+      this.logger.warn('community.image outcome=has_location erase=deferred_to_link_expiry');
     }
     if (result !== 'ok') throw IMAGE_REJECTED(`community.image.${result}`);
     try {
