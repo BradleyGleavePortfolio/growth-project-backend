@@ -83,7 +83,7 @@ type RemovedBy = z.infer<typeof RemovedBySchema>;
 
 /** A coach's removal of someone else's message (a placeholder), not an author's delete. */
 function coachRemoved(m: CommunityMessage): m is CommunityMessage & { deleted_at: Date; removed_by_user_id: string } {
-  return m.deleted_at !== null && m.removed_by_user_id !== null;
+  return !!m.deleted_at && !!m.removed_by_user_id;
 }
 
 /** SC-BE1: the sender and reply quote a space chat read adds to one row (REMOVED-BY-BE: and who removed it). */

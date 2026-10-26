@@ -72,7 +72,7 @@ const VoiceNoteRowFeedSchema = VoiceNoteFeedResponseSchema.extend({ voice_notes:
 
 /** A coach's removal of someone else's note (shown as a placeholder), not an author's delete. */
 function coachRemoved(row: CommunityVoiceNote): row is CommunityVoiceNote & { soft_deleted_at: Date; removed_by_user_id: string } {
-  return row.soft_deleted_at !== null && row.removed_by_user_id !== null;
+  return !!row.soft_deleted_at && !!row.removed_by_user_id;
 }
 
 const NOT_FOUND = {
