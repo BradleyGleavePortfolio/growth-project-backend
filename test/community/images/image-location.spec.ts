@@ -19,6 +19,7 @@ import {
   SPLIT_GPS_CHUNKS,
   tiff,
   xmpApp1,
+  XMP_NO_LOCATION,
   xmpPacket,
 } from './jpeg-fixtures';
 
@@ -45,18 +46,43 @@ describe('carriesLocation (PHOTO-GPS)', () => {
   });
 
   it('reads XMP: GPSLatitude or GPSLongitude as an attribute or an element is a location; other XMP is not', () => {
-    expect(located(jpeg(JFIF, xmpApp1(xmpPacket('exif:GPSLatitude="37,46.5N"'))))).toBe(true);
-    expect(located(jpeg(JFIF, xmpApp1(xmpPacket('exif:GPSLongitude="122,25.1W"'))))).toBe(true);
-    const element = xmpPacket('').replace('/>', '><exif:GPSLatitude>37,46.5N</exif:GPSLatitude></rdf:Description>');
+    expect(located(jpeg(JFIF, xmpApp1(xmpPacket('exif:GPSLatitude="1,0.0N"'))))).toBe(true);
+    expect(located(jpeg(JFIF, xmpApp1(xmpPacket('exif:GPSLongitude="2,0.0E"'))))).toBe(true);
+    const element = xmpPacket('').replace('/>', '><exif:GPSLatitude>1,0.0N</exif:GPSLatitude></rdf:Description>');
     expect(located(jpeg(JFIF, xmpApp1(element)))).toBe(true);
     expect(located(jpeg(JFIF, xmpApp1(xmpPacket('xmp:CreatorTool="TGP"'))))).toBe(false);
     // XMP beside a clean EXIF still counts.
     expect(located(jpeg(JFIF, exifApp1(tiff('II')), xmpApp1(xmpPacket('exif:GPSLatitude="1,0N"'))))).toBe(true);
   });
 
+  it('reads every documented XMP location name, in any letter case, as an attribute or an element (LS-1164R B1)', () => {
+    const names = [
+      // EXIF's GPS names in XMP
+      ...['exif:GPSLatitude', 'exif:GPSLongitude', 'exif:GPSDestLatitude', 'exif:GPSDestLongitude'],
+      // DJI: "Longtitude" [sic] is how some DJI drones write it; the older names; the laser range target
+      ...['drone-dji:GpsLatitude', 'drone-dji:GpsLongitude', 'drone-dji:GpsLongtitude'],
+      ...['drone-dji:Latitude', 'drone-dji:Longitude', 'drone-dji:LRFTargetLat', 'drone-dji:LRFTargetLon'],
+      // Google Dynamic Depth's EarthPose
+      ...['EarthPose:Latitude', 'EarthPose:Longitude'],
+      // any letter case
+      ...['exif:gpslatitude', 'exif:GPSLONGITUDE', 'drone-dji:gPsLaTiTuDe', 'drone-dji:gpslongtitude', 'drone-dji:lrftargetlon'],
+    ];
+    for (const name of names) {
+      expect([name, located(jpeg(JFIF, xmpApp1(xmpPacket(`${name}="+1.0"`))))]).toEqual([name, true]);
+      const element = xmpPacket('').replace('/>', `><${name}>+1.0</${name}></rdf:Description>`);
+      expect([name, located(jpeg(JFIF, exifApp1(tiff('MM')), xmpApp1(element)))]).toEqual([name, true]);
+    }
+    expect(located(jpeg(JFIF, xmpApp1(xmpPacket('xmpNote:hasextendedxmp="1"'))))).toBe(true); // the ExtendedXMP advert, any case
+  });
+
+  it('XMP with no location stays clean: editor, HDR and drone flight fields, a depth namespace, a pixel SubjectLocation', () => {
+    expect(located(jpeg(JFIF, xmpApp1(XMP_NO_LOCATION)))).toBe(false);
+    expect(located(jpeg(JFIF, exifApp1(tiff('MM')), xmpApp1(XMP_NO_LOCATION)))).toBe(false);
+  });
+
   it('refuses ExtendedXMP, which it never reads: its chunks can split a GPS name (LS-1164 B1)', () => {
     // The counterexample: no single segment names GPSLatitude; only the joined chunks do.
-    const gpsName = (seg: number[]) => /GPS(?:Latitude|Longitude)/.test(Buffer.from(seg).toString('latin1'));
+    const gpsName = (seg: number[]) => /latitude|longt?itude/i.test(Buffer.from(seg).toString('latin1'));
     expect([HAS_EXTENDED_XMP, ...SPLIT_GPS_CHUNKS].map(gpsName)).toEqual([false, false, false]);
     expect(located(jpeg(JFIF, HAS_EXTENDED_XMP, ...SPLIT_GPS_CHUNKS))).toBe(true);
     expect(located(jpeg(JFIF, ...SPLIT_GPS_CHUNKS))).toBe(true); // the chunks' signature alone

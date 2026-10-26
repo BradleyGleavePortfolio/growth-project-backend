@@ -489,9 +489,11 @@ describe('POST messages kind image (SC-BE3)', () => {
 
     it('if the erase fails it still refuses, logs erase=deferred_to_link_expiry (no key), and the erasure row erases it at link death', async () => {
       // FR-1164R: the second round sends LS-1164 B1's photo (a GPS name split across ExtendedXMP chunks).
+      // FR-1164R2: the third sends LS-1164R B1's photo (DJI's location names in XMP, its EXIF without GPS).
       for (const [failing, photo] of [
         ['failed', 'GPS in EXIF, little endian'],
         ['threw', 'a GPS name split across two ExtendedXMP chunks'],
+        ['failed', "DJI's GpsLatitude and GpsLongitude in XMP"],
       ] as const) {
         const w = world();
         const head = LOCATED[photo];
