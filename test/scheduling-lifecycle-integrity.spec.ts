@@ -94,7 +94,8 @@ class FakeNotifications {
 
   createNotification = jest.fn(async (input: CreateNotificationInput) => {
     const p = this.prefs.get(input.user_id) ?? {};
-    if (p.muted === true || p.booking_inapp === false) return null;
+    // MUTE-PAY (owner #171-3): Mute all never stops an in-app row (the real core gate).
+    if (p.booking_inapp === false) return null;
     this.rows.push(input);
     return { id: `notif-${this.rows.length}` };
   });
@@ -1712,7 +1713,8 @@ describe('S-SCHED-3 B-634-2: reminder delivery is recoverable and channel-aware'
       await reminder.runOneHourReminderSweep();
       await reminder.runOneHourReminderSweep();
     });
-    expect(remindersFor(notifications).map((r) => r.user_id)).toEqual(['coach-1']);
+    // The muted client keeps the in-app reminder; only the push is muted.
+    expect(remindersFor(notifications).map((r) => r.user_id).sort()).toEqual(['client-1', 'coach-1']);
     expect(notifications.sendPush).toHaveBeenCalledTimes(1);
     expect(db.deliveryLogs.map((l) => [l.user_id, l.status, l.attempts])).toEqual([
       ['client-1', 'sent', 1],
