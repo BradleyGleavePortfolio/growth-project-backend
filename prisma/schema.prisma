@@ -537,6 +537,7 @@ model User {
   community_voice_notes_authored     CommunityVoiceNote[]              @relation("CommunityVoiceNoteAuthor")
   community_voice_note_listens       CommunityVoiceNoteListen[]
   community_voice_consent            CommunityVoiceConsent?
+  community_space_reads              CommunitySpaceRead[]
   community_workspace_bans           CommunityWorkspaceBan[]           @relation("CommunityWorkspaceBanUser")
   // A4 broadcasts, saved replies and client tags (additive back-relations;
   // migration 20270304000000_a4_broadcasts_cards_saved_replies).
@@ -7201,6 +7202,7 @@ enum CommunityMessageKind {
   text
   voice
   system
+  image // SC-BE3: a photo (community_message_images)
 }
 
 enum CommunityPostScope {
@@ -7469,6 +7471,7 @@ model CommunityCohort {
   challenges  CommunityChallenge[]
   voice_notes CommunityVoiceNote[]
   packages    CommunityCohortPackage[]
+  reads       CommunitySpaceRead[]
 
   @@unique([workspace_id, name])
   // Cohort list ordered for a workspace (coach + client surfaces).
@@ -7544,6 +7547,7 @@ model CommunityMessage {
   coach_acked_at       DateTime?             @db.Timestamptz(6)
   coach_replied_at     DateTime?             @db.Timestamptz(6)
   visibility           String                @default("active") @db.VarChar(24)
+  high_alert           Boolean               @default(false) // SC-BE2: a coach's high-alert message (#167-8)
   deleted_at           DateTime?             @db.Timestamptz(6)
   updated_at           DateTime              @updatedAt @db.Timestamptz(6)
 
@@ -9199,4 +9203,44 @@ model RomanUsageDaily {
 
   @@id([client_id, day])
   @@map("roman_usage_daily")
+}
+
+/// SC-BE2 (20270502009100): one row per (person, space): the read line, the notification mode (null = the
+/// space's default) and an optional silence end. RLS forced: own rows, written only for a space the person can read.
+model CommunitySpaceRead {
+  user_id              String
+  cohort_id            String    @db.Uuid
+  last_read_at         DateTime? @db.Timestamptz(6)
+  last_read_message_id String?   @db.Uuid
+  notify_mode          String?
+  silenced_until       DateTime? @db.Timestamptz(6)
+  updated_at           DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  user   User            @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  cohort CommunityCohort @relation(fields: [cohort_id], references: [id], onDelete: Cascade)
+
+  @@id([user_id, cohort_id])
+  @@index([cohort_id])
+  @@map("community_space_reads")
+}
+
+// SC-BE3 (agent 168): the photo behind a kind 'image' space chat message.
+// One row per message; the object is at `storage_key` in the private
+// community-images bucket (JPEG, 10 MB). RLS forced: a row is readable by
+// whoever can open the space, and insertable only by its author there.
+model CommunityMessageImage {
+  message_id  String   @id @db.Uuid
+  cohort_id   String   @db.Uuid
+  author_id   String
+  storage_key String   @unique @db.Text
+  width       Int
+  height      Int
+  size_bytes  Int
+  mime        String   @db.VarChar(40)
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@index([cohort_id, created_at])
+  @@index([author_id])
+  @@map("community_message_images")
 }

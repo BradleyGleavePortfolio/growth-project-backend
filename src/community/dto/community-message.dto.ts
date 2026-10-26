@@ -1,10 +1,15 @@
 import {
+  IsIn,
+  IsInt,
   IsObject,
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   MaxLength,
+  Min,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { z } from 'zod';
@@ -17,6 +22,8 @@ const trim = ({ value }: { value: unknown }): unknown =>
 
 /** POST /community/cohorts/:cohortId/messages — send a cohort message. */
 export class CreateMessageDto {
+  // SC-BE3: a photo's caption is optional; a text message still needs a body.
+  @ValidateIf((o: CreateMessageDto) => o.kind !== 'image' || o.body !== undefined)
   @Transform(trim)
   @IsString()
   @MinLength(1, { message: 'message body must not be empty' })
@@ -37,6 +44,40 @@ export class CreateMessageDto {
   @IsOptional()
   @IsUUID('4')
   parent_message_id?: string;
+
+  // SC-BE3: a photo (FEATURE_COMMUNITY_IMAGES). The key from POST
+  // .../images/upload-url and the photo's pixel size; `body` is its caption.
+  @IsOptional()
+  @IsIn(['text', 'image'])
+  kind?: 'text' | 'image';
+
+  @ValidateIf((o: CreateMessageDto) => o.kind === 'image')
+  @IsString()
+  @MaxLength(200)
+  image_key?: string;
+
+  @ValidateIf((o: CreateMessageDto) => o.kind === 'image')
+  @IsInt()
+  @Min(1)
+  @Max(10000)
+  width?: number;
+
+  @ValidateIf((o: CreateMessageDto) => o.kind === 'image')
+  @IsInt()
+  @Min(1)
+  @Max(10000)
+  height?: number;
+}
+
+/** POST /community/cohorts/:cohortId/images/upload-url — SC-BE3. */
+export class ImageUploadUrlDto {
+  @IsIn(['image/jpeg'])
+  mime!: 'image/jpeg';
+
+  @IsInt()
+  @Min(1)
+  @Max(10 * 1024 * 1024)
+  size_bytes!: number;
 }
 
 /** PATCH /community/messages/:messageId — edit own message (5-min window). */
@@ -79,13 +120,23 @@ export const MessageAckEnvelopeSchema = z
 
 export type MessageAckEnvelope = z.infer<typeof MessageAckEnvelopeSchema>;
 
+/** SC-BE3: a photo with a short-lived signed read URL (null when storage cannot sign it). */
+const ChatImageSchema = z
+  .object({
+    url: z.string().nullable(),
+    width: z.number().int(),
+    height: z.number().int(),
+    expires_at: z.string().datetime(),
+  })
+  .strict();
+
 export const CommunityMessageSchema = z
   .object({
     id: z.guid(),
     cohort_id: z.guid().nullable(),
     sender_user_id: z.guid(),
     body: z.string().nullable(),
-    kind: z.enum(['text', 'voice', 'system']),
+    kind: z.enum(['text', 'voice', 'system', 'image']),
     created_at: z.string().datetime(),
     updated_at: z.string().datetime(),
     edited: z.boolean(),
@@ -128,14 +179,19 @@ export const CommunityMessageSchema = z
       .object({
         id: z.guid(),
         gone: z.boolean(),
-        kind: z.enum(['text', 'voice', 'system']).nullable(),
+        kind: z.enum(['text', 'voice', 'system', 'image']).nullable(),
         sender_name: z.string().nullable(),
         snippet: z.string().nullable(),
         voice_duration_ms: z.number().int().nullable(),
+        // FR-1139 (Opus C2): on a live quoted photo only, the photo as on its own row.
+        image: ChatImageSchema.nullable().optional(),
       })
       .strict()
       .nullable()
       .optional(),
+    // SC-BE3: on a live kind 'image' row, its photo with a short-lived signed
+    // read URL (null when storage cannot sign it), else null.
+    image: ChatImageSchema.nullable().optional(),
   })
   .strict();
 

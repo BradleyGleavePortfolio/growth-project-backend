@@ -177,7 +177,7 @@ itLive('CoachThreadState + CoachMessage v2 columns RLS as authenticated (live DB
     expect(rows).toEqual([{ relrowsecurity: true, relforcerowsecurity: true }]);
   });
 
-  it('RLS is ENABLE + FORCE on CoachMessage with exactly its two policies', async () => {
+  it('RLS is ENABLE + FORCE on CoachMessage with exactly its three policies', async () => {
     const rls = await prisma.$queryRaw<
       Array<{ relrowsecurity: boolean; relforcerowsecurity: boolean }>
     >`
@@ -203,6 +203,18 @@ itLive('CoachThreadState + CoachMessage v2 columns RLS as authenticated (live DB
       '(coach_id = app.current_user_id()) OR ' +
       '(app.is_subcoach_of(client_id) AND app.is_subcoach_on_coach_team(coach_id))))';
     expect(policies).toEqual([
+      // 20270502008900 (FX-1141, Sol B4): nobody reads a coaching chat across a block, either way.
+      {
+        policyname: 'coach_message_no_block',
+        permissive: 'RESTRICTIVE',
+        roles: ['public'],
+        cmd: 'SELECT',
+        qual:
+          '((NOT app.users_in_block(app.current_user_id(), client_id)) AND ' +
+          '(NOT app.users_in_block(app.current_user_id(), coach_id)) AND ' +
+          '(NOT app.users_in_block(app.current_user_id(), sender_id)))',
+        with_check: null,
+      },
       {
         policyname: 'coach_message_participant_access',
         permissive: 'PERMISSIVE',

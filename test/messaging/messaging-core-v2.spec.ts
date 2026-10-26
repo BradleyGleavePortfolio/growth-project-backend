@@ -782,7 +782,7 @@ describe('unified inbox', () => {
     expect(out.total_unread).toBe(2);
   });
 
-  it('coach: pinned threads first; blocked threads hide the preview and unread', async () => {
+  it('coach: pinned threads first; a blocked thread leaves the list (10-23 "Dissapear")', async () => {
     const t = build({ blocked: [OTHER_CLIENT] });
     t.prisma.$queryRaw.mockResolvedValueOnce(lastRows());
     t.prisma.coachThreadState.findMany.mockResolvedValueOnce([
@@ -790,12 +790,7 @@ describe('unified inbox', () => {
     ]);
     const out = await t.inbox.inboxForCoach(COACH, {});
     expect(out.items[0]).toMatchObject({ client_id: CLIENT, pinned: true, muted: true });
-    expect(out.items[1]).toMatchObject({
-      client_id: OTHER_CLIENT,
-      blocked_by_me: true,
-      last_message: null,
-      unread_count: 0,
-    });
+    expect(out.items.map((i) => i.client_id)).toEqual([CLIENT]);
   });
 
   it('tenancy: the query is bound to the scope (head coach namespace, authorized clients only)', async () => {
@@ -808,7 +803,7 @@ describe('unified inbox', () => {
     expect(sql.values).toEqual([COACH, [CLIENT]]);
     t.subCoachScope.getAuthorizedClientIds.mockResolvedValue([]);
     const none = await t.inbox.inboxForCoach(SUB, {});
-    expect(none).toEqual({ items: [], next_cursor: null, total_unread: 0 });
+    expect(none).toEqual({ items: [], next_cursor: null, total_unread: 0, closed_client_ids: [] });
     expect(t.prisma.$queryRaw).toHaveBeenCalledTimes(1);
   });
 

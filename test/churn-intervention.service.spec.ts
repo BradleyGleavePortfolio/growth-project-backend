@@ -54,6 +54,13 @@ function buildPrisma(initial: Partial<FakeRows> = {}): any {
   // throw, roll back any side-effects by snapshotting `rows` first.
   const fake: any = {
     rows,
+    // FR-1154R3: the send reads the client's Mute all switch (no row: not muted).
+    notificationPreferences: { findUnique: jest.fn(async () => null) },
+    // FX-1141: block rows ({ blocker_id, blocked_id }); none unless a test adds one.
+    blocks: [] as Array<{ blocker_id: string; blocked_id: string }>,
+    userBlock: {
+      findMany: jest.fn(async () => fake.blocks),
+    },
     $transaction: jest.fn(async (opsOrFn: any) => {
       const snapshot = {
         interventions: rows.interventions.map((i) => ({ ...i })),
@@ -605,6 +612,35 @@ describe('ChurnInterventionService.generateChurnDraft — R2b box-2 consent', ()
       svc.generateChurnDraft('c2', 'u1', { idempotency_key: VALID_UUID }),
     ).rejects.toThrow(/not found/i);
     expect(reader.calls).toHaveLength(0);
+  });
+});
+
+// FX-1141 (Sol B1): a block either way: no draft (no AI call, no row) and no
+// send (no nudge, no push), 403 messaging.blocked.
+describe.each([
+  ['the client blocked the coach', { blocker_id: 'u1', blocked_id: 'c1' }],
+  ['the coach blocked the client', { blocker_id: 'c1', blocked_id: 'u1' }],
+])('ChurnInterventionService across a block: %s', (_label, block) => {
+  it('refuses the draft and the send before any AI call, row, nudge or push', async () => {
+    const prisma = buildPrisma({
+      users: [{ id: 'u1', name: 'Alice', coach_id: 'c1', role: 'student', deleted_at: null }],
+      interventions: [
+        { id: 'int-1', coach_id: 'c1', client_id: 'u1', draft_text: 'Hi', edited_text: null, status: 'draft', alert_id: null,
+          risk_score_at_draft: 0.7, top_factor: null, idempotency_key: VALID_UUID, created_at: new Date(), sent_at: null,
+          dismissed_at: null, nudge_id: null },
+      ],
+    });
+    prisma.blocks.push(block);
+    const anthropic = buildAnthropicClient();
+    const notif = buildNotifications();
+    const svc = new ChurnInterventionService(prisma, buildPtmService(), buildConfig(), grantAllEgress(), notif, handleOf(anthropic));
+    const refused = { status: 403, response: { code: 'messaging.blocked' } };
+    await expect(svc.generateChurnDraft('c1', 'u1', { idempotency_key: VALID_UUID_2 })).rejects.toMatchObject(refused);
+    await expect(svc.sendIntervention('c1', 'int-1', { message_text: 'Hello', idempotency_key: VALID_UUID_2 })).rejects.toMatchObject(refused);
+    expect(anthropic.messages.create).not.toHaveBeenCalled();
+    expect(prisma.rows.interventions).toHaveLength(1);
+    expect(prisma.rows.nudges).toEqual([]);
+    expect(notif.pushToUser).not.toHaveBeenCalled();
   });
 });
 

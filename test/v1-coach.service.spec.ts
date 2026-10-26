@@ -53,11 +53,21 @@ function makePrisma() {
   };
 
   const compare = (a: any, b: any) => (a < b ? -1 : a > b ? 1 : 0);
+  // FX-1141: [blocker, blocked] pairs read by the block-pair helper (OR shape).
+  const blocks: Array<[string, string]> = [];
+  const hit = (v: any, id: string) => (typeof v === 'string' ? v === id : v.in.includes(id));
 
   return {
     _users: users,
     _messages: messages,
     _drafts: drafts,
+    _blocks: blocks,
+    userBlock: {
+      findMany: jest.fn(async ({ where }: any) =>
+        blocks
+          .filter(([a, b]) => where.OR.some((o: any) => hit(o.blocker_id, a) && hit(o.blocked_id, b)))
+          .map(([a, b]) => ({ blocker_id: a, blocked_id: b }))),
+    },
     _events: events,
     _subscriptions: subscriptions,
     _profiles: profiles,
@@ -413,6 +423,34 @@ describe('V1CoachService', () => {
     it('getDraft returns null when nothing is saved', async () => {
       const out = await svc.getDraft(coach('coach-A'), 'client-1');
       expect(out).toBeNull();
+    });
+  });
+
+  // FX-1141 (Sol B1/B2, 10-23 "Dissapear"): a block either way closes the
+  // console chat: no send, no draft words, off the list, opens empty.
+  describe.each([
+    ['the client blocked the coach', ['client-1', 'coach-A']],
+    ['the coach blocked the client', ['coach-A', 'client-1']],
+  ] as Array<[string, [string, string]]>)('block: %s', (_label, pair) => {
+    it('refuses send and draft, leaves the list, opens empty with no draft; unblock restores', async () => {
+      await svc.sendMessage(coach('coach-A'), 'client-1', 'before', undefined);
+      await svc.saveDraft(coach('coach-A'), 'client-1', 'draft words', undefined);
+      await svc.sendMessage(coach('coach-A'), 'client-2', 'other', undefined);
+      prisma._blocks.push(pair);
+      await expect(svc.sendMessage(coach('coach-A'), 'client-1', 'after')).rejects.toMatchObject({
+        status: 403,
+        response: { code: 'messaging.blocked' },
+      });
+      await expect(svc.saveDraft(coach('coach-A'), 'client-1', 'more', undefined)).rejects.toMatchObject({ status: 403 });
+      expect(prisma._messages.map((m) => m.body)).toEqual(['before', 'other']);
+      expect((await svc.listThreads(coach('coach-A'))).map((t) => t.clientId)).toEqual(['client-2']);
+      const opened = await svc.getThread(coach('coach-A'), 'client-1');
+      expect(opened).toMatchObject({ messages: [], draft: null });
+      expect(JSON.stringify(opened)).not.toContain('draft words');
+      expect(await svc.getDraft(coach('coach-A'), 'client-1')).toBeNull();
+      prisma._blocks.length = 0;
+      expect((await svc.listThreads(coach('coach-A'))).map((t) => t.clientId).sort()).toEqual(['client-1', 'client-2']);
+      expect((await svc.getThread(coach('coach-A'), 'client-1')).draft?.body).toBe('draft words');
     });
   });
 

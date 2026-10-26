@@ -151,6 +151,7 @@ function world(o: WorldOpts) {
     coachMessage: [],
     clientWorkoutAssignment: [],
     aIDraft: [],
+    userBlock: [],
   };
   const model = (name: string) => ({
     findMany: jest.fn(async (a: { where?: Where } = {}) => t[name].filter((r) => matches(r, a.where))),

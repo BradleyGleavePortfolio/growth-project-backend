@@ -46,6 +46,7 @@ function fixture() {
     return `${k.user_id}|${k.side}|${k.bucket}|${k.window_days}`;
   };
   const prisma = {
+    userBlock: { findMany: jest.fn().mockResolvedValue([]) },
     user: {
       findFirst: jest.fn(async ({ where }: { where: Row }) => {
         const hit = users.find((u) => Object.entries(where).every(([k, v]) => u[k] === v));

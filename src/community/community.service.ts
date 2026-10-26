@@ -6,6 +6,7 @@ import { CommunitySafetyService } from './safety/community-safety.service';
 import { memberName } from './member-display-name';
 import { fullNamesFor } from './community-space-access';
 import { isBannedFromWorkspace } from './community-ban';
+import { communityTabUnread, spaceUnreadCounts } from './space-reads/community-space-reads.service';
 import {
   WIN_NOT_FOUND,
   WIN_POSTING_REMOVED,
@@ -160,15 +161,9 @@ export class CommunityService {
       workspace = await this.repo.findWorkspaceById(membership.workspace_id);
     }
 
-    let unreadCohort = 0;
-    if (membership) {
-      const cohortIds = await this.repo.findActiveCohortIdsForUser(user.id);
-      unreadCohort = await this.repo.countUnreadCohortMessages({
-        userId: user.id,
-        cohortIds,
-        since: membership.last_read_message_at,
-      });
-    }
+    // SC-BE2: the tab badge adds up the space list's badges (the same spaces as GET /community/cohorts).
+    const spaces = await this.repo.findCohortsForUser({ userId: user.id, role: scope });
+    const unreadCohort = await communityTabUnread(this.prisma, user.id, spaces);
 
     const membershipView = membership
       ? {
@@ -332,6 +327,8 @@ export class CommunityService {
       userId: user.id,
       role: this.scopingRole(user),
     });
+    // SC-BE2: each space's unread badge (one round trip for the list).
+    const unread = await spaceUnreadCounts(this.prisma, user.id, cohorts.map((c) => c.id));
 
     const summaries = await Promise.all(
       cohorts.map(async (c) => ({
@@ -344,6 +341,7 @@ export class CommunityService {
         visibility: c.visibility,
         member_count: await this.repo.cohortMemberCount(c),
         my_role: role,
+        unread_count: unread.get(c.id) ?? 0,
       })),
     );
 
