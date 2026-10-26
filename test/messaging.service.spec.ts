@@ -117,17 +117,21 @@ function makePrisma() {
         }
         return { count };
       }),
-      groupBy: jest.fn(async ({ by, where }: any) => {
+      groupBy: jest.fn(async ({ by, where, _min }: any) => {
         const rows = messages.filter((m) => matches(m, where));
         const groups = new Map<string, number>();
+        const oldest = new Map<string, Date>();
         for (const r of rows) {
           const key = by.map((b: string) => (r as any)[b]).join('|');
           groups.set(key, (groups.get(key) ?? 0) + 1);
+          const seen = oldest.get(key);
+          if (!seen || r.created_at < seen) oldest.set(key, r.created_at);
         }
         const out: any[] = [];
         for (const [key, count] of groups) {
           const parts = key.split('|');
           const g: any = { _count: { _all: count } };
+          if (_min?.created_at) g._min = { created_at: oldest.get(key) ?? null };
           by.forEach((b: string, i: number) => (g[b] = parts[i]));
           out.push(g);
         }
@@ -416,6 +420,74 @@ describe('MessagingService', () => {
       await svc.sendAsClient('client-other', 'for B only');
       const out = await svc.unreadCountForCoach('coach-A');
       expect(out.total).toBe(0);
+    });
+
+    // NEEDS-YOU-BE: how long each client has been waiting, from the same rows
+    // as by_client.
+    const row = (id: string, client_id: string, sender_id: string, at: string, read = false) => ({
+      id,
+      coach_id: 'coach-A',
+      client_id,
+      sender_id,
+      body: id,
+      created_at: new Date(at),
+      read_at: read ? new Date('2026-10-25T00:00:00Z') : null,
+    });
+    const seedWaiting = () =>
+      prisma._messages.push(
+        row('m1', 'client-1', 'client-1', '2026-10-20T12:00:00Z'),
+        row('m2', 'client-1', 'client-1', '2026-10-20T10:00:00Z'),
+        row('m3', 'client-1', 'client-1', '2026-10-19T08:00:00Z', true), // read
+        row('m4', 'client-1', 'coach-A', '2026-10-18T07:00:00Z'), // coach's own
+        row('m5', 'client-2', 'client-2', '2026-10-21T09:30:00Z'),
+        row('m6', 'client-3', 'client-3', '2026-10-17T09:00:00Z', true), // 0 unread
+      );
+
+    it('oldest_unread_at_by_client: oldest unread client message, same keys as by_client', async () => {
+      seedWaiting();
+      const out = await svc.unreadCountForCoach('coach-A');
+      expect(out.by_client).toEqual({ 'client-1': 2, 'client-2': 1 });
+      expect(out.oldest_unread_at_by_client).toEqual({
+        'client-1': '2026-10-20T10:00:00.000Z',
+        'client-2': '2026-10-21T09:30:00.000Z',
+      });
+      const keys = (o: Record<string, unknown>) => Object.keys(o).sort();
+      expect(keys(out.oldest_unread_at_by_client)).toEqual(keys(out.by_client));
+      expect(out.oldest_unread_at_by_client['client-3']).toBeUndefined();
+    });
+
+    it('oldest_unread_at_by_client leaves out a moved client and a closed pair, like by_client', async () => {
+      seedWaiting();
+      // client-2 blocked the coach; client-3 moved to another coach (not on the roster).
+      (prisma as any).userBlock = { findMany: jest.fn(async () => [{ blocker_id: 'client-2' }]) };
+      prisma._messages.push(row('m7', 'client-3', 'client-3', '2026-10-16T09:00:00Z'));
+      const safety = { getBlockedIdsFor: jest.fn(async () => []) } as any;
+      const scope = {
+        getHeadCoachIdForSubCoach: jest.fn(async () => null),
+        getAuthorizedClientIds: jest.fn(async () => ['client-1', 'client-2']),
+      } as any;
+      const s = {} as any;
+      const scoped = new MessagingService(prisma as any, s, s, s, s, s, s, safety, scope);
+      const out = await scoped.unreadCountForCoach('coach-A');
+      expect(out.by_client).toEqual({ 'client-1': 2 });
+      expect(out.oldest_unread_at_by_client).toEqual({ 'client-1': '2026-10-20T10:00:00.000Z' });
+      expect(out.closed_client_ids).toEqual(['client-2']);
+      expect(out.total).toBe(2);
+    });
+
+    it('a sub-coach with no clients gets an empty oldest_unread_at_by_client', async () => {
+      const scope = {
+        getHeadCoachIdForSubCoach: jest.fn(async () => 'coach-A'),
+        getAuthorizedClientIds: jest.fn(async () => []),
+      } as any;
+      const s = {} as any;
+      const scoped = new MessagingService(prisma as any, s, s, s, s, s, s, null, scope);
+      expect(await scoped.unreadCountForCoach('sub-1')).toEqual({
+        total: 0,
+        by_client: {},
+        oldest_unread_at_by_client: {},
+        closed_client_ids: [],
+      });
     });
 
     it('client unread counts only coach→client unread messages', async () => {
