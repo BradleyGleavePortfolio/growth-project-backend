@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { muteAllStops } from '../notifications/push/push-preferences';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import {
@@ -591,6 +592,13 @@ export class ScoutService implements OnModuleDestroy {
         ? 'Records were staged in TGP. Migration is not verified. Check the importer status.'
         : 'The transfer reported issues. Some records may be staged. Migration is not complete. Check the importer status before retrying.';
     try {
+      // FR-1154R3 (B-LS1154-2): an ordinary push, so Mute all stops it (the
+      // shared rule); the settled import above is untouched.
+      const prefs = await this.prisma.notificationPreferences.findUnique({
+        where: { user_id: coachId },
+        select: { muted: true },
+      });
+      if (muteAllStops(prefs, 'import.complete', 'push')) return;
       await this.notifications.pushToUser(coachId, title, body, {
         kind: 'import.complete',
         intent_id: dto.intent_id,

@@ -198,7 +198,9 @@ describe('BroadcastDispatcherService.deliverOne', () => {
     expect(h.settles.find((s) => s.status === 'delivered')).toMatchObject({
       push_status: 'suppressed_muted',
     });
-    expect(h.emitter.emit).not.toHaveBeenCalled();
+    // FR-1154R3 (owner #171-3): the emitter still writes the in-app row; its
+    // shared push gate drops the push (test/mute-all-ordinary-senders.spec.ts).
+    expect(h.emitter.emit).toHaveBeenCalledTimes(1);
   });
 
   it('a block in either direction skips without writing a message', async () => {

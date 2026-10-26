@@ -129,7 +129,7 @@ function makeService(provider: VoiceUploadProvider) {
         removed_by_user_id: null,
       };
       created.push(row);
-      return row;
+      return { row, replayed: false };
     }),
     viewExtras: jest.fn().mockResolvedValue({
       coachId: null,

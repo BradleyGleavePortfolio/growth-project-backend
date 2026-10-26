@@ -812,12 +812,12 @@ function baseDocument(active: TrustPage, c: TrustPageContent): string {
   nav.trust-nav .nav-link:hover { color: #1F1B16; }
   h1 { font-family: "Iowan Old Style", Georgia, serif; font-weight: 500; font-size: 40px; line-height: 1.1; letter-spacing: -0.01em; margin: 0 0 8px 0; }
   p.reviewed { margin: 0 0 28px 0; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: #2C2C2C; }
-  p.intro { font-size: 18px; line-height: 1.6; margin: 0 0 36px 0; color: #3A332B; }
+  p.intro { font-size: 18px; line-height: 1.6; margin: 0 0 36px 0; color: #2C2C2C; }
   section { margin: 0 0 32px 0; }
   section h2 { font-family: "Iowan Old Style", Georgia, serif; font-weight: 500; font-size: 22px; line-height: 1.3; margin: 0 0 12px 0; color: #1F1B16; }
-  section p { font-size: 16px; line-height: 1.6; margin: 0 0 12px 0; color: #3A332B; }
+  section p { font-size: 16px; line-height: 1.6; margin: 0 0 12px 0; color: #2C2C2C; }
   section ul { margin: 0 0 12px 0; padding: 0 0 0 20px; }
-  section li { font-size: 16px; line-height: 1.6; margin: 0 0 6px 0; color: #3A332B; }
+  section li { font-size: 16px; line-height: 1.6; margin: 0 0 6px 0; color: #2C2C2C; }
   section p.links a { color: #2C4A36; text-decoration: underline; }
   p.footnote { margin: 40px 0 0 0; font-size: 13px; line-height: 1.55; color: #2C2C2C; font-style: italic; }
   footer.brand-footer { margin-top: 48px; padding-top: 24px; border-top: 1px solid #E8E1D4; font-size: 13px; color: #2C2C2C; display: flex; gap: 16px; flex-wrap: wrap; justify-content: space-between; }

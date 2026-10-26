@@ -22,10 +22,8 @@ export function switchTellBody(clientName: string | null | undefined): string {
  * Inside the move's transaction, right after the client's coach_id changed:
  * one in-app row for the former coach. A replayed payment moves nothing, so
  * it writes nothing. Its created_at is the move date the Money line shows.
- * "Mute all notifications" (the same global mute createNotification checks
- * first): a muted coach's row is still written, so Money keeps its date, but
- * as `inbox_hidden`, which the inbox list and unread count never show. It
- * stays hidden if the coach un-mutes later (a muted alert is never delivered).
+ * FR-1154 (owner #171-3): "Mute all notifications" never stops an in-app row,
+ * so a muted coach sees it in the inbox and badge like any other coach.
  */
 export async function tellFormerCoachTx(
   tx: Prisma.TransactionClient,
@@ -33,10 +31,6 @@ export async function tellFormerCoachTx(
   formerCoachId: string,
 ): Promise<void> {
   const client = await tx.user.findUnique({ where: { id: clientUserId }, select: { name: true } });
-  const prefs = await tx.notificationPreferences.findUnique({
-    where: { user_id: formerCoachId },
-    select: { muted: true },
-  });
   await tx.notification.create({
     data: {
       user_id: formerCoachId,
@@ -45,7 +39,6 @@ export async function tellFormerCoachTx(
       deep_link: null,
       body: switchTellBody(client?.name),
       payload: { client_id: clientUserId },
-      ...(prefs?.muted === true ? { inbox_hidden: true } : {}),
     },
   });
 }
@@ -53,8 +46,7 @@ export async function tellFormerCoachTx(
 /**
  * The Money line ("Moved to another coach · {date}"): for clients who moved
  * away from `coachId`, when the latest move to the house coach told them.
- * Read from the coach's own notifications only (hidden muted rows included);
- * other moves have no date.
+ * Read from the coach's own notifications only; other moves have no date.
  */
 export async function movedAwayDates(
   prisma: PrismaService,

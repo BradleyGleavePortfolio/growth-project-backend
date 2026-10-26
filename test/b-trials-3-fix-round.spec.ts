@@ -681,23 +681,13 @@ describe('B-656-3 — a trial_will_end event before the card is saved is not los
 });
 
 describe('B-656-4 — the push honours the client notification preferences', () => {
-  it('global mute: push suppressed (no send), preferences read at delivery, billing email still sent', async () => {
+  it('FR-1154 (owner #171-3): Mute all never stops the trial-ending push (money); preferences read at delivery', async () => {
     const w = world({ muted: true });
     const id = await recordNotice(w);
     await w.noticeSvc.deliver(id, NOW);
     expect(w.notifications.getPreferences).toHaveBeenCalledWith('client-1');
-    expect(w.notifications.pushToUser).not.toHaveBeenCalled();
-    expect(w.notices.rows[0]).toMatchObject({ push_status: 'suppressed', email_status: 'sent' });
-    expect(await w.noticeSvc.sweep(new Date(NOW.getTime() + 600_000))).toBe(0);
-  });
-
-  it('muted after the notice was recorded still suppresses', async () => {
-    const w = world();
-    const id = await recordNotice(w);
-    w.notifications.getPreferences.mockResolvedValueOnce({ muted: true });
-    await w.noticeSvc.deliver(id, NOW);
-    expect(w.notifications.pushToUser).not.toHaveBeenCalled();
-    expect(w.notices.rows[0].push_status).toBe('suppressed');
+    expect(w.notifications.pushToUser).toHaveBeenCalledTimes(1);
+    expect(w.notices.rows[0]).toMatchObject({ push_status: 'delivered', email_status: 'sent' });
   });
 
   it('token revoked after the notice was recorded: no_token, not retried', async () => {

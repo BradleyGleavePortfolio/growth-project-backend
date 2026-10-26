@@ -502,11 +502,11 @@ export class CommunityVoiceService {
       throw new BadRequestException(VOICE_STORAGE_KEY_REJECTED);
     }
 
-    // One row per recording: a key already published (even one a moderator
-    // later hid or the author deleted) can never be re-published.
-    if (await this.repo.findByStorageKey(dto.storage_key)) {
-      throw new ConflictException(VOICE_KEY_ALREADY_USED);
-    }
+    // One row per recording (VOICE-IDEM-BE): the same create sent again after
+    // a lost reply gets the first note back; any other use of the key (another
+    // place or parent, or a note since deleted or hidden) stays the 409.
+    const first = await this.repo.findByStorageKey(dto.storage_key);
+    if (first) return this.replay(user, workspaceId, scope, parent, first);
 
     // Upload confirmed: the object must exist at the exact minted key, be
     // audio, and fit the declared limits (the stored size is authoritative).
@@ -539,7 +539,8 @@ export class CommunityVoiceService {
       parent,
       answersClients: user.role === 'coach' || user.role === 'owner',
     };
-    const row = await this.repo.createVoiceNote(seed);
+    const { row, replayed } = await this.repo.createVoiceNote(seed);
+    if (replayed) return this.replay(user, workspaceId, scope, parent, row); // a racing create won
 
     this.track(user.id, COMMUNITY_TELEMETRY_EVENTS.voiceNotePublished, {
       workspace_id: workspaceId,
@@ -563,6 +564,33 @@ export class CommunityVoiceService {
     return VoiceNoteRowResponseSchema.parse({
       voice_note: (await this.noteViews(user.id, [row]))[0],
     });
+  }
+
+  /**
+   * VOICE-IDEM-BE replay: the first note is returned (same body as its create,
+   * nothing written, no ping or telemetry) only to its author, in the same
+   * space or thread with the same reply parent, while it and its chat message
+   * are live. Every gate in create() has already run for this request.
+   */
+  private async replay(
+    user: User,
+    workspaceId: string,
+    scope: { cohortId: string | null; conversationId: string | null },
+    parent: VoiceNoteSeed['parent'],
+    row: CommunityVoiceNote,
+  ): Promise<VoiceNoteResponse> {
+    const chat = row.cohort_id ? await this.repo.findChatMessage(row.id) : null;
+    const live = row.cohort_id === null
+      ? parent === null
+      : chat?.kind === 'voice' && chat.deleted_at === null && chat.visibility === 'active' &&
+        chat.parent_message_id === (parent?.id ?? null);
+    if (
+      !live || row.soft_deleted_at !== null || row.author_id !== user.id || row.workspace_id !== workspaceId ||
+      row.cohort_id !== scope.cohortId || row.conversation_id !== scope.conversationId
+    ) {
+      throw new ConflictException(VOICE_KEY_ALREADY_USED);
+    }
+    return VoiceNoteResponseSchema.parse({ voice_note: (await this.noteViews(user.id, [row]))[0] });
   }
 
   /**

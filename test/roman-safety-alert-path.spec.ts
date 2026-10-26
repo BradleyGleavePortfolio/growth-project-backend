@@ -71,9 +71,12 @@ function coachPhone() {
     alerts,
     inbox: db.notification.create,
     drain: () => delivery.drain(),
-    // The alert type and line Roman writes for one client.
+    // The alert type, line and severity Roman writes for one client (roman.service.ts).
     alert: (alertType: CoachAlertType, clientId: string) =>
-      coachAlerts.createAlert({ coachId: 'coach-1', clientId, alertType, message: SAFETY_ALERT_PUSH_BODY[alertType] }),
+      coachAlerts.createAlert({
+        coachId: 'coach-1', clientId, alertType, message: SAFETY_ALERT_PUSH_BODY[alertType],
+        severity: alertType === 'roman_eating_disorder_reply' ? 'warning' : 'critical',
+      }),
     // An ordinary push: a new message in one client's thread.
     message: (i: number) =>
       notifications.sendPush({

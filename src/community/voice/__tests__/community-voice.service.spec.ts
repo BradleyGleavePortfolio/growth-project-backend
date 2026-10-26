@@ -161,7 +161,7 @@ describe('CommunityVoiceService', () => {
     };
     repo = {
       findByStorageKey: jest.fn().mockResolvedValue(null),
-      createVoiceNote: jest.fn().mockResolvedValue(note()),
+      createVoiceNote: jest.fn().mockResolvedValue({ row: note(), replayed: false }),
       findById: jest.fn().mockResolvedValue(note()),
       softDeleteWithErasure: jest.fn(async (n: { storage_key: string }) => [
         { id: 'erasure-0', kind: 'object', target: n.storage_key, attempts: 0 },

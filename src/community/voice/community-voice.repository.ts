@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { CommunityVoiceNote } from '@prisma/client';
@@ -70,6 +71,19 @@ export interface VoiceViewExtras {
 }
 
 /**
+ * VOICE-IDEM-BE: a note's id is fixed by its storage key (a v4-shaped UUID
+ * from SHA-256), so the table's primary key lets one row exist per recording
+ * even when two creates race (the schema has no unique index on the key).
+ */
+export function voiceNoteIdFor(storageKey: string): string {
+  const h = createHash('sha256').update(`community.voice_note.v1|${storageKey}`).digest();
+  h[6] = (h[6] & 0x0f) | 0x40;
+  h[8] = (h[8] & 0x3f) | 0x80;
+  const x = h.subarray(0, 16).toString('hex');
+  return `${x.slice(0, 8)}-${x.slice(8, 12)}-${x.slice(12, 16)}-${x.slice(16, 20)}-${x.slice(20)}`;
+}
+
+/**
  * Hide a space voice note's chat message with the note (author delete,
  * moderation). REMOVED-BY-BE: `removedBy` (a coach's removal of someone
  * else's note) is stored on the chat row too, so the space chat keeps the
@@ -118,12 +132,27 @@ export class CommunityVoiceRepository {
    * Insert a voice note in one transaction. VOICE-BE: a space note also gets
    * its chat message (kind 'voice', sharing the note's id and time), so the
    * space chat, its new-messages line, threads and reports see one item; a
-   * coach's note answers the space's open client messages.
+   * coach's note answers the space's open client messages. VOICE-IDEM-BE:
+   * when a racing create already wrote this key's row, nothing is written and
+   * that row comes back with `replayed` (the service decides 201 or 409).
    */
-  async createVoiceNote(seed: VoiceNoteSeed): Promise<CommunityVoiceNote> {
+  async createVoiceNote(seed: VoiceNoteSeed): Promise<{ row: CommunityVoiceNote; replayed: boolean }> {
+    try {
+      return { row: await this.insertVoiceNote(seed), replayed: false };
+    } catch (err) {
+      const first = err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002'
+        ? await this.findByStorageKey(seed.storageKey)
+        : null;
+      if (!first) throw err;
+      return { row: first, replayed: true };
+    }
+  }
+
+  private insertVoiceNote(seed: VoiceNoteSeed): Promise<CommunityVoiceNote> {
     return this.prisma.$transaction(async (tx) => {
       const created = await tx.communityVoiceNote.create({
         data: {
+          id: voiceNoteIdFor(seed.storageKey),
           workspace_id: seed.workspaceId,
           cohort_id: seed.cohortId,
           conversation_id: seed.conversationId,
@@ -231,11 +260,8 @@ export class CommunityVoiceRepository {
   }
 
   /** Any row (live or soft-deleted) already holding this storage key. */
-  async findByStorageKey(storageKey: string): Promise<{ id: string } | null> {
-    return this.prisma.communityVoiceNote.findFirst({
-      where: { storage_key: storageKey },
-      select: { id: true },
-    });
+  async findByStorageKey(storageKey: string): Promise<CommunityVoiceNote | null> {
+    return this.prisma.communityVoiceNote.findFirst({ where: { storage_key: storageKey } });
   }
 
   /** Every note an author recorded (live or soft-deleted), for account deletion. */

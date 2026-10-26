@@ -137,7 +137,7 @@ type World = ReturnType<typeof world>;
 // Every coach-facing type that names a client: [type, has a push, its real writer].
 const TYPES: Array<[string, boolean, (w: World) => Promise<unknown>]> = [
   ['coach alert (eating-disorder reply)', true, (w) =>
-    new CoachAlertEmitter(w.notifications).emit({ coachId: w.reader, alertId: 'a-1', alertType: 'roman_eating_disorder_reply', severity: 'critical', message: 'A safety alert.', clientUserId: 'client-1' })],
+    new CoachAlertEmitter(w.notifications).emit({ coachId: w.reader, alertId: 'a-1', alertType: 'roman_eating_disorder_reply', severity: 'warning', message: 'A safety alert.', clientUserId: 'client-1' })],
   ['check-in submitted', true, (w) =>
     new CheckinSubmittedEmitter(w.notifications).emit({ coachId: w.reader, clientDisplayName: 'Jane Doe', clientUserId: 'client-1', streakDays: 3 })],
   ['missed check-in', true, (w) =>
