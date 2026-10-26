@@ -283,8 +283,12 @@ describe('voice notes and member wins: report, review, block, delete (Apple 1.2)
     it.each(['space', 'Hall'] as const)('Hide of a %s note leaves the attributed placeholder: no audio, search row or playback link', async (place) => {
       const noteId = seedNote(bob, place === 'Hall' ? { cohort_id: null } : {});
       const r = await moderation.report(alice, 'voice_note', noteId, 'sexual', undefined);
-      realtime.broadcastCommunityEvent.mockClear();
-      if (place === 'Hall') realtime.broadcastCommunityEvent.mockRejectedValueOnce(new Error('realtime down'));
+      const ping = realtime.broadcastCommunityEvent as jest.Mock;
+      ping.mockClear();
+      // The Hall case: the removal ping fails, and the removal stands.
+      ping.mockImplementation(async (_a: unknown, e: unknown) => {
+        if (place === 'Hall' && e === 'community.message.updated') throw new Error('realtime down');
+      });
       signDownload.mockClear();
       const acted = await moderation.act(coach, r.item.id, 'hide', undefined);
       expect(acted.item.status).toBe('actioned');
@@ -303,7 +307,8 @@ describe('voice notes and member wins: report, review, block, delete (Apple 1.2)
       expect(db.table('notification').filter((n) => n.user_id === bob.id)).toHaveLength(1);
       expect(push.sendCommunityPush.mock.calls.filter(([p]) => p.recipientId === bob.id)).toHaveLength(1);
       const cohort = place === 'Hall' ? null : cohortId;
-      const pings = (realtime.broadcastCommunityEvent.mock.calls as unknown[][]).filter((c) => c[1] === 'community.message.updated');
+      const pings = (ping.mock.calls as unknown[][]).filter((c) => c[1] === 'community.message.updated');
+      ping.mockImplementation(async () => undefined);
       expect(pings).toEqual([[
         { workspaceId: wsId, cohortId: cohort },
         'community.message.updated',
