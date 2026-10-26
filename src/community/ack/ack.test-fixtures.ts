@@ -76,6 +76,7 @@ export function buildMessage(
     coach_replied_at: null,
     visibility: 'active',
     deleted_at: null,
+    removed_by_user_id: null,
     updated_at: DEFAULT_AT,
   } satisfies CommunityMessage;
   return { ...base, ...overrides };

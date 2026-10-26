@@ -90,6 +90,7 @@ function note(over: Partial<CommunityVoiceNote> = {}): CommunityVoiceNote {
     waveform_peaks: null,
     created_at: new Date('2026-03-01T00:00:00.000Z'),
     soft_deleted_at: null,
+    removed_by_user_id: null,
   };
   return { ...base, ...over };
 }
@@ -428,6 +429,147 @@ describe('CommunityVoiceService', () => {
     it('404s an already-deleted note', async () => {
       repo.findById.mockResolvedValue(note({ soft_deleted_at: new Date() }));
       await expect(service.delete(member, NOTE_A)).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  // ── REMOVED-BY-BE (#174-4): a coach's removal stays visible as a placeholder ──
+
+  describe('coach removal (REMOVED-BY-BE)', () => {
+    /** Partial mocks typed at the constructor (no cast token). */
+    function stub<T>(v: unknown): T {
+      return v as T;
+    }
+    const REMOVED_AT = new Date('2026-03-01T01:00:00.000Z');
+    const removedNote = () => note({ soft_deleted_at: REMOVED_AT, removed_by_user_id: COACH_A_ID });
+
+    it('files a coach removal of a member note as moderation and keeps who removed it', async () => {
+      access.isWorkspaceCoach.mockResolvedValue(true);
+      await expect(service.delete(coachA, NOTE_A)).resolves.toEqual({ deleted: true });
+      expect(repo.softDeleteWithErasure).toHaveBeenCalledWith(
+        expect.objectContaining({ id: NOTE_A, author_id: MEMBER_ID }),
+        'moderation',
+        expect.any(Date),
+        COACH_A_ID,
+      );
+    });
+
+    it('keeps the author delete as before: author_delete, no remover, no removal ping', async () => {
+      await service.delete(member, NOTE_A);
+      expect(repo.softDeleteWithErasure).toHaveBeenCalledWith(expect.objectContaining({ id: NOTE_A }), 'author_delete');
+      expect(realtime.broadcastCommunityEvent).not.toHaveBeenCalled();
+    });
+
+    it('a coach deleting their own note is an author delete (it vanishes)', async () => {
+      access.isWorkspaceCoach.mockResolvedValue(true);
+      repo.findById.mockResolvedValue(note({ author_id: COACH_A_ID }));
+      await service.delete(coachA, NOTE_A);
+      expect(repo.softDeleteWithErasure).toHaveBeenCalledWith(expect.objectContaining({ id: NOTE_A }), 'author_delete');
+    });
+
+    it('pings the space with the placeholder (ids and times only) so open screens swap it', async () => {
+      access.isWorkspaceCoach.mockResolvedValue(true);
+      await service.delete(coachA, NOTE_A);
+      expect(realtime.broadcastCommunityEvent).toHaveBeenCalledTimes(1);
+      const [audience, event, payload, meta] = realtime.broadcastCommunityEvent.mock.calls[0];
+      expect(audience).toEqual({ workspaceId: WS_A, cohortId: COHORT_A });
+      expect(event).toBe('community.message.updated');
+      expect(payload).toEqual({
+        id: NOTE_A,
+        cohortId: COHORT_A,
+        updatedAt: expect.any(String),
+        removedAt: expect.any(String),
+        createdAt: '2026-03-01T00:00:00.000Z',
+        kind: 'voice',
+        authorId: MEMBER_ID,
+        removedBy: { role: 'coach', userId: COACH_A_ID },
+      });
+      expect(JSON.stringify(payload)).not.toMatch(/Coach Kim|Sam Rivers|https?:|m4a/);
+      expect(meta).toEqual({ distinctId: COACH_A_ID, channelKind: 'cohort' });
+    });
+
+    it('a Hall note removal sends no ping (its create sends none)', async () => {
+      access.isWorkspaceCoach.mockResolvedValue(true);
+      repo.findById.mockResolvedValue(note({ cohort_id: null }));
+      await service.delete(coachA, NOTE_A);
+      expect(realtime.broadcastCommunityEvent).not.toHaveBeenCalled();
+    });
+
+    it('a failed removal ping never fails the delete', async () => {
+      access.isWorkspaceCoach.mockResolvedValue(true);
+      realtime.broadcastCommunityEvent.mockRejectedValue(new Error('realtime down'));
+      await expect(service.delete(coachA, NOTE_A)).resolves.toEqual({ deleted: true });
+    });
+
+    it('lists a coach-removed note as a placeholder: no URL, no audio, who removed it and when', async () => {
+      repo.list.mockResolvedValue({ items: [removedNote()], nextCursor: null });
+      const res = await service.list(member, WS_A, { cohort_id: COHORT_A });
+      expect(res.voice_notes).toEqual([
+        {
+          id: NOTE_A,
+          workspace_id: WS_A,
+          cohort_id: COHORT_A,
+          conversation_id: null,
+          author_id: MEMBER_ID,
+          url: null,
+          duration_ms: 0,
+          bytes: 0,
+          mime_type: 'audio/mp4',
+          has_waveform: false,
+          created_at: '2026-03-01T00:00:00.000Z',
+          author_name: 'Sam',
+          author_is_coach: false,
+          waveform_peaks: null,
+          heard_at: null,
+          message_id: null,
+          parent_message_id: null,
+          removed_at: REMOVED_AT.toISOString(),
+          removed_by: { role: 'coach', user_id: COACH_A_ID, name: 'Coach' },
+        },
+      ]);
+      expect(upload.createSignedDownload).not.toHaveBeenCalled();
+    });
+
+    it('a live note carries no removed keys', async () => {
+      const res = await service.list(member, WS_A, { cohort_id: COHORT_A });
+      expect(res.voice_notes[0]).not.toHaveProperty('removed_at');
+      expect(res.voice_notes[0]).not.toHaveProperty('removed_by');
+    });
+
+    it('reads a coach-removed note as its placeholder', async () => {
+      repo.findById.mockResolvedValue(removedNote());
+      const res = await service.getOne(member, NOTE_A);
+      expect(res.voice_note).toEqual(
+        expect.objectContaining({ id: NOTE_A, url: null, removed_at: REMOVED_AT.toISOString() }),
+      );
+      expect(upload.createSignedDownload).not.toHaveBeenCalled();
+    });
+
+    it('still 404s an author-deleted note (no remover) on a read', async () => {
+      repo.findById.mockResolvedValue(note({ soft_deleted_at: REMOVED_AT }));
+      await expect(service.getOne(member, NOTE_A)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('a removed note stays 404 to a non-member and to someone in a block relation with the author', async () => {
+      repo.findById.mockResolvedValue(removedNote());
+      access.canAccessCohort.mockResolvedValueOnce(false);
+      await expect(service.getOne(stranger, NOTE_A)).rejects.toBeInstanceOf(NotFoundException);
+      const blocked = new CommunityVoiceService(
+        stub(access),
+        stub(repo),
+        stub(upload),
+        stub(realtime),
+        stub(analytics),
+        stub(safetyWithBlocks([[MEMBER_ID, STRANGER_ID]])),
+      );
+      await expect(blocked.getOne(stranger, NOTE_A)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('heard and a second delete still treat a removed note as missing', async () => {
+      repo.findById.mockResolvedValue(removedNote());
+      await expect(service.markHeard(member, NOTE_A)).rejects.toBeInstanceOf(NotFoundException);
+      access.isWorkspaceCoach.mockResolvedValue(true);
+      await expect(service.delete(coachA, NOTE_A)).rejects.toBeInstanceOf(NotFoundException);
+      expect(repo.softDeleteWithErasure).not.toHaveBeenCalled();
     });
   });
 

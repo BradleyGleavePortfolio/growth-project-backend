@@ -8,9 +8,12 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import type { CommunityCohort, CommunityMessage, User } from '@prisma/client';
+import { z } from 'zod';
 import { CommunityAccessService } from '../community-access.service';
 import { CommunityRealtimeService } from '../realtime/community-realtime.service';
 import { COMMUNITY_BROADCAST_EVENTS } from '../community-events';
+import { MessageRemovedPayloadSchema } from '../realtime/community-realtime.types';
+import { RemovedBySchema } from '../voice/community-voice.service';
 import { type ChatVoiceNote, CommunityMessagesRepository } from './community-messages.repository';
 import { PlanContextService, planTagsEnabled } from '../plan-context/plan-context.service';
 import { acksEnabled } from '../ack/ack.feature';
@@ -22,6 +25,7 @@ import {
   CommunityMessageListResponseSchema,
   CommunityMessageResponse,
   CommunityMessageResponseSchema,
+  CommunityMessageSchema,
   CommunityMessageView,
 } from '../dto/community-message.dto';
 import { CommunitySafetyService } from '../safety/community-safety.service';
@@ -62,8 +66,28 @@ const QUOTE_CHARS = 120;
 /** SC-BE1: a quote of a message the viewer may no longer see says only that. */
 const GONE = { gone: true, kind: null, sender_name: null, snippet: null, voice_duration_ms: null } as const;
 
-/** SC-BE1: the sender and reply quote a space chat read adds to one row. */
-type ChatOf = (m: CommunityMessage) => Pick<CommunityMessageView, 'sender' | 'parent'>;
+/**
+ * REMOVED-BY-BE (#174-4): a space row may be a coach's removal, kept as a
+ * placeholder with `removed_at` and `removed_by` (absent on every other row).
+ * Kept here, next to the only code that builds them, as the message DTO file
+ * belongs to another lane.
+ */
+const MessageRowSchema = CommunityMessageSchema.extend({
+  removed_at: z.string().datetime().optional(),
+  removed_by: RemovedBySchema.optional(),
+}).strict();
+type MessageRow = z.infer<typeof MessageRowSchema>;
+const MessageRowResponseSchema = CommunityMessageResponseSchema.extend({ message: MessageRowSchema }).strict();
+const MessageRowListSchema = CommunityMessageListResponseSchema.extend({ messages: z.array(MessageRowSchema) }).strict();
+type RemovedBy = z.infer<typeof RemovedBySchema>;
+
+/** A coach's removal of someone else's message (a placeholder), not an author's delete. */
+function coachRemoved(m: CommunityMessage): m is CommunityMessage & { deleted_at: Date; removed_by_user_id: string } {
+  return m.deleted_at !== null && m.removed_by_user_id !== null;
+}
+
+/** SC-BE1: the sender and reply quote a space chat read adds to one row (REMOVED-BY-BE: and who removed it). */
+type ChatOf = (m: CommunityMessage) => Pick<CommunityMessageView, 'sender' | 'parent'> & { removed_by?: RemovedBy };
 
 /**
  * Cohort-channel messages (group chat within a cohort).
@@ -97,7 +121,8 @@ export class CommunityMessagesService {
     voice?: Map<string, ChatVoiceNote>,
     chat?: ChatOf,
     images?: Map<string, ChatImage>,
-  ): CommunityMessageView {
+  ): MessageRow {
+    if (coachRemoved(m) && chat) return this.placeholder(m, chat, true);
     return {
       id: m.id,
       cohort_id: m.cohort_id,
@@ -119,6 +144,38 @@ export class CommunityMessagesService {
       ...(chat ? chat(m) : {}),
       // SC-BE3: only on kind 'image' rows (other shapes are unchanged).
       ...(m.kind === 'image' ? { image: (!m.deleted_at && images?.get(m.id)) || null } : {}),
+    };
+  }
+
+  /**
+   * REMOVED-BY-BE (#174-4): a coach-removed row keeps its place: who sent it
+   * and when, and when and by whom it was removed. No words, voice note,
+   * photo, reply quote, plan tag or ack. `withSender` false = the delete
+   * answer, which has no sender today.
+   */
+  private placeholder(
+    m: CommunityMessage & { deleted_at: Date; removed_by_user_id: string },
+    chat: ChatOf,
+    withSender: boolean,
+  ): MessageRow {
+    const row = chat(m);
+    return {
+      id: m.id,
+      cohort_id: m.cohort_id,
+      sender_user_id: m.sender_id,
+      body: null,
+      kind: m.kind,
+      created_at: m.created_at.toISOString(),
+      updated_at: m.updated_at.toISOString(),
+      edited: false,
+      deleted: true,
+      plan_context: null,
+      parent_message_id: m.parent_message_id ?? null,
+      voice_note: null,
+      ...(withSender ? { sender: row.sender, parent: null } : {}),
+      ...(m.kind === 'image' ? { image: null } : {}),
+      removed_at: m.deleted_at.toISOString(),
+      removed_by: row.removed_by ?? { role: 'coach', user_id: m.removed_by_user_id, name: '' },
     };
   }
 
@@ -194,12 +251,15 @@ export class CommunityMessagesService {
       (await this.safety.filterBlocked(user.id, live, (p) => p.sender_id, placeOf)).map((p) => [p.id, p]),
     );
     const parentImages = await this.imagesOf([...parents.values()]); // FR-1139 (Opus C2): a quoted photo, signed
-    const name = (m: CommunityMessage) =>
-      memberName(x.people.get(m.sender_id)?.name, x.fullName(m.cohort_id, m.sender_id));
+    const nameOf = (space: string | null, id: string) => memberName(x.people.get(id)?.name, x.fullName(space, id));
+    const name = (m: CommunityMessage) => nameOf(m.cohort_id, m.sender_id);
     return (m) => {
       const p = m.parent_message_id ? parents.get(m.parent_message_id) : undefined;
       const voice = p?.kind === 'voice';
       return {
+        ...(coachRemoved(m)
+          ? { removed_by: { role: 'coach' as const, user_id: m.removed_by_user_id, name: nameOf(m.cohort_id, m.removed_by_user_id) } }
+          : {}),
         sender: {
           id: m.sender_id,
           name: name(m),
@@ -463,7 +523,7 @@ export class CommunityMessagesService {
       this.chatOf(user, cohort, visible),
       this.imagesOf(visible),
     ]);
-    return CommunityMessageListResponseSchema.parse({
+    return MessageRowListSchema.parse({
       messages: visible.map((m) => this.view(m, voice, chat, images)),
       next_before: next,
     });
@@ -490,7 +550,7 @@ export class CommunityMessagesService {
       this.chatOf(user, cohort, [m]),
       this.imagesOf([m]),
     ]);
-    return CommunityMessageResponseSchema.parse({ message: this.view(m, voice, chat, images) });
+    return MessageRowResponseSchema.parse({ message: this.view(m, voice, chat, images) });
   }
 
   async edit(user: User, messageId: string, body: string): Promise<CommunityMessageResponse> {
@@ -563,22 +623,62 @@ export class CommunityMessagesService {
       });
     }
     if (m.deleted_at) {
-      // Idempotent: already deleted is a no-op success.
-      return CommunityMessageResponseSchema.parse({ message: this.view(m) });
+      // Idempotent: already deleted is a no-op success (a coach's removal answers its placeholder again).
+      return this.removedAnswer(user, cohort, m);
     }
-    if (m.kind === 'image') return this.removeImage(m, isAuthor);
-    const deleted = await this.repo.softDelete(m);
-    return CommunityMessageResponseSchema.parse({ message: this.view(deleted) });
+    // REMOVED-BY-BE (#174-4): the coach (or TGP owner) removing someone else's
+    // message keeps who and when (a placeholder for the space), erases the
+    // words, files it as moderation and tells the author. The author's own
+    // delete is unchanged (the row drops from the space).
+    const removerId = isAuthor ? null : user.id;
+    const deleted =
+      m.kind === 'image'
+        ? await this.removeImage(m, isAuthor, removerId)
+        : removerId
+          ? await this.repo.removeByCoach(m, removerId)
+          : await this.repo.softDelete(m);
+    if (removerId && coachRemoved(deleted)) this.publishRemoved(cohort, deleted);
+    return this.removedAnswer(user, cohort, deleted);
+  }
+
+  /** The delete answer: a coach's removal is its placeholder (no sender); anything else as before. */
+  private async removedAnswer(user: User, cohort: CommunityCohort, m: CommunityMessage): Promise<CommunityMessageResponse> {
+    const message = coachRemoved(m) ? this.placeholder(m, await this.chatOf(user, cohort, [m]), false) : this.view(m);
+    return MessageRowResponseSchema.parse({ message });
+  }
+
+  /**
+   * REMOVED-BY-BE: the removal's live update to everyone who may read the
+   * space (same event name and audience as an edit), so an open screen swaps
+   * the row for its placeholder. Ids and times only.
+   */
+  private publishRemoved(cohort: CommunityCohort, m: CommunityMessage & { deleted_at: Date; removed_by_user_id: string }): void {
+    const payload = MessageRemovedPayloadSchema.parse({
+      id: m.id,
+      cohortId: cohort.id,
+      updatedAt: m.updated_at.toISOString(),
+      removedAt: m.deleted_at.toISOString(),
+      createdAt: m.created_at.toISOString(),
+      kind: m.kind,
+      authorId: m.sender_id,
+      removedBy: { role: 'coach', userId: m.removed_by_user_id },
+    });
+    void this.realtime.broadcastCommunityEvent(
+      { workspaceId: cohort.workspace_id, cohortId: cohort.id },
+      COMMUNITY_BROADCAST_EVENTS.messageUpdated,
+      payload,
+      { distinctId: m.removed_by_user_id, channelKind: 'cohort' },
+    );
   }
 
   /** SC-BE3: delete a photo message and erase its object (the voice erasure path and cron). */
-  private async removeImage(m: CommunityMessage, isAuthor: boolean): Promise<CommunityMessageResponse> {
-    const { deleted, work } = await this.repo.softDeleteImage(m, isAuthor ? 'author_delete' : 'moderation');
+  private async removeImage(m: CommunityMessage, isAuthor: boolean, removerId: string | null): Promise<CommunityMessage> {
+    const { deleted, work } = await this.repo.softDeleteImage(m, isAuthor ? 'author_delete' : 'moderation', removerId);
     if (work.length > 0) {
       await this.repo
         .attemptImageErasure(this.images, work, this.logger)
         .catch(() => this.logger.warn('community image erasure left to the cron'));
     }
-    return CommunityMessageResponseSchema.parse({ message: this.view(deleted) });
+    return deleted;
   }
 }
