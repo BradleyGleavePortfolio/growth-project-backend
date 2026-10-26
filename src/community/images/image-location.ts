@@ -38,6 +38,8 @@
  *     DOP; DJI's RtkStdLat / RtkStdLon accuracy figures): no place alone;
  *   - abbreviated names other than DJI's LRFTarget ones ("Lat", "Lon" sit
  *     inside ordinary words: "Translate", "Colon");
+ *   - a StandardXMP packet cut over two XMP APP1 segments (each segment is
+ *     matched alone; Adobe XMP Part 3 keeps StandardXMP in one APP1);
  *   - anything after the first SOS (a later scan's segments, a second image
  *     after EOI), IPTC (APP13), comments, UTF-16 XMP.
  */
