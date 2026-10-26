@@ -255,14 +255,14 @@ describe('community UGC safety flow (Apple 1.2)', () => {
     );
   });
 
-  it('only the owning coach can act on an item', async () => {
+  it('only the owning coach can act on an item (others get the not-found 404)', async () => {
     const m = await messages.send(bob, cohortId, 'something');
     const r = await moderation.report(alice, 'message', m.message.id, 'spam', undefined);
     await expect(moderation.act(alice, r.item.id, 'hide', undefined)).rejects.toBeInstanceOf(
-      ForbiddenException,
+      NotFoundException,
     );
     await expect(moderation.act(otherCoach, r.item.id, 'hide', undefined)).rejects.toBeInstanceOf(
-      ForbiddenException,
+      NotFoundException,
     );
   });
 
