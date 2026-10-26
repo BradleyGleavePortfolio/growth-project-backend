@@ -563,6 +563,10 @@ export class StripeConnectApiService {
       // 3DS / SCA — let Stripe pick the right confirmation flow on the
       // first invoice's PI just like createPaymentIntent above.
       'payment_settings[save_default_payment_method]': 'on_subscription',
+      // b#1131 B2 (OPERATOR RULING 6353458098) — cards only. A delayed
+      // method (bank debit) can make a subscription active before its first
+      // payment settles; a card (Apple Pay and Google Pay are cards) does not.
+      'payment_settings[payment_method_types][0]': 'card',
     };
     if (args.oneTimePriceId) {
       form['add_invoice_items[0][price]'] = args.oneTimePriceId;
@@ -614,6 +618,9 @@ export class StripeConnectApiService {
       cancel_url: args.cancelUrl,
       'line_items[0][price]': args.priceId,
       'line_items[0][quantity]': String(args.quantity ?? 1),
+      // b#1131 B2 (OPERATOR RULING 6353458098) — cards only, so the session
+      // completes paid. Stripe shows Apple Pay and Google Pay with `card`.
+      'payment_method_types[0]': 'card',
     };
     if (args.clientReferenceId) {
       form.client_reference_id = args.clientReferenceId;
@@ -689,6 +696,9 @@ export class StripeConnectApiService {
       // routing the customer to off-host bank redirects we cannot
       // currently complete from the storefront.  The frontend treats
       // `requires_action` as a normal confirm step.
+      // b#1131 B2 (OPERATOR RULING 6353458098) — not pinned to cards: a
+      // delayed payment here stays `processing` and grants nothing; access
+      // starts only at payment_intent.succeeded (processing is not routed).
       'automatic_payment_methods[enabled]': 'true',
       'automatic_payment_methods[allow_redirects]': 'never',
     };

@@ -62,6 +62,7 @@ function build() {
     stub<PlanContextService>({ validate: jest.fn(async () => null) }),
     stub<CommunitySafetyService>({ assertAllowed: jest.fn(), hiddenFromViewer: jest.fn(async () => new Set()) }),
     stub<CommunityNotificationsService>({ pushEnabled: () => false, sendCommunityPush: jest.fn() }),
+    undefined,
     stub<CommunitySpacePushService>(spacePush),
   );
   const controller = new CommunitySpacePushController(stub<CommunityAccessService>(access), stub<CommunitySpacePushService>(spacePush));
@@ -82,7 +83,7 @@ describe('Opus C-6: the space switch off', () => {
 
   it('a High alert is an ordinary message: no allowance read, no mark, no reach, never the 429', async () => {
     const { spacePush, service } = build();
-    const sent = await service.send(coach, COHORT, 'team call moved to 6', undefined, undefined, true);
+    const sent = await service.send(coach, COHORT, 'team call moved to 6', undefined, undefined, undefined, true);
     expect(sent.message.id).toBe(message.id);
     expect(sent).not.toHaveProperty('high_alert_reach');
     expect(spacePush.highAlertAllowance).not.toHaveBeenCalled();
@@ -107,9 +108,9 @@ describe('the space switch on (unchanged)', () => {
 
   it('a High alert past today\'s 3 is refused; under it the message is marked and the reach returned', async () => {
     const { spacePush, service } = build();
-    await expect(service.send(coach, COHORT, 'team call moved to 6', undefined, undefined, true)).rejects.toMatchObject({ status: 429 });
+    await expect(service.send(coach, COHORT, 'team call moved to 6', undefined, undefined, undefined, true)).rejects.toMatchObject({ status: 429 });
     spacePush.highAlertAllowance.mockResolvedValueOnce({ reach: 4, used_today: 1, limit: 3 });
-    const sent = await service.send(coach, COHORT, 'team call moved to 6', undefined, undefined, true);
+    const sent = await service.send(coach, COHORT, 'team call moved to 6', undefined, undefined, undefined, true);
     expect(sent).toMatchObject({ high_alert_reach: 4 });
     expect(spacePush.markHighAlert).toHaveBeenCalledWith(message.id);
   });

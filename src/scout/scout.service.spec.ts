@@ -31,6 +31,8 @@ function makePrisma(doubles: PrismaDoubles): PrismaService {
     scoutImportCompletion: { create: doubles.create },
     scoutImport: { upsert: doubles.importUpsert, findUnique: doubles.importFindUnique },
     scoutIngestEntity: { groupBy: doubles.ingestGroupBy },
+    // FR-1154R3: the import push reads the coach's Mute all switch (no row: not muted).
+    notificationPreferences: { findUnique: jest.fn().mockResolvedValue(null) },
     // S7-L: the read projects `families[]` from the reconstruction ledger for
     // legacy and server rows alike; legacy fixtures have no ledger rows.
     scoutReconstructionLedger: { groupBy: jest.fn().mockResolvedValue([]) },

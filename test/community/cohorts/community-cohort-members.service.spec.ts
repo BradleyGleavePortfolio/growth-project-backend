@@ -203,20 +203,23 @@ describe('CommunityCohortMembersService', () => {
       expect(res.member.role).toBe('co_coach');
     });
 
-    it('creates a pending invite (status=invited) for an existing user by email', async () => {
+    it('adds a person by email as active at once, the same act as by id (no accept step exists)', async () => {
       repo.findUserByEmail.mockResolvedValue({
         id: 'aaaaaaaa-0000-0000-0000-000000000001',
         name: 'Jane Client',
         email: 'jane@example.com',
       });
-      repo.upsertMembership.mockResolvedValue(membership({ status: 'invited', joined_at: null }));
-      await service.assign(coachA, COHORT_A, {
+      repo.upsertMembership.mockResolvedValue(membership());
+      const res = await service.assign(coachA, COHORT_A, {
         email: 'jane@example.com',
         role: 'student',
       } as never);
       expect(repo.upsertMembership).toHaveBeenCalledWith(
-        expect.objectContaining({ status: 'invited', joinedAt: null }),
+        expect.objectContaining({ userId: 'aaaaaaaa-0000-0000-0000-000000000001', status: 'active', joinedAt: expect.any(Date) }),
       );
+      expect(repo.upsertMembership).not.toHaveBeenCalledWith(expect.objectContaining({ status: 'invited' }));
+      expect(repo.liftWorkspaceBan).toHaveBeenCalledWith(WS_A, 'aaaaaaaa-0000-0000-0000-000000000001', coachA.id);
+      expect(res.member.status).toBe('active');
     });
 
     it('400s when neither user_id nor email is supplied', async () => {
@@ -297,6 +300,7 @@ describe('CommunityCohortMembersService', () => {
           workspaceId: WS_A,
           coachId: coachA.id,
         });
+        expect(repo.liftWorkspaceBan).not.toHaveBeenCalled();
         expect(repo.upsertMembership).not.toHaveBeenCalled();
       });
 
@@ -345,6 +349,8 @@ describe('CommunityCohortMembersService', () => {
       );
       const res = await service.remove(coachA, COHORT_A, 'aaaaaaaa-0000-0000-0000-000000000001');
       expect(res.member.status).toBe('removed');
+      expect(repo.removeMembership).toHaveBeenCalledWith(COHORT_A, 'aaaaaaaa-0000-0000-0000-000000000001');
+      expect(repo.upsertMembership).not.toHaveBeenCalled(); // removing never writes a row back
     });
 
     it('403s removing the owning coach role (protect owner)', async () => {
@@ -364,11 +370,13 @@ describe('CommunityCohortMembersService', () => {
       expect(repo.removeMembership).not.toHaveBeenCalled();
     });
 
-    it('404s an unknown membership', async () => {
+    it('404s an unknown membership and writes nothing (no row is created to hold the removal)', async () => {
       repo.findMembership.mockResolvedValue(null);
       await expect(service.remove(coachA, COHORT_A, 'nobody')).rejects.toBeInstanceOf(
         NotFoundException,
       );
+      expect(repo.upsertMembership).not.toHaveBeenCalled();
+      expect(repo.removeMembership).not.toHaveBeenCalled();
     });
 
     it('403s a coach removing from a cohort they do not own (cross-cohort)', async () => {

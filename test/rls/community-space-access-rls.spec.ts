@@ -220,31 +220,58 @@ const EDIT_OWN = `UPDATE "community_messages" SET "body" = "body"`;
       expect([await count('Y', 'community_messages', msg.mem), await send('Y', 'mem')]).toEqual([1, 1]);
     });
 
-    describe('an invitation by email: the coach manages it while the person is their client; it opens nothing', () => {
+    describe('a person added by email is in at once; removing them closes the space and writes no row back', () => {
       const members = new CommunityCohortMembersService(access, new CommunityCohortMembersRepository(stub<PrismaService>(prisma)), stub<CommunitySafetyService>({}));
       const coach = stub<User>(user('X'));
       const event = uuids(['mem', 'cli'] as const);
+      const rowsOfE = () => prisma.communityMembership.findMany({ where: { cohort_id: space.mem, user_id: id.E }, select: { id: true, status: true } });
+      const spacesOfE = async () => (await access.listAccessibleCohortIds(ws.X, id.E)).sort();
       beforeAll(() => prisma.communityEvent.createMany({ data: (['mem', 'cli'] as const).map((s, i) => ({ id: event[s],
         workspace_id: ws.X, cohort_id: space[s], created_by_id: id.X, title: 'RLS event', starts_at: new Date(Date.now() + (i + 1) * 36e5) })) }));
 
-      it.each([{ who: 'a current client', moved: false }, { who: 'a client who then moves away', moved: true }])('$who', async ({ moved }) => {
+      it('a current client: reads and writes the space, only their own spaces; once removed, nothing there', async () => {
+        expect(await count('E', 'community_messages', msg.cli)).toBe(1);
+        expect([await count('E', 'community_messages', msg.mem), await send('E', 'mem')]).toEqual([0, DENIED]);
         const { member } = await members.assign(coach, space.mem, { email: `space-access-${id.E}`, role: 'student' });
-        expect([member.status, await count('E', 'community_messages', msg.cli)]).toEqual(['invited', 1]);
-        expect([await count('E', 'community_messages', msg.mem), await send('E', 'mem'), await access.canAccessCohort(cohort('mem'), user('E'))])
-          .toEqual([0, DENIED, false]); // the invitee reads and writes nothing there
-        if (moved) await prisma.$executeRaw`UPDATE "User" SET "coach_id" = ${id.Y} WHERE "id" = ${id.E}`;
-        expect(await count('X', 'community_memberships', row.Imem)).toBe(1);
-        const n = moved ? 0 : 1;
+        expect(member.status).toBe('active');
+        expect([await count('E', 'community_messages', msg.mem), await count('E', 'community_posts', post.mem), await send('E', 'mem'),
+          await access.canAccessCohort(cohort('mem'), user('E'))]).toEqual([1, 1, 1, true]);
+        expect(await spacesOfE()).toEqual([space.cli, space.mem].sort()); // their spaces and no other
+        expect([await count('E', 'community_messages', msg.ymem), await count('E', 'community_messages', msg.pub)]).toEqual([0, 0]);
         expect({
+          rls: [await count('X', 'community_memberships', String(member.id)),
+            await write('X', `UPDATE "community_memberships" SET "updated_at" = now() WHERE "id" = $1::uuid`, member.id)],
+          list: (await members.list(coach, space.mem, {})).members.filter((m) => m.user_id === id.E).map((m) => m.status),
+          today: (await foundation.findTodayContent(ws.X, id.E, new Date())).event?.id ?? null, // the nearer event is now theirs
+        }).toEqual({ rls: [1, 1], list: ['active'], today: event.mem });
+
+        await expect(members.remove(coach, space.mem, id.E)).resolves.toMatchObject({ member: { status: 'removed' } });
+        expect([await count('E', 'community_messages', msg.mem), await count('E', 'community_messages', comment.mem),
+          await count('E', 'community_posts', post.mem), await send('E', 'mem'), await reply('E', 'mem'),
+          await access.canAccessCohort(cohort('mem'), user('E'))]).toEqual([0, 0, 0, DENIED, DENIED, false]);
+        expect(await spacesOfE()).toEqual([space.cli]);
+        expect(await count('E', 'community_messages', msg.cli)).toBe(1); // still the coach's client
+        await expect(members.remove(coach, space.mem, id.E)).resolves.toMatchObject({ member: { status: 'removed' } });
+        expect(await rowsOfE()).toEqual([{ id: member.id, status: 'removed' }]); // one row, never written back
+      });
+
+      it('a client who then moves away: the space closes with the move and the old coach can no longer manage them', async () => {
+        const { member } = await members.assign(coach, space.mem, { email: `space-access-${id.E}`, role: 'student' });
+        expect([member.status, await count('E', 'community_messages', msg.mem)]).toEqual(['active', 1]); // re-added, revived
+        await prisma.$executeRaw`UPDATE "User" SET "coach_id" = ${id.Y} WHERE "id" = ${id.E}`;
+        expect(await count('X', 'community_memberships', row.Imem)).toBe(1);
+        expect({
+          reads: [await count('E', 'community_messages', msg.mem), await send('E', 'mem'), await access.canAccessCohort(cohort('mem'), user('E'))],
+          spaces: await spacesOfE(),
           rls: [await count('X', 'community_memberships', String(member.id)),
             await write('X', `UPDATE "community_memberships" SET "updated_at" = now() WHERE "id" = $1::uuid`, member.id)],
           list: (await members.list(coach, space.mem, {})).members.filter((m) => m.user_id === id.E).length,
           replyPush: (await access.readersOf(ws.X, null, [id.E])).length, // the reply push on their Hall post
           reminderPush: (await access.readersOf(ws.X, space.cli, [id.E])).length,
-          today: (await foundation.findTodayContent(ws.X, id.E, new Date())).event?.id ?? null, // never the nearer mem event
-        }).toEqual({ rls: [n, n], list: n, replyPush: n, reminderPush: n, today: moved ? null : event.cli });
-        const cancel = members.remove(coach, space.mem, id.E);
-        await (moved ? expect(cancel).rejects.toBeInstanceOf(NotFoundException) : expect(cancel).resolves.toMatchObject({ member: { status: 'removed' } }));
+          today: (await foundation.findTodayContent(ws.X, id.E, new Date())).event?.id ?? null,
+        }).toEqual({ reads: [0, DENIED, false], spaces: [], rls: [0, 0], list: 0, replyPush: 0, reminderPush: 0, today: null });
+        await expect(members.remove(coach, space.mem, id.E)).rejects.toBeInstanceOf(NotFoundException);
+        expect(await rowsOfE()).toEqual([{ id: member.id, status: 'active' }]);
       });
     });
   });

@@ -95,13 +95,18 @@ export class WorkoutAssetResolver implements AssignableAssetResolver {
    */
   async deferInline(input: AssignableAssetMaterialiseInput): Promise<boolean> {
     if (!input.tx) return false;
-    return this.programDelivery.isProgramMaster(input.assetId, input.tx);
+    // FX-JOIN: assignPlan checks scope and writes on its own connection, so a
+    // client attached earlier in this tx gets the plan from the dispatcher.
+    return (
+      (await this.programDelivery.isProgramMaster(input.assetId, input.tx)) ||
+      this.scope.onlyInTx(input.coachId, input.clientId, input.tx)
+    );
   }
 
   async materialise(
     input: AssignableAssetMaterialiseInput,
   ): Promise<AssignableAssetMaterialiseResult> {
-    const acting = await this.scope.resolve(input.coachId, input.clientId);
+    const acting = await this.scope.resolve(input.coachId, input.clientId, input.tx);
 
     const master = await this.programDelivery.findDeliverableMaster(
       acting.tenantCoachId,

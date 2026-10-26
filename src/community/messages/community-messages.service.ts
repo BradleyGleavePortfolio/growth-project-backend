@@ -6,6 +6,7 @@ import {
   Logger,
   NotFoundException,
   Optional,
+  ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import type { CommunityCohort, CommunityMessage, User } from '@prisma/client';
@@ -33,6 +34,22 @@ import { memberName } from '../member-display-name';
 import { CommunityNotificationsService } from '../notifications/community-notifications.service';
 import { NotificationKind } from '../../notifications/notification-kind';
 import { describeFailure } from '../../observability/log-pii';
+import {
+  CommunityImageStore,
+  communityImagesEnabled,
+  IMAGE_READ_TTL_SEC,
+  isOwnImage,
+  isPublishableImageKey,
+} from '../images/community-image-store';
+
+/** SC-BE3: a photo message as the send route takes it. */
+export interface ImageSend {
+  key: string;
+  width: number;
+  height: number;
+}
+type ChatImage = NonNullable<CommunityMessageView['image']>;
+const IMAGE_REJECTED = (code: string) => new UnprocessableEntityException({ error: 'invalid_image', code });
 
 const EDIT_WINDOW_MS = 5 * 60 * 1000;
 const DEFAULT_PAGE = 50;
@@ -74,6 +91,9 @@ export class CommunityMessagesService {
     private readonly planContext: PlanContextService,
     private readonly safety: CommunitySafetyService,
     private readonly communityPush: CommunityNotificationsService,
+    // SC-BE3: photo storage (optional so the positional test constructions
+    // keep working; a photo send without it is 503).
+    @Optional() private readonly images?: CommunityImageStore,
     @Optional() private readonly spacePush?: CommunitySpacePushService,
   ) {}
 
@@ -81,6 +101,7 @@ export class CommunityMessagesService {
     m: CommunityMessage,
     voice?: Map<string, ChatVoiceNote>,
     chat?: ChatOf,
+    images?: Map<string, ChatImage>,
   ): CommunityMessageView {
     return {
       id: m.id,
@@ -101,7 +122,72 @@ export class CommunityMessagesService {
       parent_message_id: m.parent_message_id ?? null,
       voice_note: (!m.deleted_at && voice?.get(m.id)) || null,
       ...(chat ? chat(m) : {}),
+      // SC-BE3: only on kind 'image' rows (other shapes are unchanged).
+      ...(m.kind === 'image' ? { image: (!m.deleted_at && images?.get(m.id)) || null } : {}),
     };
+  }
+
+  /** SC-BE3: this page's live photos, each with a short-lived signed read URL. */
+  private async imagesOf(rows: CommunityMessage[]): Promise<Map<string, ChatImage>> {
+    const live = new Map(rows.filter((m) => m.kind === 'image' && !m.deleted_at).map((m) => [m.id, m]));
+    if (live.size === 0) return new Map();
+    const expires_at = new Date(Date.now() + IMAGE_READ_TTL_SEC * 1000).toISOString();
+    // FX-1139 B2: only the message's own photo (its sender, its space) is signed.
+    const found = (await this.repo.imagesFor([...live.keys()])).filter((i) => isOwnImage(live.get(i.message_id), i));
+    const sign = async (key: string, owner: string) =>
+      (await this.images?.createSignedDownload(key, IMAGE_READ_TTL_SEC, owner)) ?? null;
+    return new Map(
+      await Promise.all(
+        found.map(async (i) => [i.message_id, { url: await sign(i.storage_key, i.author_id), width: i.width, height: i.height, expires_at }] as const),
+      ),
+    );
+  }
+
+  /**
+   * SC-BE3: write a photo message. Flag off is 422. The key must be one this
+   * server minted for this sender in this space (10 minutes); the object must
+   * be at that key, JPEG and within 10 MB, else 422. Storage down is 503.
+   * FX-1139: the rows and the copy to the sent key commit together.
+   * FR-1139 (Sol C): a validated plan tag is stored, as on a text message.
+   * PHOTO-GPS: a photo that carries a location is 422 community.image.has_location,
+   * nothing is written and its upload is erased now; if that erase fails, the
+   * upload's erasure row (recorded when its link was signed) erases it at link death.
+   */
+  private async createImage(
+    user: User,
+    cohort: CommunityCohort,
+    body: string,
+    parent: { id: string; at: Date } | null,
+    image: ImageSend,
+    planContext: PlanContextTag | null,
+  ): Promise<CommunityMessage> {
+    if (!communityImagesEnabled()) throw IMAGE_REJECTED('community.image.disabled');
+    if (!isPublishableImageKey(image.key, user.id, cohort.id)) throw IMAGE_REJECTED('community.image.key_invalid');
+    const images = this.images;
+    if (!images) throw new ServiceUnavailableException({ error: 'unavailable', code: 'community.image.storage_unavailable' });
+    const { result, size } = await images.check(image.key, user.id);
+    if (result === 'unavailable') {
+      throw new ServiceUnavailableException({ error: 'unavailable', code: 'community.image.storage_unavailable' });
+    }
+    if (result === 'has_location' && (await images.removeObjects([image.key]).catch(() => ({ failed: true }))).failed) {
+      this.logger.warn('community.image outcome=has_location erase=deferred_to_link_expiry');
+    }
+    if (result !== 'ok') throw IMAGE_REJECTED(`community.image.${result}`);
+    try {
+      return await this.repo.createImageMessage({
+        workspaceId: cohort.workspace_id,
+        cohortId: cohort.id,
+        senderId: user.id,
+        body,
+        planContext,
+        parent,
+        image: { key: image.key, width: image.width, height: image.height, sizeBytes: size },
+        publish: () => images.publish(image.key),
+      });
+    } catch (e) {
+      if ((e as { code?: string }).code === 'P2002') throw IMAGE_REJECTED('community.image.key_used');
+      throw e;
+    }
   }
 
   /**
@@ -118,6 +204,7 @@ export class CommunityMessagesService {
     const parents = new Map(
       (await this.safety.filterBlocked(user.id, live, (p) => p.sender_id, placeOf)).map((p) => [p.id, p]),
     );
+    const parentImages = await this.imagesOf([...parents.values()]); // FR-1139 (Opus C2): a quoted photo, signed
     const name = (m: CommunityMessage) =>
       memberName(x.people.get(m.sender_id)?.name, x.fullName(m.cohort_id, m.sender_id));
     return (m) => {
@@ -140,6 +227,7 @@ export class CommunityMessagesService {
                 sender_name: name(p),
                 snippet: voice ? null : Array.from(p.body ?? '').slice(0, QUOTE_CHARS).join(''),
                 voice_duration_ms: voice ? p.voice_duration_ms : null,
+                ...(p.kind === 'image' ? { image: parentImages.get(p.id) ?? null } : {}),
               }
             : { id: m.parent_message_id, ...GONE },
       };
@@ -265,6 +353,7 @@ export class CommunityMessagesService {
     body: string,
     planContextRaw?: unknown,
     parentId?: string,
+    image?: ImageSend,
     highAlert?: boolean,
   ): Promise<CommunityMessageResponse & { high_alert_reach?: number }> {
     const cohort = await this.access.findCohort(cohortId);
@@ -287,14 +376,16 @@ export class CommunityMessagesService {
     if (alert && alert.used_today >= alert.limit) {
       throw new HttpException({ code: 'community.high_alert.limit', limit: alert.limit }, HttpStatus.TOO_MANY_REQUESTS);
     }
-    const created = await this.repo.createCohortMessage({
-      workspaceId: cohort.workspace_id,
-      cohortId: cohort.id,
-      senderId: user.id,
-      body,
-      planContext,
-      parent,
-    });
+    const created = image
+      ? await this.createImage(user, cohort, body, parent, image, planContext)
+      : await this.repo.createCohortMessage({
+          workspaceId: cohort.workspace_id,
+          cohortId: cohort.id,
+          senderId: user.id,
+          body,
+          planContext,
+          parent,
+        });
     if (alert) await this.spacePush?.markHighAlert(created.id);
     // v1-6 coach-inbox producer: a coach/owner message into the cohort answers
     // the cohort's outstanding client messages, so stamp coach_replied_at on
@@ -324,7 +415,7 @@ export class CommunityMessagesService {
     // C-S-PUSH-4: tell the other members about the new group message. Fire-and-
     // forget after the write; never blocks or fails the send.
     void this.pushCohortMessage(created, cohort.workspace_id, created.cohort_id ?? cohort.id);
-    const sent = CommunityMessageResponseSchema.parse({ message: this.view(created) });
+    const sent = CommunityMessageResponseSchema.parse({ message: this.view(created, undefined, undefined, await this.imagesOf([created])) });
     return alert ? { ...sent, high_alert_reach: alert.reach } : sent;
   }
 
@@ -388,12 +479,13 @@ export class CommunityMessagesService {
     // Block filter AFTER the cursor is computed from the unfiltered page, so
     // pagination stays stable and a hidden row never becomes the cursor.
     const visible = await this.safety.filterBlocked(user.id, rows, (m) => m.sender_id, placeOf);
-    const [voice, chat] = await Promise.all([
+    const [voice, chat, images] = await Promise.all([
       this.voiceOf(user, visible),
       this.chatOf(user, cohort, visible),
+      this.imagesOf(visible),
     ]);
     return CommunityMessageListResponseSchema.parse({
-      messages: visible.map((m) => this.view(m, voice, chat)),
+      messages: visible.map((m) => this.view(m, voice, chat, images)),
       next_before: next,
     });
   }
@@ -414,8 +506,12 @@ export class CommunityMessagesService {
     }
     // Two-way block: a direct id read cannot go around the list filter.
     await this.safety.assertVisibleTo(user.id, m.sender_id, NOT_FOUND, placeOf(m));
-    const [voice, chat] = await Promise.all([this.voiceOf(user, [m]), this.chatOf(user, cohort, [m])]);
-    return CommunityMessageResponseSchema.parse({ message: this.view(m, voice, chat) });
+    const [voice, chat, images] = await Promise.all([
+      this.voiceOf(user, [m]),
+      this.chatOf(user, cohort, [m]),
+      this.imagesOf([m]),
+    ]);
+    return CommunityMessageResponseSchema.parse({ message: this.view(m, voice, chat, images) });
   }
 
   async edit(user: User, messageId: string, body: string): Promise<CommunityMessageResponse> {
@@ -461,7 +557,8 @@ export class CommunityMessagesService {
       },
       { distinctId: updated.sender_id, channelKind: 'cohort' },
     );
-    return CommunityMessageResponseSchema.parse({ message: this.view(updated) });
+    // FX-1139 (C-2): a live photo keeps its `image` on the edit answer, as on GET.
+    return CommunityMessageResponseSchema.parse({ message: this.view(updated, undefined, undefined, await this.imagesOf([updated])) });
   }
 
   async remove(user: User, messageId: string): Promise<CommunityMessageResponse> {
@@ -490,7 +587,19 @@ export class CommunityMessagesService {
       // Idempotent: already deleted is a no-op success.
       return CommunityMessageResponseSchema.parse({ message: this.view(m) });
     }
+    if (m.kind === 'image') return this.removeImage(m, isAuthor);
     const deleted = await this.repo.softDelete(m);
+    return CommunityMessageResponseSchema.parse({ message: this.view(deleted) });
+  }
+
+  /** SC-BE3: delete a photo message and erase its object (the voice erasure path and cron). */
+  private async removeImage(m: CommunityMessage, isAuthor: boolean): Promise<CommunityMessageResponse> {
+    const { deleted, work } = await this.repo.softDeleteImage(m, isAuthor ? 'author_delete' : 'moderation');
+    if (work.length > 0) {
+      await this.repo
+        .attemptImageErasure(this.images, work, this.logger)
+        .catch(() => this.logger.warn('community image erasure left to the cron'));
+    }
     return CommunityMessageResponseSchema.parse({ message: this.view(deleted) });
   }
 }

@@ -131,8 +131,6 @@ export async function authorsWhoLeft(
         WHERE "cohort_id" = ANY(${spaceIds}::uuid[]) AND "deleted_at" IS NULL)
     SELECT t."s"::text AS "s", t."a" FROM t WHERE NOT app.community_author_stays(t."w", t."s", t."a")
       OR NOT app.community_author_unbanned(t."w", t."a")
-      OR EXISTS (SELECT 1 FROM "UserBlock" ub
-                 WHERE (ub."blocker_id" = ${viewerId} AND ub."blocked_id" = t."a")
-                    OR (ub."blocker_id" = t."a" AND ub."blocked_id" = ${viewerId}))`;
+      OR app.users_in_block(${viewerId}, t."a")`;
   return rows.map((r) => [r.s, r.a]);
 }

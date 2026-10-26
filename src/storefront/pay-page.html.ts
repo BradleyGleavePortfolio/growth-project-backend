@@ -138,7 +138,8 @@ function doc(title: string, nonce: string, body: string): string {
 
 // Style C tokens from the app (theme/tokens.ts): bone, surface, ink, muted,
 // forest, textOnAccent, textOnMastheadMuted, border, gold.300 (error goes to Stripe's colorDanger only).
-const CSS = `:root{--bone:#F5EFE4;--surface:#FFFDF8;--ink:#1A1A18;--muted:#6B675F;--forest:#2C4A36;--on:#FBF7F0;--on2:#B8CCBF;--line:#DCD5CC;--gold:#D4B96B;--serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif}
+// muted is #2C2C2C, the one small-grey-text colour on light grounds (owner #168-13).
+const CSS = `:root{--bone:#F5EFE4;--surface:#FFFDF8;--ink:#1A1A18;--muted:#2C2C2C;--forest:#2C4A36;--on:#FBF7F0;--on2:#B8CCBF;--line:#DCD5CC;--gold:#D4B96B;--serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif}
 *{box-sizing:border-box}body{margin:0;background:var(--bone);color:var(--ink);font:1rem/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;-webkit-text-size-adjust:100%}
 .wrap{max-width:30rem;margin:0 auto;padding:0 1.25rem}.band{background:var(--forest);color:var(--on);padding:1.5rem 0 2.75rem}
 .band::after{content:"";display:block;width:calc(100% - 2.5rem);max-width:27.5rem;margin:1.25rem auto 0;border-top:1px solid var(--gold);opacity:.6}
@@ -180,7 +181,7 @@ addEventListener('pageshow',function(e){if(e.persisted)busy(false)});
 if(!window.Stripe){b.disabled=true;m.textContent=c.copy.failed;return}
 var stripe=Stripe(c.pk);
 var el=stripe.elements({mode:c.mode,amount:c.amount,currency:'usd',onBehalfOf:c.obo,paymentMethodTypes:['card'],
-appearance:{theme:'stripe',variables:{colorPrimary:'#2C4A36',colorText:'#1A1A18',colorTextSecondary:'#6B675F',colorDanger:'#B91C1C',colorBackground:'#ffffff',borderRadius:'12px',fontSizeBase:'16px'},rules:{'.Input':{border:'1px solid #DCD5CC',boxShadow:'none'}}}});
+appearance:{theme:'stripe',variables:{colorPrimary:'#2C4A36',colorText:'#1A1A18',colorTextSecondary:'#2C2C2C',colorDanger:'#B91C1C',colorBackground:'#ffffff',borderRadius:'12px',fontSizeBase:'16px'},rules:{'.Input':{border:'1px solid #DCD5CC',boxShadow:'none'}}}});
 var pe=el.create('payment',{fields:{billingDetails:{name:'never',email:'never'}},wallets:{applePay:'never',googlePay:'never',link:'never'}});
 pe.on('loaderror',function(){b.disabled=true;m.textContent=c.copy.failed});pe.mount('#card');
 var x=el.create('expressCheckout',{emailRequired:true,phoneNumberRequired:true,billingAddressRequired:true,buttonHeight:48,paymentMethods:{link:'never',paypal:'never',amazonPay:'never'}});

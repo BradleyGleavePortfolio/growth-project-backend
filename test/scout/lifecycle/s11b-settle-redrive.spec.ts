@@ -60,6 +60,8 @@ function makeSeams(): Seams {
   const transactions: Tx[] = [];
   const prisma = Object.assign(Object.create(PrismaService.prototype) as PrismaService, {
     scoutProgressSnapshot: { upsert: jest.fn().mockResolvedValue({}) },
+    // FR-1154R3: the import push reads the coach's Mute all switch (no row: not muted).
+    notificationPreferences: { findUnique: jest.fn().mockResolvedValue(null) },
     $transaction: jest.fn(async (fn: (tx: Tx) => Promise<unknown>) => {
       const tx = Object.assign(Object.create(PrismaService.prototype) as PrismaService, {
         scoutImportCompletion: { create: completionCreate },

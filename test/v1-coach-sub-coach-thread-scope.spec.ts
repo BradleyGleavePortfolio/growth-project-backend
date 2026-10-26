@@ -77,6 +77,7 @@ function makeWorld() {
     drafts.find((d) => d.coach_id === k.coach_id && d.client_id === k.client_id);
 
   const prisma = {
+    userBlock: { findMany: jest.fn(async () => []) },
     user: {
       findFirst: jest.fn(async ({ where }: { where: Where }) => {
         const row = users.find((u) => matches(u, where));

@@ -1,13 +1,4 @@
 {
   "schema": 1,
-  "exceptions": [
-    {
-      "ghsa": "GHSA-vfj7-8cjw-p6xm",
-      "package": "braces",
-      "max_version": "3.0.3",
-      "reason": "CVE-2026-93687 stack-exhaustion DoS via deeply nested patterns; no patched braces exists on npm (latest 3.0.3). The only lockfile copy (node_modules/braces 3.0.3) is dev-only, reached through micromatch from danger (CI tooling), never installed in the production runtime image (Dockerfile runtime stage uses npm ci --omit=dev).",
-      "expires": "2026-11-20",
-      "owner_ruling": "OR-164-1 (owner, 2026-10-21): #BRACES-EXC op 1, renew the dev-only braces exception 30 days; no patched braces on npm"
-    }
-  ]
+  "exceptions": []
 }
