@@ -23,30 +23,30 @@ export class CommunityLeaveMuteController {
   /** 409 community.space.cannot_leave for Announcements, a section heading, and the coach's own space. */
   @Post('leave')
   @HttpCode(HttpStatus.OK)
-  leave(@Request() req: AuthedRequest, @Param('cohortId', ParseUUIDPipe) cohortId: string): Promise<SpaceLeave> {
+  async leave(@Request() req: AuthedRequest, @Param('cohortId', ParseUUIDPipe) cohortId: string): Promise<SpaceLeave> {
     return this.leaveMute.leave(req.user, cohortId);
   }
 
   @Post('join')
   @HttpCode(HttpStatus.OK)
-  join(@Request() req: AuthedRequest, @Param('cohortId', ParseUUIDPipe) cohortId: string): Promise<SpaceLeave> {
+  async join(@Request() req: AuthedRequest, @Param('cohortId', ParseUUIDPipe) cohortId: string): Promise<SpaceLeave> {
     return this.leaveMute.join(req.user, cohortId);
   }
 
   /** The people who left this space (the "{name} left" line in its chat). */
   @Get('left')
-  left(@Request() req: AuthedRequest, @Param('cohortId', ParseUUIDPipe) cohortId: string): Promise<LeftMembers> {
+  async left(@Request() req: AuthedRequest, @Param('cohortId', ParseUUIDPipe) cohortId: string): Promise<LeftMembers> {
     return this.leaveMute.leftMembers(req.user, cohortId);
   }
 
   /** The caller's muted and left threads in this space. */
   @Get('threads')
-  threads(@Request() req: AuthedRequest, @Param('cohortId', ParseUUIDPipe) cohortId: string): Promise<ThreadStates> {
+  async threads(@Request() req: AuthedRequest, @Param('cohortId', ParseUUIDPipe) cohortId: string): Promise<ThreadStates> {
     return this.leaveMute.threadStates(req.user, cohortId);
   }
 
   @Put('threads/:messageId/mute')
-  mute(
+  async mute(
     @Request() req: AuthedRequest,
     @Param('cohortId', ParseUUIDPipe) cohortId: string,
     @Param('messageId', ParseUUIDPipe) messageId: string,
@@ -56,7 +56,7 @@ export class CommunityLeaveMuteController {
 
   @Delete('threads/:messageId/mute')
   @HttpCode(HttpStatus.NO_CONTENT)
-  unmute(
+  async unmute(
     @Request() req: AuthedRequest,
     @Param('cohortId', ParseUUIDPipe) cohortId: string,
     @Param('messageId', ParseUUIDPipe) messageId: string,
@@ -65,7 +65,7 @@ export class CommunityLeaveMuteController {
   }
 
   @Put('threads/:messageId/leave')
-  leaveThread(
+  async leaveThread(
     @Request() req: AuthedRequest,
     @Param('cohortId', ParseUUIDPipe) cohortId: string,
     @Param('messageId', ParseUUIDPipe) messageId: string,
@@ -76,7 +76,7 @@ export class CommunityLeaveMuteController {
   /** Follow the thread again. */
   @Delete('threads/:messageId/leave')
   @HttpCode(HttpStatus.NO_CONTENT)
-  follow(
+  async follow(
     @Request() req: AuthedRequest,
     @Param('cohortId', ParseUUIDPipe) cohortId: string,
     @Param('messageId', ParseUUIDPipe) messageId: string,

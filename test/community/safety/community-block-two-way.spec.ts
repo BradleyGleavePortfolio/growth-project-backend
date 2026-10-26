@@ -863,6 +863,8 @@ const FILTERED: Record<string, { file: string; method: string; entry?: string }>
     method: 'readableChallenge',
     entry: 'getOne',
   },
+  // LEAVE-MUTE-BE: who left a space (the "{name} left" chat line) hides blocked people both ways.
+  'CommunityLeaveMuteController.left': { file: 'leave-mute/community-leave-mute.service.ts', method: 'leftMembers' },
 };
 
 const COACH_ONLY =
@@ -877,6 +879,7 @@ const EXEMPT: Record<string, string> = {
   'CommunityCoachEmptyStatesController.emptyStates': 'static coach copy, no member content',
   'CommunitySpaceReadsController.getRead': "the caller's own read line (ids and a time), no member content",
   'CommunitySpaceReadsController.getNotify': "the caller's own notification setting for the space, no member content",
+  'CommunityLeaveMuteController.threads': "the caller's own muted and left threads (ids and times), no member content",
   'AiTriageController.getTriage': COACH_ONLY,
   'PlanContextController.resolve': 'resolves a plan reference id, no member-authored content',
   'CommunitySafetyController.info': 'static safety copy',
