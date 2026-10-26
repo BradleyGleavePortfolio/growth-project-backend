@@ -433,6 +433,12 @@ describe('MessagingService', () => {
       created_at: new Date(at),
       read_at: read ? new Date('2026-10-25T00:00:00Z') : null,
     });
+    // Typed test double: the stubs implement only what unreadCountForCoach calls.
+    const fake = <T>(v: unknown): T => v as T;
+    const scopedSvc = (safety: unknown, scope: unknown) =>
+      new MessagingService(
+        fake(prisma), fake({}), fake({}), fake({}), fake({}), fake({}), fake({}), fake(safety), fake(scope),
+      );
     const seedWaiting = () =>
       prisma._messages.push(
         row('m1', 'client-1', 'client-1', '2026-10-20T12:00:00Z'),
@@ -459,16 +465,14 @@ describe('MessagingService', () => {
     it('oldest_unread_at_by_client leaves out a moved client and a closed pair, like by_client', async () => {
       seedWaiting();
       // client-2 blocked the coach; client-3 moved to another coach (not on the roster).
-      (prisma as any).userBlock = { findMany: jest.fn(async () => [{ blocker_id: 'client-2' }]) };
+      Object.assign(prisma, { userBlock: { findMany: jest.fn(async () => [{ blocker_id: 'client-2' }]) } });
       prisma._messages.push(row('m7', 'client-3', 'client-3', '2026-10-16T09:00:00Z'));
-      const safety = { getBlockedIdsFor: jest.fn(async () => []) } as any;
+      const safety = { getBlockedIdsFor: jest.fn(async () => []) };
       const scope = {
         getHeadCoachIdForSubCoach: jest.fn(async () => null),
         getAuthorizedClientIds: jest.fn(async () => ['client-1', 'client-2']),
-      } as any;
-      const s = {} as any;
-      const scoped = new MessagingService(prisma as any, s, s, s, s, s, s, safety, scope);
-      const out = await scoped.unreadCountForCoach('coach-A');
+      };
+      const out = await scopedSvc(safety, scope).unreadCountForCoach('coach-A');
       expect(out.by_client).toEqual({ 'client-1': 2 });
       expect(out.oldest_unread_at_by_client).toEqual({ 'client-1': '2026-10-20T10:00:00.000Z' });
       expect(out.closed_client_ids).toEqual(['client-2']);
@@ -479,10 +483,8 @@ describe('MessagingService', () => {
       const scope = {
         getHeadCoachIdForSubCoach: jest.fn(async () => 'coach-A'),
         getAuthorizedClientIds: jest.fn(async () => []),
-      } as any;
-      const s = {} as any;
-      const scoped = new MessagingService(prisma as any, s, s, s, s, s, s, null, scope);
-      expect(await scoped.unreadCountForCoach('sub-1')).toEqual({
+      };
+      expect(await scopedSvc(null, scope).unreadCountForCoach('sub-1')).toEqual({
         total: 0,
         by_client: {},
         oldest_unread_at_by_client: {},
