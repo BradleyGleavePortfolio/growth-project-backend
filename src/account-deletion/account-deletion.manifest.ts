@@ -676,10 +676,14 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'CommunityVoiceNoteListen', field: 'user_id', action: del },
   { model: 'CommunityVoiceConsent', field: 'user_id', action: del },
   { model: 'CommunityVoiceNote', field: 'author_id', action: del },
+  // SC-BE3: their space chat photo rows (the objects go by the image_folder erasure).
+  { model: 'CommunityMessageImage', field: 'author_id', action: del },
   { model: 'CommunityResponse', field: 'user_id', action: del },
   { model: 'CommunityEventRsvp', field: 'user_id', action: del },
   { model: 'CommunityChallengeParticipation', field: 'user_id', action: del },
   { model: 'CommunityMembership', field: 'user_id', action: del },
+  // SC-BE2: the person's read line and notification setting per space.
+  { model: 'CommunitySpaceRead', field: 'user_id', action: del },
   { model: 'CommunitySearchEntry', field: 'authorId', action: del, uuid: true },
   { model: 'CommunityModerationAction', field: 'reported_by_id', action: detach('reported_by_id') },
   { model: 'CommunityModerationAction', field: 'actor_id', action: detach('actor_id') },

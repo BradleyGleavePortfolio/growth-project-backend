@@ -640,8 +640,14 @@ export class CheckoutWebhookHandlerService {
     prefetched?: CheckoutWebhookPrefetch,
   ): Promise<CheckoutWebhookResult> {
     switch (event.type) {
+      // b#1131 B2 (OPERATOR RULING 6353458098): a delayed payment that settled
+      // activates the purchase its completion held, once (event-id dedup and
+      // CHECKOUT_NEVER_REACTIVATES).
       case 'checkout.session.completed':
+      case 'checkout.session.async_payment_succeeded':
         return this.applyCheckoutCompleted(event, tx, prefetched);
+      case 'checkout.session.async_payment_failed':
+        return this.applyCheckoutAsyncPaymentFailed(event, tx);
       case 'checkout.session.expired':
         return this.applyCheckoutExpired(event);
       case 'customer.subscription.updated':
@@ -841,7 +847,11 @@ export class CheckoutWebhookHandlerService {
     // charge id HERE, before the tx opens. The handler then defers the whole
     // split posting to post-commit using this pre-resolved id, so the in-tx
     // path performs zero Stripe HTTP.
-    if (event.type === 'checkout.session.completed' || event.type === 'payment_intent.succeeded') {
+    if (
+      event.type === 'checkout.session.completed' ||
+      event.type === 'checkout.session.async_payment_succeeded' ||
+      event.type === 'payment_intent.succeeded'
+    ) {
       return this.prefetchChargeIdForActivation(event);
     }
     // B-690-3: dispute effects run here, before the outer tx (their own
@@ -1096,6 +1106,7 @@ export class CheckoutWebhookHandlerService {
     const obj = event.data.object as {
       id?: string;
       payment_intent?: string | null;
+      payment_status?: string;
       latest_charge?: string | { id?: string } | null;
       charges?: { data?: Array<{ id?: string }> };
     };
@@ -1112,8 +1123,10 @@ export class CheckoutWebhookHandlerService {
         obj.charges?.data?.[0]?.id ??
         null;
 
-      if (event.type === 'checkout.session.completed') {
-        if (!obj.id) return {};
+      if (event.type !== 'payment_intent.succeeded') {
+        // checkout.session.completed / async_payment_succeeded. A held
+        // (unpaid) completion activates nothing, so it needs no charge id.
+        if (!obj.id || obj.payment_status === 'unpaid') return {};
         const purchase = await this.prisma.clientPurchase.findUnique({
           where: { stripe_checkout_session_id: obj.id },
           select: { id: true, stripe_payment_intent_id: true },
@@ -1293,6 +1306,7 @@ export class CheckoutWebhookHandlerService {
       metadata?: Record<string, string>;
       mode?: string;
       status?: string;
+      payment_status?: string;
     };
     if (!session?.id) return { claimed: false, reason: 'no_session_id' };
 
@@ -1329,6 +1343,22 @@ export class CheckoutWebhookHandlerService {
         `checkout.session.completed: purchase=${purchase.id} not activated again (activated before, status=payment_failed)`,
       );
       return { claimed: true, purchase_id: purchase.id, reason: 'already_progressed' };
+    }
+    // b#1131 B2 (OPERATOR RULING 6353458098): content is granted only once
+    // Stripe reports the payment settled. Stripe's payment_status is one of
+    // paid | unpaid | no_payment_required. 'unpaid' (a delayed payment still
+    // processing) writes nothing: no entitlement, no fanout (so no house
+    // move), no split, and the PaymentIntent id is not stored (so its
+    // payment_intent.succeeded cannot activate the row by the in-app path).
+    // checkout.session.async_payment_succeeded activates it here, once;
+    // async_payment_failed ends it (applyCheckoutAsyncPaymentFailed).
+    // 'no_payment_required' (nothing owed) activates as before; the hosted
+    // package checkout refuses free packages, so it never sells a $0 session.
+    if (session.payment_status === 'unpaid') {
+      this.logger.log(
+        `${event.type}: purchase=${purchase.id} held until Stripe settles the payment`,
+      );
+      return { claimed: true, purchase_id: purchase.id, reason: 'payment_not_settled' };
     }
 
     const pkg = await db.coachPackage.findUnique({
@@ -1531,6 +1561,42 @@ export class CheckoutWebhookHandlerService {
   async settleGuestPurchase(paymentIntentId: string): Promise<void> {
     if (!this.splits) return;
     await this.splits.settleGuestPurchaseByPaymentIntent(paymentIntentId);
+  }
+
+  /**
+   * b#1131 B2 (OPERATOR RULING 6353458098): the delayed payment of a hosted
+   * checkout failed. The purchase its completion held ends as payment_failed:
+   * no entitlement, no fanout (no house move, no alert), no split. A
+   * compare-and-set on `pending`, so a purchase that is paid, active or ended
+   * by another event is never rewritten (nothing moves back).
+   */
+  private async applyCheckoutAsyncPaymentFailed(
+    event: StripeEvent,
+    tx?: WebhookTx,
+  ): Promise<CheckoutWebhookResult> {
+    const session = event.data.object as { id?: string };
+    if (!session?.id) return { claimed: false, reason: 'no_session_id' };
+    const db: WebhookTx | PrismaService = tx ?? this.prisma;
+    const purchase = await db.clientPurchase.findUnique({
+      where: { stripe_checkout_session_id: session.id },
+    });
+    if (!purchase) return { claimed: false, reason: 'no_matching_purchase' };
+    const ended = await db.clientPurchase.updateMany({
+      where: { id: purchase.id, status: 'pending' },
+      data: {
+        status: 'payment_failed',
+        entitlement_active: false,
+        last_error: 'async_payment_failed',
+        ...CLEARED_PAYMENT_SECRETS,
+      },
+    });
+    if (ended.count === 0) {
+      this.logger.log(
+        `${event.type}: purchase=${purchase.id} unchanged (status=${purchase.status})`,
+      );
+      return { claimed: true, purchase_id: purchase.id, reason: 'already_progressed' };
+    }
+    return { claimed: true, purchase_id: purchase.id };
   }
 
   private async applyCheckoutExpired(event: StripeEvent): Promise<CheckoutWebhookResult> {

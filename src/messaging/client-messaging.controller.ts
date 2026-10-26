@@ -11,6 +11,7 @@ import {
   Put,
   Query,
   Request,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
@@ -30,6 +31,7 @@ import {
   VoiceUploadRequestDto,
 } from './messaging.dto';
 import { MessagingService } from './messaging.service';
+import { CONVERSATION_CLOSED_HEADER } from './block-pair';
 import { MessageActionsService } from './message-actions.service';
 import { MessagingInboxService } from './messaging-inbox.service';
 import { MessagingCoreV2Guard } from './messaging-core.feature';
@@ -66,8 +68,12 @@ export class ClientMessagingController {
   async listThread(
     @Request() req: AuthedRequest,
     @Query() query: ListThreadQueryDto,
+    @Res({ passthrough: true }) res?: { setHeader(name: string, value: string): void },
   ) {
-    return this.messaging.listThreadForClient(req.user.id, query);
+    // FX-1141: a closed chat answers 200 [] plus the closed header.
+    return this.messaging.listThreadForClient(req.user.id, query, (state) =>
+      res?.setHeader(CONVERSATION_CLOSED_HEADER, state),
+    );
   }
 
   @Throttle({ default: { ttl: 60000, limit: 30 } })
@@ -97,7 +103,7 @@ export class ClientMessagingController {
     @Request() req: AuthedRequest,
     @Body() body: VoiceUploadRequestDto,
   ) {
-    return this.messaging.createVoiceUpload(req.user.id, body);
+    return this.messaging.createThreadVoiceUpload(req.user.id, null, body);
   }
 
   // A3-MSG-CORE: optional { up_to_message_id } (v2); empty body = legacy.

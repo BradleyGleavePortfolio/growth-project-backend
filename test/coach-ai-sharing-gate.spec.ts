@@ -188,6 +188,7 @@ describe('Stored weekly insight after a client turns a switch off (B-872-SOL-H-1
   function insightFlow(role = 'coach') {
     const rows: Record<string, Row> = {};
     let revokedAt: Date | null = null;
+    const blocks: Array<{ id: string; blocker_id: string; blocked_id: string; created_at: Date }> = [];
     const completeStructured = jest.fn(async () => ({
       data: { summary: 'Weigh-ins are down to 184.6 lb.', wins: [], concerns: [], suggested_actions: [], questions_for_coach: [] },
       tokensIn: 1, tokensOut: 1, modelUsed: 'm', latencyMs: 1,
@@ -201,6 +202,11 @@ describe('Stored weekly insight after a client turns a switch off (B-872-SOL-H-1
           (rows[where.id] = { ...rows[where.id], ...data })),
       },
       user: { findUnique: jest.fn(async () => ({ role })) },
+      // FR-1141: answers like the database, a block either way made after the asked time.
+      userBlock: {
+        findFirst: jest.fn(async ({ where }: { where: { created_at: { gt: Date }; OR: Array<{ blocker_id: string; blocked_id: string }> } }) =>
+          blocks.find((b) => b.created_at > where.created_at.gt && where.OR.some((o) => o.blocker_id === b.blocker_id && o.blocked_id === b.blocked_id)) ?? null),
+      },
       // Answers like the database: a Weigh-ins row for this coach and client revoked after the asked time.
       clientCoachConsent: {
         findFirst: jest.fn(async ({ where }: { where: Withdrawn }) =>
@@ -216,8 +222,27 @@ describe('Stored weekly insight after a client turns a switch off (B-872-SOL-H-1
       fakeOf({ assertCanAccessClient: jest.fn(async () => undefined) }), undefined,
       fakeOf<WorkoutContextService>({ build: jest.fn(async () => workoutContext) }), consentSharing([SHARES]),
     );
-    return { svc, setRevokedAt: (at: Date | null) => { revokedAt = at; } };
+    return { svc, blocks, setRevokedAt: (at: Date | null) => { revokedAt = at; } };
   }
+
+  it('FR-1141 (Sol B4): a block either way after the insight hides its words on read and edit; unblock shows them', async () => {
+    const at = new Date('2026-10-06T08:00:00Z');
+    for (const [blocker_id, blocked_id] of [[COACH, SHARES], [SHARES, COACH]]) {
+      const { svc, blocks } = insightFlow();
+      const controller = new CoachAIController(svc, fakeOf({}));
+      const req = fakeOf<Parameters<CoachAIController['getDraft']>[0]>({ user: { id: COACH } });
+      const { draftId } = await svc.generateClientInsight(COACH, { clientId: SHARES });
+      blocks.push({ id: 'blk-1', blocker_id, blocked_id, created_at: at });
+      for (const res of [await controller.getDraft(req, draftId), await controller.edit(req, draftId, { patch: { coach_notes: 'ok' } })]) {
+        expect(res).toMatchObject({ id: draftId, generatedPayload: null });
+        expect(JSON.stringify(res)).not.toContain('184.6');
+      }
+      blocks.splice(0);
+      expect(JSON.stringify(await controller.getDraft(req, draftId))).toContain('184.6');
+      blocks.push({ id: 'blk-2', blocker_id, blocked_id, created_at: new Date('2026-10-04T08:00:00Z') });
+      expect(JSON.stringify(await controller.getDraft(req, draftId))).toContain('184.6'); // a block older than the insight: it was already left out
+    }
+  });
 
   it('generate, then Weigh-ins off: read, edit and reject return the insight without its content', async () => {
     const { svc, setRevokedAt } = insightFlow();
@@ -287,6 +312,7 @@ describe('Churn re-engagement draft (U4)', () => {
         update: async ({ data }: { data: { draft_text: string } }) => ({ id: 'i1', client_id: PRIVATE, status: 'draft', top_factor: null, created_at: new Date(), ...data }),
       },
       checkIn: { findFirst: checkIn },
+      userBlock: { findMany: async () => [] },
     };
     const create = jest.fn(async (_body: { system: string }) => ({ content: [{ type: 'text', text: 'Sam, how is the week going? Coach One' }] }));
     const anthropic = AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>({ messages: { create } }));

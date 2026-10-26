@@ -3,7 +3,8 @@
  * recipient's "Mute all notifications" switch.
  *
  * A member mutes everything, another member replies to their post, and the
- * reply must not reach the muted member's device. The same reply to an
+ * reply must not reach the muted member's device; its inbox row is still
+ * written (FR-1154, owner #171-3: Mute all never stops anything in-app). The same reply to an
  * unmuted member still sends with the community defaults (community kinds have
  * no per-kind preference column; the core gate maps them onto `digest`, whose
  * push default is off, so that mapping must not silence community push).
@@ -78,7 +79,7 @@ describe('B-S-PUSH-1 community push and "Mute all notifications"', () => {
     else process.env.FEATURE_COMMUNITY_TELEMETRY = saved.telemetry;
   });
 
-  it('muted member: a reply to their post sends no push and writes no inbox row', async () => {
+  it('muted member: a reply to their post writes the inbox row but sends no push (FR-1154, owner #171-3)', async () => {
     const { svc, push, prisma, analytics } = build({
       user_id: AUTHOR,
       muted: true,
@@ -88,7 +89,10 @@ describe('B-S-PUSH-1 community push and "Mute all notifications"', () => {
     await reply(svc);
 
     expect(push).not.toHaveBeenCalled();
-    expect(prisma.notification.create).not.toHaveBeenCalled();
+    expect(prisma.notification.create).toHaveBeenCalledTimes(1);
+    expect(prisma.notification.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ user_id: AUTHOR, kind: NotificationKind.COMMUNITY_POST_REPLIED }),
+    });
     expect(analytics.capture).toHaveBeenCalledWith(AUTHOR, 'community.push.skipped', {
       kind: NotificationKind.COMMUNITY_POST_REPLIED,
       reason: 'muted',

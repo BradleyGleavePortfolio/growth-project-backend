@@ -159,7 +159,16 @@ function randomToken(bytes = 8): string {
 export class VoiceUploadProvider {
   private readonly logger = new Logger(VoiceUploadProvider.name);
 
-  constructor(private readonly supabase: SupabaseService) {}
+  constructor(protected readonly supabase: SupabaseService) {}
+
+  /**
+   * The canonical key rule every sign, stat and erase below checks first.
+   * SC-BE3: CommunityImageStore reuses this class for chat photos with its
+   * own bucket and key rule.
+   */
+  isStoreKey(key: string, ownerId?: string): boolean {
+    return isSignableVoiceKey(this.bucket(), key, ownerId);
+  }
 
   /** Bucket name — env override (`SUPABASE_VOICE_BUCKET`) or default. */
   bucket(): string {
@@ -329,11 +338,10 @@ export class VoiceUploadProvider {
     expiresInSeconds?: number,
     ownerId?: string,
   ): Promise<string | null> {
-    const bucketName = this.bucket();
     // A-610-1: re-check the key before EVERY sign, after the same
     // normalization the SDK + fetch apply. A dot segment, encoded or foreign
     // key never reaches the privileged signer (no request, no URL).
-    if (!isSignableVoiceKey(bucketName, storageKey, ownerId)) {
+    if (!this.isStoreKey(storageKey, ownerId)) {
       this.logger.warn('voice signed-download refused: key failed the canonical check');
       return null;
     }
@@ -371,7 +379,7 @@ export class VoiceUploadProvider {
    */
   async statObject(storageKey: string, ownerId: string): Promise<VoiceObjectStat> {
     const bucketName = this.bucket();
-    if (!isSignableVoiceKey(bucketName, storageKey, ownerId)) return { state: 'missing' };
+    if (!this.isStoreKey(storageKey, ownerId)) return { state: 'missing' };
     let storage: SupabaseStorageWithSignedUpload;
     try {
       storage = this.supabase.getClient().storage.from(bucketName);
@@ -408,7 +416,7 @@ export class VoiceUploadProvider {
    */
   async removeObjects(storageKeys: string[]): Promise<{ removed: number; failed: boolean }> {
     const bucketName = this.bucket();
-    const keys = [...new Set(storageKeys)].filter((k) => isSignableVoiceKey(bucketName, k));
+    const keys = [...new Set(storageKeys)].filter((k) => this.isStoreKey(k));
     if (keys.length === 0) return { removed: 0, failed: false };
     let storage: SupabaseStorageWithSignedUpload;
     try {
@@ -444,7 +452,7 @@ export class VoiceUploadProvider {
    */
   async objectGone(storageKey: string): Promise<boolean | null> {
     const bucketName = this.bucket();
-    if (!isSignableVoiceKey(bucketName, storageKey)) return null;
+    if (!this.isStoreKey(storageKey)) return null;
     let client: ReturnType<SupabaseService['getClient']>;
     try {
       client = this.supabase.getClient();

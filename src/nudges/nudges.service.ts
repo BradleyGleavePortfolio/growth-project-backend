@@ -3,6 +3,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { assertPairOpen, everyoneInBlockWith } from '../messaging/block-pair';
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
@@ -41,6 +42,8 @@ export class NudgesService {
 
   async createForClient(coachId: string, clientId: string, title: string, body: string) {
     await this.assertClientOfCoach(coachId, clientId);
+    // FX-1141 (Sol B1): no nudge across a block either way (403, no row).
+    await assertPairOpen(this.prisma, coachId, clientId);
     return this.prisma.coachNudge.create({
       data: { coach_id: coachId, client_id: clientId, title, body },
     });
@@ -55,9 +58,12 @@ export class NudgesService {
   async listForClient(clientId: string, opts: ListOpts) {
     const limit = this.clampLimit(opts.limit);
     const since = this.parseSince(opts.since);
+    // FX-1141 (Sol B1): a coach in a block either way shows no nudge or count.
+    const closed = await everyoneInBlockWith(this.prisma, clientId);
     return this.prisma.coachNudge.findMany({
       where: {
         client_id: clientId,
+        ...(closed.length ? { coach_id: { notIn: closed } } : {}),
         ...(since ? { created_at: { gt: since } } : {}),
       },
       orderBy: { created_at: 'desc' },
@@ -66,8 +72,9 @@ export class NudgesService {
   }
 
   async unreadCountForClient(clientId: string) {
+    const closed = await everyoneInBlockWith(this.prisma, clientId);
     const total = await this.prisma.coachNudge.count({
-      where: { client_id: clientId, read_at: null },
+      where: { client_id: clientId, read_at: null, ...(closed.length ? { coach_id: { notIn: closed } } : {}) },
     });
     return { total };
   }

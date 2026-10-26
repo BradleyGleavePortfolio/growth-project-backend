@@ -6,7 +6,8 @@
  *
  *   1. Idempotency  — unique (user_id, trigger_type, signal_key)
  *   2. Opt-out      — per-trigger pref in NotificationPreferences
- *   3. Global mute  — NotificationPreferences.muted
+ *   3. Global mute  — NotificationPreferences.muted drops push and email
+ *                     only (FR-1154, owner #171-3: never the in-app nudge)
  *   4. Frequency    — 48h cap across all trigger types (spec §3)
  *   5. Quiet hours  — defer if outside 8am–9pm local (spec §4)
  *
@@ -27,6 +28,7 @@ import { PrismaService } from '../../prisma.service';
 import { ConfigService } from '@nestjs/config';
 import { NotificationsService } from '../notifications.service';
 import { NotificationKind } from '../notification-kind';
+import { muteAllStops } from '../push/push-preferences';
 import { EmailService } from '../../email/email.service';
 import { EmailTemplateKey } from '../../email/email.types';
 import { nudgeCopyFor } from './copy';
@@ -40,6 +42,11 @@ import {
   NudgeTriggerType,
   capBucketStart,
 } from './nudge.types';
+
+/** No channel left: 'suppressed_muted' when Mute all is on (in-app was off too), else opt-out. */
+function suppressedStatus(prefs: Record<string, unknown>): NudgeStatus {
+  return prefs.muted === true ? NudgeStatus.SUPPRESSED_MUTED : NudgeStatus.SUPPRESSED_OPT_OUT;
+}
 
 /** Map trigger → email template key. Keeps the engine declarative. */
 const TRIGGER_TO_EMAIL_TEMPLATE: Record<NudgeTriggerType, EmailTemplateKey> = {
@@ -127,15 +134,10 @@ export class NudgeEngineService {
     try {
       const prefs = await this.notifications.getPreferences(candidate.user_id);
 
-      // ── Gate 2: global mute ──────────────────────────────────────────
-      if ((prefs as Record<string, unknown>).muted) {
-        return this.finalize(logRow.id, NudgeStatus.SUPPRESSED_MUTED, [], candidate, now);
-      }
-
-      // ── Gate 3: per-trigger opt-out ──────────────────────────────────
+      // ── Gates 2 + 3: per-trigger opt-out; global mute drops push + email ─
       const channels = this.resolveEnabledChannels(candidate.trigger_type, prefs);
       if (channels.length === 0) {
-        return this.finalize(logRow.id, NudgeStatus.SUPPRESSED_OPT_OUT, [], candidate, now);
+        return this.finalize(logRow.id, suppressedStatus(prefs), [], candidate, now);
       }
 
       // ── Gate 4: 48h frequency cap (across all trigger types) ─────────
@@ -300,12 +302,9 @@ export class NudgeEngineService {
   ): Promise<NudgeOutcome> {
     try {
       const prefs = await this.notifications.getPreferences(candidate.user_id);
-      if ((prefs as Record<string, unknown>).muted) {
-        return this.finalize(logId, NudgeStatus.SUPPRESSED_MUTED, [], candidate, now);
-      }
       const channels = this.resolveEnabledChannels(candidate.trigger_type, prefs);
       if (channels.length === 0) {
-        return this.finalize(logId, NudgeStatus.SUPPRESSED_OPT_OUT, [], candidate, now);
+        return this.finalize(logId, suppressedStatus(prefs), [], candidate, now);
       }
       const capWindowStart = new Date(now.getTime() - NUDGE_FREQUENCY_CAP_MS);
       const recentSend = await this.prisma.nudgeLog.findFirst({
@@ -356,17 +355,19 @@ export class NudgeEngineService {
   /**
    * Resolve which channels are enabled for this user/trigger combination.
    * Returns a (possibly empty) ordered list: in-app first (primary),
-   * then email, then push. Spec §2 channel ordering.
+   * then email, then push. Spec §2 channel ordering. Mute all drops email
+   * and push, never in-app (muteAllStops).
    */
   private resolveEnabledChannels(
     trigger: NudgeTriggerType,
     prefs: Record<string, unknown>,
   ): NudgeChannel[] {
     const prefix = TRIGGER_TO_PREFS_PREFIX[trigger];
+    const on = (c: NudgeChannel) => !muteAllStops(prefs, TRIGGER_TO_KIND[trigger], c);
     const out: NudgeChannel[] = [];
     if (prefs[`${prefix}_inapp`] !== false) out.push('inapp');
-    if (prefs[`${prefix}_email`] === true) out.push('email');
-    if (prefs[`${prefix}_push`] !== false) out.push('push');
+    if (prefs[`${prefix}_email`] === true && on('email')) out.push('email');
+    if (prefs[`${prefix}_push`] !== false && on('push')) out.push('push');
     return out;
   }
 

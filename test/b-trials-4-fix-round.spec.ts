@@ -278,7 +278,7 @@ describe('B-673-2 (round 10) — a change committed during the reads vetoes the 
 });
 
 function noticeWorld(
-  opts: { muted?: boolean; cardOnFile?: boolean; customerCard?: string | null } = {},
+  opts: { pushOff?: boolean; cardOnFile?: boolean; customerCard?: string | null } = {},
 ) {
   const purchases = makeTable([['id']], () => ({}));
   purchases.rows.push({
@@ -327,7 +327,9 @@ function noticeWorld(
       id: 'inapp',
       ...input,
     })),
-    getPreferences: jest.fn(async () => ({ muted: !!opts.muted })),
+    // pushOff isolates the email: a trial-ending push passes Mute all (FR-1154), so the
+    // kind's own switch is the one way to keep it from running.
+    getPreferences: jest.fn(async () => (opts.pushOff ? { trial_ending_push: false } : {})),
     pushToUser: jest.fn(async (..._args: unknown[]) => ({ delivered: true, code: 'delivered' })),
   };
   const email = { send: jest.fn(async (_input: Record<string, unknown>) => ({ status: 'sent' })) };
@@ -390,7 +392,7 @@ describe('B-672-3 (round 10) — the purchase and the customer card come from on
   });
 
   it('email: the only customer card removed during the final purchase read mails will_charge false', async () => {
-    const w = noticeWorld({ muted: true, customerCard: 'pm_customer' });
+    const w = noticeWorld({ pushOff: true, customerCard: 'pm_customer' });
     const id = await w.enqueue();
     w.duringAdmissionRead('email', () => w.setCustomerCard(null));
     await w.service.deliver(id, NOW);
@@ -407,7 +409,7 @@ describe('B-672-3 (round 10) — the purchase and the customer card come from on
   });
 
   it('email: a customer card added during the final purchase read mails will_charge true', async () => {
-    const w = noticeWorld({ muted: true, customerCard: null });
+    const w = noticeWorld({ pushOff: true, customerCard: null });
     const id = await w.enqueue();
     w.duringAdmissionRead('email', () => w.setCustomerCard('pm_new'));
     await w.service.deliver(id, NOW);

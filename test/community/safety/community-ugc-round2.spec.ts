@@ -141,6 +141,10 @@ describe('#610 round 2: wins safety reach, durable bans, notices, recording eras
     process.env.FEATURE_COMMUNITY_API = 'true';
     delete process.env.FEATURE_COMMUNITY_PUSH;
     db = new InMemoryPrisma();
+    // SC-BE2: getMe's tab badge is one SQL count this store does not model; nothing is unread here.
+    const raw = db.$queryRaw.bind(db);
+    db.$queryRaw = (q: TemplateStringsArray, ...v: unknown[]) =>
+      q.join('').includes('community_space_reads') ? Promise.resolve([]) : raw(q, ...v);
     prisma = stub<PrismaService>(db);
     coach = user('coach', 'Coach One');
     const otherCoach = user('coach', 'Other Coach');

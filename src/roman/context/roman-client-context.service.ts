@@ -77,6 +77,7 @@ import {
 } from './roman-client-context.types';
 import { onRomanContextInvalidate } from './roman-context-invalidation';
 import { resolveRomanCoachScope } from './roman-coach-scope';
+import { notInBlockWith } from '../../messaging/block-pair';
 
 export const ROMAN_CONTEXT_MEMO_TTL_MS = 15_000;
 /** C-651-4: hard bound on memoised bundles held in process memory. */
@@ -673,6 +674,9 @@ export class RomanClientContextService {
                 client_id: userId,
                 sender_id: { in: [...coachSide.filter((id) => ok.has(id)), userId] },
                 body: { not: null },
+                // FX-1141 (Sol B2): no words from a chat in a block either way.
+                coach: notInBlockWith(userId),
+                sender: notInBlockWith(userId),
               },
               orderBy: { created_at: 'desc' },
               take: ROMAN_CTX_LIMITS.coach_messages,

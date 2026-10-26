@@ -21,7 +21,7 @@ import {
 } from '../src/checkout/plan-renewal/plan-renewal.cadence';
 import { PlanRenewalAckDto, PlanRenewalController } from '../src/checkout/plan-renewal/plan-renewal.controller';
 import { PlanRenewalService } from '../src/checkout/plan-renewal/plan-renewal.service';
-import { NO_RENEWAL, planEndedAt } from '../src/checkout/plan-renewal/plan-renewal.state';
+import { NO_RENEWAL, planEndedAt, planRenewalHouseCoach } from '../src/checkout/plan-renewal/plan-renewal.state';
 import { ENV_RULES } from '../src/common/env-validation';
 import { NotificationKind } from '../src/notifications/notification-kind';
 import { lockScreenCopy } from '../src/notifications/push/lock-screen-copy';
@@ -76,6 +76,40 @@ describe('RENEWAL-BE cadence (owner #RENEWAL-PUSH)', () => {
   });
 });
 
+describe('FX-860 the house coach full name (owner W-168-HC)', () => {
+  const HOUSE = '6f1c2b3a-0d4e-4f5a-8b6c-7d8e9f0a1b2c';
+  const house = async (row: { name: string } | null, clientCoachId = 'k') => {
+    const findFirst = jest.fn(async () => row);
+    const before = process.env.HOUSE_COACH_USER_ID;
+    process.env.HOUSE_COACH_USER_ID = HOUSE;
+    try {
+      return { view: await planRenewalHouseCoach(stub<PrismaService>({ user: { findFirst } }), clientCoachId), findFirst };
+    } finally {
+      if (before === undefined) delete process.env.HOUSE_COACH_USER_ID;
+      else process.env.HOUSE_COACH_USER_ID = before;
+    }
+  };
+
+  it('adds full_name next to first_name, spaces tidied; a one-word name is its own full name', async () => {
+    expect((await house({ name: '  Bradley   Gleave ' })).view)
+      .toEqual({ id: HOUSE, first_name: 'Bradley', full_name: 'Bradley Gleave' });
+    expect((await house({ name: 'Bradley' })).view).toEqual({ id: HOUSE, first_name: 'Bradley', full_name: 'Bradley' });
+    expect((await house({ name: '   ' })).view).toEqual({ id: HOUSE, first_name: null, full_name: null });
+    expect((await house({ name: `A ${'b'.repeat(200)}` })).view?.full_name).toHaveLength(120);
+  });
+
+  it('reads only a live coach, and never for the house coach\'s own client', async () => {
+    const live = await house({ name: 'Bradley Gleave' });
+    expect(live.findFirst).toHaveBeenCalledWith({
+      where: { id: HOUSE, role: { in: ['coach', 'owner'] }, deleted_at: null },
+      select: { name: true },
+    });
+    expect((await house(null)).view).toBeNull();
+    const own = await house({ name: 'Bradley Gleave' }, HOUSE);
+    expect([own.view, own.findFirst.mock.calls.length]).toEqual([null, 0]);
+  });
+});
+
 describe('RENEWAL-BE plan-end rule (LS B2: never read off the clock)', () => {
   const at = (iso: string | null) => (iso ? new Date(iso) : null);
   const p = (billing_type: string, access: string | null, canceled: string | null, periodEnd: string | null, atPeriodEnd = false) => ({
@@ -118,12 +152,13 @@ describe('RENEWAL-BE app notifications', () => {
     expect(quietHoursFor({ kind: NotificationKind.PLAN_RENEWAL, timeZone: 'Asia/Tokyo', now: late }).deferred).toBe(false);
   });
 
-  it('the client\'s "plan renewal reminders" switch (default on) and the global mute both stop it', () => {
+  it('the client\'s "plan renewal reminders" switch (default on) stops it; Mute all does not (money, MUTE-PAY)', () => {
     expect(notificationPrefsPrefix(NotificationKind.PLAN_RENEWAL)).toBe('plan_renewal');
     expect(pushAllowedByPreferences({ plan_renewal_push: true }, NotificationKind.PLAN_RENEWAL)).toBe(true);
     expect(pushAllowedByPreferences({}, NotificationKind.PLAN_RENEWAL)).toBe(true);
     expect(pushAllowedByPreferences({ plan_renewal_push: false }, NotificationKind.PLAN_RENEWAL)).toBe(false);
-    expect(pushAllowedByPreferences({ plan_renewal_push: true, muted: true }, NotificationKind.PLAN_RENEWAL)).toBe(false);
+    expect(pushAllowedByPreferences({ plan_renewal_push: true, muted: true }, NotificationKind.PLAN_RENEWAL)).toBe(true);
+    expect(pushAllowedByPreferences({ plan_renewal_push: false, muted: true }, NotificationKind.PLAN_RENEWAL)).toBe(false);
     // Turning renewal reminders off leaves every other kind alone.
     expect(pushAllowedByPreferences({ plan_renewal_push: false }, NotificationKind.MESSAGE_RECEIVED)).toBe(true);
   });

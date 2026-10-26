@@ -57,7 +57,12 @@ export class CommunityMessagesController {
     @Param('cohortId') cohortId: string,
     @Body() body: CreateMessageDto,
   ) {
-    return this.messages.send(req.user, cohortId, body.body, body.plan_context);
+    // SC-BE3: a photo message carries its key and size; the caption is optional.
+    const image =
+      body.kind === 'image'
+        ? { key: body.image_key ?? '', width: body.width ?? 0, height: body.height ?? 0 }
+        : undefined;
+    return this.messages.send(req.user, cohortId, body.body ?? '', body.plan_context, body.parent_message_id, image);
   }
 
   @Get('cohorts/:cohortId/messages')

@@ -21,6 +21,9 @@ import { nextOccurrence } from './recurrence';
  * until then the global NotificationPreferences mute and message_push
  * preference are honoured. A muted recipient still receives the message in
  * their thread, silently (no push), the same as a muted 1:1 thread.
+ * FR-1154R3 (owner #171-3): Mute all and message_push stop only the push;
+ * the in-app row still lands (message_inapp decides it). A muted thread skips
+ * both, as a muted 1:1 thread does.
  */
 export const BROADCAST_THREAD_MUTE_PROBE = Symbol('BROADCAST_THREAD_MUTE_PROBE');
 export interface BroadcastThreadMuteProbe {
@@ -68,7 +71,7 @@ export type DeliveryOutcome =
  *                   message (message_id is also unique). Quiet hours
  *                   (21:00-08:00 recipient local, OR-113-5) defer non-urgent
  *                   deliveries to 08:00 local; blocks and roster departures
- *                   skip; mute delivers silently.
+ *                   skip; mute delivers silently (row, no push).
  *  4. finalizeRuns  closes runs with nothing left to deliver and marks
  *                   one-off broadcasts sent.
  *
@@ -446,9 +449,14 @@ export class BroadcastDispatcherService {
         return msg.id;
       });
       void this.supabase.pingChat({ coachId: b.coach_id, clientId: client.id }, 'new-message');
-      if (pushDecision === 'pending') {
+      // FR-1154R3 (B-LS1154-1): the emitter writes the in-app row and applies
+      // the shared push gate, so it runs for every recipient whose thread is
+      // not muted; push_status above stays the truthful receipt.
+      if (!threadMuted) {
         const senderName = await this.senderName(authorId);
         await this.messageReceived.emit(client.id, { senderName, threadId: client.id });
+      }
+      if (pushDecision === 'pending') {
         await this.prisma.coachBroadcastDelivery.updateMany({
           where: { id: d.id, message_id: delivered },
           data: { push_status: 'sent' },

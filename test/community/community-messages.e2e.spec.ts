@@ -483,4 +483,70 @@ itLive('community v1-3 cohort messages (live DB)', () => {
       process.env.FEATURE_COMMUNITY_API = 'true';
     }
   });
+
+  // SC-BE1: text replies (press and hold, Reply) and who sent each row.
+  const say = (who: string, body: Record<string, unknown>, cohort = ids.cohortA) =>
+    call('POST', `/api/community/cohorts/${cohort}/messages`, asUser(who), body);
+
+  it('11. SC-BE1: a reply quotes its parent, a reply to a reply joins its thread, rows name the sender', async () => {
+    await prisma.userProfile.create({ data: { user_id: ids.studentA, avatar_url: 'https://cdn.test/a.png' } });
+    try {
+      const root = (await say(ids.coachA, { body: 'Week one starts Monday' })).body.message;
+      const reply = await say(ids.studentA, { body: 'Ready', parent_message_id: root.id });
+      expect(reply.status).toBe(201);
+      expect(reply.body.message.parent_message_id).toBe(root.id);
+      const nested = await say(ids.studentA2, { body: 'Same', parent_message_id: reply.body.message.id });
+      expect(nested.status).toBe(201);
+      expect(nested.body.message.parent_message_id).toBe(root.id);
+
+      const list = await call('GET', `/api/community/cohorts/${ids.cohortA}/messages`, asUser(ids.studentA2));
+      const row = (id: string) => list.body.messages.find((m: { id: string }) => m.id === id);
+      expect(row(root.id)).toMatchObject({
+        sender: { id: ids.coachA, name: 'Coach', avatar_url: null, is_coach: true },
+        parent: null,
+      });
+      const quote = {
+        id: root.id,
+        gone: false,
+        kind: 'text',
+        sender_name: 'Coach',
+        snippet: 'Week one starts Monday',
+        voice_duration_ms: null,
+      };
+      expect(row(reply.body.message.id)).toMatchObject({
+        sender: { id: ids.studentA, name: 'Student', avatar_url: 'https://cdn.test/a.png', is_coach: false },
+        parent: quote,
+      });
+      expect(row(nested.body.message.id).parent).toEqual(quote);
+      const one = await call('GET', `/api/community/messages/${reply.body.message.id}`, asUser(ids.coachA));
+      expect(one.body.message.parent).toEqual(quote);
+      expect(one.body.message.sender.id).toBe(ids.studentA);
+    } finally {
+      await prisma.userProfile.deleteMany({ where: { user_id: ids.studentA } });
+    }
+  });
+
+  it('12. SC-BE1: a deleted parent reads gone; a reply to a gone, other-space or missing message is the 404', async () => {
+    const root = (await say(ids.studentA2, { body: 'Long day, short note' })).body.message;
+    const reply = (await say(ids.studentA, { body: 'Same here', parent_message_id: root.id })).body.message;
+    const elsewhere = (await say(ids.studentB, { body: 'Other coach' }, ids.cohortB)).body.message;
+    expect((await say(ids.studentA, { body: 'x', parent_message_id: elsewhere.id })).status).toBe(404);
+    expect((await say(ids.studentB, { body: 'x', parent_message_id: root.id }, ids.cohortB)).status).toBe(404);
+    expect((await say(ids.studentA, { body: 'x', parent_message_id: randomUUID() })).status).toBe(404);
+    expect((await say(ids.studentA, { body: 'x', parent_message_id: 'not-a-uuid' })).status).toBe(400);
+
+    expect((await call('DELETE', `/api/community/messages/${root.id}`, asUser(ids.studentA2))).status).toBe(200);
+    expect((await say(ids.studentA, { body: 'x', parent_message_id: root.id })).status).toBe(404);
+    // FX-1135: a reply to a reply joins the first message's thread, so it is checked too.
+    expect((await say(ids.studentA2, { body: 'x', parent_message_id: reply.id })).status).toBe(404);
+    const list = await call('GET', `/api/community/cohorts/${ids.cohortA}/messages`, asUser(ids.studentA));
+    expect(list.body.messages.find((m: { id: string }) => m.id === reply.id).parent).toEqual({
+      id: root.id,
+      gone: true,
+      kind: null,
+      sender_name: null,
+      snippet: null,
+      voice_duration_ms: null,
+    });
+  });
 });
