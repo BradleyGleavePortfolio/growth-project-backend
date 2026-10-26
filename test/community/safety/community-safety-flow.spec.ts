@@ -208,13 +208,39 @@ describe('community UGC safety flow (Apple 1.2)', () => {
     await expect(moderation.listFlagged(alice, {})).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it('hide removes the content for everyone and closes the item', async () => {
-    const m = await messages.send(bob, cohortId, 'rude but not filtered');
-    const r = await moderation.report(alice, 'message', m.message.id, 'harassment', undefined);
+  // FR-1165R (LS-1165 B1/B2, #174-4): the queue's Hide is the same removal as
+  // the coach's direct DELETE: on the next read, the attributed placeholder
+  // with no content; one author notice; the photo's erasure recorded; one
+  // live removal ping to the space.
+  it.each(['text', 'photo'] as const)('hide of a %s message leaves the attributed placeholder and closes the item', async (kind) => {
+    const id =
+      kind === 'text'
+        ? (await messages.send(bob, cohortId, 'rude but not filtered')).message.id
+        : String(db.seed('communityMessage', { workspace_id: wsId, cohort_id: cohortId, scope: 'cohort', kind: 'image', sender_id: bob.id, body: 'rude caption', visibility: 'visible', deleted_at: null, plan_context_type: null }).id);
+    if (kind === 'photo') {
+      db.seed('communityMessageImage', { message_id: id, cohort_id: cohortId, author_id: bob.id, storage_key: `${bob.id}/${cohortId}-1.sent.jpg`, width: 1, height: 1 });
+    }
+    const r = await moderation.report(alice, 'message', id, 'harassment', undefined);
+    realtime.broadcastCommunityEvent.mockClear();
     const acted = await moderation.act(coach, r.item.id, 'hide', undefined);
     expect(acted.item.status).toBe('actioned');
-    const list = await messages.list(alice, cohortId, {});
-    expect(list.messages.map((x) => x.id)).not.toContain(m.message.id);
+    const row = (await messages.list(alice, cohortId, {})).messages.find((x) => x.id === id);
+    expect(row).toMatchObject({ deleted: true, body: null, voice_note: null, removed_by: { role: 'coach', user_id: coach.id, name: expect.any(String) } });
+    expect(JSON.stringify(row)).not.toMatch(/rude|\.jpg|https?:/);
+    expect(db.table('communityMessage').find((x) => x.id === id)).toMatchObject({ body: null, removed_by_user_id: coach.id });
+    expect(db.table('notification').filter((n) => n.user_id === bob.id)).toHaveLength(1);
+    expect(push.sendCommunityPush.mock.calls.filter(([p]) => p.recipientId === bob.id)).toHaveLength(1);
+    if (kind === 'photo') {
+      const target = `${bob.id}/${cohortId}-1.sent.jpg`;
+      expect(db.table('communityVoiceErasure')).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'image_object', target, reason: 'moderation' })]));
+    }
+    const pings = (realtime.broadcastCommunityEvent.mock.calls as unknown[][]).filter((c) => c[1] === 'community.message.updated');
+    expect(pings).toEqual([[
+      { workspaceId: wsId, cohortId },
+      'community.message.updated',
+      expect.objectContaining({ id, workspaceId: wsId, cohortId, authorId: bob.id, removedBy: { role: 'coach', userId: coach.id } }),
+      { distinctId: coach.id, channelKind: 'cohort' },
+    ]]);
     expect((await moderation.listFlagged(coach, {})).items).toHaveLength(0);
   });
 

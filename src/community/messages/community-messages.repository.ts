@@ -268,19 +268,22 @@ export class CommunityMessagesRepository {
    * message. One write keeps who removed it and when (the placeholder) and
    * erases the words; the same transaction stores the author's notice (the
    * report queue's hide notice, once per message). An already-removed row is
-   * returned unchanged with no second notice.
+   * returned unchanged with no second notice. FR-1165R: the report queue's
+   * Hide writes the same removal with `tellAuthor` false (it stores its own
+   * once-only notice for the action).
    */
   async removeByCoach(
     message: Pick<CommunityMessage, 'id' | 'created_at' | 'sender_id'>,
     removerId: string,
     tx?: Prisma.TransactionClient,
+    tellAuthor = true,
   ): Promise<CommunityMessage> {
     const run = async (t: Prisma.TransactionClient) => {
       const hit = await t.communityMessage.updateMany({
         where: { id: message.id, created_at: message.created_at, deleted_at: null },
         data: { deleted_at: new Date(), visibility: 'hidden', removed_by_user_id: removerId, body: null },
       });
-      if (hit.count > 0) {
+      if (hit.count > 0 && tellAuthor) {
         await storeRemovalNotice(t, { recipientId: message.sender_id, targetType: 'message', targetId: message.id });
       }
       const row = await t.communityMessage.findUnique({

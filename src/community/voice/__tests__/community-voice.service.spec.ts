@@ -475,6 +475,7 @@ describe('CommunityVoiceService', () => {
       expect(event).toBe('community.message.updated');
       expect(payload).toEqual({
         id: NOTE_A,
+        workspaceId: WS_A,
         cohortId: COHORT_A,
         updatedAt: expect.any(String),
         removedAt: expect.any(String),
@@ -487,11 +488,19 @@ describe('CommunityVoiceService', () => {
       expect(meta).toEqual({ distinctId: COACH_A_ID, channelKind: 'cohort' });
     });
 
-    it('a Hall note removal sends no ping (its create sends none)', async () => {
+    it('FR-1165R (B2): a Hall note removal pings the Hall readers once, same strict payload with cohortId null', async () => {
       access.isWorkspaceCoach.mockResolvedValue(true);
       repo.findById.mockResolvedValue(note({ cohort_id: null }));
       await service.delete(coachA, NOTE_A);
-      expect(realtime.broadcastCommunityEvent).not.toHaveBeenCalled();
+      expect(realtime.broadcastCommunityEvent).toHaveBeenCalledTimes(1);
+      const [audience, event, payload, meta] = realtime.broadcastCommunityEvent.mock.calls[0];
+      expect(audience).toEqual({ workspaceId: WS_A, cohortId: null });
+      expect(event).toBe('community.message.updated');
+      expect(payload).toEqual(expect.objectContaining({ id: NOTE_A, workspaceId: WS_A, cohortId: null, kind: 'voice' }));
+      expect(Object.keys(payload).sort()).toEqual(
+        ['authorId', 'cohortId', 'createdAt', 'id', 'kind', 'removedAt', 'removedBy', 'updatedAt', 'workspaceId'],
+      );
+      expect(meta).toEqual({ distinctId: COACH_A_ID, channelKind: 'workspace' });
     });
 
     it('a failed removal ping never fails the delete', async () => {

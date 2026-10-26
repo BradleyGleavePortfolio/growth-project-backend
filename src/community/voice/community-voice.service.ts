@@ -17,7 +17,7 @@ import {
   classifyTelemetryError,
 } from '../community-events';
 import { CommunityRealtimeService } from '../realtime/community-realtime.service';
-import { MessageRemovedPayloadSchema } from '../realtime/community-realtime.types';
+import { MessageRemovedPayloadSchema, type MessageRemovedPayload } from '../realtime/community-realtime.types';
 import {
   CreateVoiceNoteDto,
   IssueVoiceUploadDto,
@@ -140,6 +140,40 @@ export const VOICE_NOT_AUTHOR = {
   message:
     'Only the person who recorded this voice note, or your coach, can delete it. You can report it instead.',
 } as const;
+
+/** A removed row as its removal ping needs it: a voice note, or a space chat message. */
+export type RemovedRow = Pick<CommunityVoiceNote, 'id' | 'workspace_id' | 'cohort_id' | 'created_at'> & {
+  kind: MessageRemovedPayload['kind'];
+  sender_id: string;
+};
+
+/**
+ * REMOVED-BY-BE / FR-1165R (B2): a coach's (or the TGP owner's) removal of someone else's
+ * item, live, to everyone who may read it now: a space's readers (channelKind 'cohort') or,
+ * for a Hall note, the Hall's readers (cohortId null, channelKind 'workspace', as Hall posts).
+ * Same event name as an edit; ids and times only. The direct DELETE and the queue's Hide send
+ * it after the commit, so a failed ping never undoes the removal.
+ */
+export async function publishRemoval(realtime: CommunityRealtimeService, row: RemovedRow, removedBy: string, at: Date): Promise<void> {
+  const payload = MessageRemovedPayloadSchema.parse({
+    id: row.id,
+    workspaceId: row.workspace_id,
+    cohortId: row.cohort_id,
+    updatedAt: at.toISOString(),
+    removedAt: at.toISOString(),
+    createdAt: row.created_at.toISOString(),
+    kind: row.kind,
+    authorId: row.sender_id,
+    removedBy: { role: 'coach', userId: removedBy },
+  });
+  const channelKind = row.cohort_id ? 'cohort' : 'workspace';
+  await realtime.broadcastCommunityEvent(
+    { workspaceId: row.workspace_id, cohortId: row.cohort_id },
+    COMMUNITY_BROADCAST_EVENTS.messageUpdated,
+    payload,
+    { distinctId: removedBy, channelKind },
+  );
+}
 
 /**
  * Community voice notes (v3-3): audio attachments coaches and members send into
@@ -805,7 +839,9 @@ export class CommunityVoiceService {
     // moderation, stores who removed it (placeholder) and tells the author.
     const removedAt = new Date();
     await this.deleteAndErase(row, user.id, removedAt);
-    void this.publishRemoved(row, user.id, removedAt).catch((err: unknown) => {
+    // The removal's live update (space or Hall); a DM note sends none (its create sends none).
+    const ping = { ...row, kind: 'voice' as const, sender_id: row.author_id };
+    if (row.conversation_id === null) void publishRemoval(this.realtime, ping, user.id, removedAt).catch((err: unknown) => {
       this.track(user.id, COMMUNITY_TELEMETRY_EVENTS.voicePublishFailed, {
         workspace_id: row.workspace_id,
         error_code: classifyTelemetryError(err),
@@ -824,32 +860,6 @@ export class CommunityVoiceService {
       ? await this.repo.softDeleteWithErasure(row, 'moderation', at, removedBy)
       : await this.repo.softDeleteWithErasure(row, 'author_delete');
     await this.runErasure(row, work);
-  }
-
-  /**
-   * REMOVED-BY-BE: the removal's live update to everyone who may read the
-   * space, so an open screen swaps the note for its placeholder. Same event
-   * name and audience as an edit; ids and times only. Hall and DM notes send
-   * none (their create sends none either).
-   */
-  private async publishRemoved(row: CommunityVoiceNote, removedBy: string, at: Date): Promise<void> {
-    if (row.conversation_id !== null || !row.cohort_id) return;
-    const payload = MessageRemovedPayloadSchema.parse({
-      id: row.id,
-      cohortId: row.cohort_id,
-      updatedAt: at.toISOString(),
-      removedAt: at.toISOString(),
-      createdAt: row.created_at.toISOString(),
-      kind: 'voice',
-      authorId: row.author_id,
-      removedBy: { role: 'coach', userId: removedBy },
-    });
-    await this.realtime.broadcastCommunityEvent(
-      { workspaceId: row.workspace_id, cohortId: row.cohort_id },
-      COMMUNITY_BROADCAST_EVENTS.messageUpdated,
-      payload,
-      { distinctId: removedBy, channelKind: 'cohort' },
-    );
   }
 
   /** Re-open (or create) the durable erasure for an already-deleted note and try it. */

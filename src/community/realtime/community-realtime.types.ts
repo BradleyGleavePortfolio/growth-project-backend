@@ -38,11 +38,15 @@ export const MessageUpdatedPayloadSchema = z
  * it keeps working) and carries the placeholder: whose item, when it was
  * sent and removed, and who removed it, by id only (no name, no text; the
  * name is on the GET placeholder).
+ * FR-1165R: a Hall voice note's removal has cohortId null and goes to the
+ * Hall's readers; workspaceId is set on every voice note and report-queue
+ * removal (the text/photo DELETE ping omits it; its cohortId is always set).
  */
 export const MessageRemovedPayloadSchema = z
   .object({
     id: z.string(),
-    cohortId: z.string(),
+    workspaceId: z.string().optional(),
+    cohortId: z.string().nullable(),
     updatedAt: z.string(),
     removedAt: z.string(),
     createdAt: z.string(),

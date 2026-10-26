@@ -39,7 +39,8 @@ import {
   recordVoiceErasures,
   type VoiceErasureRow,
 } from '../voice/voice-erasure';
-import { hideVoiceChatMessage } from '../voice/community-voice.repository';
+import { removeVoiceNoteRows } from '../voice/community-voice.repository';
+import { publishRemoval, type RemovedRow } from '../voice/community-voice.service';
 import {
   CommunityModerationItemListResponse,
   CommunityModerationItemListResponseSchema,
@@ -487,7 +488,9 @@ export class CommunityModerationService {
     // Push stays a best-effort extra on top of the stored notice, sent only
     // when this call wrote a new notice.
     const notify = action !== 'dismiss' && ownerId !== null && ownerId !== user.id;
-    const { resolved, notice, erasures } = await this.prisma.$transaction(async (tx) => {
+    // FR-1165R (B1): Hide/Ban of someone else's item = the direct DELETE's removal (placeholder).
+    const removerId = ownerId === user.id ? null : user.id;
+    const { resolved, notice, erasures, removed } = await this.prisma.$transaction(async (tx) => {
       // The compare-and-set comes first: it takes the report's row lock, so a
       // concurrent moderator waits and is then re-evaluated against our
       // committed outcome.
@@ -496,7 +499,7 @@ export class CommunityModerationService {
         { actorId: user.id, status, action, notes: notes ?? null },
         tx,
       );
-      let work: VoiceErasureRow[] = [];
+      let hid: Hidden = NOTHING_HIDDEN;
       if (action === 'ban') {
         // A ban removes the content AND the author's access to the workspace:
         // a durable ban row (B-610-2) plus every membership -> removed. The
@@ -505,11 +508,12 @@ export class CommunityModerationService {
         await this.banAuthor(tx, item.workspace_id, ownerId, user.id, item.id);
       }
       if (action === 'ban' || action === 'hide') {
-        work = await this.hideTarget(tx, item.target_type, item.target_id);
+        hid = await this.hideTarget(tx, item.target_type, item.target_id, removerId);
       }
       let result: ModerationNoticeResult = 'skipped';
       if (notify && ownerId) {
-        result = await storeModerationNotice(tx, {
+        // LO-1165 C-2: a coach's direct removal already told the author; no second notice.
+        result = action === 'hide' && hid.told ? 'exists' : await storeModerationNotice(tx, {
           recipientId: ownerId,
           moderationActionId: row.id,
           action,
@@ -517,7 +521,7 @@ export class CommunityModerationService {
           targetId: row.target_id,
         });
       }
-      return { resolved: row, notice: result, erasures: work };
+      return { resolved: row, notice: result, erasures: hid.work, removed: hid.removed };
     });
     const noticeStored = notice !== 'skipped';
 
@@ -545,6 +549,11 @@ export class CommunityModerationService {
           `moderation ${resolved.id}: erasure attempt failed after commit (${(err as Error).message}); VoiceErasureService retries it`,
         );
       }
+    }
+
+    // FR-1165R (B2): the removal's live update, as the direct DELETE sends it (never undoes it).
+    if (removed && removerId) {
+      void publishRemoval(this.realtime, removed, removerId, removed.at).catch(() => this.logger.warn(`moderation ${resolved.id}: removal ping not sent`));
     }
 
     // v1-4 post-action tail — best-effort realtime ping to the workspace coach,
@@ -936,55 +945,50 @@ export class CommunityModerationService {
   /**
    * Soft-hide the content a moderation action targets, where applicable,
    * inside the action transaction (B-610-13). Returns the recorded erasure
-   * work for a voice note (attempted by act() after the commit).
+   * work (attempted by act() after the commit). FR-1165R: `removerId` set = the direct
+   * DELETE's removal write; posts have no remover column and still vanish (v1).
    */
   private async hideTarget(
     tx: Prisma.TransactionClient,
     targetType: CommunityModerationTargetType,
     targetId: string,
-  ): Promise<VoiceErasureRow[]> {
+    removerId: string | null,
+  ): Promise<Hidden> {
     // B-610-13: every read and write here uses the action transaction.
     if (targetType === 'post') {
       const post = await this.postsRepo.findById(targetId, tx);
       if (post && !post.deleted_at) await this.postsRepo.softDelete(post.id, tx);
-      return [];
+      return NOTHING_HIDDEN;
     }
     if (targetType === 'message') {
       const msg = await this.messagesRepo.findById(targetId, tx);
-      if (msg?.kind === 'voice') return this.hideTarget(tx, 'voice_note', msg.id);
+      if (msg?.kind === 'voice') return this.hideTarget(tx, 'voice_note', msg.id, removerId);
       // SC-BE3: a photo's object erasure is recorded before the soft delete.
       const image = msg?.kind === 'image' ? await tx.communityMessageImage.findUnique({ where: { message_id: msg.id } }) : null;
       const work = image ? await recordVoiceErasures(tx, imageErasureTargets(image.storage_key), 'moderation') : [];
-      if (msg && !msg.deleted_at) {
+      if (!msg || msg.deleted_at) return { work, told: !!msg?.removed_by_user_id, removed: null };
+      if (!removerId) {
         await this.messagesRepo.softDelete({ id: msg.id, created_at: msg.created_at }, tx);
+        return { ...NOTHING_HIDDEN, work };
       }
-      return work;
+      const gone = await this.messagesRepo.removeByCoach(msg, removerId, tx, false); // act() stores the one notice
+      const chat = msg.scope === 'cohort' && msg.cohort_id !== null && msg.plan_context_type === null;
+      return { work, told: false, removed: chat && gone.deleted_at ? { ...gone, at: gone.deleted_at } : null };
     }
     if (targetType === 'voice_note') {
-      // Same soft delete as the author's own delete: every read path
-      // (list, by id, search, signed playback) skips soft-deleted notes.
       // The recording itself is erased after the action commits (act()).
       const at = new Date();
-      const note = await tx.communityVoiceNote.findUnique({
-        where: { id: targetId },
-        select: { storage_key: true },
-      });
+      const note = await tx.communityVoiceNote.findUnique({ where: { id: targetId } });
       // B-610-5 round 5: the recording erasure is recorded durably BEFORE
       // the soft delete (and, B-610-13, in the same transaction), so a crash
       // or storage outage can never strand it.
       const work = note
         ? await recordVoiceErasures(tx, objectTargets([note.storage_key]), 'moderation')
         : [];
-      await tx.communityVoiceNote.updateMany({
-        where: { id: targetId, soft_deleted_at: null },
-        data: { soft_deleted_at: at },
-      });
-      await tx.communitySearchEntry.updateMany({
-        where: { kind: 'voice_note_transcript', targetId, softDeletedAt: null },
-        data: { softDeletedAt: at },
-      });
-      await hideVoiceChatMessage(tx, targetId, at);
-      return work;
+      const hidden = await removeVoiceNoteRows(tx, targetId, at, removerId);
+      if (!note || !hidden) return { work, told: !!note?.removed_by_user_id, removed: null };
+      const ping = removerId !== null && note.conversation_id === null; // a DM note sends none
+      return { work, told: false, removed: ping ? { ...note, kind: 'voice', sender_id: note.author_id, at } : null };
     }
     if (targetType === 'win') {
       await tx.communityWin.updateMany({
@@ -992,9 +996,13 @@ export class CommunityModerationService {
         data: { hidden_at: new Date() },
       });
     }
-    return [];
+    return NOTHING_HIDDEN;
   }
 }
+
+/** hideTarget: erasure work, author already told by a direct removal (C-2), the row to ping (B2). */
+type Hidden = { work: VoiceErasureRow[]; told: boolean; removed: (RemovedRow & { at: Date }) | null };
+const NOTHING_HIDDEN: Hidden = { work: [], told: false, removed: null };
 
 const REMOVED_CONTENT = 'Removed';
 

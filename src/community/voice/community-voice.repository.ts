@@ -102,6 +102,24 @@ export async function hideVoiceChatMessage(
 }
 
 /**
+ * FR-1165R: a note's soft delete with its search and chat rows, in `tx`, after its erasure is
+ * recorded; the direct DELETE and the queue's Hide both write it. `removedBy` = a coach's
+ * removal (kept: the placeholder). True when this call removed it.
+ */
+export async function removeVoiceNoteRows(tx: Prisma.TransactionClient, noteId: string, at: Date, removedBy: string | null): Promise<boolean> {
+  const hidden = await tx.communityVoiceNote.updateMany({
+    where: { id: noteId, soft_deleted_at: null },
+    data: { soft_deleted_at: at, ...(removedBy ? { removed_by_user_id: removedBy } : {}) },
+  });
+  await tx.communitySearchEntry.updateMany({
+    where: { kind: 'voice_note_transcript', targetId: noteId, softDeletedAt: null },
+    data: { softDeletedAt: at },
+  });
+  await hideVoiceChatMessage(tx, noteId, at, removedBy);
+  return hidden.count > 0;
+}
+
+/**
  * REMOVED-BY-BE: a removed row a list or read still shows, as a placeholder:
  * live rows, plus rows a coach removed (removed_by_user_id set). An author's
  * own delete and every removal from before 20270502009400 stay gone.
@@ -312,16 +330,8 @@ export class CommunityVoiceRepository {
   ): Promise<VoiceErasureRow[]> {
     return this.prisma.$transaction(async (tx) => {
       const work = await recordVoiceErasures(tx, objectTargets([note.storage_key]), reason, at);
-      const hidden = await tx.communityVoiceNote.updateMany({
-        where: { id: note.id, soft_deleted_at: null },
-        data: { soft_deleted_at: at, ...(removedBy ? { removed_by_user_id: removedBy } : {}) },
-      });
-      await tx.communitySearchEntry.updateMany({
-        where: { kind: 'voice_note_transcript', targetId: note.id, softDeletedAt: null },
-        data: { softDeletedAt: at },
-      });
-      await hideVoiceChatMessage(tx, note.id, at, removedBy);
-      if (removedBy && hidden.count > 0) {
+      const removed = await removeVoiceNoteRows(tx, note.id, at, removedBy);
+      if (removedBy && removed) {
         await storeRemovalNotice(tx, { recipientId: note.author_id, targetType: 'voice_note', targetId: note.id });
       }
       return work;
