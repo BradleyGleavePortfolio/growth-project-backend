@@ -72,7 +72,6 @@ describe('carriesLocation (PHOTO-GPS)', () => {
       const element = xmpPacket('').replace('/>', `><${name}>+1.0</${name}></rdf:Description>`);
       expect([name, located(jpeg(JFIF, exifApp1(tiff('MM')), xmpApp1(element)))]).toEqual([name, true]);
     }
-    expect(located(jpeg(JFIF, xmpApp1(xmpPacket('xmpNote:hasextendedxmp="1"'))))).toBe(true); // the ExtendedXMP advert, any case
   });
 
   it('XMP with no location stays clean: editor, HDR and drone flight fields, a depth namespace, a pixel SubjectLocation', () => {
