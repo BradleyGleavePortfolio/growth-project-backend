@@ -40,7 +40,7 @@ const SPACE_OF: Record<Key, 'A' | 'B'> = { A: 'A', B: 'B', O: 'A', X: 'A', Y: 'A
     const note = await notes.createVoiceNote({ workspaceId: ws[SPACE_OF[k]], cohortId: space[SPACE_OF[k]], conversationId: null,
       authorId: id[k], storageKey: `${id[k]}/1700000000000-${randomUUID().replace(/-/g, '').slice(0, 16)}.m4a`, durationMs,
       bytes: 1000, mimeType: 'audio/mp4', waveformPeaks: null, parent: null, answersClients });
-    return note.id;
+    return note.row.id;
   };
   const as = <T>(k: Key, query: (tx: Prisma.TransactionClient) => Promise<T>) =>
     prisma.$transaction(async (tx: Prisma.TransactionClient) => {
@@ -166,7 +166,7 @@ const CLIENT_OF: Partial<Record<K2, K2>> = { O: 'A', M: 'A', X: 'A', V: 'A', Y: 
     const note = await notes.createVoiceNote({ workspaceId: ws[owner[s]], cohortId: space[s], conversationId: null, authorId: id[k],
       storageKey: `${id[k]}/1700000000000-${randomUUID().replace(/-/g, '').slice(0, 16)}.m4a`, durationMs: 4_000, bytes: 1000,
       mimeType: 'audio/mp4', waveformPeaks: null, parent: null, answersClients: false });
-    label[note.id] = `${k}.${s}.voice${tag}`;
+    label[note.row.id] = `${k}.${s}.voice${tag}`;
     await tick();
   };
   // Typed words as Postgres stamps them: clock_timestamp() keeps microseconds, which a JS Date cursor drops.
