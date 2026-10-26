@@ -687,6 +687,8 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'CommunityEventRsvp', field: 'user_id', action: del },
   { model: 'CommunityChallengeParticipation', field: 'user_id', action: del },
   { model: 'CommunityMembership', field: 'user_id', action: del },
+  // SC-BE2: the person's read line and notification setting per space.
+  { model: 'CommunitySpaceRead', field: 'user_id', action: del },
   { model: 'CommunitySearchEntry', field: 'authorId', action: del, uuid: true },
   { model: 'CommunityModerationAction', field: 'reported_by_id', action: detach('reported_by_id') },
   { model: 'CommunityModerationAction', field: 'actor_id', action: detach('actor_id') },
