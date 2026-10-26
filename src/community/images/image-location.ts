@@ -9,6 +9,10 @@
  *     least one entry, in either byte order ("II" little or "MM" big endian);
  *   - XMP (any other APP1): its text names GPSLatitude or GPSLongitude, as
  *     exif:GPSLatitude / exif:GPSLongitude do.
+ *   - ExtendedXMP (FR-1164R, LS-1164 B1): an APP1 that starts with its
+ *     signature, or XMP that says it has some (xmpNote:HasExtendedXMP). Its
+ *     chunks may split any name ("GPSLati" | "tude"; Adobe XMP Part 3,
+ *     1.1.3.1), so it is never read and always refused.
  *
  * It never guesses clean. Only a walk that reaches SOS with no location seen
  * answers false. A truncated or malformed APP1, a segment that runs past the
@@ -16,7 +20,7 @@
  *
  * Not read (the phone, SC-M4, re-encodes every photo, which drops them):
  * anything after the first SOS (a later scan's segments, a second image after
- * EOI), IPTC (APP13), comments, UTF-16 or split extended XMP.
+ * EOI), IPTC (APP13), comments, UTF-16 XMP.
  */
 
 /** How much of a photo is read for its location: 256 KB from the start. */
@@ -27,7 +31,9 @@ const SOS = 0xda;
 const APP1 = 0xe1;
 const GPS_INFO_TAG = 0x8825;
 const EXIF_HEADER = [0x45, 0x78, 0x69, 0x66, 0x00]; // "Exif\0" (then one pad byte)
-const XMP_GPS = /GPS(?:Latitude|Longitude)/;
+/** XMP that names a location, or says part of it sits in ExtendedXMP (not read, so refused). */
+const XMP_LOCATED = /GPS(?:Latitude|Longitude)|HasExtendedXMP/;
+const EXTENDED_XMP = 'http://ns.adobe.com/xmp/extension/\0'; // an ExtendedXMP chunk's signature
 
 /** True when the JPEG's segments before its first SOS carry a location, or cannot be read to SOS. */
 export function carriesLocation(jpeg: Uint8Array): boolean {
@@ -53,7 +59,8 @@ export function carriesLocation(jpeg: Uint8Array): boolean {
 
 function app1Located(payload: Uint8Array): boolean {
   if (EXIF_HEADER.every((c, k) => payload[k] === c)) return exifLocated(payload.subarray(6));
-  return XMP_GPS.test(Buffer.from(payload.buffer, payload.byteOffset, payload.byteLength).toString('latin1'));
+  const text = Buffer.from(payload.buffer, payload.byteOffset, payload.byteLength).toString('latin1');
+  return text.startsWith(EXTENDED_XMP) || XMP_LOCATED.test(text);
 }
 
 /** EXIF (a TIFF structure): IFD0's GPSInfo entry points at a GPS IFD with entries. Unreadable = located. */
