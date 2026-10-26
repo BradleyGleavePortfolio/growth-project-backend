@@ -173,9 +173,9 @@ export class CommunityNotificationsService {
       // over the community defaults table for the push only (step 5b): the
       // inbox row is still written (FR-1154, owner #171-3: Mute all never
       // stops anything in-app). Only the global mute is honoured here:
-      // community kinds have no per-kind preference columns and the core
-      // gate maps them onto `digest`, whose push default is false, so treating
-      // the gate's 'off' as a skip would silence every community push.
+      // community kinds have no per-kind preference columns, so the member
+      // has no per-kind push switch for an 'off' from the gate to stand for;
+      // the defaults table (step 2) is the per-kind rule for this sender.
       const muted =
         (await this.notifications.channelGate(recipientId, kind, 'push')) === 'muted';
 
@@ -196,27 +196,16 @@ export class CommunityNotificationsService {
         return;
       }
 
-      // 4) No token → skip (telemetry reason no_token). The core push path
-      // also handles this, but we surface the analytics reason explicitly.
-      const recipient = await this.prisma.user.findUnique({
-        where: { id: recipientId },
-        select: { expo_push_token: true },
-      });
-      if (!recipient?.expo_push_token) {
-        this.track(recipientId, COMMUNITY_TELEMETRY_EVENTS.pushSkipped, {
-          kind,
-          reason: 'no_token' satisfies SkipReason,
-        });
-        return;
-      }
-
       const privacyOn = this.resolveLockscreenPrivacy(input.lockscreenPrivacy);
       const body = this.buildBody(input);
       const title = COMMUNITY_PUSH_TITLES[kind];
 
-      // 5) Write the inbox row through the EXISTING core (preference gate +
+      // 4) Write the inbox row through the EXISTING core (preference gate +
       // 60s rate-limit live there). payload carries the idempotency key (no
-      // user text) so the replay guard above can find it next time.
+      // user text) so the replay guard above can find it next time. Written
+      // for every member, with or without a push token (OB2, b#1154 AUDIT
+      // 6388619778): a member who declined phone notifications still gets
+      // the inbox row.
       await this.notifications.createNotification({
         user_id: recipientId,
         kind,
@@ -230,6 +219,21 @@ export class CommunityNotificationsService {
           target_id: targetId,
         },
       });
+
+      // 5) No token: the row above stands, only the push is skipped
+      // (telemetry reason no_token). The core push path also handles this,
+      // but we surface the analytics reason explicitly.
+      const recipient = await this.prisma.user.findUnique({
+        where: { id: recipientId },
+        select: { expo_push_token: true },
+      });
+      if (!recipient?.expo_push_token) {
+        this.track(recipientId, COMMUNITY_TELEMETRY_EVENTS.pushSkipped, {
+          kind,
+          reason: 'no_token' satisfies SkipReason,
+        });
+        return;
+      }
 
       // 5b) Muted: the row above stands, the push does not go.
       if (muted) {
