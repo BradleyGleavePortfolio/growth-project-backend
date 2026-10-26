@@ -50,6 +50,7 @@ import { PrismaService } from '../../prisma.service';
 import { isClientOf, lockClientsForDraftWrite } from '../moved-client-drafts';
 import { PtmService } from '../../ptm/ptm.service';
 import { NotificationsService } from '../../notifications/notifications.service';
+import { lockScreenCopy } from '../../notifications/push/lock-screen-copy';
 import { muteAllStops } from '../../notifications/push/push-preferences';
 import {
   COACH_AI_EFFORT,
@@ -63,6 +64,8 @@ import {
 export const CHURN_ANTHROPIC_CLIENT_TOKEN = 'CHURN_ANTHROPIC_CLIENT';
 
 const ANTHROPIC_TIMEOUT_MS = 10_000;
+// The nudge push's kind: its push data type, its Mute all rule and its lock-screen line.
+const NUDGE_PUSH_KIND = 'coach_nudge';
 const MAX_MESSAGE_CHARS = 1000;
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -711,13 +714,17 @@ export class ChurnInterventionService {
     // Fire push AFTER the transaction commits. Failure cannot un-send
     // the message; we log and move on. FR-1154R3 (B-LS1154-2): an ordinary
     // push, so Mute all stops it (the shared rule); the message stays sent.
+    // The lock screen gets the copy table's line for this kind, never the
+    // coach's text (anyone holding the phone can read it); the text stays
+    // inside the app, in the nudge itself.
     if (
       this.notifications &&
       !(await this.muteAllStopsNudgePush(intervention.client_id, nudgeId))
     ) {
+      const copy = lockScreenCopy(NUDGE_PUSH_KIND, text);
       void this.notifications
-        .pushToUser(intervention.client_id, 'Message from your coach', text.slice(0, 120), {
-          type: 'coach_nudge',
+        .pushToUser(intervention.client_id, copy.title, copy.body, {
+          type: NUDGE_PUSH_KIND,
           nudge_id: nudgeId,
         })
         .catch((err) => {
@@ -742,7 +749,7 @@ export class ChurnInterventionService {
         where: { user_id: clientId },
         select: { muted: true },
       });
-      return muteAllStops(prefs, 'coach_nudge', 'push');
+      return muteAllStops(prefs, NUDGE_PUSH_KIND, 'push');
     } catch {
       this.logger.warn(`Push skipped for nudge=${nudgeId}: preference read failed`);
       return true;

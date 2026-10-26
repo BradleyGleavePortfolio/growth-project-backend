@@ -12,6 +12,7 @@ import { Prisma } from '@prisma/client';
 import { egressWithGrants, fakeOf, grantAllEgress } from './ai-egress/ai-egress.fakes';
 import { AnthropicHandle, type AnthropicMessagesClient } from '../src/ai-egress/ai-egress.service';
 import { AiConsentRequiredException } from '../src/ai-egress/ai-consent-required.exception';
+import { lockScreenCopy } from '../src/notifications/push/lock-screen-copy';
 
 class FakeP2002 extends Prisma.PrismaClientKnownRequestError {
   constructor(target: string) {
@@ -692,6 +693,56 @@ describe('ChurnInterventionService.sendIntervention', () => {
     expect(prisma.rows.interventions[0].status).toBe('sent');
     expect(prisma.rows.interventions[0].nudge_id).toBe(out.nudge_id);
     expect(notif.pushToUser).toHaveBeenCalled();
+  });
+
+  // CHURN-PUSH-COPY: anyone holding the phone can read the lock screen, so the
+  // push carries the copy table's line for coach_nudge, never the coach's text.
+  function sendWith(prisma: ReturnType<typeof buildSendTestPrisma>) {
+    const notif = buildNotifications();
+    const svc = new ChurnInterventionService(
+      prisma,
+      buildPtmService(),
+      buildConfig(),
+      grantAllEgress(),
+      notif,
+      handleOf(buildAnthropicClient()),
+    );
+    const text = 'Hi Alice, your weigh-in is up 3 kg. Call me tonight.';
+    const send = () =>
+      svc.sendIntervention('c1', 'int-1', { message_text: text, idempotency_key: VALID_UUID_2 });
+    return { notif, text, send };
+  }
+
+  it("the client's lock screen shows the copy table's line, never the coach's text", async () => {
+    const { notif, text, send } = sendWith(buildSendTestPrisma());
+    const out = await send();
+    const line = lockScreenCopy('coach_nudge', text);
+    expect(notif.pushToUser).toHaveBeenCalledTimes(1);
+    expect(notif.pushToUser).toHaveBeenCalledWith('u1', line.title, line.body, {
+      type: 'coach_nudge',
+      nudge_id: out.nudge_id,
+    });
+    expect(`${line.title} ${line.body}`).not.toMatch(/Alice|weigh-in|3 kg|Call me|Message from your coach/);
+  });
+
+  it('Mute all on: the nudge is sent, the push is not', async () => {
+    const prisma = buildSendTestPrisma();
+    prisma.notificationPreferences.findUnique.mockResolvedValue({ muted: true });
+    const { notif, send } = sendWith(prisma);
+    const out = await send();
+    expect(out.ok).toBe(true);
+    expect(prisma.rows.nudges).toHaveLength(1);
+    expect(notif.pushToUser).not.toHaveBeenCalled();
+  });
+
+  it('an unreadable Mute all switch sends no push; the nudge is still sent', async () => {
+    const prisma = buildSendTestPrisma();
+    prisma.notificationPreferences.findUnique.mockRejectedValue(new Error('prefs down'));
+    const { notif, send } = sendWith(prisma);
+    const out = await send();
+    expect(out.ok).toBe(true);
+    expect(prisma.rows.nudges).toHaveLength(1);
+    expect(notif.pushToUser).not.toHaveBeenCalled();
   });
 
   it('idempotent: second send returns existing sent_at and nudge_id', async () => {
