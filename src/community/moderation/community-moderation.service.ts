@@ -411,10 +411,12 @@ export class CommunityModerationService {
   }
 
   /** Coach (workspace owner) or platform owner may triage a queue. */
+  private async isModerator(workspaceId: string, user: User): Promise<boolean> {
+    return user.role === 'owner' || (await this.access.isWorkspaceCoach(workspaceId, user.id));
+  }
+
   private async assertModerator(workspaceId: string, user: User): Promise<void> {
-    const isModerator =
-      user.role === 'owner' || (await this.access.isWorkspaceCoach(workspaceId, user.id));
-    if (!isModerator) throw new ForbiddenException(FORBIDDEN);
+    if (!(await this.isModerator(workspaceId, user))) throw new ForbiddenException(FORBIDDEN);
   }
 
   async listQueue(
@@ -469,8 +471,12 @@ export class CommunityModerationService {
     notes: string | undefined,
   ): Promise<CommunityModerationItemResponse> {
     const item = await this.moderation.findById(itemId);
-    if (!item) throw new NotFoundException(NOT_FOUND);
-    await this.assertModerator(item.workspace_id, user);
+    // SPACE-404-CLASS (operator ruling 6353734516 on b#1137): an item outside
+    // the caller's authority answers the same 404 as an item that does not
+    // exist, before any action work, so the API never confirms it exists.
+    if (!item || !(await this.isModerator(item.workspace_id, user))) {
+      throw new NotFoundException(NOT_FOUND);
+    }
     if (!moderationActionAllowed(item, action)) {
       throw new ConflictException(alreadyActioned(item.action));
     }
