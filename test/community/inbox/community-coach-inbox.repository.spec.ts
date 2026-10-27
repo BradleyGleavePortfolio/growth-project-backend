@@ -2,15 +2,17 @@
 // client). The coach inbox merges two streams that are each bounded by a limit, so the rows of a client who
 // moved away must be left out IN the query: a filter after the limit would drop rows from the page. The
 // rule is the database's (app.community_author_stays, asked once by authorsWhoLeft); the live proof is in
-// test/rls/community-moved-client-rls.spec.ts.
+// test/rls/community-moved-client-rls.spec.ts. Owner rule D (SPACE-OWNER-ALERTS): a coach also gets their own
+// clients' rows in other coaches' public spaces, in the same one query (test/rls/community-coach-inbox-voice-rls.spec.ts).
 import { CommunityCoachInboxRepository } from '../../../src/community/inbox/community-coach-inbox.repository';
 import type { PrismaService } from '../../../src/prisma.service';
 import { stub } from '../../utils/trial-fakes';
 
 const SPACE = '11111111-1111-4111-8111-111111111111';
 const MOVED = 'moved-client';
+const PUB = '22222222-2222-4222-8222-222222222222';
 
-function world(left: Array<{ s: string; a: string }>) {
+function world(left: Array<{ s: string; a: string }>, theirs: string[] = []) {
   const asked: unknown[][] = [];
   const prisma = {
     $queryRaw: jest.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
@@ -19,6 +21,7 @@ function world(left: Array<{ s: string; a: string }>) {
     }),
     communityMessage: { findMany: jest.fn().mockResolvedValue([]) },
     communityPost: { findMany: jest.fn().mockResolvedValue([]) },
+    communityCohort: { findMany: jest.fn().mockResolvedValue(theirs.map((id) => ({ id }))) },
   };
   return { prisma, asked, repo: new CommunityCoachInboxRepository(stub<PrismaService>(prisma)) };
 }
@@ -35,8 +38,25 @@ describe('CommunityCoachInboxRepository: a moved client leaves the former coach\
     expect(asked[0].slice(1)).toEqual([[SPACE], [SPACE], 'coach-1']);
     const args = prisma.communityMessage.findMany.mock.calls[0][0];
     expect(args.where.NOT).toEqual([{ cohort_id: SPACE, sender_id: MOVED }]);
-    expect(args.where.cohort_id).toEqual({ in: [SPACE] });
+    expect(args.where.AND).toEqual([{ OR: [{ cohort_id: { in: [SPACE] } }] }, {}]);
     expect(args.take).toBe(2);
+  });
+
+  it('rule D: the coach\'s own clients\' rows in another coach\'s public space, in the same query, under the same rules', async () => {
+    const { prisma, asked, repo } = world([{ s: PUB, a: MOVED }], [PUB]);
+    await repo.unansweredMessages({ cohortIds: [SPACE], limit: 2, after: null, viewerId: 'coach-1', withVoice: true });
+    await repo.unansweredPosts({ cohortIds: [], limit: 2, after: null, viewerId: 'coach-1' });
+    expect(prisma.communityCohort.findMany.mock.calls[0][0].where).toEqual({ id: { notIn: [SPACE] }, visibility: 'public',
+      memberships: { some: { user: { coach_id: 'coach-1', role: 'student' } } } });
+    expect(asked.map((a) => a.slice(1))).toEqual([[[SPACE, PUB], [SPACE, PUB], 'coach-1'], [[PUB], [PUB], 'coach-1']]);
+    const chat = prisma.communityMessage.findMany.mock.calls[0][0].where;
+    expect(chat.AND[0].OR).toEqual([{ cohort_id: { in: [SPACE] } },
+      { cohort_id: { in: [PUB] }, sender: { coach_id: 'coach-1', role: 'student' } }]);
+    expect(chat.NOT).toEqual([{ cohort_id: PUB, sender_id: MOVED }]);
+    expect(chat).not.toHaveProperty('kind'); // voice notes too: no split by kind
+    const posts = prisma.communityPost.findMany.mock.calls[0][0].where;
+    expect(posts.AND[0].OR).toEqual([{ cohort_id: { in: [] } },
+      { cohort_id: { in: [PUB] }, author: { coach_id: 'coach-1', role: 'student' } }]);
   });
 
   it('leaves the moved client\'s posts out in the query', async () => {
