@@ -45,7 +45,8 @@ type Route = (typeof ROUTES)[number];
   const mark = (key: string, to: Route) => ack.applyTransition(coachA, row[key], to);
   const refusal = (messageId: string, to: Route) =>
     ack.applyTransition(coachA, messageId, to).then(() => 'stamped', (e) => e);
-  const stamps = (key: string) => prisma.communityMessage.findUniqueOrThrow({ where: { id: row[key] },
+  // community_messages is keyed (id, created_at) (partitioned), so the id alone is a findFirst.
+  const stamps = (key: string) => prisma.communityMessage.findFirstOrThrow({ where: { id: row[key] },
     select: { coach_seen_at: true, coach_acked_at: true, coach_replied_at: true } });
   const as = <T>(k: Key, query: (tx: Prisma.TransactionClient) => Promise<T>) =>
     prisma.$transaction(async (tx: Prisma.TransactionClient) => {
