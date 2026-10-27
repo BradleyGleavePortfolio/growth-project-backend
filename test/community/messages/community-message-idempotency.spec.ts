@@ -36,6 +36,7 @@ function harness() {
       return row;
     }),
     findFirst: jest.fn(async ({ where }: { where: { id: string } }) => rows.find((r) => r.id === where.id) ?? null),
+    updateMany: jest.fn(async () => ({ count: 0 })),
   };
   const prisma: Record<string, unknown> = { communityMessage, $executeRaw: jest.fn(async () => 1) };
   prisma.$transaction = jest.fn(async (fn: (tx: unknown) => unknown) => fn(prisma));
@@ -45,11 +46,17 @@ function harness() {
     assertCanPost: jest.fn(async () => undefined),
   };
   const realtime = { broadcastCommunityEvent: jest.fn(async () => undefined) };
+  // SC-PUSH (main): the High alert gate; the coach may send, 4 people would get it, none sent today.
+  const spacePush = {
+    highAlertAllowance: jest.fn(async () => ({ reach: 4, used_today: 0, limit: 3 })),
+    markHighAlert: jest.fn(async (id: string) => rows.filter((r) => r.id === id).forEach((r) => { r.high_alert = true; })),
+  };
   const service = new CommunityMessagesService(access as never, new CommunityMessagesRepository(prisma as never),
-    realtime as never, {} as never, safetyWithBlocks(), noCommunityPush());
+    realtime as never, {} as never, safetyWithBlocks(), noCommunityPush(), undefined, spacePush as never);
   const send = (u: User, body: string, key?: string, space = SPACE) =>
-    service.send(u, space, body, undefined, undefined, key).then((r) => r.message);
-  return { rows, realtime, send };
+    service.send(u, space, body, undefined, undefined, undefined, undefined, key).then((r) => r.message);
+  const alert = (u: User, body: string, key: string) => service.send(u, SPACE, body, undefined, undefined, undefined, true, key);
+  return { rows, realtime, spacePush, communityMessage, send, alert };
 }
 
 const status = (p: Promise<unknown>) => p.then(() => 200, (e: { status?: number }) => e.status ?? 500);
@@ -88,6 +95,27 @@ describe('FX-IDEM: POST /community/cohorts/:id/messages with Idempotency-Key', (
     await h.send(olive, 'Leg day done');
     expect(h.rows).toHaveLength(2);
   });
+
+  it('FR-1144 (main merged in): a coach resending a High alert under its key marks it once and answers alike', async () => {
+    const was = process.env.FEATURE_COMMUNITY_SPACE_PUSH;
+    process.env.FEATURE_COMMUNITY_SPACE_PUSH = 'true';
+    try {
+      const h = harness();
+      const coach = { id: '0a11ce00-0000-4000-8000-0000000000c0', role: 'coach' } as unknown as User;
+      const first = await h.alert(coach, 'Class moved to 6pm', KEY);
+      const again = await h.alert(coach, 'Class moved to 6pm', KEY);
+      expect(again).toEqual(first);
+      expect(first.high_alert_reach).toBe(4);
+      expect(h.rows).toHaveLength(1);
+      // The mark, the coach-replied stamp and the realtime ping (which carries the space push) ran once.
+      expect(h.spacePush.markHighAlert).toHaveBeenCalledTimes(1);
+      expect(h.communityMessage.updateMany).toHaveBeenCalledTimes(1);
+      expect(h.realtime.broadcastCommunityEvent).toHaveBeenCalledTimes(1);
+    } finally {
+      if (was === undefined) delete process.env.FEATURE_COMMUNITY_SPACE_PUSH;
+      else process.env.FEATURE_COMMUNITY_SPACE_PUSH = was;
+    }
+  });
 });
 
 describe('FX-IDEM: the header and the id it names', () => {
@@ -115,9 +143,9 @@ describe('FX-IDEM: the header and the id it names', () => {
     const route = new CommunityMessagesController({ send } as never);
     const req = { user: olive } as never;
     await route.send(req, SPACE, { body: 'Leg day done' } as never, KEY.toUpperCase());
-    expect(send).toHaveBeenCalledWith(olive, SPACE, 'Leg day done', undefined, undefined, KEY);
+    expect(send).toHaveBeenCalledWith(olive, SPACE, 'Leg day done', undefined, undefined, undefined, undefined, KEY);
     await route.send(req, SPACE, { body: 'Leg day done' } as never, undefined);
-    expect(send).toHaveBeenLastCalledWith(olive, SPACE, 'Leg day done', undefined, undefined, null);
+    expect(send).toHaveBeenLastCalledWith(olive, SPACE, 'Leg day done', undefined, undefined, undefined, undefined, null);
     await expect(route.send(req, SPACE, { body: 'x' } as never, 'nope')).rejects.toBeInstanceOf(BadRequestException);
     expect(send).toHaveBeenCalledTimes(2);
   });

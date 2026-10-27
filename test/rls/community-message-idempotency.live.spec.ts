@@ -45,7 +45,7 @@ const ROLE = (k: Key) => (k === 'A' || k === 'B' ? 'coach' : 'student');
   const user = (k: Key) => stub<User>({ id: id[k], role: ROLE(k), coach_id: COACH[k] ? id[COACH[k] as 'A' | 'B'] : null });
   const status = (p: Promise<unknown>) => p.then(() => 200, (e: { status?: number }) => e.status ?? 500);
   const send = (k: Key, s: 'mem' | 'bmem', body: string, key?: string, parent?: string) =>
-    chat.send(user(k), space[s], body, undefined, parent, key).then((r) => r.message);
+    chat.send(user(k), space[s], body, undefined, parent, undefined, undefined, key).then((r) => r.message);
   const sentBy = (k: Key) => prisma.communityMessage.count({ where: { sender_id: id[k] } });
   const reads = (k: Key, msg: string) =>
     prisma.$transaction(async (tx) => {
