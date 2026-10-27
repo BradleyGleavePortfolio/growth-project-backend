@@ -118,7 +118,7 @@ const SPACE_OF: Record<Key, 'A' | 'B'> = { A: 'A', B: 'B', O: 'A', X: 'A', Y: 'A
     row.vO2 = await say('O', 3_000);
     expect(await rows('A')).toContain('vO2 voice Voice note');
     const gone = await notes.findById(row.vO2);
-    await notes.softDeleteWithErasure({ id: row.vO2, storage_key: gone?.storage_key ?? '' }, 'author_delete');
+    await notes.softDeleteWithErasure({ id: row.vO2, storage_key: gone?.storage_key ?? '', author_id: gone?.author_id ?? '' }, 'author_delete');
     expect(await rows('A')).toEqual(['mO text RLS typed question', 'vO voice Voice note']);
   });
 
