@@ -162,6 +162,7 @@ describe('SC-PUSH service', () => {
     communityWorkspace: { findUnique: jest.fn() },
     userBlock: { findMany: jest.fn() },
     communitySpaceRead: { findMany: jest.fn() },
+    communityThreadPref: { findMany: jest.fn() },
     $queryRaw: jest.fn(),
   };
   const svc = new CommunitySpacePushService(
@@ -181,6 +182,7 @@ describe('SC-PUSH service', () => {
     prisma.$queryRaw.mockReset().mockResolvedValueOnce([{ id: S }, { id: 'a' }, { id: 'blocked' }, { id: 'blocker' }]).mockResolvedValue([{ c: 'c1', n: 2 }]);
     prisma.userBlock.findMany.mockResolvedValue([{ blocker_id: S, blocked_id: 'blocked' }, { blocker_id: 'blocker', blocked_id: S }]);
     prisma.communitySpaceRead.findMany.mockResolvedValue([]);
+    prisma.communityThreadPref.findMany.mockResolvedValue([]); // LEAVE-MUTE-PUSH: no muted or left thread
     prisma.communityWorkspaceBan.findFirst.mockResolvedValue(null);
     prisma.communityCohort.findMany.mockResolvedValue([]); // no all-clients space: first names
     prisma.user.findUnique.mockResolvedValue({ name: 'Sam Rivers' });

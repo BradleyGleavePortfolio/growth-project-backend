@@ -7,7 +7,9 @@
  * moved to another coach or banned has left it, except in a public space or with a helper row), the reader may
  * still read the space (app.community_can_access, so no ban), neither blocks the other (owner 10-22: hide ALL
  * messaging), and planSpacePush still gives this reader the same kind under their setting now. A row without the
- * source ids is not sent. Kept apart from that service so the push worker does not import it (it imports
+ * source ids is not sent. LEAVE-MUTE-PUSH (owner D2): nor is one for a space the reader left since, or for a
+ * reply in a thread they muted or left since (community_space_reads.left_at, community_thread_prefs; the reads
+ * readers() makes at enqueue). Kept apart from that service so the push worker does not import it (it imports
  * NotificationsService, which imports the worker).
  */
 import type { PrismaService } from '../../prisma.service';
@@ -22,6 +24,8 @@ export type SpacePushDropReason =
   | 'sender-left'
   | 'no-access'
   | 'blocked'
+  | 'left-space'
+  | 'thread-off'
   | 'not-planned';
 
 /** Why this space push must not go to `userId` now, or null when it still would be planned. */
@@ -39,7 +43,7 @@ export async function spacePushDropReason(
     select: { workspace_id: true, parent_message_id: true, high_alert: true },
   });
   if (!m) return 'message-gone';
-  const [parent, stays, open, blocks, row, cohort] = await Promise.all([
+  const [parent, stays, open, blocks, row, cohort, thread] = await Promise.all([
     m.parent_message_id
       ? prisma.communityMessage.findFirst({
           where: { id: m.parent_message_id, cohort_id: p.cohortId, scope: 'cohort', deleted_at: null },
@@ -53,13 +57,22 @@ export async function spacePushDropReason(
     }),
     prisma.communitySpaceRead.findFirst({
       where: { cohort_id: p.cohortId, user_id: userId },
-      select: { notify_mode: true, silenced_until: true },
+      select: { notify_mode: true, silenced_until: true, left_at: true },
     }),
     prisma.communityCohort.findUnique({ where: { id: p.cohortId }, select: { kind: true } }),
+    // Replies are one level deep, so the message replied to is the thread's first message.
+    m.parent_message_id
+      ? prisma.communityThreadPref.findFirst({
+          where: { user_id: userId, thread_message_id: m.parent_message_id },
+          select: { state: true },
+        })
+      : null,
   ]);
   if (stays.length === 0) return 'sender-left';
   if (!open || !cohort) return 'no-access';
   if (blocks > 0) return 'blocked';
+  if (row?.left_at) return 'left-space';
+  if (thread) return 'thread-off';
   const { effective_mode } = notifySettingOf(cohort, row, now);
   const unread =
     p.kind === 'unread' && effective_mode === 'all'
