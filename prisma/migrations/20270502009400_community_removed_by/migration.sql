@@ -2,8 +2,8 @@
 -- space voice note or chat message, so a coach's removal stays visible as a
 -- placeholder (#174-4). Reverse: down.sql.
 --
--- 1. removed_by_user_id on community_voice_notes, community_messages and
---    community_posts (posts: FR-1165R3): the coach (or TGP owner) who
+-- 1. community_voice_notes.removed_by_user_id and
+--    community_messages.removed_by_user_id: the coach (or TGP owner) who
 --    removed someone else's item, set in the same write that sets
 --    soft_deleted_at / deleted_at. Null on every live row, on an author's own
 --    delete, and on every row removed before this file, so old removals stay
@@ -20,6 +20,5 @@ SET LOCAL lock_timeout = '5s';
 
 ALTER TABLE "community_voice_notes" ADD COLUMN IF NOT EXISTS "removed_by_user_id" TEXT;
 ALTER TABLE "community_messages" ADD COLUMN IF NOT EXISTS "removed_by_user_id" TEXT;
-ALTER TABLE "community_posts" ADD COLUMN IF NOT EXISTS "removed_by_user_id" TEXT;
 
 COMMIT;
