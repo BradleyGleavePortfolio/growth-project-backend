@@ -93,6 +93,9 @@ export class CommunityCoachInboxService {
     m: MessageWithSender,
     cohortName: string,
   ): RankedItem {
+    // INBOX-PHOTO: a space photo (kind 'image', caption in body) is a 'photo' row; with no caption it reads "Photo".
+    const kind = m.kind === 'voice' ? 'voice' : m.kind === 'image' ? 'photo' : 'text';
+    const text = this.preview(m.body);
     return {
       createdAt: m.created_at,
       id: m.id,
@@ -103,11 +106,11 @@ export class CommunityCoachInboxService {
         cohort_name: cohortName,
         author_user_id: m.sender_id,
         author_display_name: m.sender.name,
-        preview: m.kind === 'voice' ? 'Voice note' : this.preview(m.body),
+        preview: kind === 'voice' ? 'Voice note' : kind === 'photo' && !text ? 'Photo' : text,
         created_at: m.created_at.toISOString(),
         item_url_path: `/community/cohorts/${m.cohort_id}/messages/${m.id}`,
-        kind: m.kind === 'voice' ? 'voice' : 'text',
-        ...(m.kind === 'voice' ? { voice: { note_id: m.id, duration_ms: m.voice_duration_ms ?? 0 } } : {}),
+        kind,
+        ...(kind === 'voice' ? { voice: { note_id: m.id, duration_ms: m.voice_duration_ms ?? 0 } } : {}),
         // v2-2: attach the per-thread ack summary ONLY when
         // FEATURE_COMMUNITY_ACKS is on. Omitted when off so the v1-6 inbox
         // shape is preserved (back-compat / kill-switch invariant).
