@@ -21,6 +21,12 @@ import { authorsWhoLeft } from '../community-space-access';
  * moved to another coach left these cohorts, so their rows are left out IN the
  * query (authorsWhoLeft asks app.community_author_stays, the rule the row
  * policies use). Each stream is limit-bounded, so a later filter would drop rows.
+ *
+ * SPACE-OWNER-ALERTS (owner rule D, 10-26: "ALL alerts and information go to the space owner and their team, plus
+ * your resident coach (or just the space owner if coachless)"): in a public space every row of every kind reaches
+ * the space owner and their team (the cohorts above), whoever the poster's coach is; it also reaches the poster's
+ * own current coach (clientsPublicSpaceIds), for that coach's clients' rows only. A coachless poster reaches the
+ * space owner's side only. Row policy: 20270502009800.
  */
 export type MessageWithSender = CommunityMessage & {
   sender: Pick<User, 'id' | 'name' | 'role'>;
@@ -71,8 +77,8 @@ export class CommunityCoachInboxRepository {
    * VOICE-INBOX (owner "#167-4 VOICE-INBOX - op 1"): with `withVoice` a client's space voice note is a row too,
    * through its chat message (kind voice, same id and time as the note), so every rule here applies to it as it
    * does to typed words: the authors authorsWhoLeft names (moved away, banned, in a block either way with the
-   * viewer) stay out; in a public space a voice note is also left out unless its author is the space coach's
-   * client (voiceOfOtherCoachesClients). Without it (the AI triage) voice notes stay out: they carry no words.
+   * viewer) stay out, and rule D reaches the same people for every kind. Without it (the AI triage) voice notes
+   * stay out: they carry no words.
    */
   async unansweredMessages(params: {
     cohortIds: string[];
@@ -83,26 +89,24 @@ export class CommunityCoachInboxRepository {
     withVoice?: boolean;
   }): Promise<MessageWithSender[]> {
     const { cohortIds, limit, after } = params;
-    if (cohortIds.length === 0) return [];
-    const [left, voiceOut] = await Promise.all([
-      authorsWhoLeft(this.prisma, cohortIds, params.viewerId),
-      params.withVoice ? this.voiceOfOtherCoachesClients(cohortIds) : [],
-    ]);
-    const notIn: Prisma.CommunityMessageWhereInput[] = [
-      ...left.map(([s, a]) => ({ cohort_id: s, sender_id: a })),
-      ...voiceOut,
-    ];
+    const theirs = await this.clientsPublicSpaceIds(params.viewerId, cohortIds);
+    if (cohortIds.length === 0 && theirs.length === 0) return [];
+    const left = await authorsWhoLeft(this.prisma, [...cohortIds, ...theirs], params.viewerId);
+    const notIn: Prisma.CommunityMessageWhereInput[] = left.map(([s, a]) => ({ cohort_id: s, sender_id: a }));
+    const arms: Prisma.CommunityMessageWhereInput[] = [{ cohort_id: { in: cohortIds } }];
+    if (theirs.length > 0 && params.viewerId) {
+      arms.push({ cohort_id: { in: theirs }, sender: { coach_id: params.viewerId, role: 'student' } });
+    }
     return this.prisma.communityMessage.findMany({
       where: {
         ...(notIn.length > 0 ? { NOT: notIn } : {}),
-        cohort_id: { in: cohortIds },
+        AND: [{ OR: arms }, afterKey(after)],
         scope: 'cohort',
         deleted_at: null,
         plan_context_type: null,
         ...(params.withVoice ? {} : { kind: { not: 'voice' as const } }),
         coach_replied_at: null,
         sender: { role: { notIn: ['coach', 'owner'] } },
-        ...afterKey(after),
       },
       orderBy: [{ created_at: 'asc' }, { id: 'asc' }],
       take: limit,
@@ -129,18 +133,22 @@ export class CommunityCoachInboxRepository {
     viewerId?: string;
   }): Promise<PostWithAuthor[]> {
     const { cohortIds, limit } = params;
-    if (cohortIds.length === 0) return [];
-    const left = await authorsWhoLeft(this.prisma, cohortIds, params.viewerId);
+    const theirs = await this.clientsPublicSpaceIds(params.viewerId, cohortIds);
+    if (cohortIds.length === 0 && theirs.length === 0) return [];
+    const left = await authorsWhoLeft(this.prisma, [...cohortIds, ...theirs], params.viewerId);
+    const arms: Prisma.CommunityPostWhereInput[] = [{ cohort_id: { in: cohortIds } }];
+    if (theirs.length > 0 && params.viewerId) {
+      arms.push({ cohort_id: { in: theirs }, author: { coach_id: params.viewerId, role: 'student' } });
+    }
     const out: PostWithAuthor[] = [];
     for (let after = params.after; out.length < limit; ) {
       const candidates = await this.prisma.communityPost.findMany({
         where: {
           ...(left.length > 0 ? { NOT: left.map(([s, a]) => ({ cohort_id: s, author_id: a })) } : {}),
-          cohort_id: { in: cohortIds },
+          AND: [{ OR: arms }, afterKey(after)],
           scope: 'cohort',
           deleted_at: null,
           author: { role: { notIn: ['coach', 'owner'] } },
-          ...afterKey(after),
         },
         orderBy: [{ created_at: 'asc' }, { id: 'asc' }],
         take: limit,
@@ -170,25 +178,22 @@ export class CommunityCoachInboxRepository {
   }
 
   /**
-   * VOICE-INBOX (Sol B3): in a public space a voice note is a row only for its author's current coach. A public
-   * space keeps the note playable to its members (authorsWhoLeft keeps public rows), but a note from a client of
-   * another coach, or of none, asks no coach here. Typed rows and posts in a public space keep the merged C6 rule
-   * (test/rls/community-moved-client-rls.spec.ts); one rule for every kind waits on the owner (PR body).
+   * Rule D, the poster's own coach: the public spaces outside `cohortIds` where a current client of the viewer is
+   * or was a member (a public space needs a membership to write in; a member who left keeps what they wrote
+   * there). Only that coach's clients' rows are asked for there (the callers' second arm), so a coachless poster,
+   * or another coach's client, reaches no one here. No viewer, no spaces.
    */
-  private async voiceOfOtherCoachesClients(cohortIds: string[]): Promise<Prisma.CommunityMessageWhereInput[]> {
-    const publicSpaces = await this.prisma.communityCohort.findMany({
-      where: { id: { in: cohortIds }, visibility: 'public' },
-      select: { id: true, workspace: { select: { coach_id: true } } },
+  async clientsPublicSpaceIds(viewerId: string | undefined, cohortIds: string[]): Promise<string[]> {
+    if (!viewerId) return [];
+    const spaces = await this.prisma.communityCohort.findMany({
+      where: {
+        id: { notIn: cohortIds },
+        visibility: 'public',
+        memberships: { some: { user: { coach_id: viewerId, role: 'student' } } },
+      },
+      select: { id: true },
     });
-    const byCoach = new Map<string, string[]>();
-    for (const { id, workspace } of publicSpaces) {
-      byCoach.set(workspace.coach_id, [...(byCoach.get(workspace.coach_id) ?? []), id]);
-    }
-    return [...byCoach].map(([coachId, ids]) => ({
-      cohort_id: { in: ids },
-      kind: 'voice',
-      sender: { role: 'student', OR: [{ coach_id: null }, { coach_id: { not: coachId } }] },
-    }));
+    return spaces.map((c) => c.id);
   }
 }
 
