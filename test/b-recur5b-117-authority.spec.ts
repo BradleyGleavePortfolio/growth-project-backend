@@ -69,7 +69,7 @@ function harness(over: Record<string, unknown> = {}, withMoney = false) {
   const notifications: any = { createNotification: jest.fn(async () => undefined), sendPush: jest.fn(async () => null) };
   const ledger = {
     findUnique: jest.fn(async () => null),
-    create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'fp_r5', ...data })),
+    createMany: jest.fn(async (_args: { data: Array<Record<string, unknown>>; skipDuplicates?: boolean }) => ({ count: 1 })),
   };
   prisma.coachFirstPaymentNotification = ledger;
   const firstPayment = withMoney
@@ -238,9 +238,9 @@ describe('B-680-3 / C-680-10: a paid invoice is never acknowledged without its e
     h.stripe.retrieveSubscription.mockRejectedValueOnce(new Error('stripe down'));
     const conversion = paid({ amount_paid: 14800 });
     await expect(h.deliver(conversion)).rejects.toThrow(/retry/);
-    expect(h.ledger.create).not.toHaveBeenCalled();
+    expect(h.ledger.createMany).not.toHaveBeenCalled();
     const result = await h.deliver(conversion);
-    expect(h.ledger.create).toHaveBeenCalledWith({ data: expect.objectContaining({ amount: 14800, currency: 'usd' }) });
+    expect(h.ledger.createMany).toHaveBeenCalledWith({ data: [expect.objectContaining({ amount: 14800, currency: 'usd' })], skipDuplicates: true });
     expect(result.deferredSplit).toMatchObject({ charge_id: 'ch_r', invoice_amount_cents: 14800 });
     expect(h.row()).toMatchObject({ status: 'active', entitlement_active: true });
   });

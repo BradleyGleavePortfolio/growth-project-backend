@@ -3,10 +3,12 @@
  *
  * Unit specs for the exactly-once first-payment primitive. These run with NO
  * live database: the transaction client is a mock whose
- * `coachFirstPaymentNotification.create` is what the DB UNIQUE(coachId)
- * constraint would call. The mock simulates the constraint by throwing a
- * Prisma P2002 on the SECOND insert for a coachId it has already seen, exactly
- * as Postgres would.
+ * `coachFirstPaymentNotification.createMany({ skipDuplicates: true })` is what
+ * the DB UNIQUE(coachId) constraint would answer. B-LSNOTIFY-1 (FR-NOTIFY2):
+ * the mock simulates INSERT ... ON CONFLICT DO NOTHING — `{ count: 0 }` on the
+ * SECOND insert for a coachId it has already seen, never a thrown P2002 (a
+ * thrown unique violation aborts a Postgres transaction even when caught).
+ * The real-Postgres proof is test/rls/first-payment-second-purchase-rls.spec.ts.
  *
  * Covers (from the L4 brief):
  *   1. Idempotency — two calls for the same coachId don't throw, the second is
@@ -17,8 +19,10 @@
  *   3. First payment — row created AND notification enqueued.
  *   4. Second payment (same coach) — row NOT duplicated AND notification NOT
  *      re-enqueued.
- *   5. Non-P2002 errors rethrow (so the outer tx rolls back and Stripe retries)
+ *   5. Real DB errors rethrow (so the outer tx rolls back and Stripe retries)
  *      and do NOT enqueue a notification.
+ *   6. B-LSNOTIFY-1 — the insert is ON CONFLICT DO NOTHING (skipDuplicates),
+ *      and nothing catches a unique violation any more.
  */
 
 import { Logger } from '@nestjs/common';
@@ -44,28 +48,29 @@ type CoachFirstPaymentDelegate = Pick<
 type MockTx = CoachFirstPaymentDelegate & Prisma.TransactionClient;
 
 /**
- * Builds a mock transaction client whose coachFirstPaymentNotification.create
- * enforces a UNIQUE(coachId) like the real DB: the first insert for a coachId
- * succeeds; a second insert for the same coachId throws Prisma P2002.
+ * Builds a mock transaction client whose coachFirstPaymentNotification.createMany
+ * enforces a UNIQUE(coachId) like the real DB under ON CONFLICT DO NOTHING:
+ * the first insert for a coachId counts 1; a second insert for the same coachId
+ * counts 0 and does NOT throw (B-LSNOTIFY-1).
  */
 function makeTxWithUniqueConstraint() {
   const insertedCoachIds = new Set<string>();
-  const create = jest.fn(async ({ data }: { data: { coachId: string } }) => {
-    if (insertedCoachIds.has(data.coachId)) {
-      throw new PrismaClientKnownRequestError('Unique constraint failed', {
-        code: 'P2002',
-        clientVersion: 'test',
-        meta: { target: ['coachId'] },
-      });
-    }
-    insertedCoachIds.add(data.coachId);
-    return { id: `row_${data.coachId}`, ...data, createdAt: new Date() };
-  });
-  // Typed delegate stub — only `coachFirstPaymentNotification.create` is wired;
-  // widened to the tx shape through the single `asStub` seam (no `as unknown
-  // as`). The local annotation keeps the create() shape type-checked.
-  const surface: { coachFirstPaymentNotification: { create: typeof create } } = {
-    coachFirstPaymentNotification: { create },
+  const create = jest.fn(
+    async ({ data }: { data: Array<{ coachId: string }>; skipDuplicates?: boolean }) => {
+      let count = 0;
+      for (const row of data) {
+        if (insertedCoachIds.has(row.coachId)) continue; // ON CONFLICT DO NOTHING
+        insertedCoachIds.add(row.coachId);
+        count += 1;
+      }
+      return { count };
+    },
+  );
+  // Typed delegate stub — only `coachFirstPaymentNotification.createMany` is
+  // wired; widened to the tx shape through the single `asStub` seam (no `as
+  // unknown as`). The local annotation keeps the createMany() shape checked.
+  const surface: { coachFirstPaymentNotification: { createMany: typeof create } } = {
+    coachFirstPaymentNotification: { createMany: create },
   };
   const tx = asStub<MockTx>(surface);
   return { tx, create, insertedCoachIds };
@@ -110,12 +115,15 @@ describe('CoachFirstPaymentService.tryEmitFirstPayment', () => {
 
     expect(create).toHaveBeenCalledTimes(1);
     expect(create).toHaveBeenCalledWith({
-      data: {
-        coachId: 'coach_1',
-        amount: 4999,
-        currency: 'usd',
-        clientId: 'client_1',
-      },
+      data: [
+        {
+          coachId: 'coach_1',
+          amount: 4999,
+          currency: 'usd',
+          clientId: 'client_1',
+        },
+      ],
+      skipDuplicates: true,
     });
     expect(emit).toHaveBeenCalledTimes(1);
     // R81 (PR-395 follow-up, F1/F2): the emit MUST receive the SAME tx so the
@@ -140,8 +148,9 @@ describe('CoachFirstPaymentService.tryEmitFirstPayment', () => {
     // Second call (e.g. Stripe webhook retry) must not throw.
     await expect(svc.tryEmitFirstPayment(tx, INPUT)).resolves.toBeUndefined();
 
-    // create was ATTEMPTED twice (no pre-SELECT / check-then-act), but exactly
-    // ONE row exists — the second attempt hit the UNIQUE constraint (P2002).
+    // createMany was ATTEMPTED twice (no pre-SELECT / check-then-act), but
+    // exactly ONE row exists — the second attempt hit the UNIQUE constraint and
+    // inserted nothing (ON CONFLICT DO NOTHING, count 0, no throw).
     expect(create).toHaveBeenCalledTimes(2);
     expect(insertedCoachIds.size).toBe(1);
     // Notification enqueued only on the winning insert.
@@ -171,7 +180,7 @@ describe('CoachFirstPaymentService.tryEmitFirstPayment', () => {
   it('shares the caller transaction: the INSERT is issued on the SAME tx object (rollback safety)', async () => {
     // 50-Failures #44 — the emit MUST happen inside the same $transaction as
     // the purchase write so an outer rollback discards the notification row.
-    // The testable invariant is that create() is invoked on the exact tx
+    // The testable invariant is that createMany() is invoked on the exact tx
     // client the caller threads in (not on a separate/global Prisma client).
     const { tx, create } = makeTxWithUniqueConstraint();
     const { emitter } = makeEmitter();
@@ -179,24 +188,57 @@ describe('CoachFirstPaymentService.tryEmitFirstPayment', () => {
 
     await svc.tryEmitFirstPayment(tx, INPUT);
 
-    // The create fn we asserted on belongs to THIS tx's
+    // The createMany fn we asserted on belongs to THIS tx's
     // coachFirstPaymentNotification delegate — proving the write rides the
     // caller's transaction and is rolled back if that transaction aborts.
-    expect(tx.coachFirstPaymentNotification.create).toBe(create);
+    expect(tx.coachFirstPaymentNotification.createMany).toBe(create);
     expect(create).toHaveBeenCalledTimes(1);
   });
 
-  it('rethrows non-P2002 errors and does NOT enqueue (outer tx rolls back, Stripe retries)', async () => {
+  it('rethrows real DB errors and does NOT enqueue (outer tx rolls back, Stripe retries)', async () => {
     const dbError = new PrismaClientKnownRequestError('connection reset', {
       code: 'P1001',
       clientVersion: 'test',
     });
-    const create = jest.fn().mockRejectedValue(dbError);
-    const tx = asStub<MockTx>({ coachFirstPaymentNotification: { create } });
+    const createMany = jest.fn().mockRejectedValue(dbError);
+    const tx = asStub<MockTx>({ coachFirstPaymentNotification: { createMany } });
     const { emitter, emit } = makeEmitter();
     const svc = new CoachFirstPaymentService(emitter);
 
     await expect(svc.tryEmitFirstPayment(tx, INPUT)).rejects.toBe(dbError);
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it('B-LSNOTIFY-1: never relies on catching a unique violation (a caught P2002 still aborts a Postgres tx)', async () => {
+    // The old code caught P2002 from create() and carried on inside the
+    // purchase transaction, which Postgres had already aborted (25P02). The
+    // service must not have a P2002 catch at all: if a unique violation ever
+    // did surface, it propagates so the caller's transaction fails loudly
+    // instead of committing nothing after a "success".
+    const unique = new PrismaClientKnownRequestError('Unique constraint failed', {
+      code: 'P2002',
+      clientVersion: 'test',
+      meta: { target: ['coachId'] },
+    });
+    const createMany = jest.fn().mockRejectedValue(unique);
+    const tx = asStub<MockTx>({ coachFirstPaymentNotification: { createMany } });
+    const { emitter, emit } = makeEmitter();
+    const svc = new CoachFirstPaymentService(emitter);
+
+    await expect(svc.tryEmitFirstPayment(tx, INPUT)).rejects.toBe(unique);
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it('B-LSNOTIFY-1: count 0 (already emitted) skips audit and emit and resolves', async () => {
+    const createMany = jest.fn().mockResolvedValue({ count: 0 });
+    const tx = asStub<MockTx>({ coachFirstPaymentNotification: { createMany } });
+    const { emitter, emit } = makeEmitter();
+    const write = jest.fn<Promise<void>, [unknown]>(() => Promise.resolve());
+    const svc = new CoachFirstPaymentService(emitter, asStub<AuditService>({ write }));
+
+    await expect(svc.tryEmitFirstPayment(tx, INPUT)).resolves.toBeUndefined();
+    expect(createMany).toHaveBeenCalledWith(expect.objectContaining({ skipDuplicates: true }));
+    expect(write).not.toHaveBeenCalled();
     expect(emit).not.toHaveBeenCalled();
   });
 
@@ -279,12 +321,15 @@ describe('CoachFirstPaymentService.tryEmitFirstPayment', () => {
 
     // Ledger row + emit are keyed to the selling sub-coach.
     expect(create).toHaveBeenCalledWith({
-      data: {
-        coachId: SUB_COACH,
-        amount: 9900,
-        currency: 'usd',
-        clientId: 'client_connect',
-      },
+      data: [
+        {
+          coachId: SUB_COACH,
+          amount: 9900,
+          currency: 'usd',
+          clientId: 'client_connect',
+        },
+      ],
+      skipDuplicates: true,
     });
     expect(emit).toHaveBeenCalledTimes(1);
     const [recipient] = emit.mock.calls[0];
@@ -328,7 +373,7 @@ describe('CoachFirstPaymentService.tryEmitFirstPayment', () => {
     expect(emit).toHaveBeenCalledTimes(1);
   });
 
-  it('F8: does NOT write an audit entry on the P2002 no-op (already emitted)', async () => {
+  it('F8: does NOT write an audit entry on the duplicate no-op (already emitted)', async () => {
     const { tx } = makeTxWithUniqueConstraint();
     const { emitter, emit } = makeEmitter();
     const write = jest.fn<Promise<void>, [unknown]>(() => Promise.resolve());
@@ -336,7 +381,7 @@ describe('CoachFirstPaymentService.tryEmitFirstPayment', () => {
     const svc = new CoachFirstPaymentService(emitter, audit);
 
     await svc.tryEmitFirstPayment(tx, INPUT);
-    // Second call hits the unique constraint → no-op, no second audit / emit.
+    // Second call hits the unique constraint (count 0) → no-op, no second audit / emit.
     await svc.tryEmitFirstPayment(tx, INPUT);
 
     expect(write).toHaveBeenCalledTimes(1);

@@ -6,7 +6,6 @@
  * transaction, and a webhook retry never sends it twice.
  */
 import type { Prisma } from '@prisma/client';
-import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { CoachFirstPaymentService } from '../src/notifications/coach-first-payment.service';
 import { FirstPaymentEmitter } from '../src/notifications/emitters/first-payment.emitter';
 import { NotificationKind } from '../src/notifications/notification-kind';
@@ -90,12 +89,10 @@ describe('FIRST-PAYMENT-PUSH: the coach gets the first-payment push', () => {
     const tx = stub<Prisma.TransactionClient>({
       ...w.db,
       coachFirstPaymentNotification: {
-        create: jest.fn(async () => {
+        // B-LSNOTIFY-1: ON CONFLICT DO NOTHING — the retry counts 0, no throw.
+        createMany: jest.fn(async () => {
           ledger += 1;
-          if (ledger > 1) {
-            throw new PrismaClientKnownRequestError('Unique constraint failed', { code: 'P2002', clientVersion: 'test' });
-          }
-          return { id: 'fp-1' };
+          return { count: ledger > 1 ? 0 : 1 };
         }),
       },
     });

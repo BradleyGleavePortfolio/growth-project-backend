@@ -1,6 +1,5 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
-import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { AuditService } from '../audit/audit.service';
 import { FirstPaymentEmitter } from './emitters/first-payment.emitter';
 
@@ -11,10 +10,14 @@ import { FirstPaymentEmitter } from './emitters/first-payment.emitter';
 // isolation as the financial-celebration trail.
 const AUDIT_FIRST_PAYMENT_EMITTED = 'notification.first_payment_emitted';
 
-// Prisma's unique-constraint violation code. The DIRECT INSERT below relies on
-// it: a duplicate (webhook retry / second payment / concurrent first payments)
-// raises P2002, which we treat as "already emitted" rather than an error.
-const PRISMA_UNIQUE_VIOLATION = 'P2002';
+// B-LSNOTIFY-1 (FR-NOTIFY2, agent 177): the ledger INSERT is
+// `INSERT ... ON CONFLICT DO NOTHING` (Prisma createMany + skipDuplicates), NOT
+// create + catch P2002. This runs inside the caller's interactive purchase
+// transaction; on Postgres a failed statement (the unique violation) aborts the
+// whole transaction (25P02) even when the error is caught in JS, so catching
+// P2002 rolled back the coach's SECOND paid purchase. ON CONFLICT never raises,
+// so the purchase transaction stays usable and `count === 0` is the
+// "already emitted" signal.
 
 /**
  * Input for {@link CoachFirstPaymentService.tryEmitFirstPayment}.
@@ -66,13 +69,15 @@ export interface TryEmitFirstPaymentInput {
  * commit-or-roll-back together).
  *
  * The exactly-once guarantee is enforced by the DB: a DIRECT INSERT into
- * CoachFirstPaymentNotification (coachId @unique). There is NO pre-SELECT /
- * check-then-act (50-Failures #28 race, #29 idempotency) — the unique
- * constraint IS the race protection. A duplicate (Stripe webhook retry, a
- * second payment for the same coach, or two concurrent first payments racing)
- * raises Prisma P2002, which we swallow as "already emitted" with a structured
- * log (50-Failures #36 — no silent swallow). Any OTHER error rethrows so the
- * outer transaction rolls back and Stripe redelivers.
+ * CoachFirstPaymentNotification (coachId @unique) with ON CONFLICT DO NOTHING
+ * (createMany + skipDuplicates). There is NO pre-SELECT / check-then-act
+ * (50-Failures #28 race, #29 idempotency) — the unique constraint IS the race
+ * protection. A duplicate (Stripe webhook retry, a second payment for the same
+ * coach, or two concurrent first payments racing) inserts 0 rows WITHOUT
+ * raising, so the shared purchase transaction is never aborted (B-LSNOTIFY-1);
+ * we log it as "already emitted" (50-Failures #36 — no silent swallow). Any
+ * real error (FK, connection, ...) still throws so the outer transaction rolls
+ * back and Stripe redelivers.
  */
 @Injectable()
 export class CoachFirstPaymentService {
@@ -90,8 +95,8 @@ export class CoachFirstPaymentService {
    * Attempt to record + emit the coach's first-ever payment notification.
    *
    * Idempotent by construction: the first call for a given coachId inserts the
-   * ledger row and emits the notification; every subsequent call no-ops on the
-   * unique-constraint violation. Implemented in the C3 commit.
+   * ledger row and emits the notification; every subsequent call inserts 0
+   * rows (ON CONFLICT DO NOTHING) and no-ops, leaving the purchase tx intact.
    *
    * @param tx     the ambient transaction client (shared with the purchase write).
    * @param input  server-trusted { coachId, amount, currency, clientId }.
@@ -102,36 +107,32 @@ export class CoachFirstPaymentService {
   ): Promise<void> {
     const { coachId, amount, currency, clientId } = input;
 
-    try {
-      // DIRECT INSERT — no pre-SELECT / check-then-act. The
-      // CoachFirstPaymentNotification(coachId @unique) constraint is the
-      // exactly-once guarantee and the race protection (50-Failures #28, #29).
-      // This runs on the AMBIENT `tx` so the ledger row commits-or-rolls-back
-      // together with the ClientPurchase write (50-Failures #44).
-      await tx.coachFirstPaymentNotification.create({
-        data: { coachId, amount, currency, clientId },
-      });
-    } catch (err) {
-      if (
-        err instanceof PrismaClientKnownRequestError &&
-        err.code === PRISMA_UNIQUE_VIOLATION
-      ) {
-        // Already fired for this coach (webhook retry, a later payment, or a
-        // concurrent first payment that lost the unique-constraint race). This
-        // is the expected idempotent no-op — NOT a silent swallow: we log it
-        // structured so it is observable (50-Failures #36). No PII / secrets in
-        // the log — only the event name and coachId (50-Failures #12, #34).
-        this.logger.log({ event: 'first_payment_already_emitted', coachId });
-        return;
-      }
-      // Any OTHER error is a real failure: rethrow so the outer transaction
-      // rolls back (the purchase row too) and Stripe redelivers the webhook.
-      throw err;
+    // DIRECT INSERT — no pre-SELECT / check-then-act. The
+    // CoachFirstPaymentNotification(coachId @unique) constraint is the
+    // exactly-once guarantee and the race protection (50-Failures #28, #29).
+    // This runs on the AMBIENT `tx` so the ledger row commits-or-rolls-back
+    // together with the ClientPurchase write (50-Failures #44).
+    // B-LSNOTIFY-1: skipDuplicates makes it ON CONFLICT DO NOTHING, so a
+    // duplicate never raises inside the purchase transaction (a caught P2002
+    // still aborts a Postgres transaction). Any other error propagates and
+    // rolls the purchase back so Stripe redelivers.
+    const { count } = await tx.coachFirstPaymentNotification.createMany({
+      data: [{ coachId, amount, currency, clientId }],
+      skipDuplicates: true,
+    });
+    if (count === 0) {
+      // Already fired for this coach (webhook retry, a later payment, or a
+      // concurrent first payment that lost the unique-constraint race). This
+      // is the expected idempotent no-op — NOT a silent swallow: we log it
+      // structured so it is observable (50-Failures #36). No PII / secrets in
+      // the log — only the event name and coachId (50-Failures #12, #34).
+      this.logger.log({ event: 'first_payment_already_emitted', coachId });
+      return;
     }
 
     // The INSERT won the unique constraint — this is the coach's first-ever
     // payment. R81 (PR-395 follow-up, F8): write the audit-log entry BEFORE the
-    // emit (after the P2002 no-op gate has passed) so the once-ever financial
+    // emit (after the count === 0 no-op gate has passed) so the once-ever financial
     // celebration is recorded. No PII: ids + amount/currency + correlation id
     // only. The write is best-effort by AuditService contract (it swallows its
     // own errors and never throws), so it cannot break the purchase tx.

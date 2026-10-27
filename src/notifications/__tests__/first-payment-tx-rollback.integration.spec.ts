@@ -29,7 +29,6 @@
 
 import { Logger } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
-import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { CoachFirstPaymentService } from '../coach-first-payment.service';
 import { FirstPaymentEmitter } from '../emitters/first-payment.emitter';
 import { NotificationsService } from '../notifications.service';
@@ -106,19 +105,21 @@ class FakeDb {
         },
       },
       coachFirstPaymentNotification: {
-        create: async ({ data }: { data: { coachId: string } }) => {
-          if (
-            this.committedCoachIds.has(data.coachId) ||
-            bufferedCoachIds.has(data.coachId)
-          ) {
-            throw new PrismaClientKnownRequestError('Unique constraint failed', {
-              code: 'P2002',
-              clientVersion: 'test',
-              meta: { target: ['coachId'] },
-            });
+        // B-LSNOTIFY-1: INSERT ... ON CONFLICT DO NOTHING (createMany +
+        // skipDuplicates) — a duplicate counts 0 and never throws.
+        createMany: async ({ data }: { data: Array<{ coachId: string }> }) => {
+          let count = 0;
+          for (const row of data) {
+            if (
+              this.committedCoachIds.has(row.coachId) ||
+              bufferedCoachIds.has(row.coachId)
+            ) {
+              continue;
+            }
+            bufferedCoachIds.add(row.coachId);
+            count += 1;
           }
-          bufferedCoachIds.add(data.coachId);
-          return { id: `tx_row_${data.coachId}`, ...data };
+          return { count };
         },
       },
     };

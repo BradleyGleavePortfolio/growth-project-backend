@@ -233,7 +233,7 @@ describe('B-680-3 / C-680-6: the first-payment notice is money collected, never 
     const h = harness(over, new CoachFirstPaymentService(new FirstPaymentEmitter(notifications)));
     const ledger = {
       findUnique: jest.fn(async () => (alreadySent ? { id: 'fp_1' } : null)),
-      create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'fp_new', ...data })),
+      createMany: jest.fn(async (_args: { data: Array<Record<string, unknown>>; skipDuplicates?: boolean }) => ({ count: 1 })),
     };
     h.prisma.coachFirstPaymentNotification = ledger;
     return { ...h, ledger, notifications };
@@ -244,7 +244,7 @@ describe('B-680-3 / C-680-6: the first-payment notice is money collected, never 
     h.setLive(sub('trialing', { trial_start: NOW }));
     await h.deliver(ev('customer.subscription.updated', sub('trialing', { trial_start: NOW })));
     expect(h.row().entitlement_active).toBe(true);
-    expect(h.ledger.create).not.toHaveBeenCalled();
+    expect(h.ledger.createMany).not.toHaveBeenCalled();
     expect(h.notifications.createNotification).not.toHaveBeenCalled();
     expect(h.notifications.sendPush).not.toHaveBeenCalled();
   });
@@ -252,19 +252,19 @@ describe('B-680-3 / C-680-6: the first-payment notice is money collected, never 
   it('(failed before) the first paid invoice after a trial records the amount Stripe collected', async () => {
     const h = money({ trial_days: 7, trial_started_at: new Date(), status: 'trialing', entitlement_active: true });
     await h.deliver(invoicePaid({ billing_reason: 'subscription_cycle' }));
-    expect(h.ledger.create).toHaveBeenCalledWith({ data: expect.objectContaining({ amount: 4900, currency: 'usd' }) });
+    expect(h.ledger.createMany).toHaveBeenCalledWith({ data: [expect.objectContaining({ amount: 4900, currency: 'usd' })], skipDuplicates: true });
   });
 
   it('(failed before) a combo first invoice reports the $148 paid, not the $49 renewal', async () => {
     const h = money();
     await h.deliver(invoicePaid({ amount_paid: 14800 }));
-    expect(h.ledger.create).toHaveBeenCalledWith({ data: expect.objectContaining({ amount: 14800 }) });
+    expect(h.ledger.createMany).toHaveBeenCalledWith({ data: [expect.objectContaining({ amount: 14800 })], skipDuplicates: true });
   });
 
   it('control: a coach who already has the notice is skipped before the insert; a $0 invoice never sends one', async () => {
     const h = money({ status: 'active', entitlement_active: true }, true);
     await h.deliver(invoicePaid({ billing_reason: 'subscription_cycle' }));
-    expect(h.ledger.create).not.toHaveBeenCalled();
+    expect(h.ledger.createMany).not.toHaveBeenCalled();
     const z = money({ trial_days: 7 });
     z.setLive(sub('trialing', { trial_start: NOW }));
     await z.deliver(invoicePaid({ amount_paid: 0 }));
