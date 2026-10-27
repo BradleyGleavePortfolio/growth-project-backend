@@ -12,6 +12,9 @@ import { CommunityAccessService } from './community-access.service';
 import { CommunityMessagesController } from './messages/community-messages.controller';
 import { CommunitySpaceReadsController } from './space-reads/community-space-reads.controller';
 import { CommunitySpaceReadsService } from './space-reads/community-space-reads.service';
+import { CommunitySpacePushController } from './space-push/community-space-push.controller';
+import { CommunitySpacePushService } from './space-push/community-space-push.service';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { CommunityMessagesService } from './messages/community-messages.service';
 import { CommunityMessagesRepository } from './messages/community-messages.repository';
 import { CommunityPostsController } from './posts/community-posts.controller';
@@ -99,6 +102,7 @@ import { CommunityLeaveMuteModule } from './leave-mute/community-leave-mute.modu
     CommunitySearchModule,
     CommunityWearablePromptsModule,
     CommunityLeaveMuteModule,
+    NotificationsModule,
   ],
   controllers: [
     CommunityController,
@@ -115,9 +119,11 @@ import { CommunityLeaveMuteModule } from './leave-mute/community-leave-mute.modu
     CommunityChallengesController,
     CommunityEventsController,
     CommunitySpaceReadsController,
+    CommunitySpacePushController,
   ],
   providers: [
     CommunitySpaceReadsService,
+    CommunitySpacePushService,
     CommunityService,
     CommunityRepository,
     CommunityFeatureFlagGuard,

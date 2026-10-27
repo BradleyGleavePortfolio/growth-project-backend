@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsIn,
   IsInt,
   IsObject,
@@ -44,6 +45,11 @@ export class CreateMessageDto {
   @IsOptional()
   @IsUUID('4')
   parent_message_id?: string;
+
+  // SC-PUSH: a coach's High alert (the coach of the space only, 3 a day).
+  @IsOptional()
+  @IsBoolean()
+  high_alert?: boolean;
 
   // SC-BE3: a photo (FEATURE_COMMUNITY_IMAGES). The key from POST
   // .../images/upload-url and the photo's pixel size; `body` is its caption.

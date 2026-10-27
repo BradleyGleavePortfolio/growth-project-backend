@@ -878,6 +878,7 @@ const EXEMPT: Record<string, string> = {
   'CommunityCoachInboxController.list': COACH_ONLY,
   'CommunityCoachEmptyStatesController.emptyStates': 'static coach copy, no member content',
   'CommunitySpaceReadsController.getRead': "the caller's own read line (ids and a time), no member content",
+  'CommunitySpacePushController.preview': COACH_ONLY,
   'CommunitySpaceReadsController.getNotify': "the caller's own notification setting for the space, no member content",
   'CommunityLeaveMuteController.threads': "the caller's own muted and left threads (ids and times), no member content",
   'AiTriageController.getTriage': COACH_ONLY,
