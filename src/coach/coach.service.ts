@@ -50,6 +50,9 @@ export interface RosterActivity {
   last_weigh_in_on: string | null;
   last_check_in_on: string | null;
   check_ins_to_review: number | null;
+  // NEEDS-YOU-BE: when the oldest of those waiting check-ins was logged (ISO,
+  // UTC). Null with none waiting or without the same habits consent.
+  oldest_check_in_to_review_at: string | null;
 }
 
 interface AuditContext {
@@ -199,7 +202,8 @@ export class CoachService {
   /**
    * UX-COACHLOOKUP-124: what a coach needs at a glance on the Clients list.
    * Adds an `activity` block to each GET /coach/clients row (latest food,
-   * workout, weigh-in and check-in day, plus check-ins waiting for review)
+   * workout, weigh-in and check-in day, plus check-ins waiting for review
+   * and, NEEDS-YOU-BE, when the oldest of those was logged)
    * and stops sending fields no roster reader uses (deletion token hash,
    * push token). Every slice follows the same per-scope consent rule as the
    * client summary and timeline (loadFitnessConsents / coachCanAccess): a
@@ -222,7 +226,7 @@ export class CoachService {
     const habitIds = idsWith(ConsentScope.FITNESS_HABITS_PROGRESS);
 
     type MaxDate = { user_id: string; _max: { date: Date | null } };
-    type Counted = { user_id: string; _count: { _all: number } };
+    type Counted = { user_id: string; _count: { _all: number }; _min: { logged_at: Date | null } };
     type Grouped = [MaxDate[], MaxDate[], MaxDate[], MaxDate[], Counted[]];
     const [food, workouts, weights, checkIns, toReview]: Grouped = await Promise.all([
       foodIds.length
@@ -258,6 +262,7 @@ export class CoachService {
             by: ['user_id'],
             where: { user_id: { in: habitIds }, reviewed_by_coach: false },
             _count: { _all: true },
+            _min: { logged_at: true },
           })
         : Promise.resolve<Counted[]>([]),
     ]);
@@ -269,6 +274,9 @@ export class CoachService {
     const weighInOn = byUser(weights);
     const checkInOn = byUser(checkIns);
     const reviewCount = new Map(toReview.map((g) => [g.user_id, g._count._all]));
+    const reviewOldest = new Map(
+      toReview.map((g) => [g.user_id, g._min?.logged_at?.toISOString() ?? null]),
+    );
 
     return rows.map((row) => {
       const scopes = granted.get(row.id);
@@ -307,6 +315,9 @@ export class CoachService {
           last_check_in_on: has(ConsentScope.FITNESS_HABITS_PROGRESS) ? (checkInOn.get(row.id) ?? null) : null,
           check_ins_to_review: has(ConsentScope.FITNESS_HABITS_PROGRESS)
             ? (reviewCount.get(row.id) ?? 0)
+            : null,
+          oldest_check_in_to_review_at: has(ConsentScope.FITNESS_HABITS_PROGRESS)
+            ? (reviewOldest.get(row.id) ?? null)
             : null,
         },
       };
