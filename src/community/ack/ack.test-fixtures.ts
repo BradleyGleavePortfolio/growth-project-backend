@@ -75,6 +75,7 @@ export function buildMessage(
     coach_acked_at: null,
     coach_replied_at: null,
     visibility: 'active',
+    high_alert: false,
     deleted_at: null,
     updated_at: DEFAULT_AT,
   } satisfies CommunityMessage;

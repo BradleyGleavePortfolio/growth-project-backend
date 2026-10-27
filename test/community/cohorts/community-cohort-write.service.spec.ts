@@ -10,6 +10,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
   NotFoundException,
 } from '@nestjs/common';
 import type { User } from '@prisma/client';
@@ -24,6 +25,7 @@ type AccessMock = {
   findWorkspace: jest.Mock;
   findCohort: jest.Mock;
   isWorkspaceCoach: jest.Mock;
+  canAccessCohort: jest.Mock;
 };
 type RepoMock = {
   create: jest.Mock;
@@ -65,6 +67,16 @@ function cohort(over: Partial<CohortWithPackages> = {}): CohortWithPackages {
   };
 }
 
+async function denial(p: Promise<unknown>): Promise<{ status: number; body: unknown }> {
+  try {
+    await p;
+  } catch (e) {
+    if (e instanceof HttpException) return { status: e.getStatus(), body: e.getResponse() };
+    throw e;
+  }
+  throw new Error('expected the call to be denied');
+}
+
 describe('CommunityCohortWriteService', () => {
   let access: AccessMock;
   let repo: RepoMock;
@@ -75,6 +87,7 @@ describe('CommunityCohortWriteService', () => {
       findWorkspace: jest.fn(),
       findCohort: jest.fn(),
       isWorkspaceCoach: jest.fn(),
+      canAccessCohort: jest.fn(async () => false),
     };
     repo = {
       create: jest.fn(),
@@ -271,12 +284,26 @@ describe('CommunityCohortWriteService', () => {
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it('403s a coach updating a cohort in a workspace they do not own (cross-cohort)', async () => {
+    const hijack: UpdateCohortDto = { name: 'Hijack' };
+
+    it('SPACE-404-CLASS: a coach who cannot read the space gets the same 404 as no space (cross-cohort)', async () => {
+      repo.findById.mockResolvedValue(null);
+      const absent = await denial(service.update(coachB, COHORT_A, hijack));
+      expect(absent).toEqual({ status: 404, body: { error: 'not_found', code: 'community.cohort.not_found' } });
       repo.findById.mockResolvedValue(cohort({ workspace_id: WS_B }));
       access.isWorkspaceCoach.mockResolvedValue(false);
-      await expect(
-        service.update(coachB, COHORT_A, { name: 'Hijack' } as never),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(await denial(service.update(coachB, COHORT_A, hijack))).toEqual(absent);
+      expect(repo.update).not.toHaveBeenCalled();
+    });
+
+    it('SPACE-404-CLASS: a coach who can read the space but not manage it keeps the 403', async () => {
+      repo.findById.mockResolvedValue(cohort({ workspace_id: WS_B }));
+      access.isWorkspaceCoach.mockResolvedValue(false);
+      access.canAccessCohort.mockResolvedValue(true);
+      expect(await denial(service.update(coachB, COHORT_A, hijack))).toEqual({
+        status: 403,
+        body: { error: 'forbidden', code: 'community.cohort.not_coach' },
+      });
       expect(repo.update).not.toHaveBeenCalled();
     });
 
@@ -320,12 +347,22 @@ describe('CommunityCohortWriteService', () => {
       expect(repo.archive).not.toHaveBeenCalled();
     });
 
-    it('403s a non-owning coach (cross-workspace archive attempt)', async () => {
+    it('SPACE-404-CLASS: a non-owning coach who cannot read the space gets the same 404 as no space', async () => {
+      repo.findById.mockResolvedValue(null);
+      const absent = await denial(service.archive(coachB, COHORT_A));
+      expect(absent).toEqual({ status: 404, body: { error: 'not_found', code: 'community.cohort.not_found' } });
       repo.findById.mockResolvedValue(cohort({ workspace_id: WS_B }));
       access.isWorkspaceCoach.mockResolvedValue(false);
-      await expect(
-        service.archive(coachB, COHORT_A),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(await denial(service.archive(coachB, COHORT_A))).toEqual(absent);
+      expect(repo.archive).not.toHaveBeenCalled();
+    });
+
+    it('SPACE-404-CLASS: a coach who can read the space but not manage it keeps the 403', async () => {
+      repo.findById.mockResolvedValue(cohort({ workspace_id: WS_B }));
+      access.isWorkspaceCoach.mockResolvedValue(false);
+      access.canAccessCohort.mockResolvedValue(true);
+      await expect(service.archive(coachB, COHORT_A)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(access.canAccessCohort).toHaveBeenCalledWith(expect.objectContaining({ id: COHORT_A, workspace_id: WS_B }), coachB);
       expect(repo.archive).not.toHaveBeenCalled();
     });
   });

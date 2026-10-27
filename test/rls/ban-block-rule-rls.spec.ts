@@ -1,9 +1,11 @@
-// BLOCK-ALL-BE (agent 168), owner rule #168-4: "a ban from a space covers that space only. The banned person sees
-// no messages in that space and cannot type there"; a block closes every conversation between the two people both
-// ways. Live, on the replayed migration chain, with the real services: A and B coach; V and X are A's clients; X
+// BLOCK-ALL-BE (agent 168), owner rule #168-4 and #170-1 BAN-SCOPE (a ban covers the coach's whole community): the
+// banned person sees no messages there and cannot type there; a block closes every conversation between the two
+// people both ways. FX-1141: the same rule holds for raw reads under forced row security. Live, on the replayed migration chain, with the real services: A and B coach; V and X are A's clients; X
 // also writes in B's public space. The moderation Ban records the ban for A's community (community_workspace_bans).
 // Every 0 follows a 1: each read runs before the ban (or block), after it, and after the unban (or unblock).
 import { randomUUID } from 'crypto';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { Prisma, PrismaClient, type User } from '@prisma/client';
 import { CommunityAccessService } from '../../src/community/community-access.service';
 import { authorsWhoLeft } from '../../src/community/community-space-access';
@@ -16,7 +18,7 @@ import type { PlanContextService } from '../../src/community/plan-context/plan-c
 import type { CommunityRealtimeService } from '../../src/community/realtime/community-realtime.service';
 import { CommunitySafetyService } from '../../src/community/safety/community-safety.service';
 import { SegmentResolverService } from '../../src/broadcasts/segment-resolver.service';
-import { inBlockWith } from '../../src/messaging/block-pair';
+import { inBlockWith, notInBlockWith } from '../../src/messaging/block-pair';
 import type { PrismaService } from '../../src/prisma.service';
 import { stub } from '../utils/trial-fakes';
 import { liveTestDatabaseUrl } from '../utils/live-test-db';
@@ -40,7 +42,7 @@ const ROLE = (k: Key) => (k === 'A' || k === 'B' ? 'coach' : 'student');
     stub<CommunityNotificationsService>({ pushEnabled: () => false }));
   const inbox = new CommunityCoachInboxService(access, new CommunityCoachInboxRepository(db));
   const segments = new SegmentResolverService(db);
-  const id = Object.fromEntries((['A', 'B', 'V', 'X', 'mV', 'mX', 'mXb'] as const).map((k) => [k, randomUUID()]));
+  const id = Object.fromEntries((['A', 'B', 'V', 'X', 'mV', 'mX', 'mXb', 'pX', 'vX', 'cV'] as const).map((k) => [k, randomUUID()]));
   const sub = Object.fromEntries((['A', 'B', 'V', 'X'] as const).map((k) => [k, randomUUID()]));
   const ws = { A: randomUUID(), B: randomUUID() };
   const space = { cli: randomUUID(), pub: randomUUID() };
@@ -66,6 +68,27 @@ const ROLE = (k: Key) => (k === 'A' || k === 'B' ? 'coach' : 'student');
       .unansweredMessages({ cohortIds: [space.cli], limit: 50, after: null, viewerId: id.A });
     return rows.map((r) => r.id).sort();
   });
+
+  // FX-1141 (Sol B4): raw SELECTs as `k` under forced row security, one count per word table, X's rows and the
+  // coaching chat of A and V. No API filter runs here: the policies alone decide.
+  const rawAs = (k: Key) => prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    await tx.$executeRawUnsafe('SET LOCAL ROLE authenticated');
+    await tx.$executeRawUnsafe(`SELECT set_config('request.jwt.claims', $1, true)`, JSON.stringify({ sub: sub[k], role: 'authenticated' }));
+    await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_id', $1, true)`, id[k]);
+    await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_role', $1, true)`, ROLE(k));
+    const [r] = await tx.$queryRaw<Array<Record<string, number>>>`SELECT
+      (SELECT count(*)::int FROM "community_messages" WHERE "id"::text = ${id.mX}) AS "message",
+      (SELECT count(*)::int FROM "community_posts" WHERE "id"::text = ${id.pX}) AS "post",
+      (SELECT count(*)::int FROM "community_voice_notes" WHERE "id"::text = ${id.vX}) AS "voice",
+      (SELECT count(*)::int FROM "community_search_entries" WHERE "targetId"::text = ${id.pX}) AS "search",
+      (SELECT count(*)::int FROM "CoachMessage" WHERE "id" = ${id.cV}) AS "coaching",
+      app.users_in_block(${id.A}, ${id.X}) AS "asksAX"`;
+    return r;
+  });
+  const words = (n: number) => ({ message: n, post: n, voice: n, search: n });
+  const openCoaching = () => prisma.coachMessage.count({ where: { id: id.cV, coach: notInBlockWith(id.V), sender: notInBlockWith(id.V) } });
+  const block = (a: Key, b: Key) => prisma.userBlock.create({ data: { blocker_id: id[a], blocked_id: id[b] } });
+  const unblockAll = () => prisma.userBlock.deleteMany({ where: { blocker_id: { in: [id.A, id.V, id.X] } } });
 
   beforeAll(async () => {
     for (const k of ['A', 'B', 'V', 'X'] as Key[]) {
@@ -148,5 +171,52 @@ const ROLE = (k: Key) => (k === 'A' || k === 'B' ? 'coach' : 'student');
     await prisma.userBlock.deleteMany({ where: { OR: [{ blocker_id: id.X }, { blocker_id: id.V }] } });
     expect(await chatOf('V', space.cli)).toEqual(sorted('mV', 'mX'));
     expect(await inboxOf('A')).toEqual(sorted('mV', 'mX'));
+  });
+
+  it('FX-1141 B4: under row security a ban or a block either way hides the words; the probe only answers its caller', async () => {
+    await prisma.communityPost.create({ data: { id: id.pX, workspace_id: ws.A, cohort_id: space.cli, scope: 'cohort', author_id: id.X, body: 'RLS pX' } });
+    await prisma.communityVoiceNote.create({ data: { id: id.vX, workspace_id: ws.A, cohort_id: space.cli, author_id: id.X,
+      storage_key: `${ws.A}/${id.X}/rls.m4a`, duration_ms: 1000, bytes: BigInt(1000), mime_type: 'audio/mp4' } });
+    await prisma.communitySearchEntry.create({ data: { workspaceId: ws.A, cohortId: space.cli, kind: 'post', targetId: id.pX, excerpt: 'RLS pX', authorId: id.X } });
+    await prisma.coachMessage.create({ data: { id: id.cV, coach_id: id.A, client_id: id.V, sender_id: id.V, body: 'RLS cV' } });
+    expect(await rawAs('A')).toMatchObject({ ...words(1), coaching: 1, asksAX: false });
+    await ban(null);
+    expect(await rawAs('A')).toMatchObject({ ...words(0), coaching: 1 });
+    await ban(new Date());
+    expect(await rawAs('A')).toMatchObject(words(1));
+    for (const [a, b] of [['A', 'X'], ['X', 'A']] as Array<[Key, Key]>) {
+      await block(a, b);
+      expect(await rawAs('A')).toMatchObject({ ...words(0), coaching: 1, asksAX: true });
+      expect(await rawAs('V')).toMatchObject({ coaching: 1, asksAX: false }); // V may not ask about A and X
+      await unblockAll();
+    }
+    for (const [a, b] of [['V', 'A'], ['A', 'V']] as Array<[Key, Key]>) {
+      await block(a, b);
+      expect(await rawAs('A')).toMatchObject({ ...words(1), coaching: 0 });
+      expect(await rawAs('V')).toMatchObject({ coaching: 0 });
+      expect(await openCoaching()).toBe(0); // the server readers' Prisma filter (AI, Roman, timeline)
+      await unblockAll();
+    }
+    expect(await rawAs('V')).toMatchObject({ coaching: 1 });
+    expect(await openCoaching()).toBe(1);
+    const [grants] = await prisma.$queryRaw<Array<Record<string, boolean>>>`SELECT
+      has_function_privilege('anon', 'app.users_in_block(text, text)', 'EXECUTE') AS "anon",
+      has_function_privilege('authenticated', 'app.users_in_block(text, text)', 'EXECUTE') AS "authenticated"`;
+    expect(grants).toEqual({ anon: false, authenticated: true });
+  });
+
+  it('FX-1141 B4: down.sql removes the five policies and both functions (rolled back here)', async () => {
+    const dir = join(__dirname, '../../prisma/migrations/20270502008900_community_ban_hides_words');
+    const steps = readFileSync(join(dir, 'down.sql'), 'utf8').split('\n').filter((l) => !l.startsWith('--')).join('\n')
+      .split(';').map((x) => x.trim()).filter((x) => x && !/^(BEGIN|COMMIT|SET LOCAL)/.test(x));
+    const left = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      for (const step of steps) await tx.$executeRawUnsafe(step);
+      const [r] = await tx.$queryRaw<Array<{ fns: number; policies: number }>>`SELECT
+        (SELECT count(*)::int FROM pg_proc WHERE proname IN ('users_in_block', 'community_author_unbanned')) AS "fns",
+        (SELECT count(*)::int FROM pg_policy WHERE polname LIKE '%unbanned_unblocked' OR polname = 'coach_message_no_block') AS "policies"`;
+      throw Object.assign(new Error('rollback'), { left: r });
+    }).catch((e: { left?: unknown }) => e.left);
+    expect(left).toEqual({ fns: 0, policies: 0 });
+    expect((await prisma.$queryRaw<Array<{ n: number }>>`SELECT count(*)::int AS "n" FROM pg_policy WHERE polname = 'coach_message_no_block'`)[0].n).toBe(1);
   });
 });

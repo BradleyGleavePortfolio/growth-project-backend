@@ -11,6 +11,7 @@ import { EmailTemplateKey } from '../email/email.types';
 import { NotificationKind } from '../notifications/notification-kind';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PushAbortedError } from '../notifications/push-delivery.types';
+import { MUTE_ALL_PASS } from '../notifications/push/push-preferences';
 import { PrismaService } from '../prisma.service';
 
 // S-FEE round 5 (owner decision OR-111-1) — delivery and read side of the
@@ -440,6 +441,8 @@ export class PayoutNoticeService {
                 n.payee_user_id,
                 NotificationKind.COACH_ALERT,
                 'push',
+                // FR-1154 (owner #171-3): a money notice; its push passes Mute all.
+                MUTE_ALL_PASS,
               )
             : 'enabled';
         if (gate !== 'enabled') return { status: 'off' };

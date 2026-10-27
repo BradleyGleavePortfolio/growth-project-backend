@@ -52,7 +52,7 @@ export class MediaAssetResolver implements AssignableAssetResolver {
   async materialise(
     input: AssignableAssetMaterialiseInput,
   ): Promise<AssignableAssetMaterialiseResult> {
-    const acting = await this.scope.resolve(input.coachId, input.clientId);
+    const acting = await this.scope.resolve(input.coachId, input.clientId, input.tx);
     const db = input.tx ?? this.prisma;
 
     // PR-12 audit P2-3 fix — race guard against concurrent CoachMediaService

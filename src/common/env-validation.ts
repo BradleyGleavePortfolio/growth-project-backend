@@ -2063,7 +2063,7 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     default: "unset → the renewal 'Join TGP's Top Rated Coach' choice is never offered",
     reason:
-      "RENEWAL-BE (owner #RENEWAL-PUSH): the user id of TGP's house coach, the second choice on the renewal pop-ups and the Home banner. The owner sets it when the house coach account exists. An id that is not a live coach account offers nothing.",
+      "RENEWAL-BE (owner #RENEWAL-PUSH): the user id of TGP's house coach, the second choice on the renewal pop-ups and the Home banner. The owner sets it when the house coach account exists. An id that is not a live coach account offers nothing. HOUSE-JOIN-BE: while FEATURE_PLAN_RENEWAL is on, a client whose renewal answer offers this coach may list and buy this coach's paid packages (src/checkout/plan-renewal/house-join.ts) and moves to this coach once the payment succeeds; every other cross-coach purchase stays 404.",
   },
   {
     name: 'FEATURE_COACH_BROADCASTS',
@@ -2211,6 +2211,14 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Community search.',
   },
   {
+    name: 'FEATURE_COMMUNITY_IMAGES',
+    values: ['true', 'false'],
+    unsetIs: 'off',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason: 'Photos in the space chat (SC-BE3).',
+  },
+  {
     name: 'FEATURE_COMMUNITY_VOICE_NOTES',
     values: ['true', 'false'],
     unsetIs: 'off',
@@ -2233,6 +2241,14 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Community wearable prompts.',
+  },
+  {
+    name: 'FEATURE_COMMUNITY_SPACE_PUSH',
+    values: ['true', 'false'],
+    unsetIs: 'off',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason: 'SC-PUSH: space chat push (collapsing unread notification, reply and High alert priority).',
   },
   {
     name: 'FEATURE_MWB_AI_LIVE_CREATE',

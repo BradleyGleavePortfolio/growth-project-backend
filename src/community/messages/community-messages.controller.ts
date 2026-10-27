@@ -61,7 +61,13 @@ export class CommunityMessagesController {
     @Headers('idempotency-key') idempotencyKey?: string,
   ) {
     const key = messageKey(idempotencyKey);
-    return this.messages.send(req.user, cohortId, body.body, body.plan_context, body.parent_message_id, key);
+    // SC-BE3: a photo message carries its key and size; the caption is optional.
+    const image =
+      body.kind === 'image'
+        ? { key: body.image_key ?? '', width: body.width ?? 0, height: body.height ?? 0 }
+        : undefined;
+    return this.messages.send(
+      req.user, cohortId, body.body ?? '', body.plan_context, body.parent_message_id, image, body.high_alert, key);
   }
 
   @Get('cohorts/:cohortId/messages')

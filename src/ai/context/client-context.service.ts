@@ -9,6 +9,7 @@ import {
   ClientContextWorkoutAssignment,
   ClientContextWeightPoint,
 } from './client-context.types';
+import { notInBlockWith } from '../../messaging/block-pair';
 
 // Coach AI v1 — per-client context builder.
 //
@@ -132,7 +133,8 @@ export class ClientContextService {
       }),
       user.coach_id
         ? this.prisma.coachMessage.findFirst({
-            where: { coach_id: user.coach_id, client_id: clientId },
+            // FX-1141 (Sol B2): none from a chat in a block either way.
+            where: { coach_id: user.coach_id, client_id: clientId, coach: notInBlockWith(clientId) },
             orderBy: { created_at: 'desc' },
           })
         : Promise.resolve(null),

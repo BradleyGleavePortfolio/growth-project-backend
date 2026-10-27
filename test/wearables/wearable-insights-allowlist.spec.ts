@@ -82,6 +82,7 @@ function build(
       findMany: jest.fn().mockResolvedValue([{ id: CLIENT }]),
     },
     aiRequestAudit: { create: jest.fn(async ({ data }: { data: object }) => ({ id: 'a', ...data })) },
+    userBlock: { findMany: jest.fn().mockResolvedValue([]) },
   };
   const { egress } = egressWithGrants(granted);
   const gateway = new AiGatewayService(
