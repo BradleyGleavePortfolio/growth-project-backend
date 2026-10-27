@@ -131,7 +131,7 @@ function makePrisma() {
         if (take) rows = rows.slice(0, take);
         return rows.map((r) => ({ ...r }));
       }),
-      groupBy: jest.fn(async ({ by, where, _count }: { by: string[]; where: Record<string, unknown>; _count: Record<string, boolean> }) => {
+      groupBy: jest.fn(async ({ by, where, _min }: { by: string[]; where: Record<string, unknown>; _count: Record<string, boolean>; _min?: Record<string, boolean> }) => {
         const rows = messages.filter((m) => match(m, where));
         const buckets = new Map<string, typeof rows>();
         for (const r of rows) {
@@ -142,6 +142,10 @@ function makePrisma() {
         return Array.from(buckets.entries()).map(([key, list]) => ({
           [by[0]]: key === '__null__' ? null : key,
           _count: { _all: list.length },
+          // NEEDS-YOU-BE: oldest row in the group when asked.
+          ...(_min?.created_at
+            ? { _min: { created_at: new Date(Math.min(...list.map((r) => r.created_at.getTime()))) } }
+            : {}),
         }));
       }),
       count: jest.fn(async ({ where }: { where: Record<string, unknown> }) => {
@@ -555,11 +559,13 @@ describe('MessagingService — block-aware list + unread filters', () => {
     let n = await svc.unreadCountForCoach('coach-1');
     expect(n.total).toBe(1);
     expect(n.by_client['client-1']).toBe(1);
+    expect(n.oldest_unread_at_by_client).toEqual({ 'client-1': '2026-05-21T01:00:00.000Z' });
 
     await safety.blockUser('coach-1', 'client-1');
     n = await svc.unreadCountForCoach('coach-1');
     expect(n.total).toBe(0);
     expect(n.by_client['client-1']).toBeUndefined();
+    expect(n.oldest_unread_at_by_client).toEqual({});
   });
 });
 
