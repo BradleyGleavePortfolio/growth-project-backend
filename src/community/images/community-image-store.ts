@@ -28,6 +28,7 @@ import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { VoiceUploadProvider } from '../voice/voice-upload.provider';
 import { normalizesToItself, voiceKeySecret } from '../voice/voice-storage-key';
 import type { VoiceErasureTarget } from '../voice/voice-erasure';
+import { carriesLocation, LOCATION_READ_BYTES } from './image-location';
 
 export const COMMUNITY_IMAGES_BUCKET = 'community-images';
 export const IMAGE_MIME = 'image/jpeg';
@@ -103,7 +104,8 @@ export function isPublishableImageKey(key: string, ownerId: string, cohortId: st
   return want.length === given.length && timingSafeEqual(want, given) && age > -300_000 && age <= IMAGE_UPLOAD_TTL_SEC * 1000;
 }
 
-export type ImageCheck = 'ok' | 'missing' | 'not_jpeg' | 'too_large' | 'unavailable';
+/** PHOTO-GPS: 'has_location' = the photo carries a location (image-location.ts); send refuses it. */
+export type ImageCheck = 'ok' | 'missing' | 'not_jpeg' | 'too_large' | 'has_location' | 'unavailable';
 
 @Injectable()
 export class CommunityImageStore extends VoiceUploadProvider {
@@ -147,7 +149,11 @@ export class CommunityImageStore extends VoiceUploadProvider {
     throw unavailable();
   }
 
-  /** At send: the object is at the exact key, says JPEG, starts with the JPEG bytes and is under the cap. */
+  /**
+   * At send: the object is at the exact key, says JPEG, starts with the JPEG bytes and is under the cap.
+   * PHOTO-GPS: then its first 256 KB (the whole photo when smaller) carry no location. A download
+   * shorter than that is never judged: 'unavailable' (503, the phone may retry).
+   */
   async check(key: string, ownerId: string): Promise<{ result: ImageCheck; size: number }> {
     const stat = await this.statObject(key, ownerId);
     if (stat.state !== 'present') return { result: stat.state, size: 0 };
@@ -157,8 +163,12 @@ export class CommunityImageStore extends VoiceUploadProvider {
     const url = await this.createSignedDownload(key, 60, ownerId);
     if (!url) return { result: 'unavailable', size };
     try {
-      const head = new Uint8Array(await (await fetch(url, { headers: { Range: 'bytes=0-2' } })).arrayBuffer());
-      return { result: head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff ? 'ok' : 'not_jpeg', size };
+      const want = Math.min(size, LOCATION_READ_BYTES);
+      const res = await fetch(url, { headers: { Range: `bytes=0-${want - 1}` } });
+      const head = new Uint8Array(await res.arrayBuffer());
+      if (!(head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff)) return { result: 'not_jpeg', size };
+      if (head.length < want) return { result: 'unavailable', size };
+      return { result: carriesLocation(head.subarray(0, want)) ? 'has_location' : 'ok', size };
     } catch {
       return { result: 'unavailable', size };
     }

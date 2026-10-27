@@ -3,7 +3,7 @@
 // Rows run as role authenticated; server paths run the real services. X, Y coach; I is X's client; Z is Y's
 // client; N has no coach and joined X's public space. Every 0 or refusal follows a 1 for the same person.
 import { randomUUID } from 'crypto';
-import { ForbiddenException, HttpException } from '@nestjs/common';
+import { HttpException, NotFoundException } from '@nestjs/common';
 import { Prisma, PrismaClient, type User } from '@prisma/client';
 import type { AnalyticsService } from '../../src/analytics/analytics.service';
 import { CommunityCohortWriteRepository } from '../../src/community/cohorts/community-cohort-write.repository';
@@ -155,7 +155,8 @@ const REPLY = 'community_challenge_comment';
 
   it('the coach sets who starts a message in a space; another coach cannot', async () => {
     expect([await send('I', 'all'), await outcome(chat.send(user('I'), space.all, 'before'))]).toEqual([1, 'sent']);
-    await expect(cohorts.update(user('Y'), space.all, { posting_policy: 'coach' })).rejects.toBeInstanceOf(ForbiddenException);
+    // SPACE-404-CLASS: Y cannot read X's space, so Y gets the same 404 as no space.
+    await expect(cohorts.update(user('Y'), space.all, { posting_policy: 'coach' })).rejects.toBeInstanceOf(NotFoundException);
     expect(await send('I', 'all')).toBe(1);
     expect((await cohorts.update(user('X'), space.all, { posting_policy: 'coach' })).cohort.posting_policy).toBe('coach');
     expect([await count('I', 'all'), await send('I', 'all'), await reply('I', 'all'), await outcome(chat.send(user('I'), space.all, 'after'))])

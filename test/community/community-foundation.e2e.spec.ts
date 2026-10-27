@@ -336,11 +336,25 @@ itLive('community v1-2 foundation (live DB)', () => {
     expect(cohortIds).not.toContain(ids.cohortB);
   });
 
-  // 9 — Cohort detail, foreign cohort denial.
-  it('9. cohort detail — foreign cohort → 403', async () => {
-    const res = await call('GET', `/api/community/cohorts/${ids.cohortB}`, asUser(ids.coachA));
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe('community.cohort.no_access');
+  // 9 — Cohort detail, foreign cohort denial. SPACE-404-CLASS (#168-16): a
+  // space the caller cannot read answers exactly like a space that does not
+  // exist (same status, same body), so the API never confirms it exists.
+  it('9. cohort detail — foreign cohort → the same 404 as no cohort', async () => {
+    const absent = await call('GET', `/api/community/cohorts/${randomUUID()}`, asUser(ids.coachA));
+    expect(absent.status).toBe(404);
+    expect(absent.body).toEqual({ error: 'not_found', code: 'community.cohort.not_found' });
+    for (const caller of [ids.coachA, ids.student]) {
+      const res = await call('GET', `/api/community/cohorts/${ids.cohortB}`, asUser(caller));
+      expect(res.status).toBe(absent.status);
+      expect(res.body).toEqual(absent.body);
+    }
+    // Allowed controls: each space's own coach still reads it.
+    const ownA = await call('GET', `/api/community/cohorts/${ids.cohortA}`, asUser(ids.coachA));
+    expect(ownA.status).toBe(200);
+    expect(ownA.body.id).toBe(ids.cohortA);
+    const ownB = await call('GET', `/api/community/cohorts/${ids.cohortB}`, asUser(ids.coachB));
+    expect(ownB.status).toBe(200);
+    expect(ownB.body.id).toBe(ids.cohortB);
   });
 
   // 10 — Today envelope structure.

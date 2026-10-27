@@ -5,7 +5,7 @@
  * FX-1139: the reported-photo queue item is in community-image-erasure.spec.ts.
  * Live RLS: test/rls/community-message-images-rls.spec.ts.
  */
-import { ForbiddenException, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import { ForbiddenException, Logger, NotFoundException, ServiceUnavailableException, UnprocessableEntityException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { Prisma, type CommunityMessage, type User } from '@prisma/client';
@@ -30,6 +30,7 @@ import type { SupabaseService } from '../../../src/supabase/supabase.service';
 import type { AuthedRequest } from '../../../src/auth/auth-request';
 import { safetyWithBlocks } from '../safety/safety-test-helpers';
 import { InMemoryPrisma } from '../safety/in-memory-prisma';
+import { CLEAN, JFIF, jpeg, LOCATED } from './jpeg-fixtures';
 
 function stub<T>(v: unknown): T {
   return v as T;
@@ -61,6 +62,8 @@ interface Obj {
   size: number;
   contentType: string;
   head: number[];
+  /** PHOTO-GPS: storage hands back at most this many bytes (a short download). */
+  served?: number;
 }
 
 function fakeStorage(objects: Map<string, Obj>) {
@@ -91,11 +94,19 @@ function fakeStorage(objects: Map<string, Obj>) {
     list: async () => ({ data: [], error: null }),
   });
   const client = { storage: { from, getBucket: async (id: string) => ({ data: { id, name: id }, error: null }) } };
-  jest.spyOn(global, 'fetch').mockImplementation(async (url) => {
+  const reads: string[] = [];
+  jest.spyOn(global, 'fetch').mockImplementation(async (url, init) => {
     const key = decodeURIComponent(String(url).split('/sign/community-images/')[1]?.split('?')[0] ?? '');
-    return new Response(Uint8Array.from(objects.get(key)?.head ?? []));
+    // PHOTO-GPS: a ranged read answers that many bytes of the object (its head, then zeros).
+    const range = new Headers(init?.headers).get('range') ?? '';
+    reads.push(range);
+    const o = objects.get(key);
+    const last = /^bytes=0-(\d+)$/.exec(range)?.[1];
+    const bytes = new Uint8Array(o ? Math.min(o.size, o.served ?? o.size, last === undefined ? o.size : Number(last) + 1) : 0);
+    bytes.set((o?.head ?? []).slice(0, bytes.length));
+    return new Response(bytes);
   });
-  return { store: new CommunityImageStore(stub<SupabaseService>({ getClient: () => client })), removed };
+  return { store: new CommunityImageStore(stub<SupabaseService>({ getClient: () => client })), removed, reads };
 }
 
 function world(opts: { banned?: string[]; blocks?: Array<[string, string]>; access?: (cohortId: string) => boolean } = {}) {
@@ -177,7 +188,7 @@ function world(opts: { banned?: string[]; blocks?: Array<[string, string]>; acce
     isWorkspaceCoach: async () => false,
   });
   const objects = new Map<string, Obj>();
-  const { store, removed } = fakeStorage(objects);
+  const { store, removed, reads } = fakeStorage(objects);
   const repo = new CommunityMessagesRepository(stub<PrismaService>(prisma));
   const service = new CommunityMessagesService(
     access,
@@ -190,11 +201,12 @@ function world(opts: { banned?: string[]; blocks?: Array<[string, string]>; acce
   );
   const controller = new CommunityImagesController(access, store, stub<PrismaService>(prisma));
   const cron = new VoiceErasureService(stub<PrismaService>(prisma), stub<VoiceUploadProvider>({}), store);
-  return { service, controller, cron, store, objects, removed, messages, images, erasures };
+  return { service, controller, cron, store, objects, removed, reads, messages, images, erasures };
 }
 
 const req = stub<AuthedRequest>({ user: me });
-const JPEG = [0xff, 0xd8, 0xff, 0xe0];
+/** PHOTO-GPS: a clean photo's head (SOI, JFIF, SOS); the send check reads up to SOS. */
+const JPEG = jpeg(JFIF);
 
 beforeEach(() => {
   process.env.FEATURE_COMMUNITY_IMAGES = 'true';
@@ -230,11 +242,11 @@ describe('POST /community/cohorts/:cohortId/images/upload-url (SC-BE3)', () => {
     expect((w.erasures[0].next_attempt_at as Date).getTime()).toBe(LINK_EXP_MS + 5 * 60 * 1000);
   });
 
-  it('refuses a non-member, a space of another workspace and a missing space alike (403)', async () => {
+  it('refuses a non-member, a space of another workspace and a missing space alike (404)', async () => {
     const { controller } = world({ access: () => false });
-    await expect(controller.uploadUrl(req, SPACE, dto)).rejects.toBeInstanceOf(ForbiddenException);
-    await expect(controller.uploadUrl(req, FOREIGN_SPACE, dto)).rejects.toBeInstanceOf(ForbiddenException);
-    await expect(controller.uploadUrl(req, '11111111-1111-4111-8111-000000000000', dto)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(controller.uploadUrl(req, SPACE, dto)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(controller.uploadUrl(req, FOREIGN_SPACE, dto)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(controller.uploadUrl(req, '11111111-1111-4111-8111-000000000000', dto)).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('answers 404 with FEATURE_COMMUNITY_IMAGES off', async () => {
@@ -436,5 +448,67 @@ describe('POST messages kind image (SC-BE3)', () => {
     const key = await uploaded(w);
     expect(await w.cron.retryDue(new Date(LINK_EXP_MS + 6 * 60 * 1000))).toEqual({ completed: 1, pending: 0 });
     expect(w.objects.has(key)).toBe(false);
+  });
+
+  describe('PHOTO-GPS: a photo that carries a location is refused', () => {
+    const LINK_DEAD = new Date(LINK_EXP_MS + 6 * 60 * 1000);
+    const sendPhoto = (w: ReturnType<typeof world>, key: string) =>
+      w.service.send(me, SPACE, 'from the trail', undefined, undefined, { key, width: 4, height: 3 });
+
+    it.each(Object.entries(LOCATED))('%s: 422 community.image.has_location, nothing written, the upload erased', async (_name, head) => {
+      const w = world();
+      const key = await uploaded(w, { head, size: head.length });
+      expect(await code(sendPhoto(w, key))).toBe('community.image.has_location');
+      expect([w.messages, w.images]).toEqual([[], []]);
+      expect(w.removed).toEqual([[key]]);
+      expect(w.objects.size).toBe(0); // no upload, no sent copy
+      expect((await w.service.list(me, SPACE, {})).messages).toEqual([]);
+      expect(await w.cron.retryDue(LINK_DEAD)).toEqual({ completed: 1, pending: 0 });
+    });
+
+    it.each(Object.entries(CLEAN))('%s: still sends, after reading the whole small photo', async (_name, head) => {
+      const w = world();
+      const key = await uploaded(w, { head, size: head.length });
+      expect((await sendPhoto(w, key)).message).toMatchObject({ kind: 'image', body: 'from the trail' });
+      expect(w.images).toEqual([expect.objectContaining({ storage_key: sentImageKey(key), size_bytes: head.length })]);
+      expect(w.reads).toEqual([`bytes=0-${head.length - 1}`]);
+      expect(w.removed).toEqual([]);
+    });
+
+    it('reads only the first 256 KB of a larger photo; a shorter download is 503 and the upload is kept', async () => {
+      const w = world();
+      expect(await code(sendPhoto(w, await uploaded(w)))).toBe('ok');
+      expect(w.reads).toEqual(['bytes=0-262143']);
+      const short = await uploaded(w, { served: 1000 });
+      const e = await sendPhoto(w, short).catch((x: unknown) => x);
+      expect(e).toBeInstanceOf(ServiceUnavailableException);
+      expect((e as ServiceUnavailableException).getResponse()).toMatchObject({ code: 'community.image.storage_unavailable' });
+      expect(w.objects.has(short)).toBe(true);
+      expect(w.removed).toEqual([]);
+    });
+
+    it('if the erase fails it still refuses, logs erase=deferred_to_link_expiry (no key), and the erasure row erases it at link death', async () => {
+      // FR-1164R: the second round sends LS-1164 B1's photo (a GPS name split across ExtendedXMP chunks).
+      // FR-1164R2: the third sends LS-1164R B1's photo (DJI's location names in XMP, its EXIF without GPS).
+      for (const [failing, photo] of [
+        ['failed', 'GPS in EXIF, little endian'],
+        ['threw', 'a GPS name split across two ExtendedXMP chunks'],
+        ['failed', "DJI's GpsLatitude and GpsLongitude in XMP"],
+      ] as const) {
+        const w = world();
+        const head = LOCATED[photo];
+        const key = await uploaded(w, { head, size: head.length });
+        const remove = jest.spyOn(w.store, 'removeObjects');
+        if (failing === 'failed') remove.mockResolvedValueOnce({ removed: 0, failed: true });
+        else remove.mockRejectedValueOnce(new Error('storage down'));
+        const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+        expect(await code(sendPhoto(w, key))).toBe('community.image.has_location');
+        expect(warn.mock.calls).toEqual([['community.image outcome=has_location erase=deferred_to_link_expiry']]);
+        expect([w.messages, w.images, w.objects.has(key)]).toEqual([[], [], true]);
+        expect(await w.cron.retryDue(LINK_DEAD)).toEqual({ completed: 1, pending: 0 });
+        expect(w.objects.size).toBe(0);
+        jest.restoreAllMocks(); // the next world installs its own storage fake
+      }
+    });
   });
 });
