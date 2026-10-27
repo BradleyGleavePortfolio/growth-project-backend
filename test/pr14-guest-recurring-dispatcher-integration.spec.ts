@@ -136,9 +136,11 @@ describe('PR-14 R2 — Guest recurring dispatcher integration (BillingService.ha
     expect(res.processed).toBe(true);
     // The fallback found the sentinel by PI id and routed.
     expect(guestCheckout.handlePaymentSucceeded).toHaveBeenCalledTimes(1);
+    // GUEST-OUTER-TX: the third argument is the webhook tx (claim only).
     expect(guestCheckout.handlePaymentSucceeded).toHaveBeenCalledWith(
       'pi_first_invoice',
       expect.objectContaining({}),
+      expect.anything(),
     );
   });
 

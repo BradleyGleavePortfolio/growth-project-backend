@@ -117,6 +117,7 @@ function commentRow(n: number): CommunityMessage {
     coach_acked_at: null,
     coach_replied_at: null,
     visibility: 'active',
+    high_alert: false,
     deleted_at: null,
     updated_at: new Date('2026-03-01T00:00:00.000Z'),
   };

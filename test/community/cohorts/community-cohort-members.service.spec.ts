@@ -6,11 +6,12 @@
  * email/user_id XOR, OWNER-coach removal protection, cross-cohort 403, and the
  * non-member 404 (non-leak) on read.
  */
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, HttpException, NotFoundException } from '@nestjs/common';
 import type { User } from '@prisma/client';
 import { CommunityCohortMembersService } from '../../../src/community/cohorts/community-cohort-members.service';
 import { safetyWithBlocks } from '../safety/safety-test-helpers';
 import type { MembershipWithUser } from '../../../src/community/cohorts/community-cohort-members.repository';
+import type { AssignMemberDto } from '../../../src/community/cohorts/community-cohort-members.dto';
 
 const WS_A = '11111111-1111-1111-1111-111111111111';
 const WS_B = '22222222-2222-2222-2222-222222222222';
@@ -43,6 +44,16 @@ function membership(over: Partial<MembershipWithUser> = {}): MembershipWithUser 
     },
     ...over,
   } as MembershipWithUser;
+}
+
+async function denial(p: Promise<unknown>): Promise<{ status: number; body: unknown }> {
+  try {
+    await p;
+  } catch (e) {
+    if (e instanceof HttpException) return { status: e.getStatus(), body: e.getResponse() };
+    throw e;
+  }
+  throw new Error('expected the call to be denied');
 }
 
 describe('CommunityCohortMembersService', () => {
@@ -203,20 +214,23 @@ describe('CommunityCohortMembersService', () => {
       expect(res.member.role).toBe('co_coach');
     });
 
-    it('creates a pending invite (status=invited) for an existing user by email', async () => {
+    it('adds a person by email as active at once, the same act as by id (no accept step exists)', async () => {
       repo.findUserByEmail.mockResolvedValue({
         id: 'aaaaaaaa-0000-0000-0000-000000000001',
         name: 'Jane Client',
         email: 'jane@example.com',
       });
-      repo.upsertMembership.mockResolvedValue(membership({ status: 'invited', joined_at: null }));
-      await service.assign(coachA, COHORT_A, {
+      repo.upsertMembership.mockResolvedValue(membership());
+      const res = await service.assign(coachA, COHORT_A, {
         email: 'jane@example.com',
         role: 'student',
       } as never);
       expect(repo.upsertMembership).toHaveBeenCalledWith(
-        expect.objectContaining({ status: 'invited', joinedAt: null }),
+        expect.objectContaining({ userId: 'aaaaaaaa-0000-0000-0000-000000000001', status: 'active', joinedAt: expect.any(Date) }),
       );
+      expect(repo.upsertMembership).not.toHaveBeenCalledWith(expect.objectContaining({ status: 'invited' }));
+      expect(repo.liftWorkspaceBan).toHaveBeenCalledWith(WS_A, 'aaaaaaaa-0000-0000-0000-000000000001', coachA.id);
+      expect(res.member.status).toBe('active');
     });
 
     it('400s when neither user_id nor email is supplied', async () => {
@@ -297,6 +311,7 @@ describe('CommunityCohortMembersService', () => {
           workspaceId: WS_A,
           coachId: coachA.id,
         });
+        expect(repo.liftWorkspaceBan).not.toHaveBeenCalled();
         expect(repo.upsertMembership).not.toHaveBeenCalled();
       });
 
@@ -320,15 +335,28 @@ describe('CommunityCohortMembersService', () => {
       });
     });
 
-    it('403s a coach assigning into a cohort they do not own (cross-cohort)', async () => {
+    const body: AssignMemberDto = { user_id: 'aaaaaaaa-0000-0000-0000-000000000001', role: 'student' };
+
+    it('SPACE-404-CLASS: no such space, another coach, a removed co-coach: the same 404 status and body', async () => {
+      access.findCohort.mockResolvedValue(null);
+      const absent = await denial(service.assign(coachB, COHORT_A, body));
+      expect(absent).toEqual({ status: 404, body: { error: 'not_found', code: 'community.cohort.not_found' } });
       access.findCohort.mockResolvedValue({ id: COHORT_A, workspace_id: WS_B });
       access.isWorkspaceCoach.mockResolvedValue(false);
-      await expect(
-        service.assign(coachB, COHORT_A, {
-          user_id: 'aaaaaaaa-0000-0000-0000-000000000001',
-          role: 'student',
-        } as never),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      access.canAccessCohort.mockResolvedValue(false);
+      expect(await denial(service.assign(coachB, COHORT_A, body))).toEqual(absent);
+      expect(repo.upsertMembership).not.toHaveBeenCalled();
+    });
+
+    it('SPACE-404-CLASS: a coach who can read the space but not manage it keeps the 403', async () => {
+      access.findCohort.mockResolvedValue({ id: COHORT_A, workspace_id: WS_B });
+      access.isWorkspaceCoach.mockResolvedValue(false);
+      access.canAccessCohort.mockResolvedValue(true);
+      expect(await denial(service.assign(coachB, COHORT_A, body))).toEqual({
+        status: 403,
+        body: { error: 'forbidden', code: 'community.cohort.not_coach' },
+      });
+      expect(repo.upsertMembership).not.toHaveBeenCalled();
     });
   });
 
@@ -345,6 +373,8 @@ describe('CommunityCohortMembersService', () => {
       );
       const res = await service.remove(coachA, COHORT_A, 'aaaaaaaa-0000-0000-0000-000000000001');
       expect(res.member.status).toBe('removed');
+      expect(repo.removeMembership).toHaveBeenCalledWith(COHORT_A, 'aaaaaaaa-0000-0000-0000-000000000001');
+      expect(repo.upsertMembership).not.toHaveBeenCalled(); // removing never writes a row back
     });
 
     it('403s removing the owning coach role (protect owner)', async () => {
@@ -364,19 +394,34 @@ describe('CommunityCohortMembersService', () => {
       expect(repo.removeMembership).not.toHaveBeenCalled();
     });
 
-    it('404s an unknown membership', async () => {
+    it('404s an unknown membership and writes nothing (no row is created to hold the removal)', async () => {
       repo.findMembership.mockResolvedValue(null);
       await expect(service.remove(coachA, COHORT_A, 'nobody')).rejects.toBeInstanceOf(
         NotFoundException,
       );
+      expect(repo.upsertMembership).not.toHaveBeenCalled();
+      expect(repo.removeMembership).not.toHaveBeenCalled();
     });
 
-    it('403s a coach removing from a cohort they do not own (cross-cohort)', async () => {
+    const who = 'aaaaaaaa-0000-0000-0000-000000000001';
+
+    it('SPACE-404-CLASS: no such space, another coach, a removed co-coach: the same 404 status and body', async () => {
+      access.findCohort.mockResolvedValue(null);
+      const absent = await denial(service.remove(coachB, COHORT_A, who));
+      expect(absent).toEqual({ status: 404, body: { error: 'not_found', code: 'community.cohort.not_found' } });
       access.findCohort.mockResolvedValue({ id: COHORT_A, workspace_id: WS_B });
       access.isWorkspaceCoach.mockResolvedValue(false);
-      await expect(
-        service.remove(coachB, COHORT_A, 'aaaaaaaa-0000-0000-0000-000000000001'),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      access.canAccessCohort.mockResolvedValue(false);
+      expect(await denial(service.remove(coachB, COHORT_A, who))).toEqual(absent);
+      expect(repo.removeMembership).not.toHaveBeenCalled();
+    });
+
+    it('SPACE-404-CLASS: a coach who can read the space but not manage it keeps the 403', async () => {
+      access.findCohort.mockResolvedValue({ id: COHORT_A, workspace_id: WS_B });
+      access.isWorkspaceCoach.mockResolvedValue(false);
+      access.canAccessCohort.mockResolvedValue(true);
+      await expect(service.remove(coachB, COHORT_A, who)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(repo.removeMembership).not.toHaveBeenCalled();
     });
   });
 });

@@ -228,7 +228,7 @@ export function renderDownloadErrorPage(
     `<title>${escapeHtml(title)}</title>`,
     '<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;max-width:32rem;',
     'margin:3rem auto;padding:0 1.25rem;color:#1a1a1a;background:#faf9f6;line-height:1.5}',
-    'h1{font-size:1.4rem;font-weight:600}.ref{color:#555;font-size:.9rem}</style>',
+    'h1{font-size:1.4rem;font-weight:600}.ref{color:#2C2C2C;font-size:.9rem}</style>',
     '</head><body>',
     `<h1>${escapeHtml(title)}</h1>`,
     `<p>${escapeHtml(message)}</p>`,

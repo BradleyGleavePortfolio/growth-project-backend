@@ -4,6 +4,7 @@ import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationKind } from '../notifications/notification-kind';
+import { pushAllowedByPreferences } from '../notifications/push/push-preferences';
 import { isDunningV2Enabled } from '../checkout/dunning-v2/dunning-v2.feature';
 import { isWorkoutRemindersEnabled } from './engagement.flags';
 import {
@@ -20,10 +21,11 @@ import {
 // MECHANISM: a five-minute @Cron (same claim-by-write pattern as the session
 // reminder job and the drip dispatcher). Each tick walks clients who finished
 // onboarding and, per client:
-//   1. opt-out: NotificationPreferences.muted, or both workout_reminder_push
-//      and workout_reminder_inapp false -> nothing (Settings > Notifications >
-//      Workout reminders, default on). The two channels are independent
-//      (C-609-6): push off still writes the in-app row and vice versa;
+//   1. opt-out: both workout_reminder_push and workout_reminder_inapp false
+//      -> nothing (Settings > Notifications > Workout reminders, default on).
+//      The two channels are independent (C-609-6): push off still writes the
+//      in-app row and vice versa; NotificationPreferences.muted stops the push
+//      only (FR-1154, owner #171-3: Mute all never stops anything in-app);
 //   2. sendWindowOpen() first (C-609-4: no plan/log query outside the local
 //      send window), then decideReminder(): client-local date/time (NotificationPreferences.timezone)
 //      is the first session day (C1) or a day with a scheduled plan workout,
@@ -195,11 +197,12 @@ export class WorkoutReminderService {
   ): Promise<Exclude<keyof ReminderTickStats, 'considered'>> {
     const prefs = await this.notifications.getPreferences(clientId);
     const p: Record<string, unknown> = { ...prefs };
-    // C-609-6: mute is global; the two channels are evaluated independently,
-    // and the reminder is skipped only when neither is on.
-    const pushOn = p.workout_reminder_push !== false;
+    // C-609-6: the two channels are evaluated independently, and the reminder
+    // is skipped only when neither is on. FR-1154: Mute all stops the push
+    // only (the shared push rule), never the in-app row.
+    const pushOn = pushAllowedByPreferences(p, NotificationKind.WORKOUT_REMINDER);
     const inappOn = p.workout_reminder_inapp !== false;
-    if (p.muted === true || (!pushOn && !inappOn)) return 'opted_out';
+    if (!pushOn && !inappOn) return 'opted_out';
     const timezone = resolveTimezone(p.timezone);
 
     // C-609-4: outside the client's local send window (or before C1) nothing

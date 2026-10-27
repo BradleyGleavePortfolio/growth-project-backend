@@ -124,6 +124,15 @@ export const RECONCILIATION_MAX_ATTEMPTS = 5;
 // attached to every Stripe PaymentIntent we create in createIntent().
 export const GUEST_CHECKOUT_METADATA_KEY = 'guest_checkout_idempotency_key';
 
+// The charge facts a payment_intent.succeeded event carries (A276-P0-2,
+// A276-F2-P2-1): the charge id, a receipt URL when already in hand, and
+// whether BillingService already ran the receipt lookup outside its tx.
+export interface PaymentChargeInfo {
+  chargeId: string | null;
+  receiptUrl: string | null;
+  preResolveAttempted?: boolean;
+}
+
 // Helper — never leak provider error details to the client. Stripe / Resend /
 // Supabase messages can include account IDs and partial keys.
 function safeErrorTag(err: unknown): string {
@@ -907,7 +916,9 @@ export class GuestCheckoutService {
   // every error is caught, logged, and silenced so the webhook returns
   // 200 to Stripe. Stripe retries non-2xx responses, and a duplicate
   // delivery against a converted row would attempt to create a second
-  // Supabase user.
+  // Supabase user. (GUEST-OUTER-TX: the one exception is the in-transaction
+  // claim, handlePaymentSucceeded with `tx`, whose database error must roll
+  // the webhook transaction back so the unrecorded payment is redelivered.)
 
   // A276-P0-2 — chargeInfo carries the Stripe-hosted receipt URL (or the
   // charge id we'd retrieve to look it up). Both are optional so legacy
@@ -917,45 +928,101 @@ export class GuestCheckoutService {
   //
   // A276-F2-P2-1 — `preResolveAttempted` is set by BillingService when it
   // already ran the outside-tx receipt lookup (success OR failure). When
-  // true and `receiptUrl` is null, the inner resolveReceiptUrl MUST NOT
-  // attempt another Stripe HTTP call (otherwise we re-introduce the
-  // in-transaction HTTP anti-pattern P1-3 was supposed to eliminate, on
-  // the Stripe-blip degraded path). The welcome email simply ships
-  // without the receipt line and an outbox/backfill job can fill it in
-  // later.
+  // true and `receiptUrl` is null, resolveReceiptUrl does not attempt a
+  // second Stripe HTTP call. The welcome email simply ships without the
+  // receipt line and an outbox/backfill job can fill it in later.
+  //
+  // GUEST-OUTER-TX — with `tx` (BillingService's webhook transaction) this
+  // only CLAIMS the payment inside that transaction: not-yet-paid→paid (and
+  // the receipt URL when the event already carried one), with no Supabase,
+  // Stripe or email call while the transaction is open. Errors propagate so
+  // the claim rolls back with the webhook's dedup row and Stripe redelivers.
+  // Returns true when this call claimed the row; the caller then runs
+  // finishPaidCheckout after its transaction commits. A crash between that
+  // commit and the conversion leaves a `paid` row with no account, which
+  // GuestCheckoutReconciliationService.scanOrphanedPaid converts (once: the
+  // conversion's own paid→converted claim and the purchase idempotency key).
+  // Without `tx` (cron callers, the subscription backstop): claim and convert
+  // here, never throwing.
+  handlePaymentSucceeded(
+    paymentIntentId: string,
+    chargeInfo?: PaymentChargeInfo,
+  ): Promise<void>;
+  handlePaymentSucceeded(
+    paymentIntentId: string,
+    chargeInfo: PaymentChargeInfo | undefined,
+    tx: Prisma.TransactionClient,
+  ): Promise<boolean>;
   async handlePaymentSucceeded(
     paymentIntentId: string,
-    chargeInfo?: {
-      chargeId: string | null;
-      receiptUrl: string | null;
-      preResolveAttempted?: boolean;
-    },
-  ): Promise<void> {
+    chargeInfo?: PaymentChargeInfo,
+    tx?: Prisma.TransactionClient,
+  ): Promise<boolean | void> {
+    if (tx) {
+      const claimed = await this.claimPaymentSucceeded(paymentIntentId, tx);
+      const inHand = chargeInfo?.receiptUrl;
+      if (claimed && typeof inHand === 'string' && /^https:\/\//.test(inHand)) {
+        await tx.guestCheckout.updateMany({
+          where: { stripe_payment_intent_id: paymentIntentId, receipt_url: null },
+          data: { receipt_url: inHand },
+        });
+      }
+      return claimed;
+    }
     try {
-      // Atomic not-yet-paid→paid transition (PAYMENT_CLAIMABLE_STATUSES,
-      // B-GUEST-126). updateMany with WHERE status IN (...) is the
-      // canonical "claim once" pattern: if count = 0,
-      // either we never owned this PI or another handler already moved
-      // it forward, and we return silently.
-      //
-      // P2-4 — refuse to fulfill rows whose checkout link has already
-      // expired. A buyer who retained a stale client secret cannot push
-      // a paid status past expires_at.
-      const claim = await this.prisma.guestCheckout.updateMany({
-        where: {
-          stripe_payment_intent_id: paymentIntentId,
-          status: { in: PAYMENT_CLAIMABLE_STATUSES },
-          expires_at: { gt: new Date() },
-        },
-        data: { status: 'paid' },
-      });
-      if (claim.count === 0) {
-        this.logger.log(
-          `handlePaymentSucceeded: no pending row for ${paymentIntentId} — duplicate, expired, or unrelated`,
-        );
+      if (!(await this.claimPaymentSucceeded(paymentIntentId, this.prisma))) {
         return;
       }
+    } catch (err) {
+      // Webhook MUST return 200 — log + swallow.
+      this.logger.error(
+        `handlePaymentSucceeded crashed (tag=${safeErrorTag(err)})`,
+      );
+      return;
+    }
+    await this.finishPaidCheckout(paymentIntentId, chargeInfo);
+  }
 
+  // Atomic not-yet-paid→paid transition (PAYMENT_CLAIMABLE_STATUSES,
+  // B-GUEST-126). updateMany with WHERE status IN (...) is the canonical
+  // "claim once" pattern: if count = 0, either we never owned this PI or
+  // another handler already moved it forward.
+  //
+  // P2-4 — refuse to fulfill rows whose checkout link has already expired.
+  // A buyer who retained a stale client secret cannot push a paid status
+  // past expires_at.
+  private async claimPaymentSucceeded(
+    paymentIntentId: string,
+    db: Prisma.TransactionClient,
+  ): Promise<boolean> {
+    const claim = await db.guestCheckout.updateMany({
+      where: {
+        stripe_payment_intent_id: paymentIntentId,
+        status: { in: PAYMENT_CLAIMABLE_STATUSES },
+        expires_at: { gt: new Date() },
+      },
+      data: { status: 'paid' },
+    });
+    if (claim.count === 0) {
+      this.logger.log(
+        `handlePaymentSucceeded: no pending row for ${paymentIntentId} — duplicate, expired, or unrelated`,
+      );
+      return false;
+    }
+    return true;
+  }
+
+  // GUEST-OUTER-TX — the claimed payment's account setup and delivery. Runs
+  // with no database transaction open (after BillingService's webhook
+  // transaction commits, or right after the no-tx claim above): receipt URL
+  // lookup (Stripe), then convertGuestToUser (Supabase account, Stripe
+  // subscription read, then its own conversion transaction). Never throws;
+  // a failed conversion is marked retryable and the reconciler retries it.
+  async finishPaidCheckout(
+    paymentIntentId: string,
+    chargeInfo?: PaymentChargeInfo,
+  ): Promise<void> {
+    try {
       const checkout = await this.prisma.guestCheckout.findUnique({
         where: { stripe_payment_intent_id: paymentIntentId },
         include: { package: { include: { coach: true } } },
@@ -995,16 +1062,15 @@ export class GuestCheckoutService {
           });
       }
 
-      // P1-4 — Guest conversion runs INLINE, before the webhook returns.
-      // The previous setImmediate path acknowledged Stripe before account
-      // creation finished; if the process exited (Fly redeploy, OOM, hard
-      // crash) the entitlement was lost and Stripe wouldn't retry because
-      // BillingService had already inserted the event into
-      // StripeProcessedEvent. Running inline means a failure leaves the
-      // event un-acknowledged and Stripe will retry the delivery.
+      // P1-4 — Guest conversion runs before the webhook returns (after the
+      // webhook transaction commits). The previous setImmediate path
+      // acknowledged Stripe before account creation finished. Now the paid
+      // claim is committed first, so if the process exits (Fly redeploy,
+      // OOM, hard crash) before or during conversion the `paid` row stays
+      // for the reconciliation job.
       //
       // Any unrecoverable error inside convertGuestToUser flips the row
-      // to 'failed' so the reconciliation job has a clear signal.
+      // to retryable so the reconciliation job has a clear signal.
       const checkoutWithReceipt = receiptUrl
         ? { ...checkout, receipt_url: receiptUrl }
         : checkout;
@@ -1039,14 +1105,12 @@ export class GuestCheckoutService {
   //
   // A276-F2-P2-1 — when `preResolveAttempted` is true, BillingService
   // already issued the Stripe HTTP lookup OUTSIDE the transaction; the
-  // result (success or null on Stripe blip) is final. We MUST NOT retry
-  // a second Stripe HTTP call here, because this method is invoked from
-  // handlePaymentSucceeded WHICH RUNS INSIDE BillingService's outer
-  // `$transaction` await — holding the Postgres connection across a
-  // Stripe round-trip is exactly the anti-pattern P1-3 was supposed to
-  // eliminate. On the degraded path (Stripe blip during pre-resolve),
-  // the receipt URL stays null, the welcome email omits the receipt
-  // line, and a future reconciliation/backfill job can fill it in.
+  // result (success or null on Stripe blip) is final and we do not issue a
+  // second Stripe HTTP call. (GUEST-OUTER-TX: this now runs from
+  // finishPaidCheckout, after BillingService's transaction commits.) On the
+  // degraded path (Stripe blip during pre-resolve), the receipt URL stays
+  // null, the welcome email omits the receipt line, and a future
+  // reconciliation/backfill job can fill it in.
   async resolveReceiptUrl(
     paymentIntentId: string,
     chargeInfo?: {
@@ -1060,7 +1124,7 @@ export class GuestCheckoutService {
       return fromEvent;
     }
     // A276-F2-P2-1 — pre-resolve was attempted outside-tx. Honour the
-    // null result; do not retry HTTP from inside the outer transaction.
+    // null result; do not retry the Stripe HTTP call.
     if (chargeInfo?.preResolveAttempted === true) {
       return null;
     }

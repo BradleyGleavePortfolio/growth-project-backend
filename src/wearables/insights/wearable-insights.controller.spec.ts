@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, HttpException } from '@nestjs/common';
 import { PATH_METADATA, METHOD_METADATA } from '@nestjs/common/constants';
 import { WearableMetricBucket } from '@prisma/client';
 import { ROMAN_REQUIRES_COACH } from '../../roman/roman-requires-coach';
@@ -356,6 +356,39 @@ describe('WearableInsightsController', () => {
       )).rejects.toBeInstanceOf(BadRequestException);
       expect(deps.create).not.toHaveBeenCalled();
       expect(deps.decide).not.toHaveBeenCalled();
+    });
+
+    // FR-1141R4 (Opus B-1): a block either way refuses approve and edit (403 messaging.blocked) before
+    // any draft row; reject and dismiss send nothing and stay open; unblock lets approve through again.
+    it.each([
+      ['the client blocked the coach', { blocker_id: CLIENT, blocked_id: COACH }],
+      ['the coach blocked the client', { blocker_id: COACH, blocked_id: CLIENT }],
+    ])('%s: approve and edit get 403 messaging.blocked with no draft; unblock restores', async (_label, block) => {
+      const svc = makeSvc();
+      svc.romanSuggestion.mockResolvedValue('Protect that sleep.');
+      const deps = approvalDeps({ materialised_at: new Date(MATERIALISED), decided_at: new Date(MATERIALISED) });
+      deps.blocks.mockResolvedValue([block]);
+      const ctrl = ctrlWithApprovals(svc, deps);
+      for (const action of ['approve', 'edit'] as const) {
+        const err = await ctrl
+          .approveInsight(reqFor('coach', COACH), approveBody(action, 'Protect that sleep.'))
+          .catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(HttpException);
+        expect((err as HttpException).getStatus()).toBe(403);
+        expect((err as HttpException).getResponse()).toMatchObject({ code: 'messaging.blocked' });
+      }
+      expect(svc.romanSuggestion).not.toHaveBeenCalled();
+      expect(deps.create).not.toHaveBeenCalled();
+      expect(deps.decide).not.toHaveBeenCalled();
+
+      await ctrl.approveInsight(reqFor('coach', COACH), approveBody('reject', 'Not this week.'));
+      await ctrl.approveInsight(reqFor('coach', COACH), approveBody('dismiss', ''));
+      expect(deps.decide.mock.calls.map(([a]) => a.decision)).toEqual(['rejected', 'rejected']);
+
+      deps.blocks.mockResolvedValue([]);
+      const out = await ctrl.approveInsight(reqFor('coach', COACH), approveBody('approve', 'Protect that sleep.'));
+      expect(out).toEqual({ status: 'ok', draft_id: DRAFT_ID, materialised_at: MATERIALISED });
+      expect(deps.decide).toHaveBeenLastCalledWith(expect.objectContaining({ decision: 'approved' }));
     });
 
     it('rejects a malformed body (missing bucket) with 400 before any write', async () => {

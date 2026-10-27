@@ -80,9 +80,10 @@ describe('the emitter', () => {
   });
 
   it('owner 57q: each safety alert is one push of its own; only the urgent and crisis ones are urgent', async () => {
+    // FR-1154: urgency is read from the severity Roman writes (roman.service.ts: eating-disorder 'warning').
     const { e, sendPush } = emitter();
     await e.emit({ ...base, alertType: 'roman_urgent_reply', message: URGENT_PUSH });
-    await e.emit({ ...base, alertId: 'a2', alertType: 'roman_eating_disorder_reply', message: ED_PUSH });
+    await e.emit({ ...base, alertId: 'a2', alertType: 'roman_eating_disorder_reply', severity: 'warning', message: ED_PUSH });
     await e.emit({ ...base, alertId: 'a3', alertType: 'roman_crisis_reply', message: URGENT_PUSH });
     expect(sendPush.mock.calls[0][0]).toMatchObject({ urgent: true, dedupe_key: 'coach_alert:a1' });
     expect(sendPush.mock.calls[1][0]).toMatchObject({ dedupe_key: 'coach_alert:a2' });
@@ -679,7 +680,8 @@ describe('the coach phone receives the safety push line', () => {
         coachId: 'coach-1',
         alertId,
         alertType,
-        severity: 'critical',
+        // FR-1154: the severity Roman writes (roman.service.ts); urgency is read from it.
+        severity: alertType === 'roman_eating_disorder_reply' ? 'warning' : 'critical',
         message,
         clientUserId: 'client-1',
       });

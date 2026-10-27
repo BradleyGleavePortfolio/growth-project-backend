@@ -54,6 +54,8 @@ function buildPrisma(initial: Partial<FakeRows> = {}): any {
   // throw, roll back any side-effects by snapshotting `rows` first.
   const fake: any = {
     rows,
+    // FR-1154R3: the send reads the client's Mute all switch (no row: not muted).
+    notificationPreferences: { findUnique: jest.fn(async () => null) },
     // FX-1141: block rows ({ blocker_id, blocked_id }); none unless a test adds one.
     blocks: [] as Array<{ blocker_id: string; blocked_id: string }>,
     userBlock: {

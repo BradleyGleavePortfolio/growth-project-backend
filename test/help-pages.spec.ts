@@ -5,6 +5,7 @@ import {
   SUPPORT_EMAIL,
   type HelpPage,
 } from '../src/public-pages/help-pages.html';
+import { contrastOnPaper } from './_fixtures/css-contrast';
 
 function makeRes() {
   const headers: Record<string, string> = {};
@@ -327,7 +328,7 @@ describe('PublicPagesController help pages', () => {
   it('contact phone labels Type / Required / Notes meet AA contrast', () => {
     const html = renderHelpPage('contact');
     const label = /table\.intake td\[data-label\]::before \{[^}]*color: (#[0-9A-F]{6});/.exec(html)?.[1];
-    expect(label).toBe('#3A332B');
+    expect(label).toBe('#2C2C2C'); // owner 10-23: help body text #2C2C2C
     const lum = (hex: string) => {
       const [r, g, b] = [1, 3, 5].map((i) => {
         const c = parseInt(hex.slice(i, i + 2), 16) / 255;
@@ -337,5 +338,21 @@ describe('PublicPagesController help pages', () => {
     };
     const ratio = (lum('#FBF8F3') + 0.05) / (lum(label as string) + 0.05);
     expect(ratio).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+// MUTED-TEXT (owner #166-9 op 1, then #168-13 #2C2C2C): the small grey text meets WCAG AA 4.5:1 on the page paper.
+describe('help pages small grey text contrast', () => {
+  it('nav links, reviewed date, footnote and footer meet AA contrast', () => {
+    const ratios = contrastOnPaper(renderHelpPage('index'), [
+      'nav.help-nav .nav-link',
+      'p.reviewed',
+      'p.footnote',
+      'footer.brand-footer',
+      'footer.brand-footer a',
+    ]);
+    for (const [sel, ratio] of Object.entries(ratios)) {
+      expect([sel, ratio, ratio >= 4.5]).toEqual([sel, ratio, true]);
+    }
   });
 });

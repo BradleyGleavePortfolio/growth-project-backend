@@ -24,6 +24,7 @@ import { CommunityModerationRepository } from './community-moderation.repository
 import { PrismaService } from '../../prisma.service';
 import { assertDmParticipantIfDm } from '../safety/community-safety.service';
 import { VoiceUploadProvider } from '../voice/voice-upload.provider';
+import { CommunityImageStore, imageErasureTargets, isOwnImage } from '../images/community-image-store';
 import { ReportAlertService } from '../../report-alerts/report-alert.service';
 import { WIN_NOT_FOUND, winModerationWorkspaceId } from '../community-wins.policy';
 import { recordWorkspaceBan } from '../community-ban';
@@ -152,6 +153,12 @@ export interface FlaggedItemView {
   content: string;
   /** Voice notes: the audio to review. Removed or text targets: null. */
   media: FlaggedMediaView | null;
+  /**
+   * FX-1139: photo messages only (no key on other items; `media` stays voice
+   * only for today's phones): the photo to review, same shape as the chat
+   * row's `image`; null once removed.
+   */
+  image?: { url: string | null; width: number; height: number; expires_at: string } | null;
   /** True once the content was hidden or deleted (content reads "Removed"). */
   removed: boolean;
   /** created_at + 24 hours: the published review commitment for this report. */
@@ -206,6 +213,8 @@ export class CommunityModerationService {
     // B-REPORTALERT-125: provided by CommunityModule; optional so unit
     // harnesses that build the service by hand keep working.
     @Optional() private readonly reportAlerts?: ReportAlertService,
+    // SC-BE3: a hidden photo's object is erased through the voice path.
+    @Optional() private readonly images?: CommunityImageStore,
   ) {}
 
   private itemView(a: CommunityModerationAction): CommunityModerationItemView {
@@ -402,10 +411,12 @@ export class CommunityModerationService {
   }
 
   /** Coach (workspace owner) or platform owner may triage a queue. */
+  private async isModerator(workspaceId: string, user: User): Promise<boolean> {
+    return user.role === 'owner' || (await this.access.isWorkspaceCoach(workspaceId, user.id));
+  }
+
   private async assertModerator(workspaceId: string, user: User): Promise<void> {
-    const isModerator =
-      user.role === 'owner' || (await this.access.isWorkspaceCoach(workspaceId, user.id));
-    if (!isModerator) throw new ForbiddenException(FORBIDDEN);
+    if (!(await this.isModerator(workspaceId, user))) throw new ForbiddenException(FORBIDDEN);
   }
 
   async listQueue(
@@ -460,8 +471,12 @@ export class CommunityModerationService {
     notes: string | undefined,
   ): Promise<CommunityModerationItemResponse> {
     const item = await this.moderation.findById(itemId);
-    if (!item) throw new NotFoundException(NOT_FOUND);
-    await this.assertModerator(item.workspace_id, user);
+    // SPACE-404-CLASS (operator ruling 6353734516 on b#1137): an item outside
+    // the caller's authority answers the same 404 as an item that does not
+    // exist, before any action work, so the API never confirms it exists.
+    if (!item || !(await this.isModerator(item.workspace_id, user))) {
+      throw new NotFoundException(NOT_FOUND);
+    }
     if (!moderationActionAllowed(item, action)) {
       throw new ConflictException(alreadyActioned(item.action));
     }
@@ -520,7 +535,7 @@ export class CommunityModerationService {
       try {
         const outcome = await attemptVoiceErasures(
           this.prisma,
-          this.voiceStorage,
+          { voice: this.voiceStorage, images: this.images },
           erasures,
           this.logger,
         );
@@ -747,7 +762,7 @@ export class CommunityModerationService {
     if (rows.length === 0) return { items: [] };
     const idsOf = (t: CommunityModerationTargetType) =>
       rows.filter((r) => r.target_type === t).map((r) => r.target_id);
-    const [posts, msgs, notes, wins] = await Promise.all([
+    const [posts, msgs, notes, wins, photos] = await Promise.all([
       this.prisma.communityPost.findMany({
         where: { id: { in: idsOf('post') } },
         select: {
@@ -763,6 +778,7 @@ export class CommunityModerationService {
         where: { id: { in: idsOf('message') } },
         select: {
           id: true,
+          kind: true,
           body: true,
           sender_id: true,
           cohort_id: true,
@@ -785,7 +801,12 @@ export class CommunityModerationService {
         where: { id: { in: idsOf('win') } },
         select: { id: true, user_id: true, title: true, description: true, hidden_at: true },
       }),
+      this.prisma.communityMessageImage.findMany({
+        where: { message_id: { in: idsOf('message') } },
+        select: { message_id: true, cohort_id: true, storage_key: true, author_id: true, width: true, height: true },
+      }),
     ]);
+    const photoById = new Map(photos.map((i) => [i.message_id, i]));
     const postById = new Map(posts.map((p) => [p.id, p]));
     const msgById = new Map(msgs.map((m) => [m.id, m]));
     const noteById = new Map(notes.map((n) => [n.id, n]));
@@ -825,6 +846,7 @@ export class CommunityModerationService {
         let content = REMOVED_CONTENT;
         let removed = true;
         let media: FlaggedMediaView | null = null;
+        let image: FlaggedItemView['image'];
         let authorId: string | null = null;
         let cohortId: string | null = null;
         let targetType: FlaggedTargetType = 'message';
@@ -879,6 +901,19 @@ export class CommunityModerationService {
               content = m.body ?? '';
               removed = false;
             }
+            // FX-1139: a reported photo comes with the photo itself (signed for the queue's 15 minutes).
+            const photo = photoById.get(m.id);
+            // FR-1139 (Sol B2): only the message's own photo (a photo message, its sender, its space).
+            if (photo && isOwnImage(m, photo)) {
+              image = m.deleted_at
+                ? null
+                : {
+                    url: (await this.images?.createSignedDownload(photo.storage_key, QUEUE_PLAYBACK_TTL_SECONDS, photo.author_id)) ?? null,
+                    width: photo.width,
+                    height: photo.height,
+                    expires_at: new Date(now + QUEUE_PLAYBACK_TTL_SECONDS * 1000).toISOString(),
+                  };
+            }
           }
         }
         return {
@@ -888,6 +923,7 @@ export class CommunityModerationService {
           target_id: r.target_id,
           content,
           media,
+          ...(image !== undefined ? { image } : {}),
           removed,
           author_user_id: authorId,
           author_name: (authorId && nameById.get(authorId)) || 'Member',
@@ -922,10 +958,13 @@ export class CommunityModerationService {
     if (targetType === 'message') {
       const msg = await this.messagesRepo.findById(targetId, tx);
       if (msg?.kind === 'voice') return this.hideTarget(tx, 'voice_note', msg.id);
+      // SC-BE3: a photo's object erasure is recorded before the soft delete.
+      const image = msg?.kind === 'image' ? await tx.communityMessageImage.findUnique({ where: { message_id: msg.id } }) : null;
+      const work = image ? await recordVoiceErasures(tx, imageErasureTargets(image.storage_key), 'moderation') : [];
       if (msg && !msg.deleted_at) {
         await this.messagesRepo.softDelete({ id: msg.id, created_at: msg.created_at }, tx);
       }
-      return [];
+      return work;
     }
     if (targetType === 'voice_note') {
       // Same soft delete as the author's own delete: every read path

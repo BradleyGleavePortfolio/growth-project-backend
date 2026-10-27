@@ -264,7 +264,7 @@ function baseDocument(opts: {
 <meta name="robots" content="noindex,nofollow" />
 <title>${escapeHtml(opts.title)}</title>
 <style nonce="${opts.nonce}">
-  :root { --accent: ${opts.accent}; --ink: #1F1B16; --paper: #FAF7F2; --muted: #6B6259; --line: #E7E1D6; }
+  :root { --accent: ${opts.accent}; --ink: #1F1B16; --paper: #FAF7F2; --muted: #2C2C2C; --line: #E7E1D6; }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
   body { background: var(--paper); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; line-height: 1.5; min-height: 100vh; display: grid; place-items: center; padding: 32px 20px; }

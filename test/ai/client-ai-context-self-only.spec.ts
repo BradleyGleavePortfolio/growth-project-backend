@@ -90,6 +90,7 @@ function fakeDb(tables: Record<string, Row[]>) {
     fastingWindow: model('fastingWindow'),
     coachingSession: model('coachingSession'),
     communityWin: model('communityWin'),
+    userBlock: model('userBlock'), // FR-1141: the cache's block-state read
     // AiService daily quota + audit (not under test here).
     userAIQuota: {
       upsert: jest.fn(async () => ({ tokens_used: 0, request_count: 0 })),

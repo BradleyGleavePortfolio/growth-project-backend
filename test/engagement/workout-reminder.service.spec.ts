@@ -257,12 +257,6 @@ describe('WorkoutReminderService', () => {
     expect(h.notifRows.rows).toHaveLength(0);
   });
 
-  it('opt-out: global mute sends nothing', async () => {
-    const h = harness({ muted: true });
-    await seed(h);
-    expect((await h.svc.runOnce(new Date('2026-10-05T14:00:00Z'))).opted_out).toBe(1);
-  });
-
   it('default (no preferences row) is ON', async () => {
     const h = harness(null);
     await seed(h);
@@ -465,13 +459,14 @@ describe('WorkoutReminderService — channel independence (C-609-6)', () => {
     expect(h.notifRows.rows).toHaveLength(0);
   });
 
-  it('global mute wins over both channels', async () => {
+  it('FR-1154 (owner #171-3): global mute stops the push only; the in-app row is still written', async () => {
     const h = harness({ muted: true, workout_reminder_push: true, workout_reminder_inapp: true });
     await seed(h);
     const s = await h.svc.runOnce(C1_0700);
-    expect(s.opted_out).toBe(1);
+    expect(s.sent).toBe(1);
     expect(h.pushToUser).not.toHaveBeenCalled();
-    expect(h.notifRows.rows).toHaveLength(0);
+    expect(h.notifRows.rows).toHaveLength(1);
+    expect(h.notifRows.rows[0]).toMatchObject({ kind: 'workout_reminder', channel: 'inapp' });
   });
 });
 

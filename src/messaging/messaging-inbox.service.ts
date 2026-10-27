@@ -52,6 +52,8 @@ export interface InboxResponse {
   items: InboxThreadView[];
   next_cursor: string | null;
   total_unread: number;
+  /** FR-1141 (LO-872 B1), coach inbox only: roster clients in a block either way with the caller. Ids only. */
+  closed_client_ids?: string[];
 }
 
 interface LastRow {
@@ -160,7 +162,11 @@ export class MessagingInboxService {
     query: { cursor?: string; limit?: number; filter?: InboxFilter },
   ): Promise<InboxResponse> {
     const { threadCoachId, clientIds } = await this.coachScope(coachId);
-    if (clientIds.length === 0) return { items: [], next_cursor: null, total_unread: 0 };
+    if (clientIds.length === 0) return { items: [], next_cursor: null, total_unread: 0, closed_client_ids: [] };
+    // 10-23 "Dissapear" (LO-872 B1): the phone also leaves these clients out
+    // of "Start a conversation"; unblock takes them off the list.
+    const blocked = (await this.messaging.blockSets(coachId)).hidden;
+    const closed_client_ids = clientIds.filter((id) => blocked.has(id)).sort();
 
     // One indexed seek per thread: DISTINCT ON over (coach_id, client_id,
     // created_at) returns each thread's newest row.
@@ -174,10 +180,10 @@ export class MessagingInboxService {
        WHERE m."coach_id" = ${threadCoachId}
          AND m."client_id" = ANY(${clientIds}::text[])
        ORDER BY m."client_id", m."created_at" DESC, m."id" DESC`);
-    if (last.length === 0) return { items: [], next_cursor: null, total_unread: 0 };
+    if (last.length === 0) return { items: [], next_cursor: null, total_unread: 0, closed_client_ids };
 
     const ids = last.map((r) => r.client_id);
-    const [unread, users, states, blocks] = await Promise.all([
+    const [unread, users, states] = await Promise.all([
       this.messaging.unreadCountForCoach(coachId),
       this.prisma.user.findMany({
         where: { id: { in: ids } },
@@ -187,11 +193,9 @@ export class MessagingInboxService {
         where: { user_id: coachId, coach_id: threadCoachId, client_id: { in: ids } },
         select: { client_id: true, muted_until: true, pinned_at: true },
       }),
-      this.messaging.blockSets(coachId),
     ]);
     const names = new Map(users.map((u) => [u.id, u.name]));
     const stateBy = new Map(states.map((s) => [s.client_id, s]));
-    const blocked = blocks.hidden;
     const now = Date.now();
 
     // 10-23 "Dissapear": a chat in a block either way leaves the list (no
@@ -226,7 +230,7 @@ export class MessagingInboxService {
         ? { group: 0, at: pinnedAt.getTime(), id: row.client_id, view }
         : { group: 1, at: row.created_at.getTime(), id: row.client_id, view };
     });
-    return this.page(ranked, query, unread.total);
+    return { ...this.page(ranked, query, unread.total), closed_client_ids };
   }
 
   private page(

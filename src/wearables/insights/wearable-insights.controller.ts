@@ -22,6 +22,7 @@ import { assertRomanHasCoach } from '../../roman/roman-requires-coach';
 import { AiApprovalService } from '../../ai/gateway/ai-approval.service';
 import { COACH_WEARABLE_MESSAGE_CAPABILITY } from '../../ai/gateway/materialisers/coach-wearable-message.materialiser';
 import { ROMAN_MESSAGE_SOURCE } from '../../ai/gateway/roman-message-draft';
+import { assertPairOpen } from '../../messaging/block-pair';
 import { WearableInsightsService } from './wearable-insights.service';
 import {
   CoachInsightResponse,
@@ -106,8 +107,9 @@ export class WearableInsightsController {
     // NOT re-implement any of that here — the endpoint creates the draft then
     // delegates the decision to decide().
     private readonly approvals: AiApprovalService,
-    // PrismaService is global; used only to create the human-validated draft
-    // row and read it back for the materialised_at timestamp.
+    // PrismaService is global; used to create the human-validated draft row,
+    // read it back for the materialised_at timestamp, and (FR-1141R4) read
+    // the block before approve or edit.
     private readonly prisma: PrismaService,
   ) {}
 
@@ -166,6 +168,12 @@ export class WearableInsightsController {
       // Dismiss is only for this client's current coach, not an admin bypass.
       body.action === 'dismiss' ? 'coach' : req.user.role,
     );
+    // FR-1141R4 (Opus B-1): approve and edit send a coaching message, so a
+    // block either way refuses them (403 messaging.blocked) before any draft
+    // row is written. Reject and dismiss send nothing and stay open.
+    if (body.action === 'approve' || body.action === 'edit') {
+      await assertPairOpen(this.prisma, req.user.id, body.client_id);
+    }
 
     // Create the human-validated draft. tenant_coach_id is pinned to the
     // requester so the materialiser sends from the correct coach namespace

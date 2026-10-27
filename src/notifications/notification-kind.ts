@@ -143,13 +143,41 @@ export const NotificationKind = {
   // once per (purchase, trial end) from the customer.subscription.trial_will_end
   // webhook (PackageTrialNotice ledger). A billing notice, not marketing: no
   // NotificationPreferences columns, so it is not opt-out-able per kind (a
-  // global mute still applies). Payload: { purchase_id, package_id,
+  // money kind: see MONEY_NOTIFICATION_KINDS). Payload: { purchase_id, package_id,
   // trial_ends_at, amount_cents, currency, will_charge }.
   TRIAL_ENDING: 'trial_ending',
   // RENEWAL-BE: the client's plan with their coach ended normally (Day 0, 1
   // and 7 of the renewal sequence). Push only, no inbox row; it opens Home.
   // Prefs: plan_renewal_push (default on).
   PLAN_RENEWAL: 'plan_renewal',
+  // SWITCH-TELL-BE: to the coach a client left when the client moved to TGP's
+  // house coach. In-app only (no push), no deep link; payload { client_id }.
+  // The new coach is never named. Its created_at is Money's moved_away_at.
+  COACH_CLIENT_MOVED: 'coach_client_moved',
 } as const;
 
 export type NotificationKindValue = (typeof NotificationKind)[keyof typeof NotificationKind];
+
+/**
+ * MUTE-PAY (owner #171-3, SoT A6.0-171): the money notices. "Mute all
+ * notifications" never stops one of these on any channel (push-preferences.ts
+ * muteAllStops); it mutes only the other phone pushes, and never an in-app row.
+ * A new kind must be classed here or in the spec's not-money list
+ * (test/dunning-kind-fix-notification-kinds.spec.ts fails otherwise). Senders:
+ *   dunning_blocker    payment blocker: checkout/dunning-v2/dunning-v2.dispatcher.ts;
+ *                      refund and dispute notice: checkout/refund-dispute-handler.service.ts
+ *   first_payment      notifications/emitters/first-payment.emitter.ts
+ *   trial_ending       packages/trials/trial-notice.service.ts
+ *   plan_renewal       checkout/plan-renewal/plan-renewal.service.ts
+ *   coach_new_purchase coach earnings: packages/purchase-fanout.service.ts
+ * Receipts and dunning emails are emails with no kind here; no email sender
+ * reads `muted`. Coach refund, dispute and payout notices ride `coach_alert`
+ * (not money as a kind): their in-app rows pass Mute all like every row.
+ */
+export const MONEY_NOTIFICATION_KINDS: ReadonlySet<string> = new Set<NotificationKindValue>([
+  NotificationKind.DUNNING_BLOCKER,
+  NotificationKind.FIRST_PAYMENT,
+  NotificationKind.TRIAL_ENDING,
+  NotificationKind.PLAN_RENEWAL,
+  NotificationKind.COACH_NEW_PURCHASE,
+]);

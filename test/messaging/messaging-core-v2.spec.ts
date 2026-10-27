@@ -803,7 +803,7 @@ describe('unified inbox', () => {
     expect(sql.values).toEqual([COACH, [CLIENT]]);
     t.subCoachScope.getAuthorizedClientIds.mockResolvedValue([]);
     const none = await t.inbox.inboxForCoach(SUB, {});
-    expect(none).toEqual({ items: [], next_cursor: null, total_unread: 0 });
+    expect(none).toEqual({ items: [], next_cursor: null, total_unread: 0, closed_client_ids: [] });
     expect(t.prisma.$queryRaw).toHaveBeenCalledTimes(1);
   });
 
