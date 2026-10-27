@@ -145,8 +145,9 @@ let expoSend: jest.SpyInstance<Promise<ExpoPushTicket[]>, [ExpoPushMessage[]]>;
 
 // A 1000-character message (the send limit) that names private things.
 const MESSAGE = `Hi Alice, your weigh-in is up 3 kg and you missed two sessions. ${'Call me tonight about the plan. '.repeat(40)}`
-  .slice(0, 1000)
-  .trim();
+  .slice(0, 999)
+  .trimEnd()
+  .padEnd(1000, '!');
 
 describe('B-LSNOTIFY-2 contract: churn nudge -> generic push -> client inbox row -> full text', () => {
   beforeAll(() => {

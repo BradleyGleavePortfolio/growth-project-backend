@@ -32,8 +32,9 @@ const ROLE: Record<Key, string> = { K: 'coach', L: 'coach', A: 'student', B: 'st
 const COACH_OF: Partial<Record<Key, Key>> = { A: 'K', B: 'K' };
 // 1000 characters (the send limit), far over the 160 the generic writer keeps.
 const MESSAGE = `Hi, your weigh-in is up 3 kg this week. ${'Call me tonight and we will adjust the plan together. '.repeat(20)}`
-  .slice(0, 1000)
-  .trim();
+  .slice(0, 999)
+  .trimEnd()
+  .padEnd(1000, '!');
 
 (DB_URL ? describe : describe.skip)('B-LSNOTIFY-2: the churn nudge reaches the client inbox on Postgres', () => {
   const prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
