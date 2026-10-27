@@ -15,7 +15,7 @@ const HOUR = 3_600_000;
 const PEOPLE = ['ana', 'bo', 'cy'] as const;
 const TOKEN: Record<string, string> = Object.fromEntries(PEOPLE.map((p) => [p, `ExponentPushToken[${p[0].repeat(22)}]`]));
 const stub = <T>(v: unknown): T => v as T;
-type Where = { id?: string; user_id?: { in: string[] }; thread_message_id?: string; cohort_id?: string };
+type Where = { id?: string; user_id?: { in: string[] }; thread_message_id?: string; cohort_id?: string; state?: { in: readonly string[] } };
 
 let log: jest.SpyInstance;
 beforeAll(() => {
@@ -50,7 +50,12 @@ function world() {
     return p;
   });
   const threadPrefs = jest.fn(async ({ where }: { where: Where }) =>
-    (where.user_id?.in ?? []).filter((u) => s.threads[`${u}:${where.thread_message_id}`]).map((user_id) => ({ user_id })),
+    (where.user_id?.in ?? [])
+      .filter((u) => {
+        const state = s.threads[`${u}:${where.thread_message_id}`];
+        return state && (!where.state || where.state.in.includes(state));
+      })
+      .map((user_id) => ({ user_id })),
   );
   const prisma = {
     communityMessage: { findFirst: async ({ where }: { where: Where }) => s.messages.find((m) => m.id === where.id && !m.deleted_at) ?? null },
@@ -141,7 +146,7 @@ describe.each(['muted', 'left'])('a thread %s: no push from its replies', (state
     const reply = await write({ reply: true });
     expect(queuedFor(reply)).toEqual([['ana', 'reply'], ['cy', 'unread']]);
     expect(threadPrefs).toHaveBeenCalledWith({
-      where: { cohort_id: 'c1', thread_message_id: 'p1', user_id: { in: [...PEOPLE] } },
+      where: { cohort_id: 'c1', thread_message_id: 'p1', user_id: { in: [...PEOPLE] }, state: { in: ['muted', 'left'] } },
       select: { user_id: true },
     });
     s.threads['ana:p1'] = state; // the author quiets her own thread: no "New reply" either
@@ -170,6 +175,21 @@ describe.each(['muted', 'left'])('a thread %s: no push from its replies', (state
     const next = await write({ reply: true });
     await delivery.drain();
     expect(row('ana', next)).toMatchObject({ status: 'sent' });
+  });
+
+  it(`FR-1168: undone (the row stays as 'followed'), its replies push again, when queued and at sending`, async () => {
+    const { s, delivery, write, queuedFor, row } = world();
+    s.threads['bo:p1'] = state;
+    expect(queuedFor(await write({ reply: true }))).toEqual([['ana', 'reply'], ['cy', 'unread']]); // control
+    const queuedWhileQuiet = await write({ reply: true });
+    s.threads['bo:p1'] = 'followed'; // unmuted or followed again before it was sent: still dropped (planned without bo)
+    const next = await write({ reply: true });
+    expect(queuedFor(next)).toEqual([['ana', 'reply'], ['bo', 'unread'], ['cy', 'unread']]);
+    s.threads['ana:p1'] = 'followed'; // a row left over from an undo does not stop the push at sending
+    await delivery.drain();
+    expect(row('bo', next)).toMatchObject({ status: 'sent' });
+    expect(row('ana', next)).toMatchObject({ status: 'sent' });
+    expect(row('bo', queuedWhileQuiet)).toBeUndefined();
   });
 });
 

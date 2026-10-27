@@ -23,6 +23,7 @@ import { memberName } from '../member-display-name';
 import { CommunityRealtimeService } from '../realtime/community-realtime.service';
 import { notifySettingOf, spaceUnreadCounts } from '../space-reads/community-space-reads.service';
 import { HIGH_ALERT_DAILY_LIMIT, planSpacePush, spacePushOn, type SpacePushReader } from './space-push-policy';
+import { QUIET_THREAD } from './space-push-still-due';
 
 export interface HighAlertAllowance {
   reach: number;
@@ -139,9 +140,10 @@ export class CommunitySpacePushService implements OnModuleInit {
         select: { user_id: true, notify_mode: true, silenced_until: true, left_at: true },
       }),
       this.prisma.communityCohort.findUniqueOrThrow({ where: { id: cohortId }, select: { kind: true } }),
+      // FR-1168: only a muted or left thread is quiet; a 'followed' row (muted or left, then undone) pushes again.
       threadId
         ? this.prisma.communityThreadPref.findMany({
-            where: { cohort_id: cohortId, thread_message_id: threadId, user_id: { in: everyone } },
+            where: { cohort_id: cohortId, thread_message_id: threadId, user_id: { in: everyone }, state: { in: [...QUIET_THREAD] } },
             select: { user_id: true },
           })
         : [],

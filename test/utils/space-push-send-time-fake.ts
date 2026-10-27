@@ -21,7 +21,7 @@ export function spaceAtSendTime(db: { $queryRaw: (sql: TemplateStringsArray, ...
     /** people app.community_can_access refuses (not in the space, or banned from its community) */
     shut: new Set<string>(),
     reads: {} as Record<string, { notify_mode: string | null; silenced_until: Date | null; left_at?: Date | null }>,
-    /** LEAVE-MUTE-PUSH: community_thread_prefs, `${user}:${first message}` -> 'muted' | 'left' */
+    /** LEAVE-MUTE-PUSH: community_thread_prefs, `${user}:${first message}` -> 'muted' | 'left' | 'followed' (FR-1168) */
     threads: {} as Record<string, string>,
     unread: 1,
     /** Sol B1 (FR-1138R5), app.community_author_stays: each client's coach now (the workspace's coach is 'coach').
@@ -50,9 +50,9 @@ export function spaceAtSendTime(db: { $queryRaw: (sql: TemplateStringsArray, ...
     },
     communityCohort: { findUnique: jest.fn(async () => ({ kind })) },
     communityThreadPref: {
-      findFirst: jest.fn(async ({ where }: { where: { user_id: string; thread_message_id: string } }) => {
+      findFirst: jest.fn(async ({ where }: { where: { user_id: string; thread_message_id: string; state?: { in: readonly string[] } } }) => {
         const state = s.threads[`${where.user_id}:${where.thread_message_id}`];
-        return state ? { state } : null;
+        return state && (!where.state || where.state.in.includes(state)) ? { state } : null;
       }),
     },
     $queryRaw: jest.fn(async (sql: TemplateStringsArray, ...v: unknown[]) => {

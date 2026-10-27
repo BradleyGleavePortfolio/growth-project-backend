@@ -17,6 +17,10 @@ import { canEnterSpace, rowsByAuthorsWhoStay } from '../community-space-access';
 import { notifySettingOf, spaceUnreadCounts } from '../space-reads/community-space-reads.service';
 import { planSpacePush, spacePushOn, type SpacePushContext } from './space-push-policy';
 
+/** FR-1168: the thread states that stop a reply push (community_thread_prefs; THREAD_STATES in
+ *  community-leave-mute.service.ts). A 'followed' row is a mute or leave undone: its replies push again. */
+export const QUIET_THREAD = ['muted', 'left'] as const;
+
 export type SpacePushDropReason =
   | 'switched-off'
   | 'no-source'
@@ -63,7 +67,7 @@ export async function spacePushDropReason(
     // Replies are one level deep, so the message replied to is the thread's first message.
     m.parent_message_id
       ? prisma.communityThreadPref.findFirst({
-          where: { user_id: userId, thread_message_id: m.parent_message_id },
+          where: { user_id: userId, thread_message_id: m.parent_message_id, state: { in: [...QUIET_THREAD] } },
           select: { state: true },
         })
       : null,
