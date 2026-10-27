@@ -4,6 +4,9 @@
 // authenticated. Each "0" or refusal follows a control of 1.
 // Coach A: members-only chat "mem" (clients O, V, P), Announcements "ann", a section heading "sec" and a chat
 // "open" for all of A's clients; N is A's client outside "mem". Coach B: space "bmem" with client X.
+// FR-1168 (fix round 1): member_count leaves out who left (LO-1168 B1); undo keeps what came while muted or
+// left read (LS-1168 B1); undo by a removed first message's id (B2); a reply of your own follows a left thread
+// (B3, text, photo and voice through their real repositories); "{name} left" rows survive a rejoin (B4).
 import { randomUUID } from 'crypto';
 import { Prisma, PrismaClient, type User } from '@prisma/client';
 import { CommunityAccessService } from '../../src/community/community-access.service';
@@ -12,6 +15,8 @@ import { CommunityService } from '../../src/community/community.service';
 import { CommunityLeaveMuteController } from '../../src/community/leave-mute/community-leave-mute.controller';
 import { CommunityLeaveMuteService } from '../../src/community/leave-mute/community-leave-mute.service';
 import { CommunitySafetyService } from '../../src/community/safety/community-safety.service';
+import { CommunityMessagesRepository } from '../../src/community/messages/community-messages.repository';
+import { CommunityVoiceRepository } from '../../src/community/voice/community-voice.repository';
 import type { PrismaService } from '../../src/prisma.service';
 import { stub } from '../utils/trial-fakes';
 import { liveTestDatabaseUrl } from '../utils/live-test-db';
@@ -58,6 +63,15 @@ const DENIED = '42501';
   const list = async (k: Key, includeLeft = false) => (await community.getCohorts(user(k), includeLeft)).cohorts;
   const unread = async (k: Key, s: Space) => (await list(k)).find((c) => c.id === space[s])?.unread_count;
   const tab = async (k: Key) => (await community.getMe(user(k))).unread.cohort_messages;
+  // LO-1168 B1: the space's member count on the list, the space itself and the Today card.
+  const members = async (k: Key) => [
+    (await list(k)).find((c) => c.id === space.mem)?.member_count,
+    (await community.getCohort(user(k), space.mem)).member_count,
+    (await community.getToday(user(k))).cohort?.member_count,
+  ];
+  const stateOf = async (k: Key, root: string) =>
+    (await routes.threads(req(k), space.mem)).threads.find((t) => t.thread_message_id === root)?.state ?? 'none';
+  const leftOf = async (k: Key, who: Key) => (await routes.left(req(k), space.mem)).left.filter((l) => l.user_id === id[who]);
   const addUser = (k: Key) => prisma.$executeRaw`INSERT INTO "User" ("id", "supabase_id", "email", "name", "role", "coach_id")
     VALUES (${id[k]}, ${sub[k]}, ${`leave-${id[k]}`}, ${NAME[k]}, ${ROLE(k)}::"Role", ${COACH[k] ? id[COACH[k] as 'A' | 'B'] : null})`;
   const as = <T>(k: Key, query: (tx: Prisma.TransactionClient) => Promise<T>) =>
@@ -120,6 +134,7 @@ const DENIED = '42501';
   });
 
   it('a left space drops out of the list, the unread counts and the tab badge; include_left marks it', async () => {
+    expect(await members('V')).toEqual([4, 4, 4]); // control: A, O, V and P
     await say('V', 'mem');
     expect(await unread('O', 'mem')).toBe(1); // control
     const badge = await tab('O');
@@ -137,6 +152,7 @@ const DENIED = '42501';
     await say('V', 'mem');
     expect(await tab('O')).toBe(badge - 1); // nothing from a left space counts
     expect((await list('V')).map((c) => c.id)).toContain(space.mem); // O's leave is O's alone
+    expect(await members('V')).toEqual([3, 3, 3]); // LO-1168 B1 (owner R7): the member count drops by one
   });
 
   it('D2d: everyone who reads the space sees who left, minus blocked people; a non-reader gets 404', async () => {
@@ -156,7 +172,8 @@ const DENIED = '42501';
     expect(back).toEqual({ cohort_id: space.mem, left_at: null });
     expect((await list('O')).map((c) => c.id)).toContain(space.mem);
     expect(await unread('O', 'mem')).toBe(0); // what came while away does not pile up
-    expect((await routes.left(req('V'), space.mem)).left).toEqual([]);
+    expect(await members('V')).toEqual([4, 4, 4]); // LO-1168 B1: and they count again
+    expect(await leftOf('V', 'O')).toHaveLength(1); // LS-1168 B4: the "{name} left" line stays after they join again
     await say('V', 'mem');
     expect(await unread('O', 'mem')).toBe(1);
     expect(await status(routes.leave(req('P'), space.mem))).toBe(200);
@@ -187,7 +204,110 @@ const DENIED = '42501';
     expect((await routes.threads(req('O'), space.mem)).threads).toEqual([left]);
     await routes.follow(req('O'), space.mem, root);
     expect((await routes.threads(req('O'), space.mem)).threads).toEqual([]);
-    expect(await unread('O', 'mem')).toBe(base + 3); // following again, the replies count again
+    expect(await unread('O', 'mem')).toBe(base); // LS-1168 B1: what came while muted or left stays read
+    await reply('V', root);
+    expect(await unread('O', 'mem')).toBe(base + 1); // following again, a new reply counts
+  });
+
+  it('LS-1168 B1 (owner R2): unmute keeps the muted-time replies read, in the list and the tab; later ones count', async () => {
+    const root = await say('A', 'mem');
+    const other = await say('A', 'mem');
+    await routes.mute(req('O'), space.mem, root);
+    const base = (await unread('O', 'mem')) ?? 0;
+    const badge = await tab('O');
+    await reply('V', root); // came while muted
+    expect(await unread('O', 'mem')).toBe(base);
+    await reply('V', other); // control: an unread reply in another thread
+    expect(await unread('O', 'mem')).toBe(base + 1);
+    expect(await tab('O')).toBe(badge + 1);
+    await routes.unmute(req('O'), space.mem, root);
+    expect(await stateOf('O', root)).toBe('none'); // the phone sees an ordinary thread again
+    expect(await unread('O', 'mem')).toBe(base + 1); // the muted-time reply stays read; the other one still counts
+    expect(await tab('O')).toBe(badge + 1);
+    await reply('V', root); // after unmute
+    expect(await unread('O', 'mem')).toBe(base + 2);
+    expect(await tab('O')).toBe(badge + 2);
+    expect((await routes.mute(req('O'), space.mem, root)).state).toBe('muted'); // muting again works as before
+    expect(await unread('O', 'mem')).toBe(base + 1);
+  });
+
+  it('LS-1168 B2: after the first message is removed (or its author blocked), undo by the id from GET /threads still works', async () => {
+    const gone = await say('V', 'mem');
+    const hidden = await say('V', 'mem');
+    await routes.mute(req('O'), space.mem, gone);
+    await routes.leaveThread(req('O'), space.mem, hidden);
+    await prisma.communityMessage.updateMany({ where: { id: gone }, data: { deleted_at: new Date() } });
+    expect(await stateOf('O', gone)).toBe('muted'); // control: still listed for the phone
+    expect(await status(routes.mute(req('O'), space.mem, gone))).toBe(404); // a new state still needs the live message
+    expect(await status(routes.unmute(req('V'), space.mem, gone))).toBe(404); // someone without that row: as before
+    expect(await status(routes.unmute(req('O'), space.mem, randomUUID()))).toBe(404);
+    expect(await status(routes.unmute(req('O'), space.mem, gone))).toBe(200);
+    expect(await stateOf('O', gone)).toBe('none');
+    await prisma.userBlock.create({ data: { blocker_id: id.O, blocked_id: id.V } });
+    expect(await status(routes.follow(req('O'), space.mem, hidden))).toBe(200); // LO-1168 C7: a blocked author too
+    await prisma.userBlock.deleteMany({ where: { blocker_id: id.O, blocked_id: id.V } });
+    expect(await stateOf('O', hidden)).toBe('none');
+  });
+
+  it('LS-1168 B3: a reply of your own (text, photo, voice) follows a left thread again; a mute stays; a failed send changes nothing', async () => {
+    const messages = new CommunityMessagesRepository(db);
+    const notes = new CommunityVoiceRepository(db);
+    const leftThread = async () => {
+      const root = await say('V', 'mem');
+      await routes.leaveThread(req('O'), space.mem, root);
+      const r = await prisma.communityMessage.findFirstOrThrow({ where: { id: root }, select: { created_at: true } });
+      return { id: root, at: r.created_at };
+    };
+    const text = (parent: { id: string; at: Date }) =>
+      messages.createCohortMessage({ workspaceId: ws.A, cohortId: space.mem, senderId: id.O, body: 'back', parent });
+    const photo = (parent: { id: string; at: Date }, publish: () => Promise<void> = async () => undefined) =>
+      messages.createImageMessage({ workspaceId: ws.A, cohortId: space.mem, senderId: id.O, body: '', parent, publish,
+        image: { key: `${id.O}/leave-${randomUUID()}.jpg`, width: 10, height: 10, sizeBytes: 100 } });
+    const t = await leftThread();
+    expect(await stateOf('O', t.id)).toBe('left'); // control
+    await reply('V', t.id);
+    expect(await stateOf('O', t.id)).toBe('left'); // someone else's reply changes nothing
+    await text(t);
+    expect(await stateOf('O', t.id)).toBe('none');
+    const p = await leftThread();
+    await photo(p);
+    expect(await stateOf('O', p.id)).toBe('none');
+    const v = await leftThread();
+    await notes.createVoiceNote({ workspaceId: ws.A, cohortId: space.mem, conversationId: null, authorId: id.O,
+      storageKey: `${id.O}/1700000000000-${randomUUID().replace(/-/g, '').slice(0, 16)}.m4a`, durationMs: 1000, bytes: 1000,
+      mimeType: 'audio/mp4', waveformPeaks: null, parent: v, answersClients: false });
+    expect(await stateOf('O', v.id)).toBe('none');
+    const f = await leftThread();
+    await expect(photo(f, async () => { throw new Error('copy failed'); })).rejects.toThrow('copy failed');
+    expect(await stateOf('O', f.id)).toBe('left'); // the send rolled back, and so did the follow
+    const m = await say('V', 'mem');
+    await routes.mute(req('O'), space.mem, m);
+    const mr = await prisma.communityMessage.findFirstOrThrow({ where: { id: m }, select: { created_at: true } });
+    await text({ id: m, at: mr.created_at });
+    expect(await stateOf('O', m)).toBe('muted'); // an ordinary mute stays (owner R3)
+    const before = (await unread('O', 'mem')) ?? 0;
+    await reply('V', t.id);
+    expect(await unread('O', 'mem')).toBe(before + 1); // the followed thread counts its new replies
+  });
+
+  it('LS-1168 B4: each leave is its own "{name} left" row, kept when they join again; the newest 200, oldest first', async () => {
+    const first = await leftOf('V', 'O');
+    expect(first).toHaveLength(1); // control
+    const again = await routes.leave(req('O'), space.mem);
+    expect(await leftOf('V', 'O')).toEqual([...first, { user_id: id.O, name: 'Olive', left_at: again.left_at }]);
+    expect(await leftOf('A', 'O')).toHaveLength(2);
+    await routes.join(req('O'), space.mem);
+    expect(await leftOf('V', 'O')).toHaveLength(2);
+    expect((await list('O')).map((c) => c.id)).toContain(space.mem); // control: O is back in the space
+    await prisma.communitySpaceDeparture.createMany({
+      data: Array.from({ length: 205 }, (_, i) => ({ cohort_id: space.mem, user_id: id.N, left_at: new Date(Date.UTC(2020, 0, 1, 0, i)) })),
+    });
+    const rows = (await routes.left(req('V'), space.mem)).left;
+    expect(rows).toHaveLength(200); // LO-1168 C2: the newest 200
+    expect(rows.map((r) => r.left_at)).toEqual([...rows.map((r) => r.left_at)].sort());
+    expect(rows[rows.length - 1]).toEqual({ user_id: id.O, name: 'Olive', left_at: again.left_at }); // the newest is kept
+    expect(rows.map((r) => r.left_at)).not.toContain(new Date(Date.UTC(2020, 0, 1, 0, 0)).toISOString()); // the oldest is not
+    await prisma.communitySpaceDeparture.deleteMany({ where: { user_id: id.N } });
   });
 
   it('a thread is a chat message of that space the caller can see; anything else answers 404', async () => {
@@ -225,7 +345,31 @@ const DENIED = '42501';
       .toBeGreaterThanOrEqual(1); // the left mark sits on the b#1137 row and its own policies
   });
 
-  it('a state outside muted and left is refused by the table', async () => {
+  it('row security on departure rows: forced; a person reads and adds only their own, for a space they read; nobody changes one', async () => {
+    expect(await prisma.$queryRaw`SELECT "relrowsecurity" AS "on", "relforcerowsecurity" AS "forced" FROM pg_class
+      WHERE "oid" = 'public.community_space_departures'::regclass`).toEqual([{ on: true, forced: true }]);
+    const count = (k: Key, owner: Key) => as(k, (tx) => tx.$queryRawUnsafe<{ n: number }[]>(
+      `SELECT count(*)::int AS "n" FROM "community_space_departures" WHERE "user_id" = $1`, id[owner])).then((r) => r[0].n);
+    expect(await count('O', 'O')).toBeGreaterThanOrEqual(2); // control
+    expect(await count('V', 'O')).toBe(0);
+    const add = (k: Key, owner: Key, s: Space) => as(k, (tx) => tx.$executeRawUnsafe(
+      `INSERT INTO "community_space_departures" ("cohort_id", "user_id", "left_at") VALUES ($1::uuid, $2, now())`,
+      space[s], id[owner])).catch(pgCode);
+    expect(await add('N', 'N', 'open')).toBe(1); // control
+    expect(await add('V', 'O', 'mem')).toBe(DENIED); // not for someone else
+    expect(await add('N', 'N', 'mem')).toBe(DENIED); // not for a space they cannot read
+    expect(await as('O', (tx) => tx.$executeRawUnsafe(
+      `UPDATE "community_space_departures" SET "left_at" = now() WHERE "user_id" = $1`, id.O))).toBe(0);
+    expect(await as('O', (tx) => tx.$executeRawUnsafe(`DELETE FROM "community_space_departures" WHERE "user_id" = $1`, id.O))).toBe(0);
+    expect(await count('O', 'O')).toBeGreaterThanOrEqual(2);
+  });
+
+  it('a state outside muted, left and followed is refused by the table', async () => {
+    expect(await addPref('O', 'O', 'mem')).toBe(1); // control (muted)
+    const followed = prisma.$executeRawUnsafe(
+      `INSERT INTO "community_thread_prefs" ("user_id", "thread_message_id", "cohort_id", "state") VALUES ($1, $2::uuid, $3::uuid, 'followed')`,
+      id.O, randomUUID(), space.mem).catch(pgCode);
+    expect(await followed).toBe(1);
     const bad = prisma.$executeRawUnsafe(
       `INSERT INTO "community_thread_prefs" ("user_id", "thread_message_id", "cohort_id", "state") VALUES ($1, $2::uuid, $3::uuid, 'gone')`,
       id.O, randomUUID(), space.mem).catch(pgCode);
