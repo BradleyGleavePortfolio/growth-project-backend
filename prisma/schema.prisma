@@ -539,6 +539,7 @@ model User {
   community_voice_consent            CommunityVoiceConsent?
   community_space_reads              CommunitySpaceRead[]
   community_thread_prefs             CommunityThreadPref[]
+  community_space_departures         CommunitySpaceDeparture[]
   community_workspace_bans           CommunityWorkspaceBan[]           @relation("CommunityWorkspaceBanUser")
   // A4 broadcasts, saved replies and client tags (additive back-relations;
   // migration 20270304000000_a4_broadcasts_cards_saved_replies).
@@ -7474,6 +7475,7 @@ model CommunityCohort {
   packages    CommunityCohortPackage[]
   reads       CommunitySpaceRead[]
   thread_prefs CommunityThreadPref[]
+  departures   CommunitySpaceDeparture[]
 
   @@unique([workspace_id, name])
   // Cohort list ordered for a workspace (coach + client surfaces).
@@ -9228,7 +9230,8 @@ model CommunitySpaceRead {
 }
 
 // LEAVE-MUTE-BE (agent 176, owner D2b): a person's muted or left thread, by its first message (no foreign key:
-// community_messages is partitioned on (id, created_at)). state 'muted' | 'left' (CHECK in 20270502009600).
+// community_messages is partitioned on (id, created_at)). state 'muted' | 'left' | 'followed' (CHECK in
+// 20270502009600; FR-1168: 'followed' = muted or left, then undone; replies up to `since` stay read).
 model CommunityThreadPref {
   user_id           String
   thread_message_id String   @db.Uuid
@@ -9243,6 +9246,22 @@ model CommunityThreadPref {
   @@id([user_id, thread_message_id])
   @@index([user_id, cohort_id])
   @@map("community_thread_prefs")
+}
+
+// FR-1168 (LS-1168 B4, owner D2d): one row each time a person leaves a space, behind the "{name} left" line in
+// its chat; joining again keeps it. RLS forced (20270502009600): own rows only.
+model CommunitySpaceDeparture {
+  cohort_id String   @db.Uuid
+  user_id   String
+  left_at   DateTime @db.Timestamptz(6)
+
+  user   User            @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  cohort CommunityCohort @relation(fields: [cohort_id], references: [id], onDelete: Cascade)
+
+  @@id([cohort_id, user_id, left_at])
+  @@index([cohort_id, left_at])
+  @@index([user_id])
+  @@map("community_space_departures")
 }
 
 // SC-BE3 (agent 168): the photo behind a kind 'image' space chat message.

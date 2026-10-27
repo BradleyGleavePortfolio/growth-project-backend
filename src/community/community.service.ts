@@ -7,7 +7,8 @@ import { memberName } from './member-display-name';
 import { fullNamesFor } from './community-space-access';
 import { isBannedFromWorkspace } from './community-ban';
 import { communityTabUnread, spaceUnreadCounts } from './space-reads/community-space-reads.service';
-import { leftSpaces } from './leave-mute/community-leave-mute.service';
+// FR-1168 (LO-1168 B1, owner R7): member_count leaves out the people who left the space.
+import { leftSpaces, membersNow } from './leave-mute/community-leave-mute.service';
 import { CommunityCohortListWithLeftSchema, type CommunityCohortListWithLeft } from './leave-mute/community-leave-mute.dto';
 import {
   WIN_NOT_FOUND,
@@ -251,7 +252,7 @@ export class CommunityService {
       ? {
           id: cohort.id,
           name: cohort.name,
-          member_count: await this.repo.cohortMemberCount(cohort),
+          member_count: (await membersNow(this.prisma, cohort)).length,
         }
       : null;
 
@@ -343,7 +344,7 @@ export class CommunityService {
         kind: c.kind,
         posting_policy: c.posting_policy,
         visibility: c.visibility,
-        member_count: await this.repo.cohortMemberCount(c),
+        member_count: (await membersNow(this.prisma, c)).length,
         my_role: role,
         unread_count: unread.get(c.id) ?? 0,
         ...(includeLeft ? { left_at: left.get(c.id)?.toISOString() ?? null } : {}),
@@ -384,7 +385,7 @@ export class CommunityService {
       posting_policy: cohort.posting_policy,
       visibility: cohort.visibility,
       package_ids: coachView ? cohort.packages.map((l) => l.package_id) : null, // C6-ACCESS: coach only
-      member_count: await this.repo.cohortMemberCount(cohort),
+      member_count: (await membersNow(this.prisma, cohort)).length,
       created_at: cohort.created_at.toISOString(),
       my_membership:
         membership && membership.status === 'active'
