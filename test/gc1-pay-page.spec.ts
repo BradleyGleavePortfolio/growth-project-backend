@@ -22,7 +22,8 @@ import { PrismaService } from '../src/prisma.service';
 import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
 import { StorefrontService } from '../src/storefront/storefront.service';
 import { PayPageController } from '../src/storefront/pay-page.controller';
-import { PAY_PAGE_COPY, esc } from '../src/storefront/pay-page.html';
+import { APP_STORE_URL_DEFAULT, PAY_PAGE_COPY, esc } from '../src/storefront/pay-page.html';
+import { renderPayDonePage } from '../src/storefront/pay-done.html';
 
 const A = 'tokAAAAAAAAAAAAAAAAAA';
 const B = 'tokBBBBBBBBBBBBBBBBBB';
@@ -676,18 +677,25 @@ describe('GC-1 pay page GET /p/:token', () => {
   });
 
   // LS-WEB4 B1: a normal longer email in the payment form's fixed slot (#pe)
-  // ran off a 360 px screen at 130% text; only #le wrapped. Every email slot
-  // is a <strong> in <p class="who"> (or the code step's .lead), both rules
-  // wrap, and no slot has its own rule, so a new slot cannot be left out.
-  it('a long email wraps in every slot that shows it: each is a .who strong or the .lead, and both rules wrap', async () => {
+  // ran off a 360 px screen at 130% text; only #le wrapped. The same email ran
+  // off the done page's still-confirming line. One rule wraps every paragraph
+  // on the sheet of every buyer page; each email slot is in one (a done-page
+  // step has its own rule) and no slot has a rule of its own, so none is missed.
+  it('a long email wraps wherever a buyer page shows it: every slot is in a paragraph on the sheet, and that rule wraps', async () => {
+    const LONG = 'alexandra.henderson@example.com';
     const pay = (await get(`/p/${A}`)).body;
     const confirm = (await get(`/p/${A}?confirmed=1`)).body;
-    for (const html of [pay, confirm]) {
+    const slow = renderPayDonePage({ kind: 'confirming', email: LONG, again: false, checkUrl: `/p/${A}/done` }, 'n', APP_STORE_URL_DEFAULT);
+    const paid = renderPayDonePage(
+      { kind: 'paid', buyer: 'new', email: LONG, coach: 'Sam', packageName: 'Monthly coaching', amountCents: 14900 },
+      'n',
+      APP_STORE_URL_DEFAULT,
+    );
+    for (const html of [pay, confirm, slow, paid]) {
       const css = /<style nonce="[^"]+">([\s\S]*?)<\/style>/.exec(html)?.[1] ?? '';
-      expect(css).toContain('.who span,.who strong{display:block}');
-      expect(css).toContain('.who strong{min-width:0;overflow-wrap:anywhere}');
-      expect(css).toContain('.lead{margin:0;overflow-wrap:anywhere}');
+      expect(css).toContain('.sheet p{overflow-wrap:anywhere}');
       expect(css).not.toMatch(/#(?:pe|to|le\d?)\{/);
+      expect(html.match(/<main class="wrap sheet[ "]/g)).toHaveLength(1);
     }
     const slots = (html: string) =>
       [...html.matchAll(/<p class="(\w+)">(?:<span>[^<]*<\/span>|[^<]*)<strong id="(\w+)">/g)].map((m) => `${m[1]}#${m[2]}`);
@@ -695,5 +703,16 @@ describe('GC-1 pay page GET /p/:token', () => {
     expect(slots(confirm)).toEqual(['who#le', 'who#le2', 'who#le3']);
     expect(pay.match(/<strong id=/g)).toHaveLength(2);
     expect(confirm.match(/<strong id=/g)).toHaveLength(3);
+    expect(paid).toContain('counter-increment:n;overflow-wrap:anywhere}');
+    const lastAt = (s: string, re: RegExp) => Math.max(-1, ...[...s.matchAll(re)].map((m) => m.index ?? -1));
+    for (const html of [slow, paid]) {
+      const at = [...html.matchAll(/alexandra\.henderson@example\.com/g)].map((m) => m.index ?? 0);
+      expect(at.length).toBeGreaterThan(0);
+      for (const i of at) {
+        const before = html.slice(html.indexOf('<main '), i);
+        expect(i).toBeLessThan(html.indexOf('</main>'));
+        expect(lastAt(before, /<(?:p|li)[\s>]/g)).toBeGreaterThan(lastAt(before, /<\/(?:p|li)>/g));
+      }
+    }
   });
 });
