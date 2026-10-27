@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -21,6 +22,7 @@ import { THROTTLER_ROUTE_LIMITS } from '../../throttler/throttler.config';
 import { CommunityFeatureFlagGuard } from '../community-feature-flag.guard';
 import { CommunityChallengesEnabledGuard } from './community-challenges-flag.guard';
 import { CommunityChallengesService } from './community-challenges.service';
+import { REMOVED_ROWS_HEADER, showsRemoved } from '../posts/community-post-removal';
 import { CreateReportDto } from '../dto/community-moderation.dto';
 import {
   CreateChallengeCommentDto,
@@ -154,8 +156,9 @@ export class CommunityChallengesController {
     @Param('challengeId', new ParseUUIDPipe({ version: '4' }))
     challengeId: string,
     @Query() query: PaginationQueryDto,
+    @Headers(REMOVED_ROWS_HEADER) removedRows?: string,
   ) {
-    return this.challenges.listComments(req.user, challengeId, query);
+    return this.challenges.listComments(req.user, challengeId, query, showsRemoved(removedRows));
   }
 
   // ── Participation writes ──────────────────────────────────────────────────

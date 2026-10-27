@@ -319,12 +319,13 @@ export class CommunityMessagesRepository {
     });
   }
 
-  async listComments(postId: string): Promise<CommunityMessage[]> {
+  /** FR-1165R3: `withRemoved` keeps a coach's removals for their placeholders. */
+  async listComments(postId: string, withRemoved = false): Promise<CommunityMessage[]> {
     return this.prisma.communityMessage.findMany({
       where: {
         plan_context_type: COMMENT_CONTEXT_TYPE,
         plan_context_id: postId,
-        deleted_at: null,
+        ...(withRemoved ? { OR: [{ deleted_at: null }, { removed_by_user_id: { not: null } }] } : { deleted_at: null }),
       },
       orderBy: { created_at: 'asc' },
     });
