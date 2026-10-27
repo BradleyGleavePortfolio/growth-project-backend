@@ -18,13 +18,19 @@ import { CreateVoiceNoteDto } from '../../../src/community/voice/community-voice
 import { keyedMessageId, messageKey } from '../../../src/community/messages/message-idempotency';
 import { safetyWithBlocks } from '../safety/safety-test-helpers';
 import { noCommunityPush } from './community-push-test-helpers';
+import { stub } from '../../utils/trial-fakes';
+
+type Deps = ConstructorParameters<typeof CommunityMessagesService>;
+type RepoDeps = ConstructorParameters<typeof CommunityMessagesRepository>;
+type RouteDeps = ConstructorParameters<typeof CommunityMessagesController>;
+type Route = CommunityMessagesController['send'];
 
 const WORKSPACE = '22222222-2222-4222-8222-222222222222';
 const SPACE = '11111111-1111-4111-8111-111111111111';
 const OTHER_SPACE = '33333333-3333-4333-8333-333333333333';
 const KEY = '6f1c2b0e-8d4a-4c1e-9b7a-2d3e4f5a6b7c';
-const olive = { id: '0a11ce00-0000-4000-8000-000000000001', role: 'student' } as unknown as User;
-const vera = { id: '0a11ce00-0000-4000-8000-000000000002', role: 'student' } as unknown as User;
+const olive = stub<User>({ id: '0a11ce00-0000-4000-8000-000000000001', role: 'student' });
+const vera = stub<User>({ id: '0a11ce00-0000-4000-8000-000000000002', role: 'student' });
 
 function harness() {
   const rows: CommunityMessage[] = [];
@@ -49,13 +55,17 @@ function harness() {
   // SC-PUSH (main): the High alert gate; the coach may send, 4 people would get it, none sent today.
   const spacePush = {
     highAlertAllowance: jest.fn(async () => ({ reach: 4, used_today: 0, limit: 3 })),
-    markHighAlert: jest.fn(async (id: string) => rows.filter((r) => r.id === id).forEach((r) => { r.high_alert = true; })),
+    markHighAlert: jest.fn(async (id: string) => {
+      for (const r of rows) if (r.id === id) r.high_alert = true;
+    }),
   };
-  const service = new CommunityMessagesService(access as never, new CommunityMessagesRepository(prisma as never),
-    realtime as never, {} as never, safetyWithBlocks(), noCommunityPush(), undefined, spacePush as never);
+  const repo = new CommunityMessagesRepository(stub<RepoDeps[0]>(prisma));
+  const service = new CommunityMessagesService(stub<Deps[0]>(access), repo, stub<Deps[2]>(realtime), stub<Deps[3]>({}),
+    safetyWithBlocks(), noCommunityPush(), undefined, stub<Deps[7]>(spacePush));
   const send = (u: User, body: string, key?: string, space = SPACE) =>
     service.send(u, space, body, undefined, undefined, undefined, undefined, key).then((r) => r.message);
-  const alert = (u: User, body: string, key: string) => service.send(u, SPACE, body, undefined, undefined, undefined, true, key);
+  const alert = (u: User, body: string, key: string) =>
+    service.send(u, SPACE, body, undefined, undefined, undefined, true, key);
   return { rows, realtime, spacePush, communityMessage, send, alert };
 }
 
@@ -96,12 +106,12 @@ describe('FX-IDEM: POST /community/cohorts/:id/messages with Idempotency-Key', (
     expect(h.rows).toHaveLength(2);
   });
 
-  it('FR-1144 (main merged in): a coach resending a High alert under its key marks it once and answers alike', async () => {
+  it('FR-1144: a coach resending a High alert under its key marks it once and answers alike', async () => {
     const was = process.env.FEATURE_COMMUNITY_SPACE_PUSH;
     process.env.FEATURE_COMMUNITY_SPACE_PUSH = 'true';
     try {
       const h = harness();
-      const coach = { id: '0a11ce00-0000-4000-8000-0000000000c0', role: 'coach' } as unknown as User;
+      const coach = stub<User>({ id: '0a11ce00-0000-4000-8000-0000000000c0', role: 'coach' });
       const first = await h.alert(coach, 'Class moved to 6pm', KEY);
       const again = await h.alert(coach, 'Class moved to 6pm', KEY);
       expect(again).toEqual(first);
@@ -140,13 +150,13 @@ describe('FX-IDEM: the header and the id it names', () => {
 
   it('the route passes the read key to the send, and refuses a bad key before any send', async () => {
     const send = jest.fn(async () => ({ message: {} }));
-    const route = new CommunityMessagesController({ send } as never);
-    const req = { user: olive } as never;
-    await route.send(req, SPACE, { body: 'Leg day done' } as never, KEY.toUpperCase());
+    const route = new CommunityMessagesController(stub<RouteDeps[0]>({ send }));
+    const req = stub<Parameters<Route>[0]>({ user: olive });
+    await route.send(req, SPACE, stub<CreateMessageDto>({ body: 'Leg day done' }), KEY.toUpperCase());
     expect(send).toHaveBeenCalledWith(olive, SPACE, 'Leg day done', undefined, undefined, undefined, undefined, KEY);
-    await route.send(req, SPACE, { body: 'Leg day done' } as never, undefined);
+    await route.send(req, SPACE, stub<CreateMessageDto>({ body: 'Leg day done' }), undefined);
     expect(send).toHaveBeenLastCalledWith(olive, SPACE, 'Leg day done', undefined, undefined, undefined, undefined, null);
-    await expect(route.send(req, SPACE, { body: 'x' } as never, 'nope')).rejects.toBeInstanceOf(BadRequestException);
+    await expect(route.send(req, SPACE, stub<CreateMessageDto>({ body: 'x' }), 'nope')).rejects.toBeInstanceOf(BadRequestException);
     expect(send).toHaveBeenCalledTimes(2);
   });
 });
