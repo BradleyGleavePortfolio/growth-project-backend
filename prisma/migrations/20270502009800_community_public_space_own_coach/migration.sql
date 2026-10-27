@@ -42,11 +42,11 @@ COMMENT ON FUNCTION app.community_public_row_of_my_client(uuid, text) IS
 
 DROP POLICY IF EXISTS "community_messages_public_own_coach" ON "community_messages";
 CREATE POLICY "community_messages_public_own_coach" ON "community_messages" FOR SELECT TO authenticated
-  USING ("scope" = 'cohort' AND app.community_public_row_of_my_client("cohort_id", "sender_id"));
+  USING ("scope" = 'cohort' AND "deleted_at" IS NULL AND app.community_public_row_of_my_client("cohort_id", "sender_id"));
 
 DROP POLICY IF EXISTS "community_posts_public_own_coach" ON "community_posts";
 CREATE POLICY "community_posts_public_own_coach" ON "community_posts" FOR SELECT TO authenticated
-  USING ("scope" = 'cohort' AND ("release_at" IS NULL OR "release_at" <= now()) AND "visibility" = 'active'
+  USING ("scope" = 'cohort' AND "deleted_at" IS NULL AND ("release_at" IS NULL OR "release_at" <= now()) AND "visibility" = 'active'
          AND app.community_public_row_of_my_client("cohort_id", "author_id"));
 
 DROP POLICY IF EXISTS "community_voice_notes_public_own_coach" ON "community_voice_notes";

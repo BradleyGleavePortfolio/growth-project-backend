@@ -4,6 +4,8 @@
 // are A's clients in A's space; A blocked X; Y is banned from A's workspace; W is B's client in B's space. Row reads
 // run as role authenticated; each person's first read is their control read, so every 0 follows a 1.
 import { randomUUID } from 'crypto';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { Prisma, PrismaClient, type User } from '@prisma/client';
 import { CommunityAccessService } from '../../src/community/community-access.service';
 import { CommunityCoachInboxRepository } from '../../src/community/inbox/community-coach-inbox.repository';
@@ -319,6 +321,25 @@ const P_ROWS = (k: K2) => [`${k}.P.post`, `${k}.P.typed`, `${k}.P.voice`];
     expect(await words('A')).toEqual(['L.S.typed', 'M.P.typed', 'N.P.typed', 'O.P.typed', 'O.S.typed', 'W.P.typed']);
     expect(await words('B')).toEqual(['M.P.typed', 'W.P.typed', 'W.SB.typed']);
     expect(await words('T')).toEqual(['M.P.typed', 'N.P.typed', 'O.P.typed', 'W.P.typed']);
+  });
+
+  // 20270502009800 down.sql takes the poster's own coach's read away; migration.sql gives it back.
+  it('down.sql takes the poster\'s own coach\'s read away (the space owner keeps theirs); migration.sql restores it', async () => {
+    const dir = join(__dirname, '..', '..', 'prisma', 'migrations', '20270502009800_community_public_space_own_coach');
+    const apply = (file: string) => prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const sql = readFileSync(join(dir, file), 'utf8').replace(/^--.*$/gm, '').split(/;\s*$/m).map((x) => x.trim());
+      for (const x of sql.filter((y) => y && !/^(BEGIN|COMMIT)$/i.test(y))) await tx.$executeRawUnsafe(x);
+    });
+    const now = async () => [await reads('A', 'community_voice_notes', idOf('W.P.voice')),
+      await reads('B', 'community_voice_notes', idOf('W.P.voice')), await reads('B', 'community_posts', idOf('W.P.post'))];
+    expect(await now()).toEqual([1, 1, 1]);
+    await apply('down.sql');
+    try {
+      expect(await now()).toEqual([1, 0, 0]);
+    } finally {
+      await apply('migration.sql');
+    }
+    expect(await now()).toEqual([1, 1, 1]);
   });
 
   it('pages walk every unanswered row once, in order, across voice, typed and post rows; answered posts use no place', async () => {
