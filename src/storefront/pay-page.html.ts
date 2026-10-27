@@ -274,7 +274,7 @@ button[aria-busy=true]::after{content:"";display:inline-block;width:1em;height:1
 .links{display:flex;flex-wrap:wrap;gap:0 1.5rem;margin:0}button.link{margin:0;min-height:2.75rem;padding:.5rem 0;background:none;color:var(--forest);text-decoration:underline;text-underline-offset:.2em}
 .hey{margin:1.5rem 0;font:500 1.625rem/1.25 var(--serif);text-align:center;outline:0;transition:opacity .6s}.hey.out{opacity:0}.sum{outline:0}.sum>div{margin:0 0 1.25rem}.sum p{margin:0}.sum h2{margin-top:1.25rem}
 .who{margin:0}.who span,.who strong{display:block}.who span{font-size:.875rem;color:var(--muted)}
-#le{min-width:0;overflow-wrap:anywhere}.btn{display:flex;align-items:center;justify-content:center;min-height:3.25rem;margin:1.25rem 0;border-radius:.75rem;background:var(--forest);color:var(--on);font-weight:600;text-decoration:none}
+.who strong{min-width:0;overflow-wrap:anywhere}.btn{display:flex;align-items:center;justify-content:center;min-height:3.25rem;margin:1.25rem 0;border-radius:.75rem;background:var(--forest);color:var(--on);font-weight:600;text-decoration:none}
 @media (prefers-reduced-motion:reduce){.hey{transition:none}}.state{margin:0;font:500 1.375rem/1.35 var(--serif)}.done{animation:rise .3s ease-out}@keyframes rise{from{opacity:0;transform:translateY(.375rem)}}
 @media (prefers-reduced-motion:reduce){.done{animation:none}}[hidden]{display:none!important}`;
 

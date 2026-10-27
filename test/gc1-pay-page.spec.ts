@@ -674,4 +674,26 @@ describe('GC-1 pay page GET /p/:token', () => {
       expect(nolink).toContain(esc(PAY_PAGE_COPY.setPassword));
     });
   });
+
+  // LS-WEB4 B1: a normal longer email in the payment form's fixed slot (#pe)
+  // ran off a 360 px screen at 130% text; only #le wrapped. Every email slot
+  // is a <strong> in <p class="who"> (or the code step's .lead), both rules
+  // wrap, and no slot has its own rule, so a new slot cannot be left out.
+  it('a long email wraps in every slot that shows it: each is a .who strong or the .lead, and both rules wrap', async () => {
+    const pay = (await get(`/p/${A}`)).body;
+    const confirm = (await get(`/p/${A}?confirmed=1`)).body;
+    for (const html of [pay, confirm]) {
+      const css = /<style nonce="[^"]+">([\s\S]*?)<\/style>/.exec(html)?.[1] ?? '';
+      expect(css).toContain('.who span,.who strong{display:block}');
+      expect(css).toContain('.who strong{min-width:0;overflow-wrap:anywhere}');
+      expect(css).toContain('.lead{margin:0;overflow-wrap:anywhere}');
+      expect(css).not.toMatch(/#(?:pe|to|le\d?)\{/);
+    }
+    const slots = (html: string) =>
+      [...html.matchAll(/<p class="(\w+)">(?:<span>[^<]*<\/span>|[^<]*)<strong id="(\w+)">/g)].map((m) => `${m[1]}#${m[2]}`);
+    expect(slots(pay)).toEqual(['lead#to', 'who#pe']);
+    expect(slots(confirm)).toEqual(['who#le', 'who#le2', 'who#le3']);
+    expect(pay.match(/<strong id=/g)).toHaveLength(2);
+    expect(confirm.match(/<strong id=/g)).toHaveLength(3);
+  });
 });
