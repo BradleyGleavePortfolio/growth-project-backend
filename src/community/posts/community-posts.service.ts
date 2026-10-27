@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { CommunityMessage, CommunityPost, CommunityResponse, User } from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
 import { memberName } from '../member-display-name';
@@ -72,6 +72,8 @@ type ExtrasFor = (targetId: string, authorId: string, spaceId: string | null) =>
  */
 @Injectable()
 export class CommunityPostsService {
+  private readonly logger = new Logger(CommunityPostsService.name);
+
   constructor(
     private readonly access: CommunityAccessService,
     private readonly posts: CommunityPostsRepository,
@@ -374,7 +376,7 @@ export class CommunityPostsService {
     const removed = await this.posts.removeByCoach(post, user.id);
     if (coachRemoved(removed)) {
       const place = { id: removed.id, workspaceId: removed.workspace_id, cohortId: removed.cohort_id };
-      void publishPostChanged(this.realtime, place, user.id, removed.deleted_at).catch(() => undefined);
+      void publishPostChanged(this.realtime, place, user.id, removed.deleted_at).catch(() => this.logger.warn(`post ${removed.id}: removal ping not sent`));
     }
     return this.postResponse(user, removed, shown);
   }
