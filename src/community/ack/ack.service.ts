@@ -7,6 +7,8 @@ import {
 import type { CommunityMessage, User } from '@prisma/client';
 import { AnalyticsService } from '../../analytics/analytics.service';
 import { CommunityAccessService } from '../community-access.service';
+import { placeOf } from '../community-space-access';
+import { CommunitySafetyService } from '../safety/community-safety.service';
 import { AckRepository } from './ack.repository';
 import {
   ACK_STATE_RANK,
@@ -78,6 +80,7 @@ export class AckService {
     private readonly repo: AckRepository,
     private readonly access: CommunityAccessService,
     private readonly analytics: AnalyticsService,
+    private readonly safety: CommunitySafetyService,
   ) {}
 
   /** Highest reached ack state from the stamped columns. */
@@ -119,6 +122,10 @@ export class AckService {
    * cohort/DM message may be acked. Coach/owner/system-authored messages are
    * not ackable and 404 identically — preventing nonsensical client-visible
    * ack state on messages that should never carry a coach acknowledgement.
+   *
+   * Visibility: a message hidden from the coach's read path (block either way,
+   * banned author, moved-away client outside a public space) 404s identically
+   * too — the ack routes act only on what the coach can read.
    */
   private async authorize(
     user: AckActor,
@@ -147,6 +154,15 @@ export class AckService {
     if (senderRole !== 'student') {
       throw new NotFoundException(NOT_FOUND);
     }
+    // Visibility (LS-1134D): an ack write passes the same gate the coach's read
+    // of this message passes — CommunitySafetyService.assertVisibleTo with the
+    // row's place, exactly as CommunityMessagesService.getOne calls it. A
+    // message the coach can no longer read (a block either way, the author
+    // banned from this community, or a client who moved away writing in the
+    // Hall, a DM or a space that is not public) answers the same 404 as an
+    // absent one. It runs before the idempotent no-op below, so a retry on an
+    // already-stamped message hands back no timestamps either.
+    await this.safety.assertVisibleTo(user.id, m.sender_id, NOT_FOUND, placeOf(m));
     return m;
   }
 

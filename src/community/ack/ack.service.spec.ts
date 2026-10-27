@@ -13,6 +13,10 @@
  *    identically (no 403-vs-404 existence oracle), platform owner bypass;
  *  - eligibility (R1): only client (student) authored messages are ackable —
  *    coach/owner/system-authored messages 404 identically;
+ *  - visibility (LS-1134D): a message the coach's read path hides (the
+ *    CommunitySafetyService.assertVisibleTo gate) 404s identically, retries
+ *    included — the live block / ban / moved-client cases are in
+ *    test/rls/community-ack-visibility-rls.spec.ts;
  *  - read-side state derivation + SLA envelope.
  *
  * Fakes come from the typed `ack.test-fixtures` builders (R0: no `as unknown
@@ -21,6 +25,8 @@
  */
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import type { CommunityMessage, Role } from '@prisma/client';
+import { stub } from '../../../test/utils/trial-fakes';
+import type { CommunitySafetyService } from '../safety/community-safety.service';
 import { ACK_TRANSITION_EVENT, AckService } from './ack.service';
 import type { StampResult } from './ack.repository';
 import {
@@ -65,6 +71,7 @@ describe('AckService', () => {
   };
   let access: { isWorkspaceCoach: jest.Mock };
   let analytics: { capture: jest.Mock };
+  let safety: { assertVisibleTo: jest.Mock };
   let service: AckService;
 
   beforeEach(() => {
@@ -77,7 +84,10 @@ describe('AckService', () => {
     };
     access = { isWorkspaceCoach: jest.fn(async () => true) };
     analytics = { capture: jest.fn() };
-    service = new AckService(repo as never, access as never, analytics as never);
+    // Default: the coach can read the message (the gate passes).
+    safety = { assertVisibleTo: jest.fn(async () => undefined) };
+    service = new AckService(repo as never, access as never, analytics as never,
+      stub<CommunitySafetyService>(safety));
   });
 
   describe('authorization (non-leak: no 403-vs-404 oracle)', () => {
@@ -179,6 +189,73 @@ describe('AckService', () => {
       expect((absent as NotFoundException).getResponse()).toEqual(
         (ineligible as NotFoundException).getResponse(),
       );
+    });
+  });
+
+  describe('visibility (the read path\'s gate, LS-1134D)', () => {
+    const hidden = (body: object) => {
+      safety.assertVisibleTo.mockImplementation(async () => {
+        throw new NotFoundException(body);
+      });
+    };
+
+    it('asks the read path\'s gate with the caller, the author, the ack not-found body and the row\'s place', async () => {
+      const m = msg();
+      repo.findById.mockResolvedValue(m);
+      repo.stampAck.mockImplementation(stampAckFrom(m));
+      await service.applyTransition(coach, MSG_ID, 'seen');
+      expect(safety.assertVisibleTo).toHaveBeenCalledWith(coach.id, m.sender_id,
+        { error: 'not_found', code: 'community.ack.message_not_found' }, [m.workspace_id, m.cohort_id]);
+    });
+
+    it('a DM row is asked about with no space (the Hall/DM place)', async () => {
+      const m = msg({ scope: 'dm', cohort_id: null });
+      repo.findById.mockResolvedValue(m);
+      repo.stampAck.mockImplementation(stampAckFrom(m));
+      await service.applyTransition(coach, MSG_ID, 'acked');
+      expect(safety.assertVisibleTo.mock.calls[0][3]).toEqual([m.workspace_id, null]);
+    });
+
+    it.each(['seen', 'acked', 'replied'] as const)('%s on a hidden message: the same 404 as absent, nothing stamped, no telemetry', async (to) => {
+      repo.findById.mockResolvedValueOnce(null);
+      const absent = await service.applyTransition(coach, MSG_ID, to).catch((e) => e);
+      repo.findById.mockResolvedValueOnce(msg());
+      hidden({ error: 'not_found', code: 'community.ack.message_not_found' });
+      const gated = await service.applyTransition(coach, MSG_ID, to).catch((e) => e);
+      expect(gated).toBeInstanceOf(NotFoundException);
+      expect((gated as NotFoundException).getResponse()).toEqual((absent as NotFoundException).getResponse());
+      expect(repo.stampAck).not.toHaveBeenCalled();
+      expect(analytics.capture).not.toHaveBeenCalled();
+    });
+
+    it('an already-stamped message that is now hidden 404s: the idempotent retry hands back no timestamps', async () => {
+      repo.findById.mockResolvedValue(msg({ coach_seen_at: new Date(), coach_acked_at: new Date() }));
+      hidden({ error: 'not_found', code: 'community.ack.message_not_found' });
+      const res = await service.applyTransition(coach, MSG_ID, 'acked').catch((e) => e);
+      expect(res).toBeInstanceOf(NotFoundException);
+      expect((res as NotFoundException).getResponse()).toEqual({ error: 'not_found', code: 'community.ack.message_not_found' });
+      expect(JSON.stringify((res as NotFoundException).getResponse())).not.toMatch(/seen_at|acked_at|replied_at/);
+      expect(repo.stampAck).not.toHaveBeenCalled();
+    });
+
+    it('the platform owner passes the gate too (as on the read path)', async () => {
+      repo.findById.mockResolvedValue(msg());
+      hidden({ error: 'not_found', code: 'community.ack.message_not_found' });
+      await expect(service.applyTransition(owner, MSG_ID, 'seen')).rejects.toBeInstanceOf(NotFoundException);
+      expect(safety.assertVisibleTo).toHaveBeenCalledWith(owner.id, expect.any(String), expect.anything(), expect.anything());
+      expect(repo.stampAck).not.toHaveBeenCalled();
+    });
+
+    it('the gate runs after the cheaper checks: an absent, foreign or ineligible message never reaches it', async () => {
+      repo.findById.mockResolvedValueOnce(null);
+      await service.applyTransition(coach, MSG_ID, 'seen').catch((e) => e);
+      repo.findById.mockResolvedValueOnce(msg());
+      access.isWorkspaceCoach.mockResolvedValueOnce(false);
+      await service.applyTransition(foreignCoach, MSG_ID, 'seen').catch((e) => e);
+      repo.findById.mockResolvedValueOnce(msg());
+      repo.findSenderRole.mockResolvedValueOnce('coach');
+      await service.applyTransition(coach, MSG_ID, 'seen').catch((e) => e);
+      expect(safety.assertVisibleTo).not.toHaveBeenCalled();
     });
   });
 
