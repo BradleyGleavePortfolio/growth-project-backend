@@ -241,4 +241,37 @@ const MESSAGE = `Hi, your weigh-in is up 3 kg this week. ${'Call me tonight and 
     expect(await listed('K')).toEqual(expect.arrayContaining([withA.id, withB.id]));
     expect(await notifications.getUnreadCount(id.K)).toBe(coachUnread + 1);
   });
+
+  it('(failed before) the client\'s side of the chat: the coach\'s message notices leave the client\'s inbox and badge in a block either way; unblock restores them', async () => {
+    // MessageReceivedEmitter shape for a client reader: the thread is the
+    // client, so the link is the reader's own chat; the body names the coach.
+    const toA = await prisma.notification.create({
+      data: {
+        user_id: id.A, kind: 'message_received', channel: 'inapp', body: 'New message from RLS user',
+        deep_link: `tgp://messages/${id.A}`, payload: { senderName: 'RLS user', threadId: id.A },
+      },
+    });
+    // Control: the coach's other client, not in a block.
+    const toB = await prisma.notification.create({
+      data: {
+        user_id: id.B, kind: 'message_received', channel: 'inapp', body: 'New message from RLS user',
+        deep_link: `tgp://messages/${id.B}`, payload: { senderName: 'RLS user', threadId: id.B },
+      },
+    });
+    const listed = async (who: Key) =>
+      (await notifications.listNotifications(id[who], {})).items.map((n) => n.id);
+    const unreadA = await notifications.getUnreadCount(id.A);
+    expect(await listed('A')).toContain(toA.id);
+
+    for (const [blocker, blocked] of [['A', 'K'], ['K', 'A']] as const) {
+      await prisma.userBlock.create({ data: { blocker_id: id[blocker], blocked_id: id[blocked] } });
+      expect(await listed('A')).not.toContain(toA.id);
+      expect(await notifications.getUnreadCount(id.A)).toBe(unreadA - 1);
+      await expect(notifications.markRead(toA.id, id.A)).rejects.toThrow('Notification not found');
+      expect(await listed('B')).toContain(toB.id);
+      await prisma.userBlock.deleteMany({ where: { blocker_id: id[blocker], blocked_id: id[blocked] } });
+      expect(await listed('A')).toContain(toA.id);
+      expect(await notifications.getUnreadCount(id.A)).toBe(unreadA);
+    }
+  });
 });
