@@ -185,4 +185,59 @@ const LISTED: Key[] = ['A', 'T', 'B']; // everyone the inbox lists W's public-sp
       expect(await words('B')).toEqual(['wPhoto', 'wTyped2']);
     });
   });
+
+  // B1 (LS-INBOX2): the report queue read only the coach who runs the community. Rule D sends the report on a
+  // public-space row to the owner's team and the poster's own coach too, to read, once each; Hide, Warn, Ban and
+  // Dismiss stay the owner's. A report in a space that is not public stays the owner's alone.
+  describe('B1: the report queue for a public-space row', () => {
+    const rep: Record<string, string> = {};
+    const report = async (type: 'message' | 'post' | 'voice_note', target: string, by: Key) =>
+      (await prisma.communityModerationAction.create({ data: { workspace_id: ws.A, target_type: type, target_id: target,
+        reported_by_id: id[by], reason: 'harassment', notes: `report by ${by}` } })).id;
+    const flagged = async (k: Key) => (await moderation.listFlagged(user(k), {})).items;
+    const view = (keys: string[], canAct: boolean) => keys.map((k) => expect.objectContaining({ id: rep[k], can_act: canAct }));
+    const queue = async (k: Key) => (await moderation.listQueue(user(k), ws.A, {})).items
+      .map((i) => `${Object.entries(rep).find(([, v]) => v === i.id)?.[0]} ${PEOPLE.find((k) => id[k] === i.reported_by_user_id) ?? 'none'}`);
+
+    beforeAll(async () => {
+      rep.w = await report('message', row.wTyped2, 'O');
+      rep.n = await report('post', row.nPost, 'O');
+      rep.s = await report('message', row.oS, 'O');
+      rep.v = await report('voice_note', row.wVoice, 'O');
+      rep.o = await report('message', row.oTyped, 'N');
+    });
+
+    it('the coach who runs the community gets every report once, and may act on each (control)', async () => {
+      expect(await flagged('A')).toEqual(view(['w', 'n', 's', 'v', 'o'], true));
+    });
+
+    it('the owner\'s team in P gets the reports on P\'s rows, to read; not the clients space\'s', async () => {
+      expect(await flagged('T')).toEqual(view(['w', 'n', 'v', 'o'], false));
+    });
+
+    it('W\'s own coach gets the reports on W\'s rows only, to read; an unrelated coach gets none', async () => {
+      expect(await flagged('B')).toEqual(view(['w', 'v'], false));
+      expect(await flagged('C')).toEqual([]);
+    });
+
+    it('the community\'s queue: the same rows for the team and the own coach, the reporter withheld; others still 403', async () => {
+      expect(await queue('A')).toEqual(['o N', 'v O', 's O', 'n O', 'w O']); // newest first
+      expect(await queue('T')).toEqual(['o none', 'v none', 'n none', 'w none']);
+      expect(await queue('B')).toEqual(['v none', 'w none']);
+      expect(await refused(moderation.listQueue(user('C'), ws.A, {}))).toBe(403);
+    });
+
+    it('reading is not acting: the team and the own coach get 403 on Hide and Dismiss, and every report stays open', async () => {
+      expect(await refused(moderation.act(user('B'), rep.w, 'hide', undefined))).toBe(403);
+      expect(await refused(moderation.act(user('T'), rep.n, 'dismiss', undefined))).toBe(403);
+      expect(await prisma.communityModerationAction.count({ where: { id: { in: Object.values(rep) }, status: 'open' } })).toBe(5);
+    });
+
+    it('a ban on the own coach in A\'s community takes the reports away too (B4); lifted, they are back', async () => {
+      await ban('B', 'A', null);
+      expect([await flagged('B'), await refused(moderation.listQueue(user('B'), ws.A, {}))]).toEqual([[], 403]);
+      await ban('B', 'A', new Date());
+      expect(await flagged('B')).toEqual(view(['w', 'v'], false));
+    });
+  });
 });
