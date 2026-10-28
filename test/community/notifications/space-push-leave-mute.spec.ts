@@ -231,6 +231,19 @@ describe('a coach High alert sent as a reply in a thread', () => {
     s.reads.bo.notify_mode = 'mute_all';
     expect(queuedFor(await write({ reply: true, highAlert: true }))).toEqual([['cy', 'high_alert']]);
   });
+
+  // FR-1168R2 C1 (LS-1168R1 C1, LO-1168R1 C1): the reach a coach is shown for a High alert reply uses the rule the
+  // push uses: not who left that thread, still who muted it; a new message counts the whole space as before.
+  it('the reach for a reply counts who it will ring there, the same people the push is queued for', async () => {
+    const { s, svc, write, queuedFor } = world();
+    s.threads['bo:p1'] = 'left';
+    s.threads['cy:p1'] = 'muted';
+    await expect(svc.highAlertReach('sam', 'w', 'c1')).resolves.toBe(3);
+    await expect(svc.highAlertReach('sam', 'w', 'c1', 'p1')).resolves.toBe(2);
+    expect(queuedFor(await write({ reply: true, highAlert: true }))).toHaveLength(2);
+    s.reads.cy.notify_mode = 'mute_all';
+    await expect(svc.highAlertReach('sam', 'w', 'c1', 'p1')).resolves.toBe(1);
+  });
 });
 
 describe('the space bell', () => {
