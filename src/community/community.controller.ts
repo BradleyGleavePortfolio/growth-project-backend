@@ -71,8 +71,9 @@ export class CommunityController {
   @Get('cohorts')
   @UseGuards(JwtAuthGuard, RolesGuard, CommunityFeatureFlagGuard)
   @Roles('student', 'coach', 'owner')
-  async getCohorts(@Request() req: AuthedRequest) {
-    return this.communityService.getCohorts(req.user);
+  async getCohorts(@Request() req: AuthedRequest, @Query('include_left') includeLeft?: string) {
+    // LEAVE-MUTE-BE: ?include_left=1 (or true) keeps the spaces the caller left, marked with left_at.
+    return this.communityService.getCohorts(req.user, includeLeft === '1' || includeLeft === 'true');
   }
 
   /** GET /community/cohorts/:cohortId — gated. */
