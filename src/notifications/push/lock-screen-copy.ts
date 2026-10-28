@@ -1,5 +1,6 @@
 import { NotificationKind } from '../notification-kind';
 import { dayLabel, formatClock, usableTimeZone } from '../local-time';
+import { spacePushCopy, type SpacePushContext } from '../../community/space-push/space-push-policy';
 
 // What a push shows on the lock screen (C-643-2 / push delivery).
 //
@@ -179,6 +180,8 @@ export interface PushContext {
   safetyAlert?: string;
   /** ...and its CoachAlert id, which the tap opens (owner 57d). */
   alertId?: string;
+  /** SC-PUSH: a space chat push (fixed copy from a count and the space name; never a name or message text). */
+  spacePush?: SpacePushContext;
 }
 
 function contextTime(context: PushContext | null | undefined): { at: Date; tz: string } | null {
@@ -200,6 +203,9 @@ export function lockScreenCopy(
   context?: PushContext | null,
   now: Date = new Date(),
 ): LockScreenCopy {
+  if (kind === NotificationKind.COMMUNITY_MESSAGE_RECEIVED && context?.spacePush) {
+    return spacePushCopy(context.spacePush);
+  }
   if (kind === NotificationKind.BOOKING_RESCHEDULED && context?.moveRequested === true) {
     return MOVE_REQUESTED_COPY;
   }

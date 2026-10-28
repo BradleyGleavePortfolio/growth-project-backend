@@ -35,7 +35,14 @@ function rosterRow(id: string, name: string) {
   };
 }
 
-function makePrisma(consentRows: Array<Record<string, unknown>>) {
+// NEEDS-YOU-BE: logged_at feeds oldest_check_in_to_review_at.
+const defaultCheckIns = [
+  { user_id: 'c1', date: '2026-10-03', reviewed_by_coach: false, logged_at: '2026-10-03T07:15:00Z' },
+  { user_id: 'c1', date: '2026-10-04', reviewed_by_coach: false, logged_at: '2026-10-04T08:00:00Z' },
+  { user_id: 'c2', date: '2026-10-05', reviewed_by_coach: false, logged_at: '2026-10-05T09:30:00Z' },
+];
+
+function makePrisma(consentRows: Array<Record<string, unknown>>, checkIns = defaultCheckIns) {
   const maxBy = (rows: Array<{ user_id: string; date: string }>) =>
     jest.fn(async ({ where }: { where: { user_id: { in: string[] } } }) => {
       const out = new Map<string, Date>();
@@ -47,11 +54,6 @@ function makePrisma(consentRows: Array<Record<string, unknown>>) {
       }
       return [...out].map(([user_id, date]) => ({ user_id, _max: { date } }));
     });
-  const checkIns = [
-    { user_id: 'c1', date: '2026-10-03', reviewed_by_coach: false },
-    { user_id: 'c1', date: '2026-10-04', reviewed_by_coach: false },
-    { user_id: 'c2', date: '2026-10-05', reviewed_by_coach: false },
-  ];
   return {
     user: {
       findMany: jest.fn().mockResolvedValue([rosterRow('c1', 'Ana Lopez'), rosterRow('c2', 'Ben Cho')]),
@@ -67,7 +69,7 @@ function makePrisma(consentRows: Array<Record<string, unknown>>) {
     workoutSession: { groupBy: maxBy([{ user_id: 'c1', date: '2026-10-02' }, { user_id: 'c2', date: '2026-10-06' }]) },
     weightLog: { groupBy: maxBy([{ user_id: 'c1', date: '2026-10-06' }, { user_id: 'c2', date: '2026-10-06' }]) },
     checkIn: {
-      groupBy: jest.fn(async (args: { where: { user_id: { in: string[] }; reviewed_by_coach?: boolean }; _count?: unknown }) => {
+      groupBy: jest.fn(async (args: { where: { user_id: { in: string[] }; reviewed_by_coach?: boolean }; _count?: unknown; _min?: unknown }) => {
         const rows = checkIns.filter(
           (c) =>
             args.where.user_id.in.includes(c.user_id) &&
@@ -75,7 +77,11 @@ function makePrisma(consentRows: Array<Record<string, unknown>>) {
         );
         const ids = [...new Set(rows.map((r) => r.user_id))];
         if (args._count) {
-          return ids.map((user_id) => ({ user_id, _count: { _all: rows.filter((r) => r.user_id === user_id).length } }));
+          return ids.map((user_id) => {
+            const mine = rows.filter((r) => r.user_id === user_id);
+            const oldest = new Date(Math.min(...mine.map((r) => Date.parse(r.logged_at))));
+            return { user_id, _count: { _all: mine.length }, ...(args._min ? { _min: { logged_at: oldest } } : {}) };
+          });
         }
         return ids.map((user_id) => ({
           user_id,
@@ -129,6 +135,7 @@ describe('GET /coach/clients roster activity (UX-COACHLOOKUP-124)', () => {
       last_weigh_in_on: '2026-10-06',
       last_check_in_on: '2026-10-04',
       check_ins_to_review: 2,
+      oldest_check_in_to_review_at: '2026-10-03T07:15:00.000Z',
     });
     expect(ana.profile).toEqual(expect.objectContaining({ id: 'p-c1' }));
 
@@ -141,6 +148,7 @@ describe('GET /coach/clients roster activity (UX-COACHLOOKUP-124)', () => {
       last_weigh_in_on: '2026-10-06',
       last_check_in_on: '2026-10-05',
       check_ins_to_review: 1,
+      oldest_check_in_to_review_at: '2026-10-05T09:30:00.000Z',
     });
     expect(ben.profile).toEqual(expect.objectContaining({ id: 'p-c2' }));
     expect(prisma.loggedFoodEntry.groupBy.mock.calls[0][0].where.user_id.in).toEqual(['c1', 'c2']);
@@ -172,9 +180,42 @@ describe('GET /coach/clients roster activity (UX-COACHLOOKUP-124)', () => {
     const rows = await svc.withRosterActivity('owner-1', 'owner', await svc.getClients('owner-1', 'all', 'owner'));
     expect(prisma.clientCoachConsent.findMany).not.toHaveBeenCalled();
     expect(rows[1].activity).toEqual(
-      expect.objectContaining({ shared: true, last_active_on: '2026-10-06', check_ins_to_review: 1 }),
+      expect.objectContaining({
+        shared: true,
+        last_active_on: '2026-10-06',
+        check_ins_to_review: 1,
+        oldest_check_in_to_review_at: '2026-10-05T09:30:00.000Z',
+      }),
     );
     expect(rows[1].profile).toEqual(expect.objectContaining({ id: 'p-c2' }));
+  });
+
+  // NEEDS-YOU-BE: how long the oldest check-in has waited, from the same rows
+  // as check_ins_to_review and behind the same habits consent.
+  it('oldest_check_in_to_review_at skips reviewed check-ins and is null with none waiting', async () => {
+    const prisma = makePrisma([], [
+      { user_id: 'c1', date: '2026-10-03', reviewed_by_coach: true, logged_at: '2026-10-03T07:15:00Z' },
+      { user_id: 'c1', date: '2026-10-04', reviewed_by_coach: false, logged_at: '2026-10-04T08:00:00Z' },
+      { user_id: 'c2', date: '2026-10-05', reviewed_by_coach: true, logged_at: '2026-10-05T09:30:00Z' },
+    ]);
+    const svc = new CoachService(stub<CoachServiceArgs[0]>(prisma), audit, consentFor(prisma));
+    const [ana, ben] = await svc.withRosterActivity('coach-A', 'coach', await svc.getClients('coach-A', 'all', 'coach'));
+    expect(ana.activity.check_ins_to_review).toBe(1);
+    expect(ana.activity.oldest_check_in_to_review_at).toBe('2026-10-04T08:00:00.000Z');
+    expect(ben.activity.check_ins_to_review).toBe(0);
+    expect(ben.activity.oldest_check_in_to_review_at).toBeNull();
+  });
+
+  it('oldest_check_in_to_review_at is null, never a time, without habits consent', async () => {
+    // coach-B does not coach c1 or c2 (moved away): no slice is shared.
+    const prisma = makePrisma([granted('c1', ConsentScope.FITNESS_HABITS_PROGRESS)]);
+    const svc = new CoachService(stub<CoachServiceArgs[0]>(prisma), audit, consentFor(prisma));
+    const rows = await svc.withRosterActivity('coach-B', 'coach', await svc.getClients('coach-B', 'all', 'coach'));
+    for (const r of rows) {
+      expect(r.activity.check_ins_to_review).toBeNull();
+      expect(r.activity.oldest_check_in_to_review_at).toBeNull();
+    }
+    expect(prisma.checkIn.groupBy).not.toHaveBeenCalled();
   });
 
   it('an empty page makes no extra queries', async () => {

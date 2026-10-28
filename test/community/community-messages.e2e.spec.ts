@@ -549,4 +549,46 @@ itLive('community v1-3 cohort messages (live DB)', () => {
       voice_duration_ms: null,
     });
   });
+
+  it('13. REMOVED-BY-BE: a coach removal stays as a placeholder; an author delete still drops', async () => {
+    const removed = (await say(ids.studentA, { body: 'the coach removes this' })).body.message;
+    const own = (await say(ids.studentA, { body: 'I delete this myself' })).body.message;
+    const del = await call('DELETE', `/api/community/messages/${removed.id}`, asUser(ids.coachA));
+    expect(del.status).toBe(200);
+    expect(del.body.message).toMatchObject({
+      id: removed.id,
+      body: null,
+      deleted: true,
+      removed_by: { role: 'coach', user_id: ids.coachA },
+    });
+    expect((await call('DELETE', `/api/community/messages/${own.id}`, asUser(ids.studentA))).status).toBe(200);
+
+    const list = await call('GET', `/api/community/cohorts/${ids.cohortA}/messages`, asUser(ids.studentA2));
+    expect(list.status).toBe(200);
+    const listed = list.body.messages.map((m: { id: string }) => m.id);
+    expect(listed).not.toContain(own.id);
+    const row = list.body.messages.find((m: { id: string }) => m.id === removed.id);
+    expect(row).toMatchObject({
+      body: null,
+      deleted: true,
+      voice_note: null,
+      parent: null,
+      sender: { id: ids.studentA },
+      removed_at: expect.any(String),
+      removed_by: { role: 'coach', user_id: ids.coachA, name: expect.any(String) },
+    });
+    const one = await call('GET', `/api/community/messages/${removed.id}`, asUser(ids.studentA2));
+    expect(one.body.message).toMatchObject({ id: removed.id, removed_by: { user_id: ids.coachA } });
+
+    // The words are erased; the record keeps who and when; the author is told once.
+    const stored = await prisma.communityMessage.findFirst({ where: { id: removed.id } });
+    expect(stored).toMatchObject({ body: null, removed_by_user_id: ids.coachA });
+    expect(stored?.deleted_at).toBeInstanceOf(Date);
+    expect((await call('DELETE', `/api/community/messages/${removed.id}`, asUser(ids.coachA))).status).toBe(200);
+    const notices = await prisma.notification.findMany({
+      where: { user_id: ids.studentA, kind: 'community_moderation_notice' },
+    });
+    expect(notices.filter((n) => JSON.stringify(n.payload).includes(removed.id))).toHaveLength(1);
+    await prisma.notification.deleteMany({ where: { user_id: ids.studentA } });
+  });
 });

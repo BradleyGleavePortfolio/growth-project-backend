@@ -35,9 +35,11 @@ const FORBIDDEN_WORKSPACE = {
   error: 'forbidden',
   code: 'community.workspace.no_access',
 } as const;
-const FORBIDDEN_COHORT = {
-  error: 'forbidden',
-  code: 'community.cohort.no_access',
+// SPACE-404-CLASS (#168-16): a space the caller cannot read answers exactly
+// like a space that does not exist, so the API never confirms it exists.
+const COHORT_NOT_FOUND = {
+  error: 'not_found',
+  code: 'community.cohort.not_found',
 } as const;
 
 /**
@@ -355,10 +357,7 @@ export class CommunityService {
     const role = this.effectiveRole(user);
     const cohort = await this.repo.findCohortById(cohortId);
     if (!cohort) {
-      throw new NotFoundException({
-        error: 'not_found',
-        code: 'community.cohort.not_found',
-      });
+      throw new NotFoundException(COHORT_NOT_FOUND);
     }
 
     const workspace = await this.repo.findWorkspaceById(cohort.workspace_id);
@@ -367,7 +366,7 @@ export class CommunityService {
     const canRead = coachView || (await this.repo.canEnterCohort(cohortId, user.id));
 
     if (!canRead) {
-      throw new ForbiddenException(FORBIDDEN_COHORT);
+      throw new NotFoundException(COHORT_NOT_FOUND);
     }
 
     return CommunityCohortResponseSchema.parse({

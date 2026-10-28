@@ -97,6 +97,7 @@ describe('CommunityMessagesService.send — coach-inbox producer', () => {
     expect(repo.markCohortClientMessagesReplied).toHaveBeenCalledWith({
       cohortId: COHORT,
       repliedAt: new Date('2026-01-01T00:00:00.000Z'),
+      viewerId: coach.id, // FR-1174: only the rows this coach can read
     });
   });
 
@@ -108,6 +109,7 @@ describe('CommunityMessagesService.send — coach-inbox producer', () => {
     repo.createCohortMessage.mockResolvedValue(createdMessage(owner.id));
     await service.send(owner, COHORT, 'looks good');
     expect(repo.markCohortClientMessagesReplied).toHaveBeenCalledTimes(1);
+    expect(repo.markCohortClientMessagesReplied).toHaveBeenCalledWith(expect.objectContaining({ viewerId: owner.id }));
   });
 
   it('does NOT stamp when a CLIENT sends a message (keeps it unanswered)', async () => {
@@ -126,6 +128,7 @@ describe('CommunityMessagesService.send — coach-inbox producer', () => {
     expect(repo.markCohortClientMessagesReplied).toHaveBeenCalledWith({
       cohortId: COHORT,
       repliedAt: persisted.created_at,
+      viewerId: coach.id,
     });
   });
 });

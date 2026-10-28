@@ -158,10 +158,16 @@ export class CommunityCohortMembersService {
     return user.role === 'owner' || (await this.access.isWorkspaceCoach(workspaceId, user.id));
   }
 
-  private async assertWorkspaceCoach(workspaceId: string, user: User): Promise<void> {
-    if (!(await this.isWorkspaceCoach(workspaceId, user))) {
-      throw new ForbiddenException(FORBIDDEN);
-    }
+  /**
+   * SPACE-404-CLASS (#168-16): a coach-only change to one space. A caller who
+   * cannot read the space (another coach, someone removed or banned) gets the
+   * same 404 as a space that does not exist; one who can read it but not manage
+   * it keeps the 403.
+   */
+  private async assertSpaceCoach(cohort: CommunityCohort, user: User): Promise<void> {
+    if (await this.isWorkspaceCoach(cohort.workspace_id, user)) return;
+    if (!(await this.access.canAccessCohort(cohort, user))) throw new NotFoundException(NOT_FOUND);
+    throw new ForbiddenException(FORBIDDEN);
   }
 
   /**
@@ -224,7 +230,7 @@ export class CommunityCohortMembersService {
 
   async assign(user: User, cohortId: string, body: AssignMemberDto): Promise<CohortMemberResponse> {
     const cohort = await this.resolveCohortOrThrow(cohortId);
-    await this.assertWorkspaceCoach(cohort.workspace_id, user);
+    await this.assertSpaceCoach(cohort, user);
 
     // Exactly one of user_id / email must be supplied (XOR). The role/user are
     // always derived from the validated body — never an auth identity.
@@ -269,7 +275,7 @@ export class CommunityCohortMembersService {
 
   async remove(user: User, cohortId: string, userId: string): Promise<CohortMemberResponse> {
     const cohort = await this.resolveCohortOrThrow(cohortId);
-    await this.assertWorkspaceCoach(cohort.workspace_id, user);
+    await this.assertSpaceCoach(cohort, user);
 
     const membership = await this.repo.findMembership(cohort.id, userId);
     if (!membership) throw new NotFoundException(NOT_FOUND);

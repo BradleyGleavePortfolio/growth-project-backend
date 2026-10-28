@@ -71,6 +71,7 @@ interface PrismaMocks {
   };
   user: {
     findUnique: jest.Mock;
+    findFirst: jest.Mock; // GUEST-ELIGIBILITY buyer lookup (null: a new email)
     create: jest.Mock;
     update: jest.Mock;
     upsert: jest.Mock; // r48 #12 — atomic upsert path
@@ -103,6 +104,7 @@ function buildPrismaMocks(): PrismaMocks {
     },
     user: {
       findUnique: jest.fn(),
+      findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn(),
       update: jest.fn(),
       // r48 #12 — convertGuestToUser now uses tx.user.upsert.  Default

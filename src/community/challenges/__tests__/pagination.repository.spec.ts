@@ -119,6 +119,7 @@ function commentRow(n: number): CommunityMessage {
     visibility: 'active',
     high_alert: false,
     deleted_at: null,
+    removed_by_user_id: null,
     updated_at: new Date('2026-03-01T00:00:00.000Z'),
   };
 }

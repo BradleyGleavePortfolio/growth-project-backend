@@ -35,9 +35,15 @@ export const DM_BLOCKED_BY_YOU = {
 } as const;
 
 /**
- * DM refusal for the person who WAS blocked: the same 404 body as a DM with a
- * member who is not there, so the block is never disclosed ("they are not
- * told"). Kept identical to CommunityDmsService's not-found body.
+ * #169-5 CLOSED-LINE (owner): in a one-to-one conversation the person who WAS
+ * blocked is told, so the phone shows "{N} has blocked you" (BAM-2b). Nobody
+ * else learns of the block: spaces, search and notifications are unchanged.
+ */
+export const DM_BLOCKED_BY_THEM = { error: 'forbidden', code: 'community.dm.blocked_by_them' } as const;
+
+/**
+ * DM refusal when a member is not there (left, banned, never joined). Kept
+ * identical to CommunityDmsService's not-found body.
  */
 export const DM_UNAVAILABLE = {
   error: 'not_found',
@@ -114,10 +120,12 @@ export const COMMUNITY_GUIDELINES: readonly string[] = [
 
 /**
  * Public 24-hour moderation commitment (owner-approved 2026-10-01 09:07 PDT,
- * launch copy section 4). Pinned by community-safety-copy.spec.ts.
+ * launch copy section 4; block sentence owner-approved 2026-10-23 10:57 PDT,
+ * A6.0-170, 137-2 row RC-BLOCK on b#1145). Pinned by
+ * community-safety-copy.spec.ts.
  */
 export const COMMUNITY_RESPONSE_COMMITMENT =
-  'Reports are reviewed within 24 hours, every day, by your coach and The Growth Project team. Content that breaks these guidelines is removed, and people who break them repeatedly lose access. If you block someone, they can no longer see your posts or message you, and they are not told.';
+  'Reports are reviewed within 24 hours, every day, by your coach and The Growth Project team. Content that breaks these guidelines is removed, and people who break them repeatedly lose access. If you block someone, they can no longer see your posts or message you. In a direct message they see that you blocked them; nobody else is told.';
 
 /**
  * A DM row (dm_key set) is only addressable by its two participants. Used by
@@ -151,11 +159,14 @@ export function assertDmParticipantIfDm(
  * reads by id answer 404 (same body as "does not exist"), and every
  * interaction that targets the other side (reply, react, RSVP, join, DM) is
  * refused the same way, so no push can cross a block. Unblocking restores
- * both directions at once (one row). The blocked user is never told.
- * Coach/owner moderation surfaces (queue, flagged list, coach inbox, AI
- * triage, the coach roster view) stay complete so reports can be actioned.
- * This makes the owner-approved copy true: "If you block someone, they can no
- * longer see your posts or message you, and they are not told."
+ * both directions at once (one row). Nobody else learns of a block. In a
+ * one-to-one DM the two people are told (#169-5 CLOSED-LINE): the blocker gets
+ * 403 community.dm.blocked_by_you and the blocked person 403
+ * community.dm.blocked_by_them, while the thread leaves both DM lists (owner
+ * 10-23 "Dissapear"). Coach/owner moderation surfaces (queue, flagged list,
+ * coach inbox, AI triage, the coach roster view) stay complete so reports can
+ * be actioned. COMMUNITY_RESPONSE_COMMITMENT says the same (owner-approved
+ * 2026-10-23 10:57 PDT).
  */
 @Injectable()
 export class CommunitySafetyService {
@@ -249,7 +260,7 @@ export class CommunitySafetyService {
   /**
    * A block in either direction closes the DM (open, read, send). The blocker
    * gets 403 community.dm.blocked_by_you with the unblock step; the blocked
-   * person gets the plain not-found body, so the block is not disclosed.
+   * person gets 403 community.dm.blocked_by_them (#169-5 CLOSED-LINE).
    */
   async assertDmAllowed(senderId: string, recipientId: string): Promise<void> {
     const rows = await this.prisma.userBlock.findMany({
@@ -265,7 +276,7 @@ export class CommunitySafetyService {
     if (rows.some((r) => r.blocker_id === senderId && r.blocked_id === recipientId)) {
       throw new ForbiddenException(DM_BLOCKED_BY_YOU);
     }
-    throw new NotFoundException(DM_UNAVAILABLE);
+    throw new ForbiddenException(DM_BLOCKED_BY_THEM);
   }
 
   /**

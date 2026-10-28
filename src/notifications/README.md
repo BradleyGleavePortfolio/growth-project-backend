@@ -68,13 +68,16 @@ at the read path. All delivery is gated behind `FEATURE_COMMUNITY_PUSH`.
 
 | Kind | In-app | Push | Email | Setting | Mute all | Category | Who receives |
 | ---- | ------ | ---- | ----- | ------- | -------- | -------- | ------------ |
-| `community_message_received` | on | on | off | `digest_*` (b#1138 makes it none) | row kept, push muted (note 2) | COACH_DIRECT | Member |
+| `community_message_received` | on | on | off | none | row kept, push muted (note 2) | COACH_DIRECT | Member |
 | `community_dm_received` | on | on | off | none | row kept, push muted (note 2) | COACH_DIRECT | Member |
 | `community_post_replied` | on | on | off | none | row kept, push muted (note 2) | CLIENT_BOT | Post author |
 | `community_event_starting_soon` | on | on | off | none | row kept, push muted (note 2) | MILESTONE | RSVP'd member |
 | `community_challenge_milestone` | on | on | off | none | row kept, push muted (note 2) | MILESTONE | Participant |
 | `community_moderation_action_against_me` | on | on | on | none | row kept, push muted (note 2) | SYSTEM | Actioned member |
 | `community_membership_changed` | on | off | off | none | row kept, push muted (note 2) | SYSTEM | Member |
+
+`notificationPrefsPrefix` files `community_message_received` (every space chat push) under `community_message`,
+a prefix with no column: only `muted` and the space's own setting stop it.
 
 Lock-screen privacy: when enabled, the push `body` is a fixed safe string
 (`COMMUNITY_PUSH_BODIES[kind].privacyOn`) that never contains user names,

@@ -242,11 +242,11 @@ describe('POST /community/cohorts/:cohortId/images/upload-url (SC-BE3)', () => {
     expect((w.erasures[0].next_attempt_at as Date).getTime()).toBe(LINK_EXP_MS + 5 * 60 * 1000);
   });
 
-  it('refuses a non-member, a space of another workspace and a missing space alike (403)', async () => {
+  it('refuses a non-member, a space of another workspace and a missing space alike (404)', async () => {
     const { controller } = world({ access: () => false });
-    await expect(controller.uploadUrl(req, SPACE, dto)).rejects.toBeInstanceOf(ForbiddenException);
-    await expect(controller.uploadUrl(req, FOREIGN_SPACE, dto)).rejects.toBeInstanceOf(ForbiddenException);
-    await expect(controller.uploadUrl(req, '11111111-1111-4111-8111-000000000000', dto)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(controller.uploadUrl(req, SPACE, dto)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(controller.uploadUrl(req, FOREIGN_SPACE, dto)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(controller.uploadUrl(req, '11111111-1111-4111-8111-000000000000', dto)).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('answers 404 with FEATURE_COMMUNITY_IMAGES off', async () => {

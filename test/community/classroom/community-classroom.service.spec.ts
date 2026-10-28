@@ -16,7 +16,7 @@
  *     published from the release time.
  *   - Storage not configured: media tiles degrade to url=null rather than 500.
  */
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, HttpException, NotFoundException } from '@nestjs/common';
 import type { CommunityClassroomMediaAsset, CommunityClassroomPost } from '@prisma/client';
 import { CommunityClassroomService } from '../../../src/community/classroom/community-classroom.service';
 import type { ClassroomPostWithMedia } from '../../../src/community/classroom/community-classroom.repository';
@@ -394,7 +394,68 @@ describe('CommunityClassroomService', () => {
     it('403s a non-coach attempting to publish a visible lesson', async () => {
       repo.findPostById.mockResolvedValue(post({ status: 'published', release_at: PAST }));
       access.isWorkspaceCoach.mockResolvedValue(false);
+      access.canAccessWorkspace.mockResolvedValue(true);
       await expect(service.publish(member, POST_A, {})).rejects.toBeInstanceOf(ForbiddenException);
+    });
+  });
+
+  // SPACE-404-CLASS (#168-16): the coach-only lesson writes answer a lesson the
+  // caller cannot read exactly like a lesson that does not exist; only someone
+  // who can read it learns it exists (403).
+  describe('coach-only writes on a lesson in a space', () => {
+    const otherCoach = makeUser({ id: STRANGER_ID, role: 'coach' });
+    const NF = { status: 404, body: { error: 'not_found', code: 'community.classroom.not_found' } };
+    const writes: Array<[string, (u: typeof coachA) => Promise<unknown>]> = [
+      ['update', (u) => service.update(u, POST_A, { title: 'X' })],
+      ['publish', (u) => service.publish(u, POST_A, {})],
+      ['archive', (u) => service.archive(u, POST_A)],
+      ['attachMedia', (u) => service.attachMedia(u, POST_A, [])],
+    ];
+
+    async function denial(p: Promise<unknown>): Promise<{ status: number; body: unknown }> {
+      try {
+        await p;
+      } catch (e) {
+        if (e instanceof HttpException) return { status: e.getStatus(), body: e.getResponse() };
+        throw e;
+      }
+      throw new Error('expected the call to be denied');
+    }
+
+    beforeEach(() => {
+      repo.findPostById.mockImplementation(async (id: string) =>
+        id === POST_A ? post({ cohort_id: COHORT_A, status: 'published', release_at: PAST }) : null,
+      );
+      access.isWorkspaceCoach.mockImplementation(async (_ws: string, uid: string) => uid === COACH_A_ID);
+      access.findCohort.mockResolvedValue({ id: COHORT_A, workspace_id: WS_A });
+    });
+
+    it.each(writes)('%s: no such lesson, another coach, a removed member: the same 404 status and body', async (_n, call) => {
+      access.canAccessCohort.mockResolvedValue(false);
+      repo.findPostById.mockResolvedValueOnce(null);
+      expect(await denial(call(otherCoach))).toEqual(NF);
+      expect(await denial(call(otherCoach))).toEqual(NF);
+      expect(await denial(call(member))).toEqual(NF);
+      expect(access.canAccessCohort).toHaveBeenCalledWith({ id: COHORT_A, workspace_id: WS_A }, otherCoach);
+      expect(repo.updatePost).not.toHaveBeenCalled();
+      expect(repo.softDeletePost).not.toHaveBeenCalled();
+      expect(repo.attachMedia).not.toHaveBeenCalled();
+    });
+
+    it.each(writes)('%s: a reader of the space who is not its coach keeps the 403', async (_n, call) => {
+      access.canAccessCohort.mockResolvedValue(true);
+      expect(await denial(call(otherCoach))).toEqual({
+        status: 403,
+        body: { error: 'forbidden', code: 'community.classroom.not_coach' },
+      });
+      expect(repo.updatePost).not.toHaveBeenCalled();
+    });
+
+    it('control: the space coach still reads and edits the lesson', async () => {
+      repo.updatePost.mockResolvedValue(post({ cohort_id: COHORT_A, title: 'X' }));
+      await expect(service.getOne(coachA, POST_A)).resolves.toMatchObject({ post: { id: POST_A } });
+      await service.update(coachA, POST_A, { title: 'X' });
+      expect(repo.updatePost).toHaveBeenCalledWith(POST_A, expect.objectContaining({ title: 'X' }));
     });
   });
 

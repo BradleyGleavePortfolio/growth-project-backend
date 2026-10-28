@@ -459,8 +459,8 @@ export class CommunityClassroomService {
 
   /**
    * Resolve a lesson the caller OWNS as coach (or platform owner), or throw. A
-   * non-coach who can otherwise read the lesson still gets 403 here; a lesson in
-   * another tenant resolves to 404 (existence never leaks).
+   * non-coach who can otherwise read the lesson still gets 403 here; a lesson
+   * they cannot read resolves to 404 (existence never leaks).
    */
   private async coachOwnedPost(user: User, postId: string): Promise<ClassroomPostWithMedia> {
     const post = await this.repo.findPostById(postId);
@@ -468,18 +468,11 @@ export class CommunityClassroomService {
       throw new NotFoundException(NOT_FOUND);
     }
     if (!(await this.isCoach(post.workspace_id, user))) {
-      // A member who is not the coach should not even learn the lesson exists
-      // through this write path, so a non-published lesson is a 404 and a
-      // visible-but-not-owned one is a 403.
-      const visible = isStudentVisible(
-        {
-          status: post.status,
-          releaseAt: post.release_at,
-          softDeletedAt: post.soft_deleted_at,
-        },
-        new Date(),
-      );
-      if (!visible) throw new NotFoundException(NOT_FOUND);
+      // SPACE-404-CLASS (#168-16): only someone who can read the lesson learns
+      // it exists through this write path (403). Anyone else (another coach,
+      // someone removed from its space) gets the same 404 as no lesson, by the
+      // same rule as GET /community/classroom/:postId.
+      await this.readablePost(user, postId, new Date());
       throw new ForbiddenException({
         error: 'forbidden',
         code: 'community.classroom.not_coach',

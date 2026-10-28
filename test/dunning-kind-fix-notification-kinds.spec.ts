@@ -74,8 +74,6 @@ function notifications(prefs: Record<string, unknown> | null) {
   return { svc, prisma, created };
 }
 
-// b#1138 (PUSH-KIND-FIX) owns this kind's line in push-preferences.ts; drop it from here when that PR lands.
-const OWNED_ELSEWHERE = new Set<string>([NotificationKind.COMMUNITY_MESSAGE_RECEIVED]);
 const MONEY_OR_SAFETY = [
   NotificationKind.DUNNING_BLOCKER,
   NotificationKind.FIRST_PAYMENT,
@@ -98,7 +96,7 @@ describe('DUNNING-KIND-FIX: every notification kind lands where the README defau
   });
 
   describe.each(defaultStates)('%s', (_state, prefs) => {
-    it.each(Object.values(NotificationKind).filter((k) => !OWNED_ELSEWHERE.has(k)))('%s', async (kind) => {
+    it.each(Object.values(NotificationKind))('%s', async (kind) => {
       const row = named.get(kind);
       expect([kind, row?.Setting]).toEqual([kind, settingOf(kind)]);
       const { svc } = notifications(prefs);

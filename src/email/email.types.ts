@@ -38,6 +38,9 @@ export const EmailTemplateKey = {
   // B-REPORTALERT-125 — a new user report (DM or community) to the support
   // inbox: ids, kind, reason label and time only. Append-only.
   REPORT_ALERT: 'report-alert',
+  // GUEST-ELIGIBILITY (owner #170-2) — the 6-digit code an existing TGP
+  // email gets before it may pay on the web purchase page. Append-only.
+  BUYER_EMAIL_CODE: 'buyer-email-code',
 } as const;
 export type EmailTemplateKey =
   (typeof EmailTemplateKey)[keyof typeof EmailTemplateKey];
