@@ -79,6 +79,7 @@ function buildWorld(opts: {
       ),
     },
     subCoachAssignment: { findMany: jest.fn(async () => []) }, // the inbox rule: no delegations
+    communityCohort: { findMany: jest.fn(async () => []) }, // FR-1152R3 B1: leads no public space
     $transaction: ledger.$transaction,
     notificationDeliveryLog: ledger.notificationDeliveryLog,
     user: {

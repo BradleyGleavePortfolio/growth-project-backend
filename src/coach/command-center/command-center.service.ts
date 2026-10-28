@@ -30,6 +30,7 @@ import { CHURN_FACTOR_SCOPES, coachVisibleFactors } from './churn-factor-scopes'
 import { resolveRecipientTimeZone } from '../../notifications/recipient-timezone';
 import { type CoachHomeDay, loadHomeDay } from './coach-home-day';
 import { inBlockWith } from '../../messaging/block-pair';
+import { spaceAlertCopies, spaceCopyOf, withSpaceCopies } from '../../community/space-safety-alerts';
 import type { CoachRiskBoardRow } from '../../admin/ptm/admin-ptm.service';
 import type { PtmRiskBucket } from '../../ptm/ptm.types';
 
@@ -100,7 +101,8 @@ export type ActionQueueAlertType =
   | 'bloodwork_review'
   | 'roman_urgent_reply'
   | 'roman_eating_disorder_reply'
-  | 'roman_crisis_reply';
+  | 'roman_crisis_reply'
+  | 'community_photo_safety';
 
 export interface ActionQueueItem {
   alert_id: string;
@@ -117,6 +119,8 @@ export interface ActionQueueItem {
    */
   quote?: string | null;
   sent_at?: string | null;
+  /** FR-1152R3 B1: a public space's copy of a photo safety alert: that space. */
+  space_id?: string;
 }
 
 /**
@@ -131,7 +135,13 @@ const SAFETY_CARD_LINE: Partial<Record<string, (name: string) => string>> = {
   // ROMAN-CRISIS-ALERT, approved word for word: the first name only.
   roman_crisis_reply: (name) =>
     `Roman sent ${name.trim().split(/\s+/)[0] || name} a crisis safety reply. Please check in with them today.`,
+  // FR-1152 (#172-5): the first name only; never the photo, caption or why.
+  community_photo_safety: (name) =>
+    `Our safety check stopped a space chat photo from ${name.trim().split(/\s+/)[0] || name}. Please check in with them today.`,
 };
+
+/** Safety alerts that carry no quote: nothing the client wrote is shown. */
+const NO_QUOTE_SAFETY_TYPES: readonly string[] = ['roman_crisis_reply', 'community_photo_safety'];
 
 export interface ActionQueueResponse {
   items: ActionQueueItem[];
@@ -165,6 +175,8 @@ function mapAlertType(backendType: string): ActionQueueAlertType {
       return 'roman_eating_disorder_reply';
     case 'roman_crisis_reply':
       return 'roman_crisis_reply';
+    case 'community_photo_safety':
+      return 'community_photo_safety';
     default:
       // Unknown backend alert types are bucketed as high_churn_risk so
       // the mobile client still renders a row, but log a warning so we
@@ -244,12 +256,14 @@ function queueItem(
     message: string;
     created_at: Date;
     acknowledged_at: Date | null;
+    payload?: Prisma.JsonValue;
     client?: { name: string | null } | null;
   },
   quote: { content: string; created_at: Date } | undefined,
 ): ActionQueueItem {
   const clientName = alert.client?.name ?? 'Unknown';
   const line = SAFETY_CARD_LINE[alert.alert_type];
+  const spaceId = spaceCopyOf(alert);
   return {
     alert_id: alert.id,
     client_id: alert.client_id,
@@ -261,6 +275,7 @@ function queueItem(
     ...(line
       ? { quote: quote?.content ?? null, sent_at: quote?.created_at.toISOString() ?? null }
       : {}),
+    ...(spaceId ? { space_id: spaceId } : {}),
   };
 }
 
@@ -406,7 +421,11 @@ export class CommandCenterService {
     // coach sees their full roster; a sub-coach sees only their assigned
     // clients. `ownerCoachId` is the head coach id under which CoachAlert /
     // CoachMessage rows are stored (sub-coaches share the head's threads).
-    const { clientIds, ownerCoachId } = await this.resolveScope(coachId);
+    // FR-1152R3 B1 (owner rule D): plus the public-space photo safety copies.
+    const [{ clientIds, ownerCoachId }, spaceCopies] = await Promise.all([
+      this.resolveScope(coachId),
+      spaceAlertCopies(this.prisma, coachId),
+    ]);
     const rosterSize = clientIds.length;
 
     if (rosterSize === 0) {
@@ -415,7 +434,10 @@ export class CommandCenterService {
         roster_size: 0,
         active_today: 0,
         check_in_rate_7day: 0,
-        open_alerts: 0,
+        open_alerts:
+          spaceCopies.length > 0
+            ? await this.prisma.coachAlert.count({ where: { acknowledged_at: null, OR: spaceCopies } })
+            : 0,
         at_risk_count: 0,
         win_streak_count: 0,
         unread_messages: 0,
@@ -461,11 +483,16 @@ export class CommandCenterService {
       }),
       this.prisma.coachAlert.count({
         where: {
-          coach_id: alertCoachIds(coachId, ownerCoachId),
-          client_id: { in: clientIds },
           acknowledged_at: null,
-          ...visibleAlertsWhere(clientIds, shared),
-          ...safetyAlertsForCurrentCoach(coachId),
+          ...withSpaceCopies(
+            {
+              coach_id: alertCoachIds(coachId, ownerCoachId),
+              client_id: { in: clientIds },
+              ...visibleAlertsWhere(clientIds, shared),
+              ...safetyAlertsForCurrentCoach(coachId),
+            },
+            spaceCopies,
+          ),
         },
       }),
       // CC-1: pending_actions is a DISTINCT source from open_alerts. Open
@@ -942,9 +969,13 @@ export class CommandCenterService {
     // SC-2: alerts are scoped to the SubCoachScope-resolved client set. A
     // sub-coach only sees alerts for the clients assigned to them (client_id
     // IN assigned), under the head coach's id or their own (alertCoachIds).
-    // A head coach with no clients sees nothing.
-    const { clientIds, ownerCoachId } = await this.resolveScope(coachId);
-    if (clientIds.length === 0) {
+    // A head coach with no clients sees nothing but their public-space photo
+    // safety copies (FR-1152R3 B1, owner rule D).
+    const [{ clientIds, ownerCoachId }, spaceCopies] = await Promise.all([
+      this.resolveScope(coachId),
+      spaceAlertCopies(this.prisma, coachId),
+    ]);
+    if (clientIds.length === 0 && spaceCopies.length === 0) {
       return { items: [], total_pending: 0 };
     }
 
@@ -952,11 +983,16 @@ export class CommandCenterService {
     // Coach sharing switch (visibleAlertsWhere).
     const shared = await this.sharedWith(coachId, clientIds);
     const baseWhere: Prisma.CoachAlertWhereInput = {
-      coach_id: alertCoachIds(coachId, ownerCoachId),
-      client_id: { in: clientIds },
       acknowledged_at: null,
-      ...visibleAlertsWhere(clientIds, shared),
-      ...safetyAlertsForCurrentCoach(coachId),
+      ...withSpaceCopies(
+        {
+          coach_id: alertCoachIds(coachId, ownerCoachId),
+          client_id: { in: clientIds },
+          ...visibleAlertsWhere(clientIds, shared),
+          ...safetyAlertsForCurrentCoach(coachId),
+        },
+        spaceCopies,
+      ),
     };
     const where: Prisma.CoachAlertWhereInput = {
       ...baseWhere,
@@ -983,24 +1019,33 @@ export class CommandCenterService {
   /**
    * Owner 57d: one Roman safety alert by id, for the tap of its push or inbox
    * row. The same fields as its queue row, and the same rule: only the
-   * client's coach of record reads it. Another coach, an assistant, a former
-   * coach, another alert type or a deleted message is the same 404. A crisis
-   * alert has no message to quote.
+   * client's coach of record reads it (or, for a public space's photo safety
+   * copy, its reader while they lead that space: FR-1152R3 B1). Another
+   * coach, an assistant, a former coach, another alert type or a deleted
+   * message is the same 404. A crisis alert has no message to quote.
    */
   async getSafetyAlert(alertId: string, coachId: string): Promise<ActionQueueItem> {
-    const { clientIds, ownerCoachId } = await this.resolveScope(coachId);
+    const [{ clientIds, ownerCoachId }, spaceCopies] = await Promise.all([
+      this.resolveScope(coachId),
+      spaceAlertCopies(this.prisma, coachId),
+    ]);
     const alert = await this.prisma.coachAlert.findFirst({
       where: {
         id: alertId,
         alert_type: { in: [...ROMAN_SAFETY_ALERT_TYPES] },
-        coach_id: alertCoachIds(coachId, ownerCoachId),
-        client_id: { in: clientIds },
-        ...safetyAlertsForCurrentCoach(coachId),
+        ...withSpaceCopies(
+          {
+            coach_id: alertCoachIds(coachId, ownerCoachId),
+            client_id: { in: clientIds },
+            ...safetyAlertsForCurrentCoach(coachId),
+          },
+          spaceCopies,
+        ),
       },
       include: { client: { select: { name: true } } },
     });
     const quote = alert ? (await this.safetyQuotes([alert])).get(alert.id) : undefined;
-    if (!alert || (!quote && alert.alert_type !== 'roman_crisis_reply')) {
+    if (!alert || (!quote && !NO_QUOTE_SAFETY_TYPES.includes(alert.alert_type))) {
       throw new NotFoundException('Alert not found');
     }
     return queueItem(alert, quote);
@@ -1017,7 +1062,7 @@ export class CommandCenterService {
     const refs = new Map<string, Array<{ alertId: string; clientId: string }>>();
     for (const a of alerts) {
       const p = a.payload as { roman_message_id?: unknown } | null;
-      if (a.alert_type === 'roman_crisis_reply' || !SAFETY_CARD_LINE[a.alert_type]) continue;
+      if (NO_QUOTE_SAFETY_TYPES.includes(a.alert_type) || !SAFETY_CARD_LINE[a.alert_type]) continue;
       if (typeof p?.roman_message_id !== 'string') continue;
       refs.set(p.roman_message_id, [
         ...(refs.get(p.roman_message_id) ?? []),
@@ -1056,7 +1101,10 @@ export class CommandCenterService {
     // check — head-coach behaviour unchanged. A sub-coach dismissing an
     // alert for a client NOT assigned to them still 404s (no IDOR). Like the
     // list, a sub-coach's alerts may be under their own id (alertCoachIds).
-    const { clientIds, ownerCoachId } = await this.resolveScope(coachId);
+    const [{ clientIds, ownerCoachId }, spaceCopies] = await Promise.all([
+      this.resolveScope(coachId),
+      spaceAlertCopies(this.prisma, coachId),
+    ]);
     // CoachAlertsService.acknowledgeForScope is idempotent and IDOR-safe:
     //   * updateMany/findFirst scoped to (coach_id, client_id IN allowed)
     //   * NotFoundException for alerts outside the allowed client set (an
@@ -1067,6 +1115,7 @@ export class CommandCenterService {
       alertCoachIds(coachId, ownerCoachId),
       clientIds,
       safetyAlertsForCurrentCoach(coachId),
+      spaceCopies,
     );
     return { ok: true };
   }

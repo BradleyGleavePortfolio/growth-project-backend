@@ -186,6 +186,8 @@ function asContext(v: Prisma.JsonValue | null): PushContext | null {
     Object.prototype.hasOwnProperty.call(SAFETY_ALERT_PUSH_BODY, o.safetyAlert)
       ? { safetyAlert: o.safetyAlert }
       : {}),
+    // FR-1152R3 B1: ...and a public space's copy keeps the space line.
+    ...(o.spaceAlert === true ? { spaceAlert: true as const } : {}),
     // SC-PUSH: a space chat push keeps its count, kind and space.
     ...asSpacePushContext(o.spacePush),
   };

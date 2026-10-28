@@ -55,6 +55,8 @@ describe('the lock-screen push', () => {
       roman_urgent_reply: URGENT_PUSH,
       roman_eating_disorder_reply: ED_PUSH,
       roman_crisis_reply: URGENT_PUSH,
+      // FR-1152 (#172-5): the space chat photo safety alert, the same line.
+      community_photo_safety: URGENT_PUSH,
     });
   });
 });
@@ -189,6 +191,7 @@ describe('the alert card in the action queue', () => {
       user: { findMany: jest.fn(async () => [{ id: 'client-1' }, { id: 'client-2' }]) },
       coachAlert: { findMany: jest.fn(async (_a: unknown) => alerts), count: jest.fn(async () => alerts.length) },
       romanMessage: { findMany: jest.fn(async (_a: unknown) => messages) },
+      communityCohort: { findMany: jest.fn(async () => []) }, // FR-1152R3 B1: leads no public space
     };
     const svc = new CommandCenterService(
       fakeOf<PrismaService>(prisma),
@@ -317,6 +320,7 @@ describe('owner 4: the current coach only', () => {
         ]),
       },
       user: { findMany: jest.fn(async () => []) },
+      communityCohort: { findMany: jest.fn(async () => []) }, // FR-1152R3 B1: leads no public space
     };
     // Team scope: head coach-1 sees its roster; assistant sub-1 has an open
     // assignment to client-1 under head coach-1 (still open after a move).
@@ -462,6 +466,7 @@ describe('owner 4: the current coach only', () => {
         },
         subCoachAssignment: { findMany: jest.fn(async () => []) },
         coachingSession: { findMany: jest.fn(async () => []) },
+        communityCohort: { findMany: jest.fn(async () => []) }, // FR-1152R3 B1: leads no public space
         notification: {
           findMany: jest.fn(async ({ where, take }: { where: unknown; take: number }) => hits(where).slice(0, take)),
           count: jest.fn(async ({ where }: { where: unknown }) => hits(where).length),
@@ -587,6 +592,7 @@ describe('owner 4: the current coach only', () => {
         ),
       },
       subCoachAssignment: { findMany: jest.fn(async () => []) },
+      communityCohort: { findMany: jest.fn(async () => []) }, // FR-1152R3 B1: leads no public space
       coachAlert: {
         findMany: jest.fn(async ({ where }: { where: unknown }) => joined().filter((r) => matches(r, where))),
         count: jest.fn(async ({ where }: { where: unknown }) => joined().filter((r) => matches(r, where)).length),

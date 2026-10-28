@@ -8,6 +8,7 @@ import type {
 import { PrismaService } from '../prisma.service';
 import { isBannedFromWorkspace } from './community-ban';
 import { canEnterSpace, fullNamesFor, rowsWithSpaceAccess } from './community-space-access';
+import { spaceLeaders } from './space-safety-alerts';
 
 /**
  * Shared authorization queries for the v1-3 write surfaces.
@@ -25,6 +26,11 @@ export class CommunityAccessService {
 
   async findCohort(cohortId: string): Promise<CommunityCohort | null> {
     return this.prisma.communityCohort.findUnique({ where: { id: cohortId } });
+  }
+
+  /** FR-1152R3 B1 (rule D): who gets a public space's copy of a photo safety alert. */
+  spaceLeaders(space: Pick<CommunityCohort, 'id' | 'workspace_id' | 'visibility'>): Promise<string[]> {
+    return spaceLeaders(this.prisma, space);
   }
 
   /**
