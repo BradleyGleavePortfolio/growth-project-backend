@@ -266,7 +266,14 @@ const MESSAGE = `Hi, your weigh-in is up 3 kg this week. ${'Call me tonight and 
     for (const [blocker, blocked] of [['A', 'K'], ['K', 'A']] as const) {
       await prisma.userBlock.create({ data: { blocker_id: id[blocker], blocked_id: id[blocked] } });
       expect(await listed('A')).not.toContain(toA.id);
-      expect(await notifications.getUnreadCount(id.A)).toBe(unreadA - 1);
+      // The nudge and the AI notice from the cases above name the coach too,
+      // so they leave as well: prove this row is not counted by reading it
+      // directly and seeing the badge stay the same.
+      const blocked = await notifications.getUnreadCount(id.A);
+      expect(blocked).toBeLessThan(unreadA);
+      await prisma.notification.update({ where: { id: toA.id }, data: { read_at: new Date() } });
+      expect(await notifications.getUnreadCount(id.A)).toBe(blocked);
+      await prisma.notification.update({ where: { id: toA.id }, data: { read_at: null } });
       await expect(notifications.markRead(toA.id, id.A)).rejects.toThrow('Notification not found');
       expect(await listed('B')).toContain(toB.id);
       await prisma.userBlock.deleteMany({ where: { blocker_id: id[blocker], blocked_id: id[blocked] } });
