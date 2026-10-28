@@ -191,20 +191,21 @@ const LISTED: Key[] = ['A', 'T', 'B']; // everyone the inbox lists W's public-sp
   // Dismiss stay the owner's. A report in a space that is not public stays the owner's alone.
   describe('B1: the report queue for a public-space row', () => {
     const rep: Record<string, string> = {};
-    const report = async (type: 'message' | 'post' | 'voice_note', target: string, by: Key) =>
+    const t0 = Date.now() - 60_000; // one second apart, so oldest-first and newest-first are defined
+    const report = async (type: 'message' | 'post' | 'voice_note', target: string, by: Key, n: number) =>
       (await prisma.communityModerationAction.create({ data: { workspace_id: ws.A, target_type: type, target_id: target,
-        reported_by_id: id[by], reason: 'harassment', notes: `report by ${by}` } })).id;
+        reported_by_id: id[by], reason: 'harassment', notes: `report by ${by}`, created_at: new Date(t0 + n * 1000) } })).id;
     const flagged = async (k: Key) => (await moderation.listFlagged(user(k), {})).items;
     const view = (keys: string[], canAct: boolean) => keys.map((k) => expect.objectContaining({ id: rep[k], can_act: canAct }));
     const queue = async (k: Key) => (await moderation.listQueue(user(k), ws.A, {})).items
       .map((i) => `${Object.entries(rep).find(([, v]) => v === i.id)?.[0]} ${PEOPLE.find((k) => id[k] === i.reported_by_user_id) ?? 'none'}`);
 
     beforeAll(async () => {
-      rep.w = await report('message', row.wTyped2, 'O');
-      rep.n = await report('post', row.nPost, 'O');
-      rep.s = await report('message', row.oS, 'O');
-      rep.v = await report('voice_note', row.wVoice, 'O');
-      rep.o = await report('message', row.oTyped, 'N');
+      rep.w = await report('message', row.wTyped2, 'O', 1);
+      rep.n = await report('post', row.nPost, 'O', 2);
+      rep.s = await report('message', row.oS, 'O', 3);
+      rep.v = await report('voice_note', row.wVoice, 'O', 4);
+      rep.o = await report('message', row.oTyped, 'N', 5);
     });
 
     it('the coach who runs the community gets every report once, and may act on each (control)', async () => {
