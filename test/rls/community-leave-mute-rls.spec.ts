@@ -346,12 +346,15 @@ const DENIED = '42501';
     const all = [id.A, id.O, id.V].sort(); // the coach, O and V (P lost access in D2e)
     expect(await roster('A')).toEqual(all); // control
     await routes.leave(req('O'), space.mem);
-    const without = [id.A, id.V].sort();
-    expect(await roster('A')).toEqual(without); // the coach's list
-    expect(await roster('V')).toEqual(without); // a member's list
-    expect(await roster('O')).toEqual(without); // O still reads the space (Spaces you left) and is not in its list
-    expect(await members('V')).toEqual([2, 2, 2]); // the list and member_count agree
-    await routes.join(req('O'), space.mem);
+    try {
+      const without = [id.A, id.V].sort();
+      expect(await roster('A')).toEqual(without); // the coach's list
+      expect(await roster('V')).toEqual(without); // a member's list
+      expect(await roster('O')).toEqual(without); // O still reads the space (Spaces you left) and is not in its list
+      expect(await members('V')).toEqual([2, 2, 2]); // the list and member_count agree
+    } finally {
+      await routes.join(req('O'), space.mem); // O is back for the later cases even when a check above fails
+    }
     expect(await roster('A')).toEqual(all);
     expect(await members('V')).toEqual([3, 3, 3]);
   });
@@ -384,6 +387,7 @@ const DENIED = '42501';
     } finally {
       if (flag === undefined) delete process.env.FEATURE_COMMUNITY_REALTIME;
       else process.env.FEATURE_COMMUNITY_REALTIME = flag;
+      await routes.join(req('O'), space.mem); // O is back for the later cases even when a check above fails
     }
   });
 
