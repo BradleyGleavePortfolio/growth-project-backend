@@ -26,6 +26,7 @@ import { Logger } from '@nestjs/common';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { ChurnInterventionService } from '../../src/coach/command-center/churn-intervention.service';
 import { NotificationsService } from '../../src/notifications/notifications.service';
+import { InboxBlockRule } from '../../src/notifications/inbox-block-rule';
 import { liveTestDatabaseUrl } from '../utils/live-test-db';
 import { stub } from '../utils/trial-fakes';
 
@@ -51,7 +52,11 @@ const MESSAGE = `Hi, your weigh-in is up 3 kg this week. ${'Call me tonight and 
   const interventionId = randomUUID();
   const interventionB = randomUUID();
   const sendKey = randomUUID();
-  const notifications = new NotificationsService(stub<ConstructorParameters<typeof NotificationsService>[0]>(prisma));
+  // As NotificationsModule wires it: the inbox's block rule (B-LONOTIFY3-1).
+  const notifications = new NotificationsService(
+    stub<ConstructorParameters<typeof NotificationsService>[0]>(prisma), undefined, undefined, undefined,
+    new InboxBlockRule(stub<ConstructorParameters<typeof InboxBlockRule>[0]>(prisma)),
+  );
   const service = new ChurnInterventionService(
     stub<ConstructorParameters<typeof ChurnInterventionService>[0]>(prisma),
     stub<ConstructorParameters<typeof ChurnInterventionService>[1]>({}),

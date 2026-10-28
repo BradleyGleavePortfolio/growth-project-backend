@@ -51,6 +51,7 @@ import { isClientOf, lockClientsForDraftWrite } from '../moved-client-drafts';
 import { PtmService } from '../../ptm/ptm.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { lockScreenCopy } from '../../notifications/push/lock-screen-copy';
+import { NotificationKind } from '../../notifications/notification-kind';
 import { muteAllStops } from '../../notifications/push/push-preferences';
 import {
   COACH_AI_EFFORT,
@@ -64,7 +65,7 @@ import {
 export const CHURN_ANTHROPIC_CLIENT_TOKEN = 'CHURN_ANTHROPIC_CLIENT';
 
 const ANTHROPIC_TIMEOUT_MS = 10_000;
-// The nudge push's kind: its push data type, its Mute all rule and its lock-screen line.
+// The nudge push's kind: its push data type and its Mute all rule.
 // B-LSNOTIFY-2: also the kind of the client's inbox row (Notification), the
 // same kind the approved-AI-draft path already writes (send-notification
 // materialiser), so the phone's inbox shows it as a plain row.
@@ -708,7 +709,9 @@ export class ChurnInterventionService {
             channel: 'inapp',
             body: text,
             deep_link: null,
-            payload: { title: NUDGE_TITLE, nudge_id: nudgeId },
+            // B-LONOTIFY3-1: the row names its coach, so the inbox can hide it
+            // while the two are in a block either way (inbox-block-rule.ts).
+            payload: { title: NUDGE_TITLE, nudge_id: nudgeId, coach_id: coachId },
           },
         });
       });
@@ -750,9 +753,11 @@ export class ChurnInterventionService {
     // Fire push AFTER the transaction commits. Failure cannot un-send
     // the message; we log and move on. FR-1154R3 (B-LS1154-2): an ordinary
     // push, so Mute all stops it (the shared rule); the message stays sent.
-    // The lock screen gets the copy table's line for this kind, never the
-    // coach's text (anyone holding the phone can read it); the text stays
-    // inside the app, in the inbox row written above.
+    // The lock screen never shows the coach's text (anyone holding the phone
+    // can read it); the text stays inside the app, in the inbox row written
+    // above. CPC-W2 (owner 10-27 15:58, DECISIONS #178-3, wording approved):
+    // it reads as a new message, the copy table's message line; the push
+    // kind, its Mute all rule and its data stay coach_nudge.
     // B-LSNOTIFY-2: the data carries a tap target the phone knows — `kind`
     // (no actionScreen would fall back to NotificationCenter for any kind,
     // pushNotifications.ts:159-165) and an explicit actionScreen
@@ -762,7 +767,7 @@ export class ChurnInterventionService {
       this.notifications &&
       !(await this.muteAllStopsNudgePush(intervention.client_id, nudgeId))
     ) {
-      const copy = lockScreenCopy(NUDGE_PUSH_KIND, text);
+      const copy = lockScreenCopy(NotificationKind.MESSAGE_RECEIVED, text);
       void this.notifications
         .pushToUser(intervention.client_id, copy.title, copy.body, {
           type: NUDGE_PUSH_KIND,

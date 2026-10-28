@@ -29,6 +29,7 @@ import { VoicePolicyService } from '../roman/voice/voice-policy.service';
 import { EnqueueResult, PushDeliveryService } from './push/push-delivery.service';
 import { PushContext, lockScreenCopy, safetyAlertTap } from './push/lock-screen-copy';
 import { currentCoachInbox } from './current-coach-inbox';
+import { InboxBlockRule } from './inbox-block-rule';
 import { resolveRecipientTimeZone } from './recipient-timezone';
 import {
   MuteAllPass,
@@ -129,18 +130,32 @@ export class NotificationsService implements OnModuleInit {
     // C-643-2: device delivery for inbox notifications. @Optional so thin
     // unit tests without DI keep working (sendPush is then a no-op).
     @Optional() private pushDelivery?: PushDeliveryService,
+    // B-LONOTIFY3-1: a block hides the rows that name the other person
+    // (inbox-block-rule.ts). @Optional for the same thin unit tests; a
+    // production boot without it fails (onModuleInit).
+    @Optional() private inboxBlocks?: InboxBlockRule,
   ) {}
 
   /**
    * C-648-2: NotificationsModule provides PushDeliveryService. If that wiring
    * is ever lost, every device push would silently stop, so a production
    * boot fails here instead. (Thin unit tests construct the service without
-   * DI and never run this hook.)
+   * DI and never run this hook.) B-LONOTIFY3-1: the same for the inbox's
+   * block rule, without which a blocked person's rows would stay listed.
    */
   onModuleInit(): void {
-    if (this.pushDelivery) return;
-    const notWired =
-      'NotificationsService started without PushDeliveryService: no inbox notification would reach a device.';
+    this.requireWired(
+      this.pushDelivery,
+      'NotificationsService started without PushDeliveryService: no inbox notification would reach a device.',
+    );
+    this.requireWired(
+      this.inboxBlocks,
+      "NotificationsService started without InboxBlockRule: a blocked person's notifications would stay in the inbox.",
+    );
+  }
+
+  private requireWired(dependency: unknown, notWired: string): void {
+    if (dependency) return;
     if (process.env.NODE_ENV === 'production') throw new Error(notWired);
     this.logger.error(notWired);
   }
@@ -751,9 +766,21 @@ export class NotificationsService implements OnModuleInit {
     });
   }
 
-  /** The user's inbox: a moved client's rows leave the coach they left (current-coach-inbox.ts). */
-  private inboxWhere(userId: string): Promise<Prisma.NotificationWhereInput> {
-    return currentCoachInbox(this.prisma, userId);
+  /**
+   * The user's inbox: a moved client's rows leave the coach they left
+   * (current-coach-inbox.ts), and while two people are in a block the rows
+   * that name the other one are left out (inbox-block-rule.ts), added under
+   * AND next to any AND the move rule has. Callers add plain keys (id,
+   * read_at, created_at, inbox_hidden), never AND.
+   */
+  private async inboxWhere(userId: string): Promise<Prisma.NotificationWhereInput> {
+    const [inbox, blocked] = await Promise.all([
+      currentCoachInbox(this.prisma, userId),
+      this.inboxBlocks ? this.inboxBlocks.where(userId) : [],
+    ]);
+    if (blocked.length === 0) return inbox;
+    const and = inbox.AND === undefined ? [] : Array.isArray(inbox.AND) ? inbox.AND : [inbox.AND];
+    return { ...inbox, AND: [...and, ...blocked] };
   }
 
   // ── Push delivery (Phase 6B baseline, extended Phase 9) ──────────────────

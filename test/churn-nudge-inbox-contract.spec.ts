@@ -3,6 +3,7 @@ import { Logger } from '@nestjs/common';
 import { Expo, ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk';
 import { ChurnInterventionService } from '../src/coach/command-center/churn-intervention.service';
 import { NotificationsService } from '../src/notifications/notifications.service';
+import { InboxBlockRule } from '../src/notifications/inbox-block-rule';
 import { stub } from './utils/trial-fakes';
 
 // B-LSNOTIFY-2 (FR-NOTIFY2, agent 177; b#1171 AUDIT 6426427779) — contract:
@@ -130,7 +131,11 @@ function world(opts: { muted?: boolean; token?: string | null } = {}) {
       }
     }),
   };
-  const notifications = new NotificationsService(stub<ConstructorParameters<typeof NotificationsService>[0]>(db));
+  // As NotificationsModule wires it: the inbox's block rule (B-LONOTIFY3-1).
+  const notifications = new NotificationsService(
+    stub<ConstructorParameters<typeof NotificationsService>[0]>(db), undefined, undefined, undefined,
+    new InboxBlockRule(stub<ConstructorParameters<typeof InboxBlockRule>[0]>(db)),
+  );
   const direct = jest.spyOn(notifications, 'pushToUser');
   const svc = new ChurnInterventionService(
     stub<ConstructorParameters<typeof ChurnInterventionService>[0]>(db),
