@@ -712,6 +712,7 @@ describe('two-way block: member list, leaderboard, wins, Today, search and voice
         waveform_peaks: null,
         created_at: new Date('2026-09-30T00:00:00.000Z'),
         soft_deleted_at: null,
+        removed_by_user_id: null,
       };
     }
     // C6-WINS-MOVE: what app.community_author_stays reads. Alice, Bob and Carol are the coach's clients.

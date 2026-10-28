@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { CommunityPost, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
+import { storeRemovalNotice } from '../safety/community-moderation-notices';
 
 /**
  * Data access for Lab posts.
@@ -39,18 +40,20 @@ export class CommunityPostsRepository {
 
   /**
    * Workspace posts, pinned-first then newest-first, cursor-paginated by
-   * created_at. Excludes soft-deleted/hidden rows.
+   * created_at. Excludes soft-deleted/hidden rows; `withRemoved` (FR-1165R3)
+   * keeps a coach's removals for their placeholders.
    */
   async listByWorkspace(params: {
     workspaceId: string;
     before: Date | null;
     limit: number;
+    withRemoved?: boolean;
   }): Promise<CommunityPost[]> {
+    const live = { visibility: 'active', deleted_at: null };
     return this.prisma.communityPost.findMany({
       where: {
         workspace_id: params.workspaceId,
-        visibility: 'active',
-        deleted_at: null,
+        ...(params.withRemoved ? { OR: [live, { removed_by_user_id: { not: null } }] } : live),
         ...(params.before ? { created_at: { lt: params.before } } : {}),
       },
       orderBy: [{ pinned_at: 'desc' }, { created_at: 'desc' }],
@@ -85,5 +88,36 @@ export class CommunityPostsRepository {
       where: { id: postId },
       data: { deleted_at: new Date(), visibility: 'hidden' },
     });
+  }
+
+  /**
+   * FR-1165R3: a coach's removal of someone else's post. Keeps who removed
+   * it, erases the words and the pin, and tells the author once (unless the
+   * caller does, `tellAuthor` false: the queue's act()). Only a live post is
+   * written, so a repeat or a race writes and tells nothing. LS-1165R4 B1: the
+   * same transaction takes its search copy out of search and erases its words.
+   */
+  async removeByCoach(
+    post: Pick<CommunityPost, 'id' | 'author_id'>,
+    removerId: string,
+    tx?: Prisma.TransactionClient,
+    tellAuthor = true,
+  ): Promise<CommunityPost> {
+    const run = async (t: Prisma.TransactionClient) => {
+      const hit = await t.communityPost.updateMany({
+        where: { id: post.id, deleted_at: null },
+        data: { deleted_at: new Date(), visibility: 'hidden', removed_by_user_id: removerId, title: null, body: null, pinned_at: null },
+      });
+      if (hit.count > 0) {
+        await t.communitySearchEntry.updateMany({ where: { kind: 'post', targetId: post.id }, data: { softDeletedAt: new Date(), excerpt: '' } });
+      }
+      if (hit.count > 0 && tellAuthor) {
+        await storeRemovalNotice(t, { recipientId: post.author_id, targetType: 'post', targetId: post.id });
+      }
+      const row = await t.communityPost.findUnique({ where: { id: post.id } });
+      if (!row) throw new Error('community post vanished during removal');
+      return row;
+    };
+    return tx ? run(tx) : this.prisma.$transaction(run);
   }
 }

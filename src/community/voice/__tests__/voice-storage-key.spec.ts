@@ -126,6 +126,7 @@ function makeService(provider: VoiceUploadProvider) {
         waveform_peaks: null,
         created_at: new Date('2026-10-01T00:00:00.000Z'),
         soft_deleted_at: null,
+        removed_by_user_id: null,
       };
       created.push(row);
       return { row, replayed: false };

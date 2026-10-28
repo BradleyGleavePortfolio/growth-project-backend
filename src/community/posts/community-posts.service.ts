@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { CommunityMessage, CommunityPost, CommunityResponse, User } from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
 import { memberName } from '../member-display-name';
@@ -11,19 +11,35 @@ import { CommunityMessagesRepository } from '../messages/community-messages.repo
 import { CommunityReactionsRepository } from '../reactions/community-reactions.repository';
 import { CommunityReactionSummary, summariseReactions } from '../dto/community-reaction.dto';
 import {
-  CommunityCommentListResponse,
   CommunityCommentListResponseSchema,
   CommunityCommentResponse,
   CommunityCommentResponseSchema,
+  CommunityCommentSchema,
   CommunityCommentView,
-  CommunityPostListResponse,
   CommunityPostListResponseSchema,
   CommunityPostResponse,
   CommunityPostResponseSchema,
+  CommunityPostSchema,
   CommunityPostView,
 } from '../dto/community-post.dto';
 import { CommunitySafetyService } from '../safety/community-safety.service';
 import { placeOf } from '../community-space-access';
+import { z } from 'zod';
+import { RemovedKeys, coachRemoved, publishPostChanged, removedByOf, type Removed } from './community-post-removal';
+
+/**
+ * FR-1165R3: a post and a reply as sent. A coach's removal of someone else's
+ * is a placeholder (no title, words, pin or reactions; removed_at and
+ * removed_by added), sent only to a phone that asks (REMOVED_ROWS_HEADER).
+ * Kept here: the post DTO file belongs to another lane.
+ */
+const PostRowSchema = CommunityPostSchema.extend(RemovedKeys).strict();
+const PostRowResponseSchema = CommunityPostResponseSchema.extend({ post: PostRowSchema }).strict();
+const PostRowListSchema = CommunityPostListResponseSchema.extend({ posts: z.array(PostRowSchema) }).strict();
+const CommentRowSchema = CommunityCommentSchema.extend({ body: z.string().nullable(), ...RemovedKeys }).strict();
+const CommentRowListSchema = CommunityCommentListResponseSchema.extend({ comments: z.array(CommentRowSchema) }).strict();
+type PostRow = z.infer<typeof PostRowSchema>;
+type CommentRow = z.infer<typeof CommentRowSchema>;
 
 const DEFAULT_PAGE = 30;
 const MAX_PAGE = 100;
@@ -56,6 +72,8 @@ type ExtrasFor = (targetId: string, authorId: string, spaceId: string | null) =>
  */
 @Injectable()
 export class CommunityPostsService {
+  private readonly logger = new Logger(CommunityPostsService.name);
+
   constructor(
     private readonly access: CommunityAccessService,
     private readonly posts: CommunityPostsRepository,
@@ -138,31 +156,52 @@ export class CommunityPostsService {
     });
   }
 
-  private async postViews(viewer: User, rows: CommunityPost[]): Promise<CommunityPostView[]> {
-    const extras = await this.viewExtras(
-      viewer,
-      'post',
-      rows[0]?.workspace_id ?? null,
-      rows.map((p) => ({ id: p.id, authorId: p.author_id, spaceId: p.cohort_id })),
-    );
-    return rows.map((p) => this.postView(p, extras(p.id, p.author_id, p.cohort_id)));
-  }
-
-  private async postResponse(viewer: User, post: CommunityPost): Promise<CommunityPostResponse> {
-    return CommunityPostResponseSchema.parse({ post: (await this.postViews(viewer, [post]))[0] });
-  }
-
-  private async commentViews(
+  /** FR-1165R3: who removed each coach-removed row, only for a phone that asked (`shown`). */
+  private removedOf<T extends CommunityPost | CommunityMessage>(
     viewer: User,
-    rows: CommunityMessage[],
-  ): Promise<CommunityCommentView[]> {
-    const extras = await this.viewExtras(
-      viewer,
-      'comment',
-      rows[0]?.workspace_id ?? null,
-      rows.map((m) => ({ id: m.id, authorId: m.sender_id, spaceId: m.cohort_id })),
-    );
-    return rows.map((m) => this.commentView(m, extras(m.id, m.sender_id, m.cohort_id)));
+    rows: T[],
+    shown: boolean,
+  ): Promise<(r: T) => Removed | undefined> {
+    if (!shown) return Promise.resolve(() => undefined);
+    return removedByOf(this.access, (ids) => this.posts.namesByUserId(ids), viewer.id, rows);
+  }
+
+  private async postViews(viewer: User, rows: CommunityPost[], shown = false): Promise<PostRow[]> {
+    const [extras, removed] = await Promise.all([
+      this.viewExtras(
+        viewer,
+        'post',
+        rows[0]?.workspace_id ?? null,
+        rows.map((p) => ({ id: p.id, authorId: p.author_id, spaceId: p.cohort_id })),
+      ),
+      this.removedOf(viewer, rows, shown),
+    ]);
+    return rows.map((p) => {
+      const view = this.postView(p, extras(p.id, p.author_id, p.cohort_id));
+      const gone = removed(p);
+      return gone ? { ...view, title: null, body: null, pinned: false, reactions: [], ...gone } : view;
+    });
+  }
+
+  private async postResponse(viewer: User, post: CommunityPost, shown = false) {
+    return PostRowResponseSchema.parse({ post: (await this.postViews(viewer, [post], shown))[0] });
+  }
+
+  private async commentViews(viewer: User, rows: CommunityMessage[], shown = false): Promise<CommentRow[]> {
+    const [extras, removed] = await Promise.all([
+      this.viewExtras(
+        viewer,
+        'comment',
+        rows[0]?.workspace_id ?? null,
+        rows.map((m) => ({ id: m.id, authorId: m.sender_id, spaceId: m.cohort_id })),
+      ),
+      this.removedOf(viewer, rows, shown),
+    ]);
+    return rows.map((m) => {
+      const view = this.commentView(m, extras(m.id, m.sender_id, m.cohort_id));
+      const gone = removed(m);
+      return gone ? { ...view, body: null, reactions: [], ...gone } : view;
+    });
   }
 
   private parsePage(limit: string | undefined): number {
@@ -234,7 +273,8 @@ export class CommunityPostsService {
     user: User,
     workspaceId: string,
     query: { before?: string; limit?: string },
-  ): Promise<CommunityPostListResponse> {
+    shown = false, // FR-1165R3: the phone asked for placeholders (REMOVED_ROWS_HEADER)
+  ) {
     const workspace = await this.access.findWorkspace(workspaceId);
     if (!workspace || !(await this.access.canAccessWorkspace(workspaceId, user))) {
       throw new NotFoundException(POST_NOT_FOUND);
@@ -244,6 +284,7 @@ export class CommunityPostsService {
       workspaceId,
       before: this.parseBefore(query.before),
       limit,
+      withRemoved: shown,
     });
     const next = rows.length === limit ? rows[rows.length - 1].created_at.toISOString() : null;
     // C6-BVIS: a post of a space shows only to whoever the rule lets into that space.
@@ -254,16 +295,16 @@ export class CommunityPostsService {
     const inSpace = open ? rows.filter((p) => !p.cohort_id || open.has(p.cohort_id)) : rows;
     // Block filter after the cursor is taken from the unfiltered page. C6-WINS-MOVE: and a client who left.
     const visible = await this.safety.filterBlocked(user.id, inSpace, (p) => p.author_id, placeOf);
-    return CommunityPostListResponseSchema.parse({
-      posts: await this.postViews(user, visible),
+    return PostRowListSchema.parse({
+      posts: await this.postViews(user, visible, shown),
       next_before: next,
     });
   }
 
-  /** Resolve a readable post for the caller, or throw 404. */
-  private async readablePost(user: User, postId: string): Promise<CommunityPost> {
+  /** Resolve a readable post for the caller, or throw 404 (FR-1165R3: `removed` lets a coach's removal through). */
+  private async readablePost(user: User, postId: string, removed = false): Promise<CommunityPost> {
     const post = await this.posts.findById(postId);
-    if (!post || post.deleted_at) throw new NotFoundException(POST_NOT_FOUND);
+    if (!post || (post.deleted_at && !(removed && coachRemoved(post)))) throw new NotFoundException(POST_NOT_FOUND);
     // C6-BVIS: a post of a space opens by the rule for that space, its comments with it.
     const open = post.cohort_id
       ? await this.access.canAccessCohort({ id: post.cohort_id, workspace_id: post.workspace_id }, user)
@@ -277,15 +318,15 @@ export class CommunityPostsService {
    * (404, same body). Used by every read of a single post and its thread;
    * edit/remove stay on readablePost (author-only / coach paths).
    */
-  private async visiblePost(user: User, postId: string): Promise<CommunityPost> {
-    const post = await this.readablePost(user, postId);
+  private async visiblePost(user: User, postId: string, removed = false): Promise<CommunityPost> {
+    const post = await this.readablePost(user, postId, removed);
     await this.safety.assertVisibleTo(user.id, post.author_id, POST_NOT_FOUND, placeOf(post));
     return post;
   }
 
-  async getOne(user: User, postId: string): Promise<CommunityPostResponse> {
-    const post = await this.visiblePost(user, postId);
-    return this.postResponse(user, post);
+  async getOne(user: User, postId: string, shown = false) {
+    const post = await this.visiblePost(user, postId, shown);
+    return this.postResponse(user, post, shown);
   }
 
   async edit(
@@ -318,7 +359,7 @@ export class CommunityPostsService {
     return this.postResponse(user, updated);
   }
 
-  async remove(user: User, postId: string): Promise<CommunityPostResponse> {
+  async remove(user: User, postId: string, shown = false) {
     const post = await this.readablePost(user, postId);
     const isAuthor = post.author_id === user.id;
     const isModerator =
@@ -329,8 +370,15 @@ export class CommunityPostsService {
         code: 'community.post.not_author',
       });
     }
-    const deleted = await this.posts.softDelete(postId);
-    return this.postResponse(user, deleted);
+    if (isAuthor) return this.postResponse(user, await this.posts.softDelete(postId), shown);
+    // FR-1165R3: a coach's removal of someone else's post stays as a placeholder;
+    // the author is told once, and the post's readers get the edit's ping.
+    const removed = await this.posts.removeByCoach(post, user.id);
+    if (coachRemoved(removed)) {
+      const place = { id: removed.id, workspaceId: removed.workspace_id, cohortId: removed.cohort_id };
+      void publishPostChanged(this.realtime, place, user.id, removed.deleted_at).catch(() => this.logger.warn(`post ${removed.id}: removal ping not sent`));
+    }
+    return this.postResponse(user, removed, shown);
   }
 
   // ── Comments ───────────────────────────────────────────────────────────────
@@ -377,12 +425,13 @@ export class CommunityPostsService {
     });
   }
 
-  async listComments(user: User, postId: string): Promise<CommunityCommentListResponse> {
-    const post = await this.visiblePost(user, postId);
-    const rows = await this.messages.listComments(post.id);
+  async listComments(user: User, postId: string, shown = false) {
+    const post = await this.visiblePost(user, postId, shown);
+    // FR-1165R3: a removed post's placeholder shows no replies.
+    const rows = post.deleted_at ? [] : await this.messages.listComments(post.id, shown);
     const visible = await this.safety.filterBlocked(user.id, rows, (m) => m.sender_id, placeOf);
-    return CommunityCommentListResponseSchema.parse({
-      comments: await this.commentViews(user, visible),
+    return CommentRowListSchema.parse({
+      comments: await this.commentViews(user, visible, shown),
     });
   }
 }

@@ -77,6 +77,7 @@ export function buildMessage(
     visibility: 'active',
     high_alert: false,
     deleted_at: null,
+    removed_by_user_id: null,
     updated_at: DEFAULT_AT,
   } satisfies CommunityMessage;
   return { ...base, ...overrides };

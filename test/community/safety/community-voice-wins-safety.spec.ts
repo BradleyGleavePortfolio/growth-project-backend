@@ -276,21 +276,56 @@ describe('voice notes and member wins: report, review, block, delete (Apple 1.2)
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it('Hide removes the voice note for everyone: by id, list, search, and no new playback link', async () => {
-      const noteId = seedNote(bob);
+    // FR-1165R (LS-1165 B1/B2, #174-4): the queue's Hide is the same removal as
+    // the coach's direct DELETE: on the next read, the attributed placeholder
+    // with no audio and no search row; the erasure recorded; one author
+    // notice; one live removal ping (space or Hall) that can fail harmlessly.
+    it.each(['space', 'Hall'] as const)('Hide of a %s note leaves the attributed placeholder: no audio, search row or playback link', async (place) => {
+      const noteId = seedNote(bob, place === 'Hall' ? { cohort_id: null } : {});
       const r = await moderation.report(alice, 'voice_note', noteId, 'sexual', undefined);
+      const ping = realtime.broadcastCommunityEvent as jest.Mock;
+      ping.mockClear();
+      // The Hall case: the removal ping fails, and the removal stands.
+      ping.mockImplementation(async (_a: unknown, e: unknown) => {
+        if (place === 'Hall' && e === 'community.message.updated') throw new Error('realtime down');
+      });
+      signDownload.mockClear();
       const acted = await moderation.act(coach, r.item.id, 'hide', undefined);
       expect(acted.item.status).toBe('actioned');
 
-      expect(noteRow(noteId)?.soft_deleted_at).toBeInstanceOf(Date);
+      expect(noteRow(noteId)).toMatchObject({ soft_deleted_at: expect.any(Date), removed_by_user_id: coach.id });
       const search = db.table('communitySearchEntry').find((x) => x.targetId === noteId);
       expect(search?.softDeletedAt).toBeInstanceOf(Date);
-      await expect(voice.getOne(alice, noteId)).rejects.toBeInstanceOf(NotFoundException);
-      await expect(voice.getOne(bob, noteId)).rejects.toBeInstanceOf(NotFoundException);
+      expect(db.table('communityVoiceErasure')).toEqual([expect.objectContaining({ target: `${bob.id}/1700000000-abc.m4a`, reason: 'moderation' })]);
+      for (const reader of [alice, bob]) {
+        const { voice_note } = await voice.getOne(reader, noteId);
+        expect(voice_note).toMatchObject({ url: null, duration_ms: 0, waveform_peaks: null, removed_by: { role: 'coach', user_id: coach.id, name: expect.any(String) } });
+      }
       const page = await voice.list(carol, wsId, { limit: 20 });
-      expect(page.voice_notes.map((n) => n.id)).not.toContain(noteId);
+      expect(page.voice_notes.find((n) => n.id === noteId)).toMatchObject({ url: null, removed_by: { user_id: coach.id } });
+      expect(signDownload).not.toHaveBeenCalled();
+      expect(db.table('notification').filter((n) => n.user_id === bob.id)).toHaveLength(1);
+      expect(push.sendCommunityPush.mock.calls.filter(([p]) => p.recipientId === bob.id)).toHaveLength(1);
+      const cohort = place === 'Hall' ? null : cohortId;
+      const pings = (ping.mock.calls as unknown[][]).filter((c) => c[1] === 'community.message.updated');
+      ping.mockImplementation(async () => undefined);
+      expect(pings).toEqual([[
+        { workspaceId: wsId, cohortId: cohort },
+        'community.message.updated',
+        expect.objectContaining({ id: noteId, workspaceId: wsId, cohortId: cohort, kind: 'voice', authorId: bob.id, removedBy: { role: 'coach', userId: coach.id } }),
+        { distinctId: coach.id, channelKind: place === 'Hall' ? 'workspace' : 'cohort' },
+      ]]);
       // Closed, so it leaves the open queue.
       expect((await moderation.listFlagged(coach, {})).items).toHaveLength(0);
+    });
+
+    it('LO-1165 C-2: a Hide after a direct coach removal adds no second notice', async () => {
+      const noteId = seedNote(bob);
+      const r = await moderation.report(alice, 'voice_note', noteId, 'sexual', undefined);
+      await voice.delete(coach, noteId);
+      await moderation.act(coach, r.item.id, 'hide', undefined);
+      expect(db.table('notification').filter((n) => n.user_id === bob.id)).toHaveLength(1);
+      expect(push.sendCommunityPush.mock.calls.filter(([p]) => p.recipientId === bob.id)).toHaveLength(0);
     });
 
     it('Warn notifies the author and keeps their access', async () => {
