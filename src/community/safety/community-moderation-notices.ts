@@ -84,7 +84,7 @@ export function removalNoticeKey(targetType: RemovalNoticeTarget, targetId: stri
   return `community:moderation_notice:removal:${targetType}:${targetId}:hide`;
 }
 
-export type RemovalNoticeTarget = 'message' | 'voice_note';
+export type RemovalNoticeTarget = 'message' | 'voice_note' | 'post'; // 'post': FR-1165R3
 
 /**
  * REMOVED-BY-BE (#174-4): the author's notice for a coach's direct removal.

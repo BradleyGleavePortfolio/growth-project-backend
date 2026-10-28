@@ -28,6 +28,7 @@ import {
   ChallengeCommentListResponseSchema,
   ChallengeCommentResponse,
   ChallengeCommentResponseSchema,
+  ChallengeCommentSchema,
   ChallengeCommentView,
   ChallengeListResponse,
   ChallengeListResponseSchema,
@@ -42,6 +43,12 @@ import {
   ParticipationView,
 } from './community-challenges.dto';
 import { CommunitySafetyService } from '../safety/community-safety.service';
+import { z } from 'zod';
+import { RemovedKeys, removedByOf, type Removed } from '../posts/community-post-removal';
+
+/** FR-1165R3: a comment as sent; a coach's removal is a placeholder (no words). The DTO file belongs to another lane. */
+const CommentRowSchema = ChallengeCommentSchema.extend({ body: z.string().nullable(), ...RemovedKeys }).strict();
+const CommentRowListSchema = ChallengeCommentListResponseSchema.extend({ comments: z.array(CommentRowSchema) }).strict();
 
 const NOT_FOUND = {
   error: 'not_found',
@@ -148,6 +155,11 @@ export class CommunityChallengesService {
       body: m.body ?? '',
       created_at: m.created_at.toISOString(),
     };
+  }
+
+  /** FR-1165R3: a coach-removed comment's placeholder: who removed it and when, no words. */
+  private commentRow(m: CommunityMessage, removed: Removed | undefined) {
+    return removed ? { ...this.commentView(m), body: null, ...removed } : this.commentView(m);
   }
 
   // ── Authorization helpers ─────────────────────────────────────────────────
@@ -611,18 +623,27 @@ export class CommunityChallengesService {
     user: User,
     challengeId: string,
     query: { limit?: number; cursor?: string } = {},
-  ): Promise<ChallengeCommentListResponse> {
+    withRemoved = false, // FR-1165R3: the phone asked for placeholders (REMOVED_ROWS_HEADER)
+  ): Promise<ChallengeCommentListResponse | z.infer<typeof CommentRowListSchema>> {
     const challenge = await this.readableChallenge(user, challengeId);
     const page = await this.repo.listComments({
       challengeId,
       limit: query.limit,
       cursor: query.cursor,
+      withRemoved,
     });
     // #168-4: and comments by an author banned from this community.
     // FX-1141 (Sol B3): placed in the challenge's own space (null = community-wide).
     const visible = await this.safety.filterBlocked(user.id, page.items, (m) => m.sender_id, () => [challenge.workspace_id, challenge.cohort_id]);
-    return ChallengeCommentListResponseSchema.parse({
-      comments: visible.map((m) => this.commentView(m)),
+    if (!withRemoved) {
+      return ChallengeCommentListResponseSchema.parse({
+        comments: visible.map((m) => this.commentView(m)),
+        next_cursor: page.nextCursor,
+      });
+    }
+    const removed = await removedByOf(this.access, (ids) => this.repo.namesByUserId(ids), user.id, visible);
+    return CommentRowListSchema.parse({
+      comments: visible.map((m) => this.commentRow(m, removed(m))),
       next_cursor: page.nextCursor,
     });
   }

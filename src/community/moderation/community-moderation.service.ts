@@ -18,7 +18,7 @@ import { CommunityRealtimeService } from '../realtime/community-realtime.service
 import { CommunityNotificationsService } from '../notifications/community-notifications.service';
 import { COMMUNITY_BROADCAST_EVENTS } from '../community-events';
 import { NotificationKind } from '../../notifications/notification-kind';
-import { CommunityMessagesRepository } from '../messages/community-messages.repository';
+import { COMMENT_CONTEXT_TYPE, CommunityMessagesRepository } from '../messages/community-messages.repository';
 import { CommunityPostsRepository } from '../posts/community-posts.repository';
 import { CommunityModerationRepository } from './community-moderation.repository';
 import { PrismaService } from '../../prisma.service';
@@ -41,6 +41,7 @@ import {
 } from '../voice/voice-erasure';
 import { removeVoiceNoteRows } from '../voice/community-voice.repository';
 import { publishRemoval, type RemovedRow } from '../voice/community-voice.service';
+import { publishPostChanged } from '../posts/community-post-removal';
 import {
   CommunityModerationItemListResponse,
   CommunityModerationItemListResponseSchema,
@@ -496,7 +497,7 @@ export class CommunityModerationService {
     const notify = action !== 'dismiss' && ownerId !== null && ownerId !== user.id;
     // FR-1165R (B1): Hide/Ban of someone else's item = the direct DELETE's removal (placeholder).
     const removerId = ownerId === user.id ? null : user.id;
-    const { resolved, notice, erasures, removed } = await this.prisma.$transaction(async (tx) => {
+    const { resolved, notice, erasures, removed, post } = await this.prisma.$transaction(async (tx) => {
       // The compare-and-set comes first: it takes the report's row lock, so a
       // concurrent moderator waits and is then re-evaluated against our
       // committed outcome.
@@ -527,7 +528,7 @@ export class CommunityModerationService {
           targetId: row.target_id,
         });
       }
-      return { resolved: row, notice: result, erasures: hid.work, removed: hid.removed };
+      return { resolved: row, notice: result, erasures: hid.work, removed: hid.removed, post: hid.post };
     });
     const noticeStored = notice !== 'skipped';
 
@@ -560,6 +561,10 @@ export class CommunityModerationService {
     // FR-1165R (B2): the removal's live update, as the direct DELETE sends it (never undoes it).
     if (removed && removerId) {
       void publishRemoval(this.realtime, removed, removerId, removed.at).catch(() => this.logger.warn(`moderation ${resolved.id}: removal ping not sent`));
+    }
+    // FR-1165R3: a removed post or post comment pings the post's readers, as an edit does.
+    if (post && removerId) {
+      void publishPostChanged(this.realtime, post, removerId, new Date()).catch(() => this.logger.warn(`moderation ${resolved.id}: post removal ping not sent`));
     }
 
     // v1-4 post-action tail — best-effort realtime ping to the workspace coach,
@@ -952,7 +957,7 @@ export class CommunityModerationService {
    * Soft-hide the content a moderation action targets, where applicable,
    * inside the action transaction (B-610-13). Returns the recorded erasure
    * work (attempted by act() after the commit). FR-1165R: `removerId` set = the direct
-   * DELETE's removal write; posts have no remover column and still vanish (v1).
+   * DELETE's removal write (FR-1165R3: posts and post comments too, their post to ping).
    */
   private async hideTarget(
     tx: Prisma.TransactionClient,
@@ -963,8 +968,13 @@ export class CommunityModerationService {
     // B-610-13: every read and write here uses the action transaction.
     if (targetType === 'post') {
       const post = await this.postsRepo.findById(targetId, tx);
-      if (post && !post.deleted_at) await this.postsRepo.softDelete(post.id, tx);
-      return NOTHING_HIDDEN;
+      if (!post || post.deleted_at) return { ...NOTHING_HIDDEN, told: !!post?.removed_by_user_id };
+      if (!removerId) {
+        await this.postsRepo.softDelete(post.id, tx);
+        return NOTHING_HIDDEN;
+      }
+      await this.postsRepo.removeByCoach(post, removerId, tx, false); // act() stores the one notice
+      return { ...NOTHING_HIDDEN, post: { id: post.id, workspaceId: post.workspace_id, cohortId: post.cohort_id } };
     }
     if (targetType === 'message') {
       const msg = await this.messagesRepo.findById(targetId, tx);
@@ -979,7 +989,9 @@ export class CommunityModerationService {
       }
       const gone = await this.messagesRepo.removeByCoach(msg, removerId, tx, false); // act() stores the one notice
       const chat = msg.scope === 'cohort' && msg.cohort_id !== null && msg.plan_context_type === null;
-      return { work, told: false, removed: chat && gone.deleted_at ? { ...gone, at: gone.deleted_at } : null };
+      const under = msg.plan_context_type === COMMENT_CONTEXT_TYPE && msg.plan_context_id; // a post comment: its post changed
+      const post = under ? { id: under, workspaceId: msg.workspace_id, cohortId: msg.cohort_id } : null;
+      return { work, told: false, removed: chat && gone.deleted_at ? { ...gone, at: gone.deleted_at } : null, post };
     }
     if (targetType === 'voice_note') {
       // The recording itself is erased after the action commits (act()).
@@ -1006,8 +1018,13 @@ export class CommunityModerationService {
   }
 }
 
-/** hideTarget: erasure work, author already told by a direct removal (C-2), the row to ping (B2). */
-type Hidden = { work: VoiceErasureRow[]; told: boolean; removed: (RemovedRow & { at: Date }) | null };
+/** hideTarget: erasure work, author already told by a direct removal (C-2), the row to ping (B2), the post to ping (FR-1165R3). */
+type Hidden = {
+  work: VoiceErasureRow[];
+  told: boolean;
+  removed: (RemovedRow & { at: Date }) | null;
+  post?: { id: string; workspaceId: string; cohortId: string | null } | null;
+};
 const NOTHING_HIDDEN: Hidden = { work: [], told: false, removed: null };
 
 const REMOVED_CONTENT = 'Removed';
