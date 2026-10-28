@@ -68,11 +68,51 @@ export async function storeModerationNotice(
   },
 ): Promise<ModerationNoticeResult> {
   if (!isNoticeAction(input.action)) return 'skipped';
-  const key = moderationNoticeKey(input.moderationActionId, input.action);
+  return writeNotice(tx, input.recipientId, moderationNoticeKey(input.moderationActionId, input.action), input.action, {
+    moderation_action_id: input.moderationActionId,
+    target_type: input.targetType,
+    target_id: input.targetId,
+  });
+}
+
+/**
+ * REMOVED-BY-BE (#174-4): the key for a coach's direct removal of someone
+ * else's voice note or chat message (no report, so no moderation action id).
+ * One key per removed item, so the author gets the notice once per removal.
+ */
+export function removalNoticeKey(targetType: RemovalNoticeTarget, targetId: string): string {
+  return `community:moderation_notice:removal:${targetType}:${targetId}:hide`;
+}
+
+export type RemovalNoticeTarget = 'message' | 'voice_note' | 'post'; // 'post': FR-1165R3
+
+/**
+ * REMOVED-BY-BE (#174-4): the author's notice for a coach's direct removal.
+ * The same stored notice as a hide from the report queue (action 'hide', the
+ * approved text above, link tgp://community/safety), written inside the
+ * removal's own transaction.
+ */
+export async function storeRemovalNotice(
+  tx: Pick<Prisma.TransactionClient, 'notification'>,
+  input: { recipientId: string; targetType: RemovalNoticeTarget; targetId: string },
+): Promise<ModerationNoticeResult> {
+  return writeNotice(tx, input.recipientId, removalNoticeKey(input.targetType, input.targetId), 'hide', {
+    target_type: input.targetType,
+    target_id: input.targetId,
+  });
+}
+
+async function writeNotice(
+  tx: Pick<Prisma.TransactionClient, 'notification'>,
+  recipientId: string,
+  key: string,
+  action: ModerationNoticeAction,
+  extra: Prisma.JsonObject,
+): Promise<ModerationNoticeResult> {
   // A member has a handful of these at most, so the idempotency check reads
   // their notices and compares the key (portable, no JSON-path operator).
   const existing = await tx.notification.findMany({
-    where: { user_id: input.recipientId, kind: COMMUNITY_MODERATION_NOTICE_KIND },
+    where: { user_id: recipientId, kind: COMMUNITY_MODERATION_NOTICE_KIND },
     select: { payload: true },
   });
   if (existing.some((n) => isJsonObject(n.payload) && n.payload.idempotency_key === key)) {
@@ -80,18 +120,12 @@ export async function storeModerationNotice(
   }
   await tx.notification.create({
     data: {
-      user_id: input.recipientId,
+      user_id: recipientId,
       kind: COMMUNITY_MODERATION_NOTICE_KIND,
-      body: MODERATION_NOTICE_BODIES[input.action],
+      body: MODERATION_NOTICE_BODIES[action],
       channel: 'inapp',
       deep_link: 'tgp://community/safety',
-      payload: {
-        idempotency_key: key,
-        action: input.action,
-        moderation_action_id: input.moderationActionId,
-        target_type: input.targetType,
-        target_id: input.targetId,
-      },
+      payload: { idempotency_key: key, action, ...extra },
     },
   });
   return 'created';
