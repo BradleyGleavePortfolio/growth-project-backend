@@ -64,20 +64,11 @@ They are **code-level only** — the `NotificationPreferences` table has no
 per-kind column for them (v1-4 is schema-frozen), so their channel defaults
 live in `COMMUNITY_PUSH_DEFAULTS`
 (`src/community/notifications/community-notifications.types.ts`) and are applied
-at the read path.
-
-Push switches (enabled only by the literal value `true`):
-- `FEATURE_COMMUNITY_PUSH` gates `CommunityNotificationsService.sendCommunityPush`:
-  the legacy community sender for DMs, post replies, events, challenges,
-  moderation and the older group-message push.
-- `FEATURE_COMMUNITY_SPACE_PUSH` independently gates space-chat pushes
-  (`community_message_received`: unread updates, replies and High alerts).
-  It does not require `FEATURE_COMMUNITY_PUSH`. When space push is on, the
-  older group-message sender is skipped; when it is off, that sender can run
-  only if `FEATURE_COMMUNITY_PUSH` is on.
-
-Turning off `FEATURE_COMMUNITY_PUSH` alone does not stop space-chat pushes.
-To stop both push paths, both switches must be off.
+at the read path. All delivery is gated behind `FEATURE_COMMUNITY_PUSH`, except the space chat
+push (`community_message_received` from `src/community/space-push/`), which only
+`FEATURE_COMMUNITY_SPACE_PUSH` gates (`spacePushOn()`, `space-push-policy.ts`). The older
+cohort message push of that kind (`pushCohortMessage`, `community-messages.service.ts`) needs
+`FEATURE_COMMUNITY_PUSH` and stops whenever the space chat push is on.
 
 | Kind | In-app | Push | Email | Setting | Mute all | Category | Who receives |
 | ---- | ------ | ---- | ----- | ------- | -------- | -------- | ------------ |
@@ -91,6 +82,17 @@ To stop both push paths, both switches must be off.
 
 `notificationPrefsPrefix` files `community_message_received` (every space chat push) under `community_message`,
 a prefix with no column: only `muted` and the space's own setting stop it.
+
+Push switches (enabled only by the literal value `true`):
+- `FEATURE_COMMUNITY_PUSH` gates `CommunityNotificationsService.sendCommunityPush`:
+  the legacy community sender for DMs, post replies, events, challenges,
+  moderation and the older cohort message push.
+- `FEATURE_COMMUNITY_SPACE_PUSH` independently gates space-chat pushes
+  (`community_message_received`: unread updates, replies and High alerts).
+  It does not require `FEATURE_COMMUNITY_PUSH`.
+
+Turning off `FEATURE_COMMUNITY_PUSH` alone does not stop space-chat pushes.
+To stop both push paths, both switches must be off.
 
 For the legacy `sendCommunityPush` path, lock-screen privacy means the push
 `body` is a fixed safe string
