@@ -7,7 +7,8 @@
  * reused. FR-1168: a thread row stays after unmute or follow again as 'followed' with since = that moment, so
  * the replies that came while it was muted or left stay read (owner R2); a reply of your own follows a left
  * thread again (the 20270502009600 trigger); "{name} left" lines are their own rows, kept when the person
- * joins again; the people of a space (member_count) leave out the people who left it (owner R7).
+ * joins again; the people of a space (member_count, the member list: membersNow) leave out the people who
+ * left it (owner R7).
  * Every route answers 404 community.cohort.not_found for a space the caller cannot read now (the b#1137 rule),
  * so these routes never confirm that a space exists.
  */
@@ -15,8 +16,10 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import type { CommunityCohort, User } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { CommunityAccessService } from '../community-access.service';
-import { fullNamesFor, placeOf, readersNow } from '../community-space-access';
+import { COMMUNITY_BROADCAST_EVENTS } from '../community-events';
+import { fullNamesFor, placeOf } from '../community-space-access';
 import { memberName } from '../member-display-name';
+import { CommunityRealtimeService } from '../realtime/community-realtime.service';
 import { CommunitySafetyService } from '../safety/community-safety.service';
 import type { LeftMembers, SpaceLeave, ThreadState, ThreadStates } from './community-leave-mute.dto';
 
@@ -40,29 +43,13 @@ export async function leftSpaces(prisma: PrismaService, userId: string, cohortId
   return new Map(rows.map((r) => [r.cohort_id, r.left_at as Date]));
 }
 
-/** FR-1168 (LO-1168 B1, owner R7): the people of a space now (the access rule, readersNow) without those who
- *  left it, so its member count drops by one when someone leaves and comes back when they join again. */
-export async function membersNow(
-  prisma: PrismaService,
-  cohort: Pick<CommunityCohort, 'id' | 'workspace_id'>,
-  listed = false,
-): Promise<string[]> {
-  const ids = await readersNow(prisma, cohort.workspace_id, cohort.id, listed);
-  if (ids.length === 0) return ids;
-  const left = await prisma.communitySpaceRead.findMany({
-    where: { cohort_id: cohort.id, user_id: { in: ids }, left_at: { not: null } },
-    select: { user_id: true },
-  });
-  const gone = new Set(left.map((r) => r.user_id));
-  return ids.filter((id) => !gone.has(id));
-}
-
 @Injectable()
 export class CommunityLeaveMuteService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: CommunityAccessService,
     private readonly safety: CommunitySafetyService,
+    private readonly realtime: CommunityRealtimeService,
   ) {}
 
   /** The space when the person may read it now (the b#1137 rule; 404 otherwise). */
@@ -72,9 +59,23 @@ export class CommunityLeaveMuteService {
     return cohort;
   }
 
+  /** FR-1168R2 B2 (LS-1168 B4): an ids-only ping to everyone who reads the space now (the person who left still
+   *  does), so an open chat shows "{name} left" (D2d, the phone's approved words) and the member count at once:
+   *  the phone reads GET .../left and the space again. No words travel. Fire and forget, as every write here
+   *  (#24): the broadcast logs its own failure and never throws, and the leave or join stands either way. */
+  private tell(cohort: CommunityCohort, userId: string, change: 'left' | 'joined'): void {
+    void this.realtime.broadcastCommunityEvent(
+      { workspaceId: cohort.workspace_id, cohortId: cohort.id },
+      COMMUNITY_BROADCAST_EVENTS.membershipChanged,
+      { wsId: cohort.workspace_id, cohortId: cohort.id, userId, change },
+      { distinctId: userId, channelKind: 'cohort' },
+    );
+  }
+
   /** POST .../leave (D2c, D2f): every space but Announcements; never a section heading, never the coach of the
    *  community from their own space (409). Leaving twice keeps the first time. FR-1168 (LS-1168 B4): the same
-   *  statement writes the departure row behind the "{name} left" line, once per leave. */
+   *  statement writes the departure row behind the "{name} left" line, once per leave; FR-1168R2 B2: that leave
+   *  (only that one) pings the space. */
   async leave(user: User, cohortId: string): Promise<SpaceLeave> {
     const cohort = await this.readable(user, cohortId);
     if (cohort.kind !== 'chat' || (await this.access.isWorkspaceCoach(cohort.workspace_id, user.id))) {
@@ -89,6 +90,7 @@ export class CommunityLeaveMuteService {
       d AS (INSERT INTO "community_space_departures" ("cohort_id", "user_id", "left_at")
         SELECT ${cohortId}::uuid, ${user.id}, s."left_at" FROM s)
       SELECT "left_at" FROM s`;
+    if (marked[0]) this.tell(cohort, user.id, 'left');
     const prior = marked[0]
       ?? (await this.prisma.communitySpaceRead.findUnique({
         where: { user_id_cohort_id: { user_id: user.id, cohort_id: cohortId } },
@@ -99,9 +101,14 @@ export class CommunityLeaveMuteService {
 
   /** POST .../join (D2e): back in, on their own, while they can read the space now (404 otherwise). The read
    *  line moves to now, so the unread count starts at the moment they join again (#168-15). Only the current
-   *  state clears: their departure rows ("{name} left") stay (LS-1168 B4). */
+   *  state clears: their departure rows ("{name} left") stay (LS-1168 B4). FR-1168R2 B2: a join that ends a
+   *  leave pings the space; a join while already in changes nothing and pings nobody. */
   async join(user: User, cohortId: string): Promise<SpaceLeave> {
-    await this.readable(user, cohortId);
+    const cohort = await this.readable(user, cohortId);
+    const was = await this.prisma.communitySpaceRead.findUnique({
+      where: { user_id_cohort_id: { user_id: user.id, cohort_id: cohortId } },
+      select: { left_at: true },
+    });
     const newest = await this.prisma.communityMessage.findFirst({
       where: { cohort_id: cohortId, scope: 'cohort', plan_context_type: null, deleted_at: null },
       orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
@@ -115,6 +122,7 @@ export class CommunityLeaveMuteService {
       create: { user_id: user.id, cohort_id: cohortId, ...line },
       update: line,
     });
+    if (was?.left_at) this.tell(cohort, user.id, 'joined');
     return { cohort_id: cohortId, left_at: null };
   }
 

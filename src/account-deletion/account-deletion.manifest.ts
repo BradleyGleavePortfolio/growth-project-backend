@@ -676,6 +676,12 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'CommunityVoiceNoteListen', field: 'user_id', action: del },
   { model: 'CommunityVoiceConsent', field: 'user_id', action: del },
   { model: 'CommunityVoiceNote', field: 'author_id', action: del },
+  // REMOVED-BY-BE (#174-4): who removed someone else's voice note, space
+  // message or post. The removal stays; the remover's id is detached, so the row then
+  // drops like a removal made before 20270502009400.
+  { model: 'CommunityVoiceNote', field: 'removed_by_user_id', action: detach('removed_by_user_id') },
+  { model: 'CommunityMessage', field: 'removed_by_user_id', action: detach('removed_by_user_id') },
+  { model: 'CommunityPost', field: 'removed_by_user_id', action: detach('removed_by_user_id') },
   // SC-BE3: their space chat photo rows (the objects go by the image_folder erasure).
   { model: 'CommunityMessageImage', field: 'author_id', action: del },
   { model: 'CommunityResponse', field: 'user_id', action: del },

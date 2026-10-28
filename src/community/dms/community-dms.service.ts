@@ -27,8 +27,8 @@ import { CommunitySafetyService, DM_UNAVAILABLE } from '../safety/community-safe
 const DEFAULT_PAGE = 30;
 const MAX_PAGE = 100;
 
-// Same body as the block refusal seen by a blocked member (DM_UNAVAILABLE),
-// so "not there" and "blocked you" are indistinguishable.
+// A member who is not there (left, banned, never joined). A block is told
+// apart since #169-5 CLOSED-LINE (403 blocked_by_you / blocked_by_them).
 const DM_NOT_FOUND = DM_UNAVAILABLE;
 
 const DM_DISABLED = {
@@ -49,10 +49,46 @@ export async function assertDmOpen(access: CommunityAccessService, safety: Commu
 }
 
 /**
+ * Single source of truth for the per-participant DM gate: a member whose
+ * effective DM state (tri-state membership.dm_enabled → workspace
+ * dm_enabled_default, the secure default OFF) resolves false may neither send
+ * NOR read DM data. Throws 403 DM_DISABLED. assertDmReadable (write/thread
+ * reads, coach acks on a DM row) and listThreads (the thread-metadata read)
+ * route through here so no DM surface can return data to a default-OFF caller.
+ */
+function gateDmRead(
+  membership: Pick<CommunityMembership, 'dm_enabled'> | null,
+  workspace: Pick<CommunityWorkspace, 'dm_enabled_default'> | null,
+): void {
+  if (!resolveDmEnabled(membership, workspace)) {
+    throw new ForbiddenException(DM_DISABLED);
+  }
+}
+
+function resolveDmEnabled(
+  membership: Pick<CommunityMembership, 'dm_enabled'> | null,
+  workspace: Pick<CommunityWorkspace, 'dm_enabled_default'> | null,
+): boolean {
+  if (membership && membership.dm_enabled !== null) {
+    return membership.dm_enabled;
+  }
+  return workspace?.dm_enabled_default ?? false;
+}
+
+/** FR-1174: the full DM read rule, for `a` reading the DM with `b` (authoriseDm, and the coach ack
+ * routes on a DM row): not oneself, assertDmOpen, then DMs effectively on for both. Throws the
+ * refusal `a` gets (404 DM_NOT_FOUND, or 403 DM_DISABLED). */
+export async function assertDmReadable(access: CommunityAccessService, safety: CommunitySafetyService,
+  workspace: Pick<CommunityWorkspace, 'id' | 'dm_enabled_default'>, a: string, b: string): Promise<void> {
+  if (a === b) throw new NotFoundException(DM_NOT_FOUND);
+  for (const m of await assertDmOpen(access, safety, workspace.id, a, b)) gateDmRead(m, workspace);
+}
+
+/**
  * 1:1 direct messages within a workspace.
  *
  * DM eligibility follows the established v1-2 tri-state contract. The
- * resolveDmEnabled below is a local mirror of the community.service.ts resolver,
+ * resolveDmEnabled above is a local mirror of the community.service.ts resolver,
  * kept byte-for-byte in sync; a future refactor will share a single
  * implementation. A membership's dm_enabled is nullable — null inherits the
  * workspace's dm_enabled_default, an explicit boolean overrides. The secure
@@ -66,7 +102,7 @@ export async function assertDmOpen(access: CommunityAccessService, safety: Commu
  * therefore enforces the boolean gate that DOES exist: both participants must be
  * active members of the same workspace AND have DMs effectively enabled. The
  * coach_only/members distinction is the single thing that cannot be honoured
- * until the column lands; authoriseDm() is the one place to relax this.
+ * until the column lands; assertDmReadable() is the one place to relax this.
  *
  * Both participants must be active workspace members or the caller gets 404
  * (cross-tenant non-leak posture). A disabled recipient yields 403 with an
@@ -81,16 +117,6 @@ export class CommunityDmsService {
     private readonly communityPush: CommunityNotificationsService,
     private readonly safety: CommunitySafetyService,
   ) {}
-
-  private resolveDmEnabled(
-    membership: Pick<CommunityMembership, 'dm_enabled'> | null,
-    workspace: Pick<CommunityWorkspace, 'dm_enabled_default'> | null,
-  ): boolean {
-    if (membership && membership.dm_enabled !== null) {
-      return membership.dm_enabled;
-    }
-    return workspace?.dm_enabled_default ?? false;
-  }
 
   private messageView(m: CommunityMessage): CommunityDmMessageView {
     return {
@@ -118,23 +144,6 @@ export class CommunityDmsService {
   }
 
   /**
-   * Single source of truth for the per-participant DM gate: a member whose
-   * effective DM state (tri-state membership.dm_enabled → workspace
-   * dm_enabled_default) resolves false may neither send NOR read DM data. Throws
-   * 403 DM_DISABLED. Both authoriseDm (write/thread reads) and listThreads (the
-   * thread-metadata read) route through here so no DM surface can return data to
-   * a default-OFF caller.
-   */
-  private gateDmRead(
-    membership: Pick<CommunityMembership, 'dm_enabled'> | null,
-    workspace: Pick<CommunityWorkspace, 'dm_enabled_default'> | null,
-  ): void {
-    if (!this.resolveDmEnabled(membership, workspace)) {
-      throw new ForbiddenException(DM_DISABLED);
-    }
-  }
-
-  /**
    * Authorise a DM between the caller and a recipient in a workspace. Throws 404
    * if either side is not an active member (non-leak), 403 if either side has
    * DMs disabled. Returns the deterministic thread key.
@@ -146,11 +155,7 @@ export class CommunityDmsService {
   ): Promise<string> {
     const workspace = await this.access.findWorkspace(workspaceId);
     if (!workspace) throw new NotFoundException(DM_NOT_FOUND);
-    if (sender.id === recipientId) throw new NotFoundException(DM_NOT_FOUND);
-
-    const pair = await assertDmOpen(this.access, this.safety, workspaceId, sender.id, recipientId);
-    for (const membership of pair) this.gateDmRead(membership, workspace);
-
+    await assertDmReadable(this.access, this.safety, workspace, sender.id, recipientId);
     return CommunityDmsRepository.dmKey(workspaceId, sender.id, recipientId);
   }
 
@@ -246,13 +251,15 @@ export class CommunityDmsService {
     }
     // Reading thread metadata is a DM surface too: gate on the caller's
     // effective DM state before returning any rows.
-    this.gateDmRead(membership, workspace);
+    gateDmRead(membership, workspace);
     const rows = await this.dms.listThreadsForUser({
       workspaceId,
       userId: user.id,
       limit: this.parsePage(query.limit),
     });
-    // #168-4: the other member's place in this community too (left, or banned).
+    // #168-4: the other member's place in this community too (left, or banned). Owner 10-23
+    // "Dissapear": a block either way drops the thread from both lists (no row, no name, no time);
+    // unblock brings it back. Opening it another way answers 403 blocked_by_you / blocked_by_them.
     const visible = await this.safety.filterBlocked(
       user.id,
       rows,

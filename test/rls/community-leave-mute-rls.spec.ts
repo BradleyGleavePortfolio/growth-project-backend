@@ -9,12 +9,17 @@
 // (B3, text, photo and voice through their real repositories); "{name} left" rows survive a rejoin (B4).
 import { randomUUID } from 'crypto';
 import { Prisma, PrismaClient, type User } from '@prisma/client';
+import { CommunityCohortMembersRepository } from '../../src/community/cohorts/community-cohort-members.repository';
+import { CommunityCohortMembersService } from '../../src/community/cohorts/community-cohort-members.service';
 import { CommunityAccessService } from '../../src/community/community-access.service';
 import { CommunityRepository } from '../../src/community/community.repository';
 import { CommunityService } from '../../src/community/community.service';
 import { CommunityLeaveMuteController } from '../../src/community/leave-mute/community-leave-mute.controller';
 import { CommunityLeaveMuteService } from '../../src/community/leave-mute/community-leave-mute.service';
 import { CommunitySafetyService } from '../../src/community/safety/community-safety.service';
+import { CommunityRealtimeService } from '../../src/community/realtime/community-realtime.service';
+import type { SupabaseService } from '../../src/supabase/supabase.service';
+import type { AnalyticsService } from '../../src/analytics/analytics.service';
 import { CommunityMessagesRepository } from '../../src/community/messages/community-messages.repository';
 import { CommunityVoiceRepository } from '../../src/community/voice/community-voice.repository';
 import type { PrismaService } from '../../src/prisma.service';
@@ -38,8 +43,33 @@ const DENIED = '42501';
   const prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
   const db = stub<PrismaService>(prisma);
   const safety = new CommunitySafetyService(db);
-  const routes = new CommunityLeaveMuteController(new CommunityLeaveMuteService(db, new CommunityAccessService(db), safety));
+  // FR-1168R2 B2: the real realtime service (its audience is decided on this database); only the Supabase
+  // client is a fake that records each private-topic send. Every broadcast is awaited through `pings`.
+  const sent: { topic: string; event: string; payload: unknown }[] = [];
+  const client = {
+    channel: (topic: string) => ({
+      httpSend: async (event: string, payload: unknown) => {
+        sent.push({ topic, event, payload });
+        return { success: true };
+      },
+    }),
+    removeChannel: async () => 'ok',
+  };
+  const realtime = new CommunityRealtimeService(stub<SupabaseService>({ getClient: () => client }), stub<AnalyticsService>({ capture: () => undefined }), db);
+  const pings: Promise<void>[] = [];
+  const broadcast = realtime.broadcastCommunityEvent.bind(realtime);
+  jest.spyOn(realtime, 'broadcastCommunityEvent').mockImplementation((...args) => {
+    const p = broadcast(...args);
+    pings.push(p);
+    return p;
+  });
+  const heard = async () => {
+    await Promise.all(pings.splice(0));
+    return sent.splice(0);
+  };
+  const routes = new CommunityLeaveMuteController(new CommunityLeaveMuteService(db, new CommunityAccessService(db), safety, realtime));
   const community = new CommunityService(db, new CommunityRepository(db), safety);
+  const cohortMembers = new CommunityCohortMembersService(new CommunityAccessService(db), new CommunityCohortMembersRepository(db), safety);
   const ids = <K extends string>(list: readonly K[]) => Object.fromEntries(list.map((k) => [k, randomUUID()])) as Record<K, string>;
   const id = ids(PEOPLE);
   const sub = ids(PEOPLE);
@@ -69,6 +99,8 @@ const DENIED = '42501';
     (await community.getCohort(user(k), space.mem)).member_count,
     (await community.getToday(user(k))).cohort?.member_count,
   ];
+  // FR-1168R2 B1: who the space's member list (GET .../members) shows to k.
+  const roster = async (k: Key) => (await cohortMembers.list(user(k), space.mem, {})).members.map((m) => m.user_id).sort();
   const stateOf = async (k: Key, root: string) =>
     (await routes.threads(req(k), space.mem)).threads.find((t) => t.thread_message_id === root)?.state ?? 'none';
   const leftOf = async (k: Key, who: Key) => (await routes.left(req(k), space.mem)).left.filter((l) => l.user_id === id[who]);
@@ -308,6 +340,55 @@ const DENIED = '42501';
     expect(rows[rows.length - 1]).toEqual({ user_id: id.O, name: 'Olive', left_at: again.left_at }); // the newest is kept
     expect(rows.map((r) => r.left_at)).not.toContain(new Date(Date.UTC(2020, 0, 1, 0, 0)).toISOString()); // the oldest is not
     await prisma.communitySpaceDeparture.deleteMany({ where: { user_id: id.N } });
+  });
+
+  it('FR-1168R2 B1: the member list leaves out a person who left, for the coach and the members; they are back when they join', async () => {
+    const all = [id.A, id.O, id.V].sort(); // the coach, O and V (P lost access in D2e)
+    expect(await roster('A')).toEqual(all); // control
+    await routes.leave(req('O'), space.mem);
+    try {
+      const without = [id.A, id.V].sort();
+      expect(await roster('A')).toEqual(without); // the coach's list
+      expect(await roster('V')).toEqual(without); // a member's list
+      expect(await roster('O')).toEqual(without); // O still reads the space (Spaces you left) and is not in its list
+      expect(await members('V')).toEqual([2, 2, 2]); // the list and member_count agree
+    } finally {
+      await routes.join(req('O'), space.mem); // O is back for the later cases even when a check above fails
+    }
+    expect(await roster('A')).toEqual(all);
+    expect(await members('V')).toEqual([3, 3, 3]);
+  });
+
+  it('FR-1168R2 B2: a leave pings at once everyone who reads the space (ids only), so an open chat shows the line; join pings too', async () => {
+    const flag = process.env.FEATURE_COMMUNITY_REALTIME;
+    process.env.FEATURE_COMMUNITY_REALTIME = 'true';
+    try {
+      await heard(); // nothing left over from earlier cases
+      const readers = [id.A, id.O, id.V].map((u) => `community:user:${u}`).sort(); // O still reads the space
+      await routes.leave(req('O'), space.mem);
+      const left = await heard();
+      expect(left.map((s) => s.topic).sort()).toEqual(readers); // not N (no access), not X (another coach)
+      for (const s of left) {
+        expect(s.event).toBe('community.membership.changed');
+        expect(s.payload).toEqual({ wsId: ws.A, cohortId: space.mem, userId: id.O, change: 'left' }); // ids only, no name
+      }
+      const line = (await routes.left(req('V'), space.mem)).left;
+      expect(line[line.length - 1]).toMatchObject({ user_id: id.O, name: 'Olive' }); // what the phone reads on the ping
+      await routes.leave(req('O'), space.mem); // already out: no new line, no ping
+      expect(await heard()).toEqual([]);
+      await routes.join(req('O'), space.mem);
+      const back = await heard();
+      expect(back.map((s) => s.topic).sort()).toEqual(readers);
+      for (const s of back) expect(s.payload).toEqual({ wsId: ws.A, cohortId: space.mem, userId: id.O, change: 'joined' });
+      await routes.join(req('O'), space.mem); // already in: no ping
+      expect(await heard()).toEqual([]);
+      expect(await code(routes.leave(req('V'), space.ann))).toBe('community.space.cannot_leave'); // a refused leave pings nobody
+      expect(await heard()).toEqual([]);
+    } finally {
+      if (flag === undefined) delete process.env.FEATURE_COMMUNITY_REALTIME;
+      else process.env.FEATURE_COMMUNITY_REALTIME = flag;
+      await routes.join(req('O'), space.mem); // O is back for the later cases even when a check above fails
+    }
   });
 
   it('a thread is a chat message of that space the caller can see; anything else answers 404', async () => {
