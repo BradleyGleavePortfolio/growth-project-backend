@@ -7,6 +7,7 @@ BEGIN;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '30s';
 
+DROP POLICY IF EXISTS "community_message_images_public_own_coach" ON "community_message_images";
 DROP POLICY IF EXISTS "community_voice_notes_public_own_coach" ON "community_voice_notes";
 DROP POLICY IF EXISTS "community_posts_public_own_coach" ON "community_posts";
 DROP POLICY IF EXISTS "community_messages_public_own_coach" ON "community_messages";

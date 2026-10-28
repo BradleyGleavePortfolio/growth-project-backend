@@ -65,4 +65,10 @@ CREATE POLICY "community_voice_notes_public_own_coach" ON "community_voice_notes
   USING ("soft_deleted_at" IS NULL AND "conversation_id" IS NULL
          AND app.community_public_row_of_my_client("cohort_id", "author_id"));
 
+-- FR-1173 (LS-INBOX2 B2): the photo row behind the client's image message, for the same coach. The table's
+-- RESTRICTIVE community_message_images_author_stays still ANDs on top (a client who moved takes it away).
+DROP POLICY IF EXISTS "community_message_images_public_own_coach" ON "community_message_images";
+CREATE POLICY "community_message_images_public_own_coach" ON "community_message_images" FOR SELECT TO authenticated
+  USING (app.community_public_row_of_my_client("cohort_id", "author_id"));
+
 COMMIT;
