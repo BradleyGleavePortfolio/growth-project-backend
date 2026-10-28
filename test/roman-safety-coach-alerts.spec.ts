@@ -592,6 +592,7 @@ describe('owner 4: the current coach only', () => {
         ),
       },
       subCoachAssignment: { findMany: jest.fn(async () => []) },
+      communityCohort: { findMany: jest.fn(async () => []) }, // FR-1152R3 B1: leads no public space
       coachAlert: {
         findMany: jest.fn(async ({ where }: { where: unknown }) => joined().filter((r) => matches(r, where))),
         count: jest.fn(async ({ where }: { where: unknown }) => joined().filter((r) => matches(r, where)).length),
