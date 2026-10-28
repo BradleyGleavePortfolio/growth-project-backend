@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 import type { CommunityVoiceNote } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { fullNamesFor } from '../community-space-access';
-import { openClientMessagesOf } from '../messages/community-messages.repository';
+import { openClientMessagesReadBy } from '../messages/community-messages.repository';
 import {
   attemptVoiceErasures,
   objectTargets,
@@ -128,7 +128,10 @@ export class CommunityVoiceRepository {
     }
   }
 
-  private insertVoiceNote(seed: VoiceNoteSeed): Promise<CommunityVoiceNote> {
+  private async insertVoiceNote(seed: VoiceNoteSeed): Promise<CommunityVoiceNote> {
+    // FR-1174: a coach's space note answers only the open client messages the coach can read.
+    const open = seed.answersClients && seed.cohortId
+      ? await openClientMessagesReadBy(this.prisma, seed.cohortId, seed.authorId) : null;
     return this.prisma.$transaction(async (tx) => {
       const created = await tx.communityVoiceNote.create({
         data: {
@@ -161,9 +164,9 @@ export class CommunityVoiceRepository {
             parent_message_at: seed.parent?.at ?? null,
           },
         });
-        if (seed.answersClients) {
+        if (open) {
           await tx.communityMessage.updateMany({
-            where: openClientMessagesOf(created.cohort_id),
+            where: open,
             data: { coach_replied_at: created.created_at },
           });
         }

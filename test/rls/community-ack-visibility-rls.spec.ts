@@ -8,7 +8,8 @@
 // stamped; each refusal follows its control (a 200 before, or a 200 once the block or ban is gone).
 // FR-1174 (LS-1174 B1): the full read rule per kind. A (a coach member of S; DMs on by default) has DMs with M and
 // D; O and R have one of their own. A DM passes the DM reader's rule (in it, both still members, DMs on for both);
-// post comments, challenge comments and the leaderboard sentinel are never acked; W is the platform owner.
+// post comments, challenge comments and the leaderboard sentinel are never acked; W is the platform owner; the
+// bulk replied stamps (a coach's text, a coach's space voice note) touch only rows the coach can read.
 import { randomUUID } from 'crypto';
 import { NotFoundException } from '@nestjs/common';
 import { Prisma, PrismaClient } from '@prisma/client';
@@ -18,8 +19,9 @@ import { type AckActor, AckService } from '../../src/community/ack/ack.service';
 import { CHALLENGE_COMMENT_CONTEXT_TYPE, CHALLENGE_OPTIN_CONTEXT_TYPE } from '../../src/community/challenges/community-challenges.repository';
 import { CommunityAccessService } from '../../src/community/community-access.service';
 import { CommunityDmsRepository } from '../../src/community/dms/community-dms.repository';
-import { COMMENT_CONTEXT_TYPE } from '../../src/community/messages/community-messages.repository';
+import { COMMENT_CONTEXT_TYPE, CommunityMessagesRepository } from '../../src/community/messages/community-messages.repository';
 import { CommunitySafetyService } from '../../src/community/safety/community-safety.service';
+import { CommunityVoiceRepository } from '../../src/community/voice/community-voice.repository';
 import type { PrismaService } from '../../src/prisma.service';
 import { stub } from '../utils/trial-fakes';
 import { liveTestDatabaseUrl } from '../utils/live-test-db';
@@ -203,6 +205,22 @@ type Route = (typeof ROUTES)[number];
   it('the owner acks a plain space row and is refused on a DM they are not in', async () => {
     expect((await mark('wO', 'seen', ownerW)).ack.state).toBe('seen');
     await expectRefused('dD', ['replied'], ownerW);
+  });
+
+  it('bulk replied stamps (a coach text, a coach space voice note) skip every author the coach cannot read', async () => {
+    const open = async () => Object.fromEntries(await Promise.all((['O', 'X', 'V', 'Y', 'M'] as const).map(async (k) => [k, await say(k)])));
+    const replied = async (ids: Record<string, string>) => Object.fromEntries(await Promise.all(Object.entries(ids).map(async ([k, mid]) =>
+      [k, (await prisma.communityMessage.findFirstOrThrow({ where: { id: mid } })).coach_replied_at !== null])));
+    const hidden = { X: false, V: false, Y: false, M: false };
+    const text = await open();
+    await new CommunityMessagesRepository(db).markCohortClientMessagesReplied({ cohortId: space.S, repliedAt: new Date(), viewerId: id.A });
+    expect(await replied(text)).toEqual({ O: true, ...hidden });
+    const voice = await open();
+    await new CommunityVoiceRepository(db).createVoiceNote({ workspaceId: ws.A, cohortId: space.S, conversationId: null, authorId: id.A,
+      storageKey: `${id.A}/1700000000000-${randomUUID().replace(/-/g, '').slice(0, 16)}.m4a`, durationMs: 3000, bytes: 1000,
+      mimeType: 'audio/mp4', waveformPeaks: null, parent: null, answersClients: true });
+    expect(await replied(voice)).toEqual({ O: true, ...hidden });
+    for (const key of ['mX', 'mV', 'mY']) expect(await stamps(key)).toEqual(NONE);
   });
 
   it('the refusals were the gate: once the blocks and the ban are gone, A acks X, V and Y', async () => {
