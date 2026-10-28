@@ -4,7 +4,7 @@ import type { CommunityMessage, CommunityMessageImage } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import type { PlanContextTag } from '../plan-context/plan-context.dto';
 import { bannedAmong } from '../community-ban';
-import { fullNamesFor, rowsWithSpaceAccess } from '../community-space-access';
+import { authorsWhoLeft, fullNamesFor, rowsWithSpaceAccess } from '../community-space-access';
 import { bytesToPeaks } from '../voice/community-voice.dto';
 import { storeRemovalNotice } from '../safety/community-moderation-notices';
 import { imageErasureTargets, sentImageKey } from '../images/community-image-store';
@@ -17,15 +17,22 @@ import {
   type VoiceErasureStorage,
 } from '../voice/voice-erasure';
 
-/** A space's client messages still waiting on a coach reply (the coach inbox message arm). */
-export const openClientMessagesOf = (cohortId: string): Prisma.CommunityMessageWhereInput => ({
-  cohort_id: cohortId,
-  scope: 'cohort',
-  deleted_at: null,
-  plan_context_type: null,
-  coach_replied_at: null,
-  sender: { role: { notIn: ['coach', 'owner'] } },
-});
+/** A space's client messages still waiting on a coach reply (the coach inbox message arm) that
+ * `viewerId` can read (FR-1174): the authors authorsWhoLeft names for this space — moved away, banned,
+ * or in a block either way with the viewer — stay out, as the inbox and getOne leave them out. */
+export async function openClientMessagesReadBy(prisma: PrismaService, cohortId: string,
+  viewerId: string): Promise<Prisma.CommunityMessageWhereInput> {
+  const hidden = (await authorsWhoLeft(prisma, [cohortId], viewerId)).map(([, a]) => a);
+  return {
+    cohort_id: cohortId,
+    scope: 'cohort',
+    deleted_at: null,
+    plan_context_type: null,
+    coach_replied_at: null,
+    ...(hidden.length > 0 ? { sender_id: { notIn: hidden } } : {}),
+    sender: { role: { notIn: ['coach', 'owner'] } },
+  };
+}
 
 /** VOICE-BE: what a voice chat message shows before play (the URL comes from the voice route). */
 export interface ChatVoiceNote {
@@ -154,14 +161,16 @@ export class CommunityMessagesRepository {
    * sends a cohort message: every prior non-deleted, non-comment CLIENT message
    * in that cohort that is still open is stamped `coach_replied_at = now`, so it
    * drops out of the inbox. Bounded to client (non coach/owner) senders so the
-   * coach's own messages are never flagged. Returns the count updated.
+   * coach's own messages are never flagged, and (FR-1174) to rows the sender
+   * `viewerId` can read. Returns the count updated.
    */
   async markCohortClientMessagesReplied(params: {
     cohortId: string;
     repliedAt: Date;
+    viewerId: string;
   }): Promise<number> {
     const { count } = await this.prisma.communityMessage.updateMany({
-      where: openClientMessagesOf(params.cohortId),
+      where: await openClientMessagesReadBy(this.prisma, params.cohortId, params.viewerId),
       data: { coach_replied_at: params.repliedAt },
     });
     return count;
