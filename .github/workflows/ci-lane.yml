@@ -1,0 +1,59 @@
+# FR-1168R2 DB lane (agent 179). Lives ONLY on ci/** branches; never merge it. Mirrors ci.yml rls-live-tests:
+# postgres:15, node 22, the whole migration chain replayed from empty (rls_replay), rls_empty, then
+# scripts/ci/run-rls-suites.mjs over the suites listed in .ci-lane-specs (one per line).
+name: ci-lane
+on:
+  push:
+    branches: ['ci/**']
+jobs:
+  targeted:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 10s --health-timeout 5s --health-retries 10
+    env:
+      RLS_ADMIN_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      EMPTY_URL: postgresql://postgres:postgres@localhost:5432/rls_empty
+      NODE_OPTIONS: --max-old-space-size=4096
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx prisma generate
+      - name: psql
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1; then
+            for i in 1 2 3; do
+              timeout 120 sudo apt-get update -o Acquire::Retries=3 && timeout 240 sudo apt-get install -y postgresql-client && break
+              sleep 10
+            done
+          fi
+          psql --version
+      - name: Template rls_replay (every migration from empty on the Supabase shim)
+        run: bash scripts/ci/replay-migrations.sh rls_replay
+      - name: Template rls_empty
+        run: |
+          psql "$RLS_ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE rls_empty'
+          psql "$EMPTY_URL" -v ON_ERROR_STOP=1 -f scripts/ci/supabase-shim.sql \
+            -c 'CREATE SCHEMA app' -c 'GRANT USAGE ON SCHEMA app TO anon, authenticated, service_role'
+      - name: Live suites (.ci-lane-specs)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }
+          mapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)
+          echo "suites: ${SPECS[*]}"
+          node scripts/ci/run-rls-suites.mjs "${SPECS[@]}"
