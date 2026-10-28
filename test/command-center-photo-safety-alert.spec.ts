@@ -63,7 +63,8 @@ describe('the photo safety alert type', () => {
     await e.emit({ coachId: 'coach-1', alertId: 'a1', severity: 'critical', clientUserId: 'client-1', alertType: TYPE, message: URGENT_PUSH });
     const tap = { actionScreen: COACH_SAFETY_ALERT_SCREEN, actionParams: { alertId: 'a1' } };
     expect(create.mock.calls[0][0]).toMatchObject({ body: URGENT_INBOX, payload: { alertId: 'a1', alertType: TYPE, ...tap } });
-    expect(sendPush.mock.calls[0][0]).toMatchObject({ context: { safetyAlert: TYPE, alertId: 'a1' } });
+    // FR-1154 (now in main): a critical safety alert's push is urgent, as the crisis one's is (#172-5 "the same alert").
+    expect(sendPush.mock.calls[0][0]).toMatchObject({ context: { safetyAlert: TYPE, alertId: 'a1' }, urgent: true });
   });
 });
 
