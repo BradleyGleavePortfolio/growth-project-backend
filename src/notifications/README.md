@@ -64,7 +64,20 @@ They are **code-level only** — the `NotificationPreferences` table has no
 per-kind column for them (v1-4 is schema-frozen), so their channel defaults
 live in `COMMUNITY_PUSH_DEFAULTS`
 (`src/community/notifications/community-notifications.types.ts`) and are applied
-at the read path. All delivery is gated behind `FEATURE_COMMUNITY_PUSH`.
+at the read path.
+
+Push switches (enabled only by the literal value `true`):
+- `FEATURE_COMMUNITY_PUSH` gates `CommunityNotificationsService.sendCommunityPush`:
+  the legacy community sender for DMs, post replies, events, challenges,
+  moderation and the older group-message push.
+- `FEATURE_COMMUNITY_SPACE_PUSH` independently gates space-chat pushes
+  (`community_message_received`: unread updates, replies and High alerts).
+  It does not require `FEATURE_COMMUNITY_PUSH`. When space push is on, the
+  older group-message sender is skipped; when it is off, that sender can run
+  only if `FEATURE_COMMUNITY_PUSH` is on.
+
+Turning off `FEATURE_COMMUNITY_PUSH` alone does not stop space-chat pushes.
+To stop both push paths, both switches must be off.
 
 | Kind | In-app | Push | Email | Setting | Mute all | Category | Who receives |
 | ---- | ------ | ---- | ----- | ------- | -------- | -------- | ------------ |
@@ -79,7 +92,8 @@ at the read path. All delivery is gated behind `FEATURE_COMMUNITY_PUSH`.
 `notificationPrefsPrefix` files `community_message_received` (every space chat push) under `community_message`,
 a prefix with no column: only `muted` and the space's own setting stop it.
 
-Lock-screen privacy: when enabled, the push `body` is a fixed safe string
+For the legacy `sendCommunityPush` path, lock-screen privacy means the push
+`body` is a fixed safe string
 (`COMMUNITY_PUSH_BODIES[kind].privacyOn`) that never contains user names,
 message excerpts, cohort names, or event titles. The richer privacy-off body
 is built only from pre-approved short context.
