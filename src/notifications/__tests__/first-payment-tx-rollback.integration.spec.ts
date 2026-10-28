@@ -104,6 +104,8 @@ class FakeDb {
           return { id: `tx_n_${bufferedNotifications.length}`, ...data };
         },
       },
+      // B-LSNOTIFY3-1: the step's SAVEPOINT / RELEASE / ROLLBACK TO.
+      $executeRaw: async () => 0,
       coachFirstPaymentNotification: {
         // B-LSNOTIFY-1: INSERT ... ON CONFLICT DO NOTHING (createMany +
         // skipDuplicates) — a duplicate counts 0 and never throws.

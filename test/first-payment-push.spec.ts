@@ -25,6 +25,8 @@ function world() {
   const inbox: Array<Record<string, unknown>> = [];
   const db = {
     ...w.db,
+    // B-LSNOTIFY3-1: the first-payment step's SAVEPOINT / RELEASE / ROLLBACK TO.
+    $executeRaw: jest.fn(async () => 0),
     notification: {
       findFirst: jest.fn(async () => null),
       create: jest.fn(async (a: { data: Record<string, unknown> }) => {
@@ -112,7 +114,7 @@ describe('FIRST-PAYMENT-PUSH: the coach gets the first-payment push', () => {
     expect(w.outbox).toHaveLength(1);
   });
 
-  it('inside the purchase transaction a failed queue write fails the emit (the purchase rolls back)', async () => {
+  it('inside the purchase transaction a failed queue write fails the emit (the first-payment step then rolls back to its savepoint; see first-payment-notice-savepoint.spec)', async () => {
     const w = world();
     const tx = stub<Prisma.TransactionClient>({
       ...w.db,

@@ -84,6 +84,8 @@ class FakeDb {
     const bufferedCoachIds = new Set<string>();
 
     const txSurface = {
+      // B-LSNOTIFY3-1: the step's SAVEPOINT / RELEASE / ROLLBACK TO.
+      $executeRaw: async () => 0,
       notificationPreferences: {
         findUnique: async () => null,
       },
