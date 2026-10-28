@@ -47,7 +47,8 @@ describe('CommunityCoachInboxRepository: a moved client leaves the former coach\
     await repo.unansweredMessages({ cohortIds: [SPACE], limit: 2, after: null, viewerId: 'coach-1', withVoice: true });
     await repo.unansweredPosts({ cohortIds: [], limit: 2, after: null, viewerId: 'coach-1' });
     expect(prisma.communityCohort.findMany.mock.calls[0][0].where).toEqual({ id: { notIn: [SPACE] }, visibility: 'public',
-      memberships: { some: { user: { coach_id: 'coach-1', role: 'student' } } } });
+      memberships: { some: { user: { coach_id: 'coach-1', role: 'student' } } },
+      workspace: { bans: { none: { user_id: 'coach-1', lifted_at: null } } } });
     expect(asked.map((a) => a.slice(1))).toEqual([[[SPACE, PUB], [SPACE, PUB], 'coach-1'], [[PUB], [PUB], 'coach-1']]);
     const chat = prisma.communityMessage.findMany.mock.calls[0][0].where;
     expect(chat.AND[0].OR).toEqual([{ cohort_id: { in: [SPACE] } },

@@ -7,6 +7,7 @@ import type {
 } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { authorsWhoLeft } from '../community-space-access';
+import { clientOf, publicSpaceFor } from '../community-public-row';
 
 /**
  * Data access for the coach inbox aggregator.
@@ -95,7 +96,7 @@ export class CommunityCoachInboxRepository {
     const notIn: Prisma.CommunityMessageWhereInput[] = left.map(([s, a]) => ({ cohort_id: s, sender_id: a }));
     const arms: Prisma.CommunityMessageWhereInput[] = [{ cohort_id: { in: cohortIds } }];
     if (theirs.length > 0 && params.viewerId) {
-      arms.push({ cohort_id: { in: theirs }, sender: { coach_id: params.viewerId, role: 'student' } });
+      arms.push({ cohort_id: { in: theirs }, sender: clientOf(params.viewerId) });
     }
     return this.prisma.communityMessage.findMany({
       where: {
@@ -138,7 +139,7 @@ export class CommunityCoachInboxRepository {
     const left = await authorsWhoLeft(this.prisma, [...cohortIds, ...theirs], params.viewerId);
     const arms: Prisma.CommunityPostWhereInput[] = [{ cohort_id: { in: cohortIds } }];
     if (theirs.length > 0 && params.viewerId) {
-      arms.push({ cohort_id: { in: theirs }, author: { coach_id: params.viewerId, role: 'student' } });
+      arms.push({ cohort_id: { in: theirs }, author: clientOf(params.viewerId) });
     }
     const out: PostWithAuthor[] = [];
     for (let after = params.after; out.length < limit; ) {
@@ -181,15 +182,16 @@ export class CommunityCoachInboxRepository {
    * Rule D, the poster's own coach: the public spaces outside `cohortIds` where a current client of the viewer is
    * or was a member (a public space needs a membership to write in; a member who left keeps what they wrote
    * there). Only that coach's clients' rows are asked for there (the callers' second arm), so a coachless poster,
-   * or another coach's client, reaches no one here. No viewer, no spaces.
+   * or another coach's client, reaches no one here. No viewer, no spaces. A coach banned from the space's community
+   * gets none of it (the row rule asks the same, app.community_public_row_of_my_client).
    */
   async clientsPublicSpaceIds(viewerId: string | undefined, cohortIds: string[]): Promise<string[]> {
     if (!viewerId) return [];
     const spaces = await this.prisma.communityCohort.findMany({
       where: {
         id: { notIn: cohortIds },
-        visibility: 'public',
-        memberships: { some: { user: { coach_id: viewerId, role: 'student' } } },
+        ...publicSpaceFor(viewerId),
+        memberships: { some: { user: clientOf(viewerId) } },
       },
       select: { id: true },
     });
