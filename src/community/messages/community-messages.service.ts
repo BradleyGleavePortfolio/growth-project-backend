@@ -49,7 +49,7 @@ import {
 import { AiEgressService } from '../../ai-egress/ai-egress.service';
 import { assertCaptionAllowed, assertPhotoAllowed } from '../images/community-photo-check';
 import { CoachAlertsService } from '../../coach/coach-alerts.service';
-import { SAFETY_ALERT_PUSH_BODY } from '../../notifications/push/lock-screen-copy';
+import { SAFETY_ALERT_PUSH_BODY, SPACE_SAFETY_ALERT_PUSH_BODY } from '../../notifications/push/lock-screen-copy';
 
 /** SC-BE3: a photo message as the send route takes it. */
 export interface ImageSend {
@@ -140,12 +140,16 @@ export class CommunityMessagesService {
    * instructions "raises the same alert a crisis message does", as
    * RomanService.alertCoachOfSafetyReply: one critical alert to the sender's
    * current coach (users.coach_id, read fresh for this request), at most once
-   * per send or edit. The row holds no photo, caption or category: its message
-   * is the fixed push line. No coach, no alert; the refusal stands either way
-   * (a failed write is logged, never thrown). Rides FEATURE_COMMUNITY_IMAGES.
+   * per send or edit. FR-1152R3 B1 (owner rule D): in a public space its
+   * owner and coach-role team get one space copy each (payload space_id, the
+   * space push line), except anyone in a block with the sender either way; a
+   * current coach among them gets just that copy. A row holds no photo,
+   * caption or category: its message is the fixed push line. Nobody to tell,
+   * no alert; the refusal stands either way (each failed write is logged,
+   * never thrown). Rides FEATURE_COMMUNITY_IMAGES.
    */
-  private async alertCoachOfPhotoSafety(user: User): Promise<void> {
-    if (!communityImagesEnabled() || user.role !== 'student' || !user.coach_id) return;
+  private async alertCoachOfPhotoSafety(user: User, space: CommunityCohort): Promise<void> {
+    if (!communityImagesEnabled() || user.role !== 'student') return;
     let alerts: CoachAlertsService | undefined;
     try {
       alerts = this.moduleRef?.get(CoachAlertsService, { strict: false });
@@ -154,16 +158,28 @@ export class CommunityMessagesService {
       return;
     }
     if (!alerts) return;
+    let side: string[] = [];
     try {
-      await alerts.createAlert({
-        coachId: user.coach_id,
-        clientId: user.id,
-        alertType: 'community_photo_safety',
-        severity: 'critical',
-        message: SAFETY_ALERT_PUSH_BODY.community_photo_safety,
-      });
+      side = await this.access.spaceLeaders(space);
+      const hidden = side.length > 0 ? await this.safety.hiddenFromViewer(user.id) : new Set<string>();
+      side = side.filter((id) => !hidden.has(id));
     } catch (err) {
-      this.logger.warn(`community.photo_safety_alert outcome=failed ${describeFailure(err)}`);
+      side = [];
+      this.logger.warn(`community.photo_safety_alert outcome=no_space_side ${describeFailure(err)}`);
+    }
+    const alert = { clientId: user.id, alertType: 'community_photo_safety', severity: 'critical' } as const;
+    const copies = [
+      ...(user.coach_id && !side.includes(user.coach_id)
+        ? [{ ...alert, coachId: user.coach_id, message: SAFETY_ALERT_PUSH_BODY.community_photo_safety }]
+        : []),
+      ...side.map((coachId) => ({ ...alert, coachId, message: SPACE_SAFETY_ALERT_PUSH_BODY, payload: { space_id: space.id } })),
+    ];
+    for (const copy of copies) {
+      try {
+        await alerts.createAlert(copy);
+      } catch (err) {
+        this.logger.warn(`community.photo_safety_alert outcome=failed ${describeFailure(err)}`);
+      }
     }
   }
 
@@ -278,7 +294,7 @@ export class CommunityMessagesService {
     if (result !== 'ok') throw IMAGE_REJECTED(`community.image.${result}`);
     if (this.egress) {
       await assertPhotoAllowed(this.egress, images, image.key, user.id, size, body, () =>
-        this.alertCoachOfPhotoSafety(user),
+        this.alertCoachOfPhotoSafety(user, cohort),
       );
     }
     try {
@@ -661,7 +677,7 @@ export class CommunityMessagesService {
     // write, the edit as well as the send. Refused or unavailable: nothing is
     // written, the old caption stays, the sent photo is never touched.
     if (m.kind === 'image' && this.egress) {
-      await assertCaptionAllowed(this.egress, body, () => this.alertCoachOfPhotoSafety(user));
+      await assertCaptionAllowed(this.egress, body, () => this.alertCoachOfPhotoSafety(user, cohort));
     }
     const updated = await this.repo.updateBody(m, body);
     void this.realtime.broadcastCommunityEvent(
