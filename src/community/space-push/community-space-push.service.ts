@@ -47,22 +47,27 @@ export class CommunitySpacePushService implements OnModuleInit {
   }
 
   /** Who would hear a High alert in this space now: readers minus the sender, blocked pairs, those who left the
-   * space and Mute all. */
-  async highAlertReach(senderId: string, workspaceId: string, cohortId: string): Promise<number> {
-    const readers = await this.readers(senderId, workspaceId, cohortId, false);
+   * space and Mute all. FR-1168R2 C1: for a reply, `threadId` (its thread's first message) also leaves out those
+   * who left that thread, by the push's own rule (readers() for a High alert), so the reach is who it will ring. */
+  async highAlertReach(senderId: string, workspaceId: string, cohortId: string, threadId: string | null = null): Promise<number> {
+    const readers = await this.readers(senderId, workspaceId, cohortId, false, threadId, true);
     return readers.filter((r) => r.effectiveMode !== 'mute_all').length;
   }
 
   /** Only the coach of the space's community may send a High alert; at most HIGH_ALERT_DAILY_LIMIT there a
    * day (UTC day; deleted ones still count). 403 `community.high_alert.coach_only` for anyone else. */
-  async highAlertAllowance(userId: string, cohort: { id: string; workspace_id: string }): Promise<HighAlertAllowance> {
+  async highAlertAllowance(
+    userId: string,
+    cohort: { id: string; workspace_id: string },
+    threadId: string | null = null,
+  ): Promise<HighAlertAllowance> {
     const ws = await this.prisma.communityWorkspace.findUnique({ where: { id: cohort.workspace_id }, select: { coach_id: true } });
     if (!ws || ws.coach_id !== userId) throw new ForbiddenException({ code: 'community.high_alert.coach_only' });
     const since = new Date();
     since.setUTCHours(0, 0, 0, 0);
     const [used_today, reach] = await Promise.all([
       this.prisma.communityMessage.count({ where: { cohort_id: cohort.id, high_alert: true, created_at: { gte: since } } }),
-      this.highAlertReach(userId, cohort.workspace_id, cohort.id),
+      this.highAlertReach(userId, cohort.workspace_id, cohort.id, threadId),
     ]);
     return { reach, used_today, limit: HIGH_ALERT_DAILY_LIMIT };
   }
