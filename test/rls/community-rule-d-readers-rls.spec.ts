@@ -240,4 +240,43 @@ const LISTED: Key[] = ['A', 'T', 'B']; // everyone the inbox lists W's public-sp
       expect(await flagged('B')).toEqual(view(['w', 'v'], false));
     });
   });
+
+  // B2 (LS-INBOX2; LO-INBOX2 C1): the inbox lists a public-space row to the owner's team and the poster's own coach,
+  // but the ack let in only the coach who runs the community, and the post read and the photo's row only a space
+  // member. One row-scoped rule now (CommunityAccessService.isPublicRowOfMyClient, its SQL twin in 20270502009800):
+  // this one row to its author's coach, read only, never the space or anyone else's rows, never while banned there.
+  describe('B2: whoever the inbox lists a row to can open it and acknowledge it', () => {
+    it('acknowledge: the owner\'s team (T) and W\'s own coach (B) may, and it clears the row for everyone', async () => {
+      expect(await refused(ack.applyTransition(user('C'), row.wTyped2, 'acked'))).toBe(404);
+      expect(await refused(ack.applyTransition(user('B'), row.nTyped, 'acked'))).toBe(404); // not B's client
+      expect(await refused(ack.applyTransition(user('B'), row.wTyped2, 'acked'))).toBe('ok');
+      expect(await refused(ack.applyTransition(user('T'), row.nTyped, 'acked'))).toBe('ok');
+      for (const k of LISTED) expect([k, (await rows(k)).filter((r) => r === 'wTyped2' || r === 'nTyped')]).toEqual([k, []]);
+    });
+
+    it('open a post: B reads W\'s post and only W\'s own comments on it; T, on A\'s team, reads the whole thread', async () => {
+      expect((await posts.getOne(user('B'), row.wPost)).post.id).toBe(row.wPost);
+      expect((await posts.listComments(user('B'), row.wPost)).comments.map((c) => label(c.id))).toEqual(['cW']);
+      expect((await posts.listComments(user('T'), row.wPost)).comments.map((c) => label(c.id)).sort()).toEqual(['cN', 'cO', 'cW']);
+    });
+
+    it('row-scoped: not another author\'s post, not for an unrelated coach, never a write, never while banned there', async () => {
+      expect(await refused(posts.getOne(user('B'), row.nPost))).toBe(404);
+      expect(await refused(posts.getOne(user('C'), row.wPost))).toBe(404);
+      expect(await refused(posts.listComments(user('C'), row.wPost))).toBe(404);
+      expect(await refused(posts.addComment(user('B'), row.wPost, 'hello from the coach'))).toBe(404);
+      await ban('B', 'A', null);
+      expect([await refused(posts.getOne(user('B'), row.wPost)), await refused(ack.applyTransition(user('B'), row.wPhoto, 'acked'))])
+        .toEqual([404, 404]);
+      await ban('B', 'A', new Date());
+    });
+
+    it('the photo\'s row: A, T and W\'s own coach B read W\'s image row; the unrelated coach C reads none', async () => {
+      const image = (k: Key) => count(k, 'community_message_images', row.wPhoto, 'message_id');
+      expect([await image('A'), await image('T'), await image('B'), await image('C')]).toEqual([1, 1, 1, 0]);
+      await ban('B', 'A', null);
+      expect(await image('B')).toBe(0);
+      await ban('B', 'A', new Date());
+    });
+  });
 });
