@@ -93,6 +93,9 @@ export class CommunityCoachInboxService {
     m: MessageWithSender,
     cohortName: string,
   ): RankedItem {
+    // INBOX-PHOTO: a space photo (kind 'image', caption in body) is a 'photo' row; with no caption it reads "Photo".
+    const kind = m.kind === 'voice' ? 'voice' : m.kind === 'image' ? 'photo' : 'text';
+    const text = this.preview(m.body);
     return {
       createdAt: m.created_at,
       id: m.id,
@@ -103,9 +106,11 @@ export class CommunityCoachInboxService {
         cohort_name: cohortName,
         author_user_id: m.sender_id,
         author_display_name: m.sender.name,
-        preview: this.preview(m.body),
+        preview: kind === 'voice' ? 'Voice note' : kind === 'photo' && !text ? 'Photo' : text,
         created_at: m.created_at.toISOString(),
         item_url_path: `/community/cohorts/${m.cohort_id}/messages/${m.id}`,
+        kind,
+        ...(kind === 'voice' ? { voice: { note_id: m.id, duration_ms: m.voice_duration_ms ?? 0 } } : {}),
         // v2-2: attach the per-thread ack summary ONLY when
         // FEATURE_COMMUNITY_ACKS is on. Omitted when off so the v1-6 inbox
         // shape is preserved (back-compat / kill-switch invariant).
@@ -149,6 +154,7 @@ export class CommunityCoachInboxService {
         preview: this.preview(previewSource),
         created_at: p.created_at.toISOString(),
         item_url_path: `/community/cohorts/${p.cohort_id}/posts/${p.id}`,
+        kind: 'text',
       },
     };
   }
@@ -183,13 +189,15 @@ export class CommunityCoachInboxService {
     const limit = this.parseLimit(query.limit);
     const cursor = this.decodeCursor(query.cursor);
 
-    // Over-fetch each stream up to `limit` past the cursor; the merge + slice
+    // Over-fetch each stream to `limit + 1` past the cursor; the merge + slice
     // below yields the correct first `limit` across both streams. Because each
     // stream is itself keyset-filtered by `after`, the union of the two
-    // `limit`-bounded streams always contains the global first `limit` items.
+    // bounded streams always contains the global first `limit + 1` items, so a
+    // row past the page (in either stream, or both) is what sets next_cursor.
+    // VOICE-INBOX: withVoice adds the client's space voice notes (repository).
     const [messages, posts] = await Promise.all([
-      this.repo.unansweredMessages({ cohortIds, limit, after: cursor, viewerId: user.id }),
-      this.repo.unansweredPosts({ cohortIds, limit, after: cursor, viewerId: user.id }),
+      this.repo.unansweredMessages({ cohortIds, limit: limit + 1, after: cursor, viewerId: user.id, withVoice: true }),
+      this.repo.unansweredPosts({ cohortIds, limit: limit + 1, after: cursor, viewerId: user.id }),
     ]);
 
     // Resolve cohort names once for every cohort referenced in this page.
@@ -211,7 +219,7 @@ export class CommunityCoachInboxService {
 
     const page = ranked.slice(0, limit);
     const nextCursor =
-      ranked.length > limit && page.length === limit
+      ranked.length > limit
         ? this.encodeCursor(page[page.length - 1])
         : null;
 

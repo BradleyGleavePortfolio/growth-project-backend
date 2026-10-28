@@ -809,21 +809,21 @@ function baseDocument(active: HelpPage, c: HelpPageContent): string {
   header.brand { display: flex; align-items: center; justify-content: space-between; margin-bottom: 40px; gap: 16px; flex-wrap: wrap; }
   header.brand .wordmark { display: inline-flex; align-items: center; min-height: 44px; font-family: "Iowan Old Style", Georgia, serif; font-weight: 500; font-size: 18px; letter-spacing: 0.02em; color: #1F1B16; text-decoration: none; }
   nav.help-nav { display: flex; flex-wrap: wrap; margin: 0 -8px; }
-  nav.help-nav .nav-link { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; padding: 0 8px; box-sizing: border-box; color: #8A7F6E; text-decoration: none; font-size: 14px; }
-  nav.help-nav .nav-link.active { color: #1F1B16; }
+  nav.help-nav .nav-link { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; padding: 0 8px; box-sizing: border-box; color: #2C2C2C; text-decoration: none; font-size: 14px; }
+  nav.help-nav .nav-link.active { color: #1F1B16; text-decoration: underline; text-underline-offset: 6px; }
   nav.help-nav .nav-link:hover { color: #1F1B16; }
   h1 { font-family: "Iowan Old Style", Georgia, serif; font-weight: 500; font-size: 40px; line-height: 1.1; letter-spacing: -0.01em; margin: 0 0 8px 0; }
-  p.reviewed { margin: 0 0 28px 0; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: #8A7F6E; }
-  p.intro { font-size: 18px; line-height: 1.6; margin: 0 0 36px 0; color: #3A332B; }
+  p.reviewed { margin: 0 0 28px 0; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: #2C2C2C; }
+  p.intro { font-size: 18px; line-height: 1.6; margin: 0 0 36px 0; color: #2C2C2C; }
   section { margin: 0 0 32px 0; }
   section h2 { font-family: "Iowan Old Style", Georgia, serif; font-weight: 500; font-size: 22px; line-height: 1.3; margin: 0 0 12px 0; color: #1F1B16; }
   section h3 { font-family: "Iowan Old Style", Georgia, serif; font-weight: 500; font-size: 17px; line-height: 1.35; margin: 18px 0 6px 0; color: #1F1B16; }
-  section p { font-size: 16px; line-height: 1.6; margin: 0 0 12px 0; color: #3A332B; }
+  section p { font-size: 16px; line-height: 1.6; margin: 0 0 12px 0; color: #2C2C2C; }
   section ul { margin: 0 0 12px 0; padding: 0 0 0 20px; }
-  section li { font-size: 16px; line-height: 1.6; margin: 0 0 6px 0; color: #3A332B; }
+  section li { font-size: 16px; line-height: 1.6; margin: 0 0 6px 0; color: #2C2C2C; }
   section p.links a { display: inline-flex; align-items: center; min-height: 44px; color: #1F1B16; text-decoration: underline; }
   table.intake { border-collapse: collapse; width: 100%; margin: 0 0 12px 0; font-size: 14px; }
-  table.intake th, table.intake td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #E8E1D4; vertical-align: top; color: #3A332B; }
+  table.intake th, table.intake td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #E8E1D4; vertical-align: top; color: #2C2C2C; }
   table.intake th { font-weight: 600; color: #1F1B16; background: #F4EFE6; }
   @media (max-width: 600px) {
     table.intake, table.intake tbody, table.intake tr, table.intake td { display: block; }
@@ -832,11 +832,11 @@ function baseDocument(active: HelpPage, c: HelpPageContent): string {
     table.intake td { padding: 2px 0; border: 0; }
     table.intake td:first-child { font-weight: 600; color: #1F1B16; }
     table.intake td[data-label] { display: grid; grid-template-columns: 84px minmax(0, 1fr); align-items: baseline; }
-    table.intake td[data-label]::before { content: attr(data-label); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #3A332B; }
+    table.intake td[data-label]::before { content: attr(data-label); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #2C2C2C; }
   }
-  p.footnote { margin: 40px 0 0 0; font-size: 13px; line-height: 1.55; color: #8A7F6E; font-style: italic; }
-  footer.brand-footer { margin-top: 48px; padding-top: 24px; border-top: 1px solid #E8E1D4; font-size: 13px; color: #8A7F6E; display: flex; gap: 16px; flex-wrap: wrap; justify-content: space-between; }
-  footer.brand-footer a { display: inline-flex; align-items: center; min-height: 44px; color: #8A7F6E; text-decoration: underline; }
+  p.footnote { margin: 40px 0 0 0; font-size: 13px; line-height: 1.55; color: #2C2C2C; font-style: italic; }
+  footer.brand-footer { margin-top: 48px; padding-top: 24px; border-top: 1px solid #E8E1D4; font-size: 13px; color: #2C2C2C; display: flex; gap: 16px; flex-wrap: wrap; justify-content: space-between; }
+  footer.brand-footer a { display: inline-flex; align-items: center; min-height: 44px; color: #2C2C2C; text-decoration: underline; }
 </style>
 </head>
 <body>

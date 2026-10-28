@@ -255,14 +255,14 @@ describe('community UGC safety flow (Apple 1.2)', () => {
     );
   });
 
-  it('only the owning coach can act on an item', async () => {
+  it('only the owning coach can act on an item (others get the not-found 404)', async () => {
     const m = await messages.send(bob, cohortId, 'something');
     const r = await moderation.report(alice, 'message', m.message.id, 'spam', undefined);
     await expect(moderation.act(alice, r.item.id, 'hide', undefined)).rejects.toBeInstanceOf(
-      ForbiddenException,
+      NotFoundException,
     );
     await expect(moderation.act(otherCoach, r.item.id, 'hide', undefined)).rejects.toBeInstanceOf(
-      ForbiddenException,
+      NotFoundException,
     );
   });
 
@@ -302,18 +302,16 @@ describe('community UGC safety flow (Apple 1.2)', () => {
     expect((await messages.list(bob, cohortId, {})).messages).toHaveLength(2);
   });
 
-  it('block closes DMs in both directions and hides the thread from both sides', async () => {
+  it('block closes DMs in both directions, hides the thread from both lists and tells each person who closed it', async () => {
     await dms.send(bob, wsId, alice.id, 'hello');
     expect((await dms.listThreads(alice, wsId, {})).threads).toHaveLength(1);
     await safety.block(alice, bob.id);
     expect((await dms.listThreads(alice, wsId, {})).threads).toHaveLength(0);
-    // Blocked person: indistinguishable from "not there" (same 404 body).
-    const notThere = await dms.send(bob, wsId, carol.id + '-gone', 'x').catch((e: unknown) => e);
-    const blockedErr = await dms.send(bob, wsId, alice.id, 'hello again').catch((e: unknown) => e);
-    expect(blockedErr).toBeInstanceOf(NotFoundException);
-    expect((blockedErr as NotFoundException).getResponse()).toEqual(
-      (notThere as NotFoundException).getResponse(),
-    );
+    // Blocked person: told the other person blocked them (no message text: the phone shows "{N} has blocked you").
+    await expect(dms.send(bob, wsId, alice.id, 'hello again')).rejects.toMatchObject({
+      status: 403,
+      response: { error: 'forbidden', code: 'community.dm.blocked_by_them' },
+    });
     // Blocker: told it is their block, with the way back.
     await expect(dms.send(alice, wsId, bob.id, 'hi')).rejects.toBeInstanceOf(ForbiddenException);
     await expect(dms.listThread(alice, wsId, bob.id, {})).rejects.toMatchObject({
@@ -363,8 +361,9 @@ describe('community UGC safety flow (Apple 1.2)', () => {
         message: expect.stringContaining('Community safety'),
       },
     });
+    // #169-5: the blocked side's code is the phone's cue for "{N} has blocked you" (BAM-2b); the phone shows no server text.
     await expect(dms.send(bob, wsId, alice.id, 'hi')).rejects.toMatchObject({
-      response: { code: 'community.dm.not_found', message: expect.stringContaining('Refresh') },
+      response: { error: 'forbidden', code: 'community.dm.blocked_by_them' },
     });
     for (const body of bodies) {
       const msg = (body as { message: string }).message;

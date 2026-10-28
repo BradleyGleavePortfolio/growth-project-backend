@@ -146,7 +146,7 @@ describe('createNotification preference gating', () => {
     expect(mockPrisma.notification.create).toHaveBeenCalled();
   });
 
-  it('suppresses notification when muted=true', async () => {
+  it('MUTE-PAY (owner #171-3): muted=true never suppresses the in-app row', async () => {
     storedPrefs.set('u1', { user_id: 'u1', muted: true });
     const result = await service.createNotification({
       user_id: 'u1',
@@ -154,8 +154,8 @@ describe('createNotification preference gating', () => {
       body: 'Test',
       channel: 'inapp',
     });
-    expect(result).toBeNull();
-    expect(mockPrisma.notification.create).not.toHaveBeenCalled();
+    expect(result).not.toBeNull();
+    expect(mockPrisma.notification.create).toHaveBeenCalledTimes(1);
   });
 
   it('suppresses push notification when milestone_push=false', async () => {

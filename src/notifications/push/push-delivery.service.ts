@@ -20,6 +20,8 @@ import { usableTimeZone } from '../local-time';
 import { resolveRecipientTimeZone } from '../recipient-timezone';
 import { pushStillCurrent } from '../current-coach-inbox';
 import { planRenewalPushStillDue } from '../../checkout/plan-renewal/plan-renewal.state';
+import { asSpacePushContext, spacePushExpoFields } from '../../community/space-push/space-push-policy';
+import { spacePushDropReason } from '../../community/space-push/space-push-still-due';
 
 // Device delivery for inbox notifications (C-643-2), through a durable
 // outbox (B-NOTIF-5: B-648-1, B-648-6, C-648-4 / OR-113-5, C-648-5).
@@ -42,13 +44,13 @@ import { planRenewalPushStillDue } from '../../checkout/plan-renewal/plan-renewa
 //     and the row is closed (at most once). A lost CAS is never reported as sent.
 //   - Every decision is re-made at the moment of sending, not only at
 //     enqueue (B-648-9, B-648-10): the recipient's current preferences
-//     (`muted`, `<kind>_push`), quiet hours in the recipient's CURRENT zone,
-//     and the burst cap. A push whose switch was turned off while it waited
-//     is suppressed; one that would now land inside quiet hours waits for
-//     08:00 local again, without spending a provider retry attempt. The
-//     switches and the device token are read once more after every other
-//     read, so a mute or sign-out committed during preparation stops the
-//     send (Sol B-648-9, round 5).
+//     (`muted` unless the kind is money, `<kind>_push`), quiet hours in the
+//     recipient's CURRENT zone, and the burst cap. A push whose switch was
+//     turned off while it waited is suppressed; one that would now land
+//     inside quiet hours waits for 08:00 local again, without spending a
+//     provider retry attempt. The switches and the device token are read
+//     once more after every other read, so a mute or sign-out committed
+//     during preparation stops the send (Sol B-648-9, round 5).
 //   - Lock screen (B-692-1): title and body come only from the per-kind
 //     templates (lock-screen-copy.ts), rendered at the moment of sending; the
 //     Android channel is one the app creates (push-channels.ts, B-693-1).
@@ -184,6 +186,8 @@ function asContext(v: Prisma.JsonValue | null): PushContext | null {
     Object.prototype.hasOwnProperty.call(SAFETY_ALERT_PUSH_BODY, o.safetyAlert)
       ? { safetyAlert: o.safetyAlert }
       : {}),
+    // SC-PUSH: a space chat push keeps its count, kind and space.
+    ...asSpacePushContext(o.spacePush),
   };
 }
 
@@ -496,12 +500,23 @@ export class PushDeliveryService {
           return await this.finish(row, 'dropped', 'obsolete');
         }
       }
+      // Sol B-2 (FR-1138): a space push that waited is planned again for its reader now (a block, a ban, a
+      // deleted message or Mute all since enqueue drops it).
+      if (context?.spacePush) {
+        const why = await spacePushDropReason(this.prisma, row.user_id, context.spacePush, this.now());
+        if (why) {
+          this.logger.log(`push dropped: row=${row.id} kind=${row.kind} reason=space-${why}`);
+          return await this.finish(row, 'dropped', 'obsolete');
+        }
+      }
 
-      // B-648-9: the recipient's CURRENT switches, the same rule as enqueue.
+      // B-648-9: the recipient's CURRENT switches, the same rule as enqueue
+      // (MUTE-PAY, FR-1154: a money kind, a safety alert or a stored
+      // MUTE_ALL_PASS passes muted).
       const prefs = await this.prisma.notificationPreferences.findUnique({
         where: { user_id: row.user_id },
       });
-      if (!pushAllowedByPreferences(prefs as Record<string, unknown> | null, row.kind)) {
+      if (!pushAllowedByPreferences(prefs as Record<string, unknown> | null, row.kind, row.context)) {
         return await this.finish(row, 'dropped', 'preference-off');
       }
 
@@ -569,7 +584,7 @@ export class PushDeliveryService {
           select: { expo_push_token: true },
         }),
       ]);
-      if (!pushAllowedByPreferences(prefsAtSend as Record<string, unknown> | null, row.kind)) {
+      if (!pushAllowedByPreferences(prefsAtSend as Record<string, unknown> | null, row.kind, row.context)) {
         return await this.finish(row, 'dropped', 'preference-off');
       }
       const to = userAtSend?.expo_push_token ?? null;
@@ -607,6 +622,8 @@ export class PushDeliveryService {
         sound: 'default',
         channelId: androidChannelFor(row.kind),
         priority: 'high',
+        // SC-PUSH: the space's unread notification collapses and later updates are quiet.
+        ...spacePushExpoFields(context?.spacePush),
       };
 
       let ticket: ExpoPushTicket | undefined;

@@ -4,11 +4,13 @@
  * Mocks CommunityAccessService + CommunityCoachInboxRepository (no DB). Covers:
  * not-a-coach 403, empty inbox, unanswered-only filtering (repo predicate),
  * multi-cohort aggregation, FIFO sort + (created_at,id) tiebreak, message+post
- * merge, pagination/next_cursor, and preview truncation (≤200).
+ * merge, pagination/next_cursor, preview truncation (≤200), voice rows and
+ * photo rows (INBOX-PHOTO).
  */
 import { ForbiddenException } from '@nestjs/common';
 import type { User } from '@prisma/client';
 import { CommunityCoachInboxService } from '../../../src/community/inbox/community-coach-inbox.service';
+import { CoachInboxQueryDto } from '../../../src/community/inbox/community-coach-inbox.dto';
 import type {
   MessageWithSender,
   PostWithAuthor,
@@ -176,6 +178,77 @@ describe('CommunityCoachInboxService', () => {
     ]);
     const res = await service.list(coach, {} as never);
     expect(res.items[0].preview.length).toBe(200);
+  });
+
+  // VOICE-INBOX (owner #167-4 op 1): a client's space voice note is a row in the same message stream.
+  it('asks the repository for the voice notes, under the rules for the calling coach', async () => {
+    repo.coachedCohortIds.mockResolvedValue([COHORT_1]);
+    await service.list(coach, new CoachInboxQueryDto());
+    expect(repo.unansweredMessages).toHaveBeenCalledWith(
+      expect.objectContaining({ viewerId: coach.id, withVoice: true }),
+    );
+    expect(repo.unansweredPosts).toHaveBeenCalledWith(expect.objectContaining({ viewerId: coach.id }));
+  });
+
+  // VOICE-INBOX (Sol B2): each stream is asked for one row past the page, so a backlog in one stream alone
+  // still says there is a next page.
+  it('gives a next_cursor when only one stream holds more than a page', async () => {
+    repo.coachedCohortIds.mockResolvedValue([COHORT_1]);
+    const rows = [1, 2, 3].map((n) =>
+      msg({ id: `aaaaaaaa-0000-0000-0000-00000000000${n}`, created_at: new Date(`2026-01-0${n}T00:00:00.000Z`) }),
+    );
+    repo.unansweredMessages.mockImplementation(async (p: { limit: number }) => rows.slice(0, p.limit));
+    const res = await service.list(coach, Object.assign(new CoachInboxQueryDto(), { limit: '2' }));
+    expect(repo.unansweredMessages).toHaveBeenCalledWith(expect.objectContaining({ limit: 3 }));
+    expect(res.items.map((i) => i.id)).toEqual([rows[0].id, rows[1].id]);
+    expect(res.next_cursor).not.toBeNull();
+  });
+
+  it('renders a voice note as a "Voice note" row with its length and note id; a typed row says text', async () => {
+    repo.coachedCohortIds.mockResolvedValue([COHORT_1, COHORT_2]);
+    const voice = msg({ id: 'aaaaaaaa-0000-0000-0000-000000000009', kind: 'voice', body: null, voice_duration_ms: 42_000 });
+    repo.unansweredMessages.mockResolvedValue([msg(), voice]);
+    repo.unansweredPosts.mockResolvedValue([post()]);
+    const res = await service.list(coach, new CoachInboxQueryDto());
+    expect(res.items.map((i) => [i.type, i.kind, i.preview])).toEqual([
+      ['message', 'text', 'help please'],
+      ['message', 'voice', 'Voice note'],
+      ['post', 'text', 'progress post'],
+    ]);
+    expect(res.items[1].voice).toEqual({ note_id: 'aaaaaaaa-0000-0000-0000-000000000009', duration_ms: 42_000 });
+    expect(res.items[0]).not.toHaveProperty('voice');
+    expect(res.items[2]).not.toHaveProperty('voice');
+  });
+
+  // INBOX-PHOTO: a space photo (kind 'image', caption in body) is a 'photo' row; with no caption it reads "Photo"
+  // (owner 10-26 13:5x "4.) approve all wording"), never a blank row. Text and voice rows are unchanged.
+  it('renders a space photo as a photo row: its caption, or "Photo" with none', async () => {
+    repo.coachedCohortIds.mockResolvedValue([COHORT_1]);
+    const row = (n: number, over: Partial<MessageWithSender>) =>
+      msg({
+        id: `aaaaaaaa-0000-0000-0000-00000000000${n}`,
+        created_at: new Date(`2026-01-0${n}T00:00:00.000Z`),
+        ...over,
+      });
+    repo.unansweredMessages.mockResolvedValue([
+      row(1, { kind: 'image', body: '' }),
+      row(2, { kind: 'image', body: null }),
+      row(3, { kind: 'image', body: ' \n  ' }),
+      row(4, { kind: 'image', body: '  Leg day\n done ' }),
+      row(5, {}),
+      row(6, { kind: 'voice', body: null, voice_duration_ms: 5_000 }),
+    ]);
+    const res = await service.list(coach, new CoachInboxQueryDto());
+    expect(res.items.map((i) => [i.type, i.kind, i.preview])).toEqual([
+      ['message', 'photo', 'Photo'],
+      ['message', 'photo', 'Photo'],
+      ['message', 'photo', 'Photo'],
+      ['message', 'photo', 'Leg day done'],
+      ['message', 'text', 'help please'],
+      ['message', 'voice', 'Voice note'],
+    ]);
+    expect(res.items.filter((i) => 'voice' in i).map((i) => i.id)).toEqual([res.items[5].id]);
+    expect(res.items[0].item_url_path).toBe(`/community/cohorts/${COHORT_1}/messages/${res.items[0].id}`);
   });
 
   it('collapses whitespace and trims the preview', async () => {

@@ -39,6 +39,7 @@ import { messagingError, MESSAGING_ERRORS } from './messaging-errors';
 import { isRomanMessageDraft } from '../ai/gateway/roman-message-draft';
 import { THREAD_UPDATED_EVENT, type ThreadUpdateKind } from './messaging-realtime';
 import { SHARE_CARD_TYPE, shareCardOf } from './share-card';
+import { assertPairOpen, type ConversationClosed } from './block-pair';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
@@ -82,6 +83,18 @@ export interface ResolvedThread {
   actorId: string;
   actorSide: 'coach' | 'client';
   otherPartyId: string;
+}
+
+/**
+ * GET /coach/messages/unread-count. NEEDS-YOU-BE: `oldest_unread_at_by_client`
+ * is keyed exactly like `by_client` and built from the same rows: when the
+ * oldest client message still unread was sent (ISO, UTC). No entry at 0.
+ */
+export interface CoachUnreadCount {
+  total: number;
+  by_client: Record<string, number>;
+  oldest_unread_at_by_client: Record<string, string>;
+  closed_client_ids: string[];
 }
 
 /** Max quoted-preview length carried on `reply_to` (characters). */
@@ -450,6 +463,13 @@ export class MessagingService {
     return (await this.blockSets(callerId)).hidden;
   }
 
+  /** FX-1141: how the pair is closed for the caller, or null while open. */
+  async closedFor(callerId: string, otherId: string): Promise<ConversationClosed | null> {
+    const { mine, hidden } = await this.blockSets(callerId);
+    if (mine.has(otherId)) return 'blocked_by_you';
+    return hidden.has(otherId) ? 'blocked_by_them' : null;
+  }
+
   /** True when either side of the pair has blocked the other. */
   async isEitherSideBlocked(a: string, b: string): Promise<boolean> {
     if (!this.safety) return false;
@@ -697,8 +717,14 @@ export class MessagingService {
     return rows.map((r) => this.serializeMessage(r, blocked));
   }
 
-  async listThreadForCoach(coachId: string, clientId: string, opts: ListOpts) {
+  async listThreadForCoach(
+    coachId: string,
+    clientId: string,
+    opts: ListOpts,
+    onClosed?: (state: ConversationClosed) => void,
+  ) {
     const client = await this.assertClientOfCoach(coachId, clientId);
+    await this.tellClosed(coachId, clientId, onClosed);
     // For sub-coaches, the thread's coach_id is the head coach's id —
     // returned in client.coach_id by assertClientOfCoach.
     const threadCoachId = client.coach_id ?? coachId;
@@ -707,11 +733,27 @@ export class MessagingService {
     return this.serializeThreadPage(coachId, visible);
   }
 
-  async listThreadForClient(clientId: string, opts: ListOpts) {
+  async listThreadForClient(
+    clientId: string,
+    opts: ListOpts,
+    onClosed?: (state: ConversationClosed) => void,
+  ) {
     const coachId = await this.requireClientCoachId(clientId);
+    await this.tellClosed(clientId, coachId, onClosed);
     const rows = await this.listThread(coachId, clientId, opts);
     const visible = await this.filterBlockedAuthors(clientId, coachId, rows);
     return this.serializeThreadPage(clientId, visible);
+  }
+
+  /** FX-1141: the thread GET's closed signal (header), only when asked. */
+  private async tellClosed(
+    callerId: string,
+    otherId: string,
+    onClosed?: (state: ConversationClosed) => void,
+  ): Promise<void> {
+    if (!onClosed) return;
+    const state = await this.closedFor(callerId, otherId);
+    if (state) onClosed(state);
   }
 
   /**
@@ -1047,6 +1089,24 @@ export class MessagingService {
     return this.voiceUploadProvider().createSignedUpload(userId, request);
   }
 
+  /**
+   * FX-1141 (B5): a coaching voice upload is a write in the thread, so no
+   * upload URL is issued across a block either way (403 messaging.blocked,
+   * storage untouched). `otherId` null: the client's current coach.
+   */
+  async createThreadVoiceUpload(
+    userId: string,
+    otherId: string | null,
+    request: SignedVoiceUploadRequest,
+  ): Promise<SignedVoiceUploadResponse> {
+    const other =
+      otherId ??
+      (await this.prisma.user.findUnique({ where: { id: userId }, select: { coach_id: true } }))
+        ?.coach_id;
+    if (other) await assertPairOpen(this.prisma, userId, other);
+    return this.createVoiceUpload(userId, request);
+  }
+
   // ---- read markers ----
 
   // Mark every message from the *other* party in this thread as read. We only
@@ -1242,7 +1302,7 @@ export class MessagingService {
   //
   // Phase 11: sub-coaches see only the unread counts for clients they're
   // currently assigned to, scoped through the SubCoachAssignment overlay.
-  async unreadCountForCoach(coachId: string) {
+  async unreadCountForCoach(coachId: string): Promise<CoachUnreadCount> {
     let threadCoachId = coachId;
     let clientFilter: { in: string[] } | undefined = undefined;
     if (this.subCoachScope) {
@@ -1253,7 +1313,9 @@ export class MessagingService {
         // assigned clients only.
         threadCoachId = headCoachId;
         const ids = await this.subCoachScope.getAuthorizedClientIds(coachId);
-        if (ids.length === 0) return { total: 0, by_client: {} };
+        if (ids.length === 0) {
+          return { total: 0, by_client: {}, oldest_unread_at_by_client: {}, closed_client_ids: [] };
+        }
         clientFilter = { in: ids };
       }
     }
@@ -1269,8 +1331,9 @@ export class MessagingService {
     // is absent (legacy unit-test DI) we fall back to the prior
     // `NOT: { sender_id: coachId }` behaviour so those tests are unchanged.
     let senderFilter: Prisma.CoachMessageWhereInput;
+    let clientIds: string[] = [];
     if (this.subCoachScope) {
-      const clientIds =
+      clientIds =
         clientFilter?.in ??
         (await this.subCoachScope.getAuthorizedClientIds(coachId));
       senderFilter = { sender_id: { in: clientIds } };
@@ -1288,6 +1351,7 @@ export class MessagingService {
         ...(isMessagingCoreV2Enabled() ? { deleted_at: null } : {}),
       },
       _count: { _all: true },
+      _min: { created_at: true },
     });
     // Apple 1.2 — drop blocked clients from the unread count so the coach's
     // badge doesn't trail forever when they've blocked someone. Cheap lookup
@@ -1296,6 +1360,7 @@ export class MessagingService {
     // pre-existing un-filtered count.
     const blockedIds = await this.hiddenIdsFor(coachId); // #168-4: either way
     const by_client: Record<string, number> = {};
+    const oldest_unread_at_by_client: Record<string, string> = {};
     let total = 0;
     for (const g of groups) {
       if (g.client_id !== null && blockedIds.has(g.client_id)) {
@@ -1308,10 +1373,20 @@ export class MessagingService {
       // recipient to badge against).
       if (g.client_id !== null) {
         by_client[g.client_id] = g._count._all;
+        // NEEDS-YOU-BE: same row, so the same keys as by_client.
+        const oldest = g._min?.created_at;
+        if (oldest) oldest_unread_at_by_client[g.client_id] = oldest.toISOString();
       }
       total += g._count._all;
     }
-    return { total, by_client };
+    // FR-1141 (LO-872 B1): the roster clients in a block either way, ids only,
+    // so the coach's list leaves them out too ("Dissapear"); unblock clears it.
+    return {
+      total,
+      by_client,
+      oldest_unread_at_by_client,
+      closed_client_ids: clientIds.filter((id) => blockedIds.has(id)).sort(),
+    };
   }
 
   async unreadCountForClient(clientId: string) {

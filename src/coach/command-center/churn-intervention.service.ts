@@ -36,6 +36,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
+import { assertPairOpen } from '../../messaging/block-pair';
 import { AiEgressService, AnthropicHandle } from '../../ai-egress/ai-egress.service';
 import { isAiEgressRefusal } from '../../ai-egress/ai-consent-required.exception';
 import { AiDataSubject, clientDataSubject } from '../../ai-egress/ai-egress.types';
@@ -49,6 +50,7 @@ import { PrismaService } from '../../prisma.service';
 import { isClientOf, lockClientsForDraftWrite } from '../moved-client-drafts';
 import { PtmService } from '../../ptm/ptm.service';
 import { NotificationsService } from '../../notifications/notifications.service';
+import { muteAllStops } from '../../notifications/push/push-preferences';
 import {
   COACH_AI_EFFORT,
   COACH_AI_MODEL,
@@ -342,6 +344,9 @@ export class ChurnInterventionService {
       select: { id: true, name: true },
     });
     if (!client) throw new NotFoundException('Client not found');
+    // FX-1141 (Sol B1): no draft for a chat in a block either way (403, no
+    // AI call, no row).
+    await assertPairOpen(this.prisma, coachId, clientId);
 
     // B-865-SOL-130-2: the draft is written from the churn score and its
     // factors (all four kinds of logs) and the last check-in, so it needs all
@@ -535,6 +540,8 @@ export class ChurnInterventionService {
       where: { id: interventionId, coach_id: coachId },
     });
     if (!intervention) throw new NotFoundException('Intervention not found');
+    // FX-1141 (Sol B1): no nudge or push across a block either way (403).
+    await assertPairOpen(this.prisma, coachId, intervention.client_id);
 
     // Send-idempotency replay: if this exact send_idempotency_key was
     // already persisted for this coach, return the existing send result
@@ -702,8 +709,12 @@ export class ChurnInterventionService {
     }
 
     // Fire push AFTER the transaction commits. Failure cannot un-send
-    // the message; we log and move on.
-    if (this.notifications) {
+    // the message; we log and move on. FR-1154R3 (B-LS1154-2): an ordinary
+    // push, so Mute all stops it (the shared rule); the message stays sent.
+    if (
+      this.notifications &&
+      !(await this.muteAllStopsNudgePush(intervention.client_id, nudgeId))
+    ) {
       void this.notifications
         .pushToUser(intervention.client_id, 'Message from your coach', text.slice(0, 120), {
           type: 'coach_nudge',
@@ -722,6 +733,20 @@ export class ChurnInterventionService {
       sent_at: sentAt.toISOString(),
       nudge_id: nudgeId,
     };
+  }
+
+  /** FR-1154R3 (owner #171-3): Mute all stops this push; an unreadable switch sends none. */
+  private async muteAllStopsNudgePush(clientId: string, nudgeId: string): Promise<boolean> {
+    try {
+      const prefs = await this.prisma.notificationPreferences.findUnique({
+        where: { user_id: clientId },
+        select: { muted: true },
+      });
+      return muteAllStops(prefs, 'coach_nudge', 'push');
+    } catch {
+      this.logger.warn(`Push skipped for nudge=${nudgeId}: preference read failed`);
+      return true;
+    }
   }
 
   // ── POST /churn-interventions/:id/dismiss ────────────────────────────

@@ -30,6 +30,13 @@ export interface ApprovalDeps {
   decide: jest.Mock;
   prisma: PrismaService;
   create: jest.Mock;
+  // FR-1141R4: the block read behind assertPairOpen ([] = no block).
+  blocks: jest.Mock;
+}
+
+// FR-1141R4: the block read approve and edit make (assertPairOpen).
+function blockReader(blocks: jest.Mock): PrismaService['userBlock'] {
+  return { findMany: blocks } as Pick<PrismaService['userBlock'], 'findMany'> as PrismaService['userBlock'];
 }
 
 // Builds a typed WearableInsightsService double with the three methods the
@@ -57,21 +64,24 @@ export function makeApprovalDeps(
 ): ApprovalDeps {
   const create = jest.fn().mockResolvedValue({ id: draftId });
   const decide = jest.fn().mockResolvedValue(decideResult);
+  const blocks = jest.fn().mockResolvedValue([]);
 
   // Narrow doubles. `aiActionDraft` is narrowed to the one method the
   // controller calls (`create`) and widened to the full delegate type with an
   // explicit assertion; the whole object is then a `Pick` of PrismaService.
-  const prismaDouble: Pick<PrismaService, 'aiActionDraft'> = {
+  const prismaDouble: Pick<PrismaService, 'aiActionDraft' | 'userBlock'> = {
     aiActionDraft: { create } as Pick<
       PrismaService['aiActionDraft'],
       'create'
     > as PrismaService['aiActionDraft'],
+    userBlock: blockReader(blocks),
   };
   const approvalsDouble: Pick<AiApprovalService, 'decide'> = { decide };
 
   return {
     create,
     decide,
+    blocks,
     prisma: prismaDouble as PrismaService,
     approvals: approvalsDouble as AiApprovalService,
   };
@@ -89,11 +99,12 @@ export function makeController(overrides: {
   const approvalsDouble: Pick<AiApprovalService, 'decide'> = {
     decide: jest.fn(),
   };
-  const prismaDouble: Pick<PrismaService, 'aiActionDraft'> = {
+  const prismaDouble: Pick<PrismaService, 'aiActionDraft' | 'userBlock'> = {
     aiActionDraft: { create: jest.fn() } as Pick<
       PrismaService['aiActionDraft'],
       'create'
     > as PrismaService['aiActionDraft'],
+    userBlock: blockReader(jest.fn().mockResolvedValue([])),
   };
   // Widen the jest.Mocked Pick double to the concrete service via its
   // underlying Pick shape (the mock wrappers make a direct widening ambiguous,

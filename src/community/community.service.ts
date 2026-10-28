@@ -6,6 +6,7 @@ import { CommunitySafetyService } from './safety/community-safety.service';
 import { memberName } from './member-display-name';
 import { fullNamesFor } from './community-space-access';
 import { isBannedFromWorkspace } from './community-ban';
+import { communityTabUnread, spaceUnreadCounts } from './space-reads/community-space-reads.service';
 import {
   WIN_NOT_FOUND,
   WIN_POSTING_REMOVED,
@@ -34,9 +35,11 @@ const FORBIDDEN_WORKSPACE = {
   error: 'forbidden',
   code: 'community.workspace.no_access',
 } as const;
-const FORBIDDEN_COHORT = {
-  error: 'forbidden',
-  code: 'community.cohort.no_access',
+// SPACE-404-CLASS (#168-16): a space the caller cannot read answers exactly
+// like a space that does not exist, so the API never confirms it exists.
+const COHORT_NOT_FOUND = {
+  error: 'not_found',
+  code: 'community.cohort.not_found',
 } as const;
 
 /**
@@ -158,15 +161,9 @@ export class CommunityService {
       workspace = await this.repo.findWorkspaceById(membership.workspace_id);
     }
 
-    let unreadCohort = 0;
-    if (membership) {
-      const cohortIds = await this.repo.findActiveCohortIdsForUser(user.id);
-      unreadCohort = await this.repo.countUnreadCohortMessages({
-        userId: user.id,
-        cohortIds,
-        since: membership.last_read_message_at,
-      });
-    }
+    // SC-BE2: the tab badge adds up the space list's badges (the same spaces as GET /community/cohorts).
+    const spaces = await this.repo.findCohortsForUser({ userId: user.id, role: scope });
+    const unreadCohort = await communityTabUnread(this.prisma, user.id, spaces);
 
     const membershipView = membership
       ? {
@@ -330,6 +327,8 @@ export class CommunityService {
       userId: user.id,
       role: this.scopingRole(user),
     });
+    // SC-BE2: each space's unread badge (one round trip for the list).
+    const unread = await spaceUnreadCounts(this.prisma, user.id, cohorts.map((c) => c.id));
 
     const summaries = await Promise.all(
       cohorts.map(async (c) => ({
@@ -342,6 +341,7 @@ export class CommunityService {
         visibility: c.visibility,
         member_count: await this.repo.cohortMemberCount(c),
         my_role: role,
+        unread_count: unread.get(c.id) ?? 0,
       })),
     );
 
@@ -357,10 +357,7 @@ export class CommunityService {
     const role = this.effectiveRole(user);
     const cohort = await this.repo.findCohortById(cohortId);
     if (!cohort) {
-      throw new NotFoundException({
-        error: 'not_found',
-        code: 'community.cohort.not_found',
-      });
+      throw new NotFoundException(COHORT_NOT_FOUND);
     }
 
     const workspace = await this.repo.findWorkspaceById(cohort.workspace_id);
@@ -369,7 +366,7 @@ export class CommunityService {
     const canRead = coachView || (await this.repo.canEnterCohort(cohortId, user.id));
 
     if (!canRead) {
-      throw new ForbiddenException(FORBIDDEN_COHORT);
+      throw new NotFoundException(COHORT_NOT_FOUND);
     }
 
     return CommunityCohortResponseSchema.parse({

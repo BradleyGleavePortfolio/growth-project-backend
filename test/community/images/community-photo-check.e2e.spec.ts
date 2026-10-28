@@ -173,6 +173,7 @@ function world(
     safetyWithBlocks(),
     stub<CommunityNotificationsService>({ pushEnabled: () => false }),
     store,
+    undefined, // main's space push (SC-PUSH): not under test here
     egress,
     moduleRef,
   );
@@ -531,8 +532,9 @@ describe('boot and wiring', () => {
 
   it('the running server always injects the check and finds the coach alert service', () => {
     const params = Reflect.getMetadata('design:paramtypes', CommunityMessagesService);
-    expect(params[7]).toBe(AiEgressService);
-    expect(params[8]).toBe(ModuleRef);
+    // After main's space push (slot 7), so main's positional constructions keep their slots.
+    expect(params[8]).toBe(AiEgressService);
+    expect(params[9]).toBe(ModuleRef);
     expect(Reflect.getMetadata('__module:global__', AiEgressModule)).toBe(true);
     expect(Reflect.getMetadata('exports', AiEgressModule)).toContain(AiEgressService);
     expect(Reflect.getMetadata('exports', CoachModule)).toContain(CoachAlertsService);

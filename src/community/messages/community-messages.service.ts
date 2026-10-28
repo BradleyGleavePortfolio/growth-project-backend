@@ -1,5 +1,7 @@
 import {
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
   Logger,
   NotFoundException,
@@ -11,6 +13,8 @@ import { ModuleRef } from '@nestjs/core';
 import type { CommunityCohort, CommunityMessage, User } from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
 import { CommunityRealtimeService } from '../realtime/community-realtime.service';
+import { spacePushOn } from '../space-push/space-push-policy';
+import { CommunitySpacePushService } from '../space-push/community-space-push.service';
 import { COMMUNITY_BROADCAST_EVENTS } from '../community-events';
 import { type ChatVoiceNote, CommunityMessagesRepository } from './community-messages.repository';
 import { PlanContextService, planTagsEnabled } from '../plan-context/plan-context.service';
@@ -95,9 +99,11 @@ export class CommunityMessagesService {
     // SC-BE3: photo storage (optional so the positional test constructions
     // keep working; a photo send without it is 503).
     @Optional() private readonly images?: CommunityImageStore,
+    @Optional() private readonly spacePush?: CommunitySpacePushService,
     // PHOTO-CHECK-BE: the photo check's egress. The server always has it (the
     // AI egress module is global; pinned in community-photo-check.e2e.spec.ts);
-    // only b#1139's hand-built test services leave it out.
+    // only b#1139's hand-built test services leave it out. Kept after main's
+    // spacePush so the positional test constructions keep their slots.
     @Optional() private readonly egress?: AiEgressService,
     // FR-1152 (#172-5): finds CoachAlertsService (CoachModule, in AppModule)
     // for the photo safety alert, without a community -> coach module import
@@ -188,6 +194,10 @@ export class CommunityMessagesService {
    * server minted for this sender in this space (10 minutes); the object must
    * be at that key, JPEG and within 10 MB, else 422. Storage down is 503.
    * FX-1139: the rows and the copy to the sent key commit together.
+   * FR-1139 (Sol C): a validated plan tag is stored, as on a text message.
+   * PHOTO-GPS: a photo that carries a location is 422 community.image.has_location,
+   * nothing is written and its upload is erased now; if that erase fails, the
+   * upload's erasure row (recorded when its link was signed) erases it at link death.
    */
   private async createImage(
     user: User,
@@ -195,6 +205,7 @@ export class CommunityMessagesService {
     body: string,
     parent: { id: string; at: Date } | null,
     image: ImageSend,
+    planContext: PlanContextTag | null,
   ): Promise<CommunityMessage> {
     if (!communityImagesEnabled()) throw IMAGE_REJECTED('community.image.disabled');
     if (!isPublishableImageKey(image.key, user.id, cohort.id)) throw IMAGE_REJECTED('community.image.key_invalid');
@@ -203,6 +214,9 @@ export class CommunityMessagesService {
     const { result, size } = await images.check(image.key, user.id);
     if (result === 'unavailable') {
       throw new ServiceUnavailableException({ error: 'unavailable', code: 'community.image.storage_unavailable' });
+    }
+    if (result === 'has_location' && (await images.removeObjects([image.key]).catch(() => ({ failed: true }))).failed) {
+      this.logger.warn('community.image outcome=has_location erase=deferred_to_link_expiry');
     }
     if (result !== 'ok') throw IMAGE_REJECTED(`community.image.${result}`);
     if (this.egress) {
@@ -216,6 +230,7 @@ export class CommunityMessagesService {
         cohortId: cohort.id,
         senderId: user.id,
         body,
+        planContext,
         parent,
         image: { key: image.key, width: image.width, height: image.height, sizeBytes: size },
         publish: () => images.publish(image.key),
@@ -240,6 +255,7 @@ export class CommunityMessagesService {
     const parents = new Map(
       (await this.safety.filterBlocked(user.id, live, (p) => p.sender_id, placeOf)).map((p) => [p.id, p]),
     );
+    const parentImages = await this.imagesOf([...parents.values()]); // FR-1139 (Opus C2): a quoted photo, signed
     const name = (m: CommunityMessage) =>
       memberName(x.people.get(m.sender_id)?.name, x.fullName(m.cohort_id, m.sender_id));
     return (m) => {
@@ -262,6 +278,7 @@ export class CommunityMessagesService {
                 sender_name: name(p),
                 snippet: voice ? null : Array.from(p.body ?? '').slice(0, QUOTE_CHARS).join(''),
                 voice_duration_ms: voice ? p.voice_duration_ms : null,
+                ...(p.kind === 'image' ? { image: parentImages.get(p.id) ?? null } : {}),
               }
             : { id: m.parent_message_id, ...GONE },
       };
@@ -388,7 +405,8 @@ export class CommunityMessagesService {
     planContextRaw?: unknown,
     parentId?: string,
     image?: ImageSend,
-  ): Promise<CommunityMessageResponse> {
+    highAlert?: boolean,
+  ): Promise<CommunityMessageResponse & { high_alert_reach?: number }> {
     const cohort = await this.access.findCohort(cohortId);
     // Treat a missing cohort and an unauthorised cohort identically (404).
     if (!cohort || !(await this.access.canAccessCohort(cohort, user))) {
@@ -403,8 +421,14 @@ export class CommunityMessagesService {
     // v2-1: validate + authorize any attached plan-context tag BEFORE the write
     // (flag-off drops it; malformed → 422; missing entity → 422; foreign → 403).
     const planContext = await this.resolveIncomingPlanContext(user, planContextRaw);
+    // SC-PUSH: a High alert only from the space's coach, at most 3 there a day. Opus C-6: with the space
+    // switch off it does nothing (no mark, no count against the 3, no reach).
+    const alert = highAlert && this.spacePush && spacePushOn() ? await this.spacePush.highAlertAllowance(user.id, cohort) : null;
+    if (alert && alert.used_today >= alert.limit) {
+      throw new HttpException({ code: 'community.high_alert.limit', limit: alert.limit }, HttpStatus.TOO_MANY_REQUESTS);
+    }
     const created = image
-      ? await this.createImage(user, cohort, body, parent, image)
+      ? await this.createImage(user, cohort, body, parent, image, planContext)
       : await this.repo.createCohortMessage({
           workspaceId: cohort.workspace_id,
           cohortId: cohort.id,
@@ -413,6 +437,7 @@ export class CommunityMessagesService {
           planContext,
           parent,
         });
+    if (alert) await this.spacePush?.markHighAlert(created.id);
     // v1-6 coach-inbox producer: a coach/owner message into the cohort answers
     // the cohort's outstanding client messages, so stamp coach_replied_at on
     // them (the inbox message arm keys "unanswered" off that column). Bounded to
@@ -441,7 +466,8 @@ export class CommunityMessagesService {
     // C-S-PUSH-4: tell the other members about the new group message. Fire-and-
     // forget after the write; never blocks or fails the send.
     void this.pushCohortMessage(created, cohort.workspace_id, created.cohort_id ?? cohort.id);
-    return CommunityMessageResponseSchema.parse({ message: this.view(created, undefined, undefined, await this.imagesOf([created])) });
+    const sent = CommunityMessageResponseSchema.parse({ message: this.view(created, undefined, undefined, await this.imagesOf([created])) });
+    return alert ? { ...sent, high_alert_reach: alert.reach } : sent;
   }
 
   /**
@@ -459,7 +485,8 @@ export class CommunityMessagesService {
     cohortId: string,
   ): Promise<void> {
     try {
-      if (!this.communityPush.pushEnabled()) return;
+      // SC-PUSH: with the space push on, it alone tells the space (one collapsing notification).
+      if (!this.communityPush.pushEnabled() || spacePushOn()) return;
       const members = await this.repo.listCohortPushRecipients({
         workspaceId,
         cohortId,

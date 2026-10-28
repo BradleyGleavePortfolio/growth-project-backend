@@ -40,6 +40,8 @@ import { alertCoachOfFlaggedJoinTx } from '../onboarding/flagged-join-alert';
 import { type GuestCheckoutStatus } from './guest-checkout-status';
 import { EmailSenderConfigError, resolveEmailSender } from '../email/email-sender';
 import { SELLING_COACH } from '../packages/coach-selling';
+import { BuyerHasOtherCoachError, assertBuyerMayPay, buyerVerdict } from './buyer-check';
+import { payPageUrl } from './storefront-links';
 
 // S-FEE — guest storefront charges are separate charges and transfers, like
 // every other checkout path. The PaymentIntent / Subscription carries NO
@@ -123,6 +125,15 @@ export const RECONCILIATION_MAX_ATTEMPTS = 5;
 // pulling GuestCheckoutService into its constructor. The same key is
 // attached to every Stripe PaymentIntent we create in createIntent().
 export const GUEST_CHECKOUT_METADATA_KEY = 'guest_checkout_idempotency_key';
+
+// The charge facts a payment_intent.succeeded event carries (A276-P0-2,
+// A276-F2-P2-1): the charge id, a receipt URL when already in hand, and
+// whether BillingService already ran the receipt lookup outside its tx.
+export interface PaymentChargeInfo {
+  chargeId: string | null;
+  receiptUrl: string | null;
+  preResolveAttempted?: boolean;
+}
 
 // Helper — never leak provider error details to the client. Stripe / Resend /
 // Supabase messages can include account IDs and partial keys.
@@ -370,6 +381,17 @@ export class GuestCheckoutService {
 
     const normalisedEmail = dto.guest_email.toLowerCase().trim();
     const normalisedName = dto.guest_name.trim();
+
+    // GUEST-ELIGIBILITY (audit LS-1140 item 2, owner #170-2) — before any
+    // row, idempotency replay or Stripe object: a new email passes; an
+    // existing TGP email needs a fresh code proof for this email + package,
+    // then must be a buyer this coach can take (#SWITCH-V1 otherwise).
+    await assertBuyerMayPay(this.prisma, this.config, {
+      shareToken: token,
+      sellingCoachId: pkg.coach.id,
+      email: normalisedEmail,
+      buyerToken: dto.buyer_token,
+    });
 
     // R47 / Audit #6 P0-5 — validate the optional landing_page_id query
     // param. We must defend against three classes of abuse:
@@ -907,7 +929,9 @@ export class GuestCheckoutService {
   // every error is caught, logged, and silenced so the webhook returns
   // 200 to Stripe. Stripe retries non-2xx responses, and a duplicate
   // delivery against a converted row would attempt to create a second
-  // Supabase user.
+  // Supabase user. (GUEST-OUTER-TX: the one exception is the in-transaction
+  // claim, handlePaymentSucceeded with `tx`, whose database error must roll
+  // the webhook transaction back so the unrecorded payment is redelivered.)
 
   // A276-P0-2 — chargeInfo carries the Stripe-hosted receipt URL (or the
   // charge id we'd retrieve to look it up). Both are optional so legacy
@@ -917,45 +941,101 @@ export class GuestCheckoutService {
   //
   // A276-F2-P2-1 — `preResolveAttempted` is set by BillingService when it
   // already ran the outside-tx receipt lookup (success OR failure). When
-  // true and `receiptUrl` is null, the inner resolveReceiptUrl MUST NOT
-  // attempt another Stripe HTTP call (otherwise we re-introduce the
-  // in-transaction HTTP anti-pattern P1-3 was supposed to eliminate, on
-  // the Stripe-blip degraded path). The welcome email simply ships
-  // without the receipt line and an outbox/backfill job can fill it in
-  // later.
+  // true and `receiptUrl` is null, resolveReceiptUrl does not attempt a
+  // second Stripe HTTP call. The welcome email simply ships without the
+  // receipt line and an outbox/backfill job can fill it in later.
+  //
+  // GUEST-OUTER-TX — with `tx` (BillingService's webhook transaction) this
+  // only CLAIMS the payment inside that transaction: not-yet-paid→paid (and
+  // the receipt URL when the event already carried one), with no Supabase,
+  // Stripe or email call while the transaction is open. Errors propagate so
+  // the claim rolls back with the webhook's dedup row and Stripe redelivers.
+  // Returns true when this call claimed the row; the caller then runs
+  // finishPaidCheckout after its transaction commits. A crash between that
+  // commit and the conversion leaves a `paid` row with no account, which
+  // GuestCheckoutReconciliationService.scanOrphanedPaid converts (once: the
+  // conversion's own paid→converted claim and the purchase idempotency key).
+  // Without `tx` (cron callers, the subscription backstop): claim and convert
+  // here, never throwing.
+  handlePaymentSucceeded(
+    paymentIntentId: string,
+    chargeInfo?: PaymentChargeInfo,
+  ): Promise<void>;
+  handlePaymentSucceeded(
+    paymentIntentId: string,
+    chargeInfo: PaymentChargeInfo | undefined,
+    tx: Prisma.TransactionClient,
+  ): Promise<boolean>;
   async handlePaymentSucceeded(
     paymentIntentId: string,
-    chargeInfo?: {
-      chargeId: string | null;
-      receiptUrl: string | null;
-      preResolveAttempted?: boolean;
-    },
-  ): Promise<void> {
+    chargeInfo?: PaymentChargeInfo,
+    tx?: Prisma.TransactionClient,
+  ): Promise<boolean | void> {
+    if (tx) {
+      const claimed = await this.claimPaymentSucceeded(paymentIntentId, tx);
+      const inHand = chargeInfo?.receiptUrl;
+      if (claimed && typeof inHand === 'string' && /^https:\/\//.test(inHand)) {
+        await tx.guestCheckout.updateMany({
+          where: { stripe_payment_intent_id: paymentIntentId, receipt_url: null },
+          data: { receipt_url: inHand },
+        });
+      }
+      return claimed;
+    }
     try {
-      // Atomic not-yet-paid→paid transition (PAYMENT_CLAIMABLE_STATUSES,
-      // B-GUEST-126). updateMany with WHERE status IN (...) is the
-      // canonical "claim once" pattern: if count = 0,
-      // either we never owned this PI or another handler already moved
-      // it forward, and we return silently.
-      //
-      // P2-4 — refuse to fulfill rows whose checkout link has already
-      // expired. A buyer who retained a stale client secret cannot push
-      // a paid status past expires_at.
-      const claim = await this.prisma.guestCheckout.updateMany({
-        where: {
-          stripe_payment_intent_id: paymentIntentId,
-          status: { in: PAYMENT_CLAIMABLE_STATUSES },
-          expires_at: { gt: new Date() },
-        },
-        data: { status: 'paid' },
-      });
-      if (claim.count === 0) {
-        this.logger.log(
-          `handlePaymentSucceeded: no pending row for ${paymentIntentId} — duplicate, expired, or unrelated`,
-        );
+      if (!(await this.claimPaymentSucceeded(paymentIntentId, this.prisma))) {
         return;
       }
+    } catch (err) {
+      // Webhook MUST return 200 — log + swallow.
+      this.logger.error(
+        `handlePaymentSucceeded crashed (tag=${safeErrorTag(err)})`,
+      );
+      return;
+    }
+    await this.finishPaidCheckout(paymentIntentId, chargeInfo);
+  }
 
+  // Atomic not-yet-paid→paid transition (PAYMENT_CLAIMABLE_STATUSES,
+  // B-GUEST-126). updateMany with WHERE status IN (...) is the canonical
+  // "claim once" pattern: if count = 0, either we never owned this PI or
+  // another handler already moved it forward.
+  //
+  // P2-4 — refuse to fulfill rows whose checkout link has already expired.
+  // A buyer who retained a stale client secret cannot push a paid status
+  // past expires_at.
+  private async claimPaymentSucceeded(
+    paymentIntentId: string,
+    db: Prisma.TransactionClient,
+  ): Promise<boolean> {
+    const claim = await db.guestCheckout.updateMany({
+      where: {
+        stripe_payment_intent_id: paymentIntentId,
+        status: { in: PAYMENT_CLAIMABLE_STATUSES },
+        expires_at: { gt: new Date() },
+      },
+      data: { status: 'paid' },
+    });
+    if (claim.count === 0) {
+      this.logger.log(
+        `handlePaymentSucceeded: no pending row for ${paymentIntentId} — duplicate, expired, or unrelated`,
+      );
+      return false;
+    }
+    return true;
+  }
+
+  // GUEST-OUTER-TX — the claimed payment's account setup and delivery. Runs
+  // with no database transaction open (after BillingService's webhook
+  // transaction commits, or right after the no-tx claim above): receipt URL
+  // lookup (Stripe), then convertGuestToUser (Supabase account, Stripe
+  // subscription read, then its own conversion transaction). Never throws;
+  // a failed conversion is marked retryable and the reconciler retries it.
+  async finishPaidCheckout(
+    paymentIntentId: string,
+    chargeInfo?: PaymentChargeInfo,
+  ): Promise<void> {
+    try {
       const checkout = await this.prisma.guestCheckout.findUnique({
         where: { stripe_payment_intent_id: paymentIntentId },
         include: { package: { include: { coach: true } } },
@@ -995,16 +1075,15 @@ export class GuestCheckoutService {
           });
       }
 
-      // P1-4 — Guest conversion runs INLINE, before the webhook returns.
-      // The previous setImmediate path acknowledged Stripe before account
-      // creation finished; if the process exited (Fly redeploy, OOM, hard
-      // crash) the entitlement was lost and Stripe wouldn't retry because
-      // BillingService had already inserted the event into
-      // StripeProcessedEvent. Running inline means a failure leaves the
-      // event un-acknowledged and Stripe will retry the delivery.
+      // P1-4 — Guest conversion runs before the webhook returns (after the
+      // webhook transaction commits). The previous setImmediate path
+      // acknowledged Stripe before account creation finished. Now the paid
+      // claim is committed first, so if the process exits (Fly redeploy,
+      // OOM, hard crash) before or during conversion the `paid` row stays
+      // for the reconciliation job.
       //
       // Any unrecoverable error inside convertGuestToUser flips the row
-      // to 'failed' so the reconciliation job has a clear signal.
+      // to retryable so the reconciliation job has a clear signal.
       const checkoutWithReceipt = receiptUrl
         ? { ...checkout, receipt_url: receiptUrl }
         : checkout;
@@ -1039,14 +1118,12 @@ export class GuestCheckoutService {
   //
   // A276-F2-P2-1 — when `preResolveAttempted` is true, BillingService
   // already issued the Stripe HTTP lookup OUTSIDE the transaction; the
-  // result (success or null on Stripe blip) is final. We MUST NOT retry
-  // a second Stripe HTTP call here, because this method is invoked from
-  // handlePaymentSucceeded WHICH RUNS INSIDE BillingService's outer
-  // `$transaction` await — holding the Postgres connection across a
-  // Stripe round-trip is exactly the anti-pattern P1-3 was supposed to
-  // eliminate. On the degraded path (Stripe blip during pre-resolve),
-  // the receipt URL stays null, the welcome email omits the receipt
-  // line, and a future reconciliation/backfill job can fill it in.
+  // result (success or null on Stripe blip) is final and we do not issue a
+  // second Stripe HTTP call. (GUEST-OUTER-TX: this now runs from
+  // finishPaidCheckout, after BillingService's transaction commits.) On the
+  // degraded path (Stripe blip during pre-resolve), the receipt URL stays
+  // null, the welcome email omits the receipt line, and a future
+  // reconciliation/backfill job can fill it in.
   async resolveReceiptUrl(
     paymentIntentId: string,
     chargeInfo?: {
@@ -1060,7 +1137,7 @@ export class GuestCheckoutService {
       return fromEvent;
     }
     // A276-F2-P2-1 — pre-resolve was attempted outside-tx. Honour the
-    // null result; do not retry HTTP from inside the outer transaction.
+    // null result; do not retry the Stripe HTTP call.
     if (chargeInfo?.preResolveAttempted === true) {
       return null;
     }
@@ -1418,6 +1495,7 @@ export class GuestCheckoutService {
         checkout.guest_email,
         checkout.guest_name,
         checkout.id,
+        checkout.package.share_token,
       );
       supabaseUserId = result.supabaseUserId;
       inviteLink = result.inviteLink;
@@ -1526,6 +1604,12 @@ export class GuestCheckoutService {
           },
           update: {},
         });
+        // GUEST-ELIGIBILITY — settlement keeps the one-coach boundary: an
+        // account that gained another coach after the code check is held
+        // for refund (holdForRefund), never re-parented or retried.
+        if (buyerVerdict(dbUser, checkout.package.coach_id) === 'other_coach') {
+          throw new BuyerHasOtherCoachError();
+        }
         if (dbUser.coach_id == null && dbUser.role === 'student') {
           // User existed but had no coach (rare — orphaned account).
           // Attach them to the package's coach.  Done as a separate
@@ -1708,6 +1792,10 @@ export class GuestCheckoutService {
         }
       });
     } catch (err) {
+      if (err instanceof BuyerHasOtherCoachError) {
+        await this.holdForRefund(checkout);
+        return;
+      }
       // Audit #3 P1-6 — DB transaction failures (deadlocks, unique
       // races, connection drops) are transient. Flip to
       // conversion_failed_retryable; the reconciliation worker will
@@ -1797,6 +1885,7 @@ export class GuestCheckoutService {
     email: string,
     name: string,
     checkoutId: string,
+    shareToken: string | null = null,
   ): Promise<{ supabaseUserId: string; inviteLink: string | null }> {
     const client = this.supabase.getClient();
 
@@ -1833,7 +1922,7 @@ export class GuestCheckoutService {
     );
 
     if (data?.user?.id) {
-      const inviteLink = await this.generateInviteLink(email);
+      const inviteLink = await this.generateInviteLink(email, shareToken);
       return { supabaseUserId: data.user.id, inviteLink };
     }
 
@@ -1886,6 +1975,48 @@ export class GuestCheckoutService {
       }
     }
     throw new SupabaseExistingUserNotFoundError();
+  }
+
+  // GUEST-ELIGIBILITY (audit LS-1140 item 2) — the buyer paid, then the
+  // one-coach rule refused delivery (their account has another coach).
+  // Lasting, never retried: conversion_failed_terminal with last_error
+  // 'buyer_has_other_coach' and retry_count at the cap (the reconciler only
+  // takes paid / conversion_failed_retryable). Operator: the error log line
+  // below. Coach: an in-app alert. Refund path (existing): refund the
+  // PaymentIntent in Stripe; charge.refunded -> handleChargeRefunded moves
+  // the row to 'refunded', pauses any subscription and tells the coach.
+  private async holdForRefund(checkout: CheckoutWithRelations): Promise<void> {
+    const moved = await this.prisma.guestCheckout.updateMany({
+      where: { id: checkout.id, status: { in: ['paid', 'conversion_failed_retryable'] } },
+      data: {
+        status: 'conversion_failed_terminal',
+        retry_count: RECONCILIATION_MAX_ATTEMPTS,
+        last_error: 'buyer_has_other_coach',
+        last_retry_at: new Date(),
+      },
+    });
+    this.logger.error(
+      `GuestCheckout ${checkout.id} held for refund (last_error=buyer_has_other_coach): refund pi=${checkout.stripe_payment_intent_id} in Stripe; charge.refunded closes the row`,
+    );
+    if (moved.count === 0) return;
+    await this.notifications
+      .createNotification({
+        user_id: checkout.package.coach_id,
+        kind: NotificationKind.COACH_ALERT,
+        body: `A buyer paid for ${checkout.package.name}, but their account already has another coach, so nothing was delivered. The payment needs a refund.`,
+        payload: {
+          event: 'guest_purchase_held_for_refund',
+          reason: 'buyer_has_other_coach',
+          guest_checkout_id: checkout.id,
+          payment_intent_id: checkout.stripe_payment_intent_id,
+        },
+        channel: 'inapp',
+      })
+      .catch((err) => {
+        this.logger.warn(
+          `held-for-refund coach alert failed checkout=${checkout.id} (tag=${safeErrorTag(err)})`,
+        );
+      });
   }
 
   // Audit #3 P1-6 — flip a paid (or retryable) row to
@@ -1990,14 +2121,24 @@ export class GuestCheckoutService {
   // than leaving the user with no path into the app. Conversion is
   // already complete by this point (ClientPurchase exists), so the user
   // can recover via the standard password-reset / magic-link flow.
-  private async generateInviteLink(email: string): Promise<string | null> {
+  private async generateInviteLink(
+    email: string,
+    shareToken: string | null = null,
+  ): Promise<string | null> {
     try {
       const client = this.supabase.getClient();
+      // GUEST-ELIGIBILITY (owner #170-2) — with the pay page on, the
+      // confirm link lands on its confirm-and-download state
+      // (/p/<token>?confirmed=1). Supabase only honours redirectTo for URLs
+      // on the project's Redirect URLs list; otherwise it uses the Site URL.
+      const redirectTo =
+        shareToken && this.config.get<string>('GUEST_PAY_PAGE_ENABLED') === 'true'
+          ? payPageUrl(this.config.get<string>('STOREFRONT_BASE_URL'), shareToken, { confirmed: '1' })
+          : null;
       const { data, error } = await withTimeout(
-        client.auth.admin.generateLink({
-          type: 'invite',
-          email,
-        }),
+        client.auth.admin.generateLink(
+          redirectTo ? { type: 'invite', email, options: { redirectTo } } : { type: 'invite', email },
+        ),
         SUPABASE_ADMIN_TIMEOUT_MS,
         'supabase_generateLink',
       );
@@ -2064,11 +2205,13 @@ export class GuestCheckoutService {
       this.config.get<string>('PLAY_STORE_URL') ??
       'https://play.google.com/store/apps/details?id=com.growthproject.app';
 
+    // GUEST-ELIGIBILITY (owner #170-2, A6.0-170: approved) — a new buyer's
+    // post-checkout confirm email: confirming the email finishes the account.
     const credentials =
       inviteLink !== null
-        ? `<p>To access your account, set a password and verify your email:</p><p><a href="${escapeAttr(
+        ? `<p>Confirm this is your email, and we'll finish setting up your TGP Fitness account.</p><p><a href="${escapeAttr(
             inviteLink,
-          )}" style="background:#C9A84C;color:#1A1A1A;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">Activate your account</a></p><p style="color:#666;font-size:14px;">This link expires in 24 hours. If it does, you can use "Forgot password" on the sign-in screen with <strong>${escapeHtml(
+          )}" style="background:#2C4A36;color:#FBF7F0;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">Confirm my email</a></p><p style="color:#2C2C2C;font-size:14px;">The link works for 24 hours. If it runs out, open the TGP Fitness app, tap Forgot password? and enter <strong>${escapeHtml(
             checkout.guest_email,
           )}</strong>.</p>`
         : `<p>We've added <strong>${escapeHtml(
@@ -2090,7 +2233,10 @@ export class GuestCheckoutService {
     const body = {
       from: fromAddress,
       to: checkout.guest_email,
-      subject: `${coachName} is ready for you on Growth Project`,
+      subject:
+        inviteLink !== null
+          ? `Confirm your email to start with ${coachName} on TGP Fitness`
+          : `${coachName} is ready for you on Growth Project`,
       html: `<!doctype html><html><body style="font-family:Inter,Arial,sans-serif;background:#F5F0E8;margin:0;padding:24px;">
 <h1 style="font-family:Georgia,serif;color:#1A1A1A;">Welcome, ${escapeHtml(checkout.guest_name)}.</h1>
 <p>You're enrolled in <strong>${escapeHtml(packageName)}</strong> with ${escapeHtml(coachName)}.</p>

@@ -10,6 +10,7 @@ import {
   CapabilityMaterializer,
   MaterializeResult,
 } from './capability-materialiser.interface';
+import { assertPairOpen } from '../../../messaging/block-pair';
 
 /**
  * Stream 2 — `draft.send_notification`.
@@ -133,6 +134,11 @@ export class SendNotificationMaterializer implements CapabilityMaterializer {
     // approval time; otherwise a draft naming any user id could push to a
     // stranger once approved.
     await this.assertRecipientInRoster(draft, payload.clientId);
+    // FX-1141 (Sol B1): no coach notification to a client in a block with
+    // the requesting or tenant coach, either way (403, no row, no push).
+    for (const coach of new Set([draft.requester_id, draft.tenant_coach_id])) {
+      if (coach) await assertPairOpen(this.prisma, coach, payload.clientId);
+    }
 
     // Idempotency via schema-level @unique on ai_draft_id. Same race
     // pattern as the other Stream 2 materialisers.
