@@ -9,6 +9,8 @@
 // (B3, text, photo and voice through their real repositories); "{name} left" rows survive a rejoin (B4).
 import { randomUUID } from 'crypto';
 import { Prisma, PrismaClient, type User } from '@prisma/client';
+import { CommunityCohortMembersRepository } from '../../src/community/cohorts/community-cohort-members.repository';
+import { CommunityCohortMembersService } from '../../src/community/cohorts/community-cohort-members.service';
 import { CommunityAccessService } from '../../src/community/community-access.service';
 import { CommunityRepository } from '../../src/community/community.repository';
 import { CommunityService } from '../../src/community/community.service';
@@ -40,6 +42,7 @@ const DENIED = '42501';
   const safety = new CommunitySafetyService(db);
   const routes = new CommunityLeaveMuteController(new CommunityLeaveMuteService(db, new CommunityAccessService(db), safety));
   const community = new CommunityService(db, new CommunityRepository(db), safety);
+  const cohortMembers = new CommunityCohortMembersService(new CommunityAccessService(db), new CommunityCohortMembersRepository(db), safety);
   const ids = <K extends string>(list: readonly K[]) => Object.fromEntries(list.map((k) => [k, randomUUID()])) as Record<K, string>;
   const id = ids(PEOPLE);
   const sub = ids(PEOPLE);
@@ -69,6 +72,8 @@ const DENIED = '42501';
     (await community.getCohort(user(k), space.mem)).member_count,
     (await community.getToday(user(k))).cohort?.member_count,
   ];
+  // FR-1168R2 B1: who the space's member list (GET .../members) shows to k.
+  const roster = async (k: Key) => (await cohortMembers.list(user(k), space.mem, {})).members.map((m) => m.user_id).sort();
   const stateOf = async (k: Key, root: string) =>
     (await routes.threads(req(k), space.mem)).threads.find((t) => t.thread_message_id === root)?.state ?? 'none';
   const leftOf = async (k: Key, who: Key) => (await routes.left(req(k), space.mem)).left.filter((l) => l.user_id === id[who]);
@@ -308,6 +313,20 @@ const DENIED = '42501';
     expect(rows[rows.length - 1]).toEqual({ user_id: id.O, name: 'Olive', left_at: again.left_at }); // the newest is kept
     expect(rows.map((r) => r.left_at)).not.toContain(new Date(Date.UTC(2020, 0, 1, 0, 0)).toISOString()); // the oldest is not
     await prisma.communitySpaceDeparture.deleteMany({ where: { user_id: id.N } });
+  });
+
+  it('FR-1168R2 B1: the member list leaves out a person who left, for the coach and the members; they are back when they join', async () => {
+    const all = [id.A, id.O, id.V].sort(); // the coach, O and V (P lost access in D2e)
+    expect(await roster('A')).toEqual(all); // control
+    await routes.leave(req('O'), space.mem);
+    const without = [id.A, id.V].sort();
+    expect(await roster('A')).toEqual(without); // the coach's list
+    expect(await roster('V')).toEqual(without); // a member's list
+    expect(await roster('O')).toEqual(without); // O still reads the space (Spaces you left) and is not in its list
+    expect(await members('V')).toEqual([2, 2, 2]); // the list and member_count agree
+    await routes.join(req('O'), space.mem);
+    expect(await roster('A')).toEqual(all);
+    expect(await members('V')).toEqual([3, 3, 3]);
   });
 
   it('a thread is a chat message of that space the caller can see; anything else answers 404', async () => {
