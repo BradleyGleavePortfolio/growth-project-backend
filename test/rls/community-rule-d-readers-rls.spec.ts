@@ -163,4 +163,26 @@ const LISTED: Key[] = ['A', 'T', 'B']; // everyone the inbox lists W's public-sp
       await ban('B', 'C', new Date());
     });
   });
+
+  // B3 (LS-INBOX2; rule D (d)): Acknowledge stamps coach_acked_at, but the inbox and the AI triage asked only for no
+  // reply, so an acknowledged row stayed for every coach. Seen is not an acknowledgement and leaves the row.
+  describe('B3: one coach\'s Acknowledge clears the row for every coach', () => {
+    const open = async (k: Key, of: string[]) => [k, (await rows(k)).filter((r) => of.includes(r))];
+
+    it('Seen leaves the row in every inbox that lists it', async () => {
+      await ack.applyTransition(user('A'), row.wTyped, 'seen');
+      for (const k of LISTED) expect(await open(k, ['wTyped'])).toEqual([k, ['wTyped']]);
+      expect(await words('B')).toContain('wTyped');
+    });
+
+    it('A\'s Acknowledge on a typed row and a voice row takes both out of A\'s, T\'s and B\'s inbox and the AI triage', async () => {
+      await ack.applyTransition(user('A'), row.wTyped, 'acked');
+      await ack.applyTransition(user('A'), row.wVoice, 'acked');
+      for (const k of LISTED) {
+        expect(await open(k, ['wTyped', 'wVoice'])).toEqual([k, []]);
+        expect([k, (await words(k)).includes('wTyped')]).toEqual([k, false]);
+      }
+      expect(await words('B')).toEqual(['wPhoto', 'wTyped2']);
+    });
+  });
 });

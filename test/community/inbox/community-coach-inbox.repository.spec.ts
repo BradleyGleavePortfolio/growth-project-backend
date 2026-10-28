@@ -66,6 +66,14 @@ describe('CommunityCoachInboxRepository: a moved client leaves the former coach\
       bans: { none: { user_id: 'coach-1', lifted_at: null } } });
   });
 
+  it('B3 (FR-1173, LS-INBOX2; rule D (d)): an acknowledged message is no longer open, for any coach or the AI triage', async () => {
+    const { prisma, repo } = world([]);
+    await repo.unansweredMessages({ cohortIds: [SPACE], limit: 2, after: null, viewerId: 'coach-1' });
+    const where = prisma.communityMessage.findMany.mock.calls[0][0].where;
+    expect(where).toMatchObject({ coach_replied_at: null, coach_acked_at: null });
+    expect(where).not.toHaveProperty('coach_seen_at'); // seen is not an acknowledgement
+  });
+
   it('leaves the moved client\'s posts out in the query', async () => {
     const { prisma, repo } = world([{ s: SPACE, a: MOVED }]);
     await repo.unansweredPosts({ cohortIds: [SPACE], limit: 2, after: null });
