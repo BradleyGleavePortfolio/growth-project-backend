@@ -151,7 +151,7 @@ const TYPES: Array<[string, boolean, (w: World) => Promise<unknown>]> = [
     new BookingEmitter(w.notifications, w.prisma).emitBooked({ sessionId: 'sess-1', coachUserId: w.reader, clientDisplayName: 'Jane Doe', scheduledAt: new Date('2026-06-09T15:00:00Z') })],
   ['session cancelled (the shared session link)', true, (w) =>
     new BookingEmitter(w.notifications, w.prisma).emitCancelled({ sessionId: 'sess-1', recipientUserId: w.reader, recipientRole: 'coach', cancellingPartyDisplayName: 'Jane Doe', scheduledAt: new Date('2026-06-09T15:00:00Z'), cancelReason: null })],
-  ['first payment', false, (w) => new FirstPaymentEmitter(w.notifications).emit(w.reader, { amount: 5000, currency: 'usd', clientId: 'client-1' }, w.tx)],
+  ['first payment', true, (w) => new FirstPaymentEmitter(w.notifications).emit(w.reader, { amount: 5000, currency: 'usd', clientId: 'client-1' }, w.tx)],
 ];
 
 // Every reader: [who, the change while the push waits for 08:00, keeps everything].
