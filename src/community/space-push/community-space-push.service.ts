@@ -7,7 +7,8 @@
  * from the community causes none. Recipients are everyone who may read the space now (app.community_can_access,
  * so no banned member), minus the sender and anyone who blocks the sender or is blocked by them (owner 10-22:
  * hide ALL messaging), minus anyone who left the space and, for a reply, anyone who muted or left its thread
- * (LEAVE-MUTE-PUSH, owner D2: no push of any kind from there; joining again or unmuting brings them back), each
+ * (LEAVE-MUTE-PUSH, owner D2: no push of any kind from there; joining again or unmuting brings them back; FR-1168R2
+ * B1: a muted thread still hears the coach's High alert, a left thread or space does not), each
  * with their own setting for the space and their own unread count. A reply or High alert opens the space at that
  * message; the unread notification opens it at the read line. Delivery is the push outbox
  * (NotificationsService.sendPush): the master switch, quiet hours held to the morning and the lock-screen rule
@@ -23,7 +24,7 @@ import { memberName } from '../member-display-name';
 import { CommunityRealtimeService } from '../realtime/community-realtime.service';
 import { notifySettingOf, spaceUnreadCounts } from '../space-reads/community-space-reads.service';
 import { HIGH_ALERT_DAILY_LIMIT, planSpacePush, spacePushOn, type SpacePushReader } from './space-push-policy';
-import { QUIET_THREAD } from './space-push-still-due';
+import { quietThreadStates } from './space-push-still-due';
 
 export interface HighAlertAllowance {
   reach: number;
@@ -90,7 +91,7 @@ export class CommunitySpacePushService implements OnModuleInit {
         isBannedFromWorkspace(this.prisma, m.workspace_id, m.sender_id),
       ]);
       if (!cohort || banned) return;
-      const readers = await this.readers(m.sender_id, m.workspace_id, cohortId, true, m.parent_message_id);
+      const readers = await this.readers(m.sender_id, m.workspace_id, cohortId, true, m.parent_message_id, m.high_alert);
       const pushes = planSpacePush({ senderId: m.sender_id, repliedToId: parent?.sender_id ?? null, highAlert: m.high_alert }, readers);
       for (const p of pushes) {
         const from = p.kind === 'reply' ? await this.nameIn(cohortId, m.workspace_id, m.sender_id, p.userId) : undefined;
@@ -120,13 +121,15 @@ export class CommunitySpacePushService implements OnModuleInit {
     return memberName(user.name, full(cohortId, senderId));
   }
 
-  /** `threadId`: for a reply, the message it replies to (replies are one level deep, so the thread's first). */
+  /** `threadId`: for a reply, the message it replies to (replies are one level deep, so the thread's first).
+   *  `highAlert`: a coach High alert, which a muted thread still hears (quietThreadStates, FR-1168R2 B1). */
   private async readers(
     senderId: string,
     workspaceId: string,
     cohortId: string,
     withUnread: boolean,
     threadId: string | null = null,
+    highAlert = false,
   ): Promise<SpacePushReader[]> {
     const everyone = (await readersNow(this.prisma, workspaceId, cohortId)).filter((id) => id !== senderId);
     if (everyone.length === 0) return [];
@@ -141,9 +144,10 @@ export class CommunitySpacePushService implements OnModuleInit {
       }),
       this.prisma.communityCohort.findUniqueOrThrow({ where: { id: cohortId }, select: { kind: true } }),
       // FR-1168: only a muted or left thread is quiet; a 'followed' row (muted or left, then undone) pushes again.
+      // FR-1168R2 B1: for a High alert only a left thread is.
       threadId
         ? this.prisma.communityThreadPref.findMany({
-            where: { cohort_id: cohortId, thread_message_id: threadId, user_id: { in: everyone }, state: { in: [...QUIET_THREAD] } },
+            where: { cohort_id: cohortId, thread_message_id: threadId, user_id: { in: everyone }, state: { in: [...quietThreadStates(highAlert)] } },
             select: { user_id: true },
           })
         : [],

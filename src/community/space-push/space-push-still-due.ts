@@ -8,8 +8,8 @@
  * still read the space (app.community_can_access, so no ban), neither blocks the other (owner 10-22: hide ALL
  * messaging), and planSpacePush still gives this reader the same kind under their setting now. A row without the
  * source ids is not sent. LEAVE-MUTE-PUSH (owner D2): nor is one for a space the reader left since, or for a
- * reply in a thread they muted or left since (community_space_reads.left_at, community_thread_prefs; the reads
- * readers() makes at enqueue). Kept apart from that service so the push worker does not import it (it imports
+ * reply in a thread they muted or left since (a High alert: only a thread they left, FR-1168R2 B1)
+ * (community_space_reads.left_at, community_thread_prefs; the reads readers() makes at enqueue). Kept apart from that service so the push worker does not import it (it imports
  * NotificationsService, which imports the worker).
  */
 import type { PrismaService } from '../../prisma.service';
@@ -20,6 +20,12 @@ import { planSpacePush, spacePushOn, type SpacePushContext } from './space-push-
 /** FR-1168: the thread states that stop a reply push (community_thread_prefs; THREAD_STATES in
  *  community-leave-mute.service.ts). A 'followed' row is a mute or leave undone: its replies push again. */
 export const QUIET_THREAD = ['muted', 'left'] as const;
+
+/** FR-1168R2 B1 (LS-1168R1 B1; plan 9.2 R3 and 9.5, owner #168-18): the thread states that keep this message from
+ *  the reader. A muted thread stops its replies, never the coach's High alert; a thread they left stays silent,
+ *  High alerts too. Used at enqueue (readers()) and at sending (spacePushDropReason), so both decide alike. */
+export const quietThreadStates = (highAlert: boolean): ReadonlyArray<(typeof QUIET_THREAD)[number]> =>
+  highAlert ? ['left'] : QUIET_THREAD;
 
 export type SpacePushDropReason =
   | 'switched-off'
@@ -67,7 +73,7 @@ export async function spacePushDropReason(
     // Replies are one level deep, so the message replied to is the thread's first message.
     m.parent_message_id
       ? prisma.communityThreadPref.findFirst({
-          where: { user_id: userId, thread_message_id: m.parent_message_id, state: { in: [...QUIET_THREAD] } },
+          where: { user_id: userId, thread_message_id: m.parent_message_id, state: { in: [...quietThreadStates(m.high_alert)] } },
           select: { state: true },
         })
       : null,
