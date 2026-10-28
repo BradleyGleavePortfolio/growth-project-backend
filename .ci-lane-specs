@@ -1,0 +1,16 @@
+test/community/
+src/community/
+src/notifications/
+test/push-delivery
+test/mute-all-ordinary-senders.spec.ts
+test/notify-move.spec.ts
+test/roman-safety
+test/booking-lock-screen-push.spec.ts
+test/booking-emitter.spec.ts
+test/dunning-kind-fix-notification-kinds.spec.ts
+test/scheduling-request-expiry.spec.ts
+test/scheduling-lifecycle-integrity.spec.ts
+test/product-rules
+test/module-graph.spec.ts
+test/community.service.spec.ts
+test/report-alerts
