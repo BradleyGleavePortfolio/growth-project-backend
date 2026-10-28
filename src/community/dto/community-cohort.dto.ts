@@ -13,6 +13,16 @@ export const CommunityCohortParamsSchema = z
 
 export type CommunityCohortParams = z.infer<typeof CommunityCohortParamsSchema>;
 
+/** SC-PURPOSE-BE: a space's purpose as members read it. The coach writes it (trimmed, up to
+ *  2,000 characters); none, or a cleared one (""), reads as null. */
+export function spacePurpose(stored: string | null | undefined): string | null {
+  return stored && stored.trim() !== '' ? stored : null;
+}
+
+// SC-PURPOSE-BE: string or null on both space reads; optional only until getCohorts and
+// getCohort fill it.
+const SpacePurposeSchema = z.string().nullable().optional();
+
 const CommunityCohortSummarySchema = z
   .object({
     id: z.guid(),
@@ -22,6 +32,7 @@ const CommunityCohortSummarySchema = z
     kind: z.enum(SPACE_KINDS),
     posting_policy: z.enum(POSTING_POLICIES),
     visibility: z.enum(SPACE_VISIBILITIES),
+    description: SpacePurposeSchema,
     member_count: z.number().int().nonnegative(),
     my_role: CommunityMemberRoleSchema,
     unread_count: z.number().int().min(0).max(99).optional(), // SC-BE2: on GET /community/cohorts rows; 99 = 99+
@@ -49,6 +60,7 @@ export const CommunityCohortResponseSchema = z
     kind: z.enum(SPACE_KINDS),
     posting_policy: z.enum(POSTING_POLICIES),
     visibility: z.enum(SPACE_VISIBILITIES),
+    description: SpacePurposeSchema,
     package_ids: z.array(z.string()).nullable(), // C6-ACCESS: the coach's view only; null to a member
     member_count: z.number().int().nonnegative(),
     created_at: z.string().datetime(),
