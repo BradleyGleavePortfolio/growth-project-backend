@@ -6,6 +6,7 @@ import type {
   CommunityModerationTargetType,
 } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
+import { clientOf, publicSpaceFor } from '../community-public-row';
 
 /**
  * Data access for the moderation queue (CommunityModerationAction rows).
@@ -47,6 +48,62 @@ export class CommunityModerationRepository {
     return (tx ?? this.prisma).communityModerationAction.findUnique({
       where: { id: itemId },
     });
+  }
+
+  /**
+   * Rule D (owner, 10-26; decision #178-2; FR-1173 LS-INBOX2 B1): the reports someone who does not run the
+   * community reads there, to read only: a report on a public space's message, post or voice note reaches the
+   * space's team (an active coach or assistant membership) and the author's own coach (the author is their
+   * current client), never while they are banned from the community or in a block with the author. The same
+   * rule as community-public-row.ts and app.community_public_row_of_my_client. Each report once.
+   */
+  async listForRuleDReader(params: {
+    viewerId: string;
+    workspaceId: string | null;
+    status: CommunityModerationStatus | null;
+    limit: number;
+    newestFirst: boolean;
+  }): Promise<CommunityModerationAction[]> {
+    const { viewerId: me } = params;
+    const dir = params.newestFirst ? Prisma.sql`DESC` : Prisma.sql`ASC`;
+    return this.prisma.$queryRaw<CommunityModerationAction[]>`
+      SELECT a.* FROM "community_moderation_actions" a
+      LEFT JOIN "community_messages" m ON a."target_type" = 'message' AND m."id" = a."target_id" AND m."scope" = 'cohort'
+      LEFT JOIN "community_posts" p ON a."target_type" = 'post' AND p."id" = a."target_id" AND p."scope" = 'cohort'
+      LEFT JOIN "community_voice_notes" v
+        ON a."target_type" = 'voice_note' AND v."id" = a."target_id" AND v."conversation_id" IS NULL
+      JOIN "community_cohorts" c ON c."id" = COALESCE(m."cohort_id", p."cohort_id", v."cohort_id")
+        AND c."workspace_id" = a."workspace_id" AND c."visibility" = 'public'
+      JOIN "community_workspaces" w ON w."id" = a."workspace_id" AND w."coach_id" <> ${me}
+      JOIN "User" u ON u."id" = COALESCE(m."sender_id", p."author_id", v."author_id")
+      WHERE TRUE
+        ${params.workspaceId ? Prisma.sql`AND a."workspace_id" = ${params.workspaceId}::uuid` : Prisma.empty}
+        ${params.status ? Prisma.sql`AND a."status" = ${params.status}::"CommunityModerationStatus"` : Prisma.empty}
+        AND NOT EXISTS (SELECT 1 FROM "community_workspace_bans" b
+          WHERE b."workspace_id" = a."workspace_id" AND b."user_id" = ${me} AND b."lifted_at" IS NULL)
+        AND NOT EXISTS (SELECT 1 FROM "UserBlock" ub
+          WHERE (ub."blocker_id" = ${me} AND ub."blocked_id" = u."id") OR (ub."blocker_id" = u."id" AND ub."blocked_id" = ${me}))
+        AND ((u."coach_id" = ${me} AND u."role" = 'student')
+          OR EXISTS (SELECT 1 FROM "community_memberships" cm WHERE cm."cohort_id" = c."id" AND cm."user_id" = ${me}
+            AND cm."status" = 'active' AND cm."role" IN ('coach', 'assistant')))
+      ORDER BY a."created_at" ${dir}, a."id" ${dir}
+      LIMIT ${params.limit}`;
+  }
+
+  /**
+   * Rule D: may the viewer read this community's report queue as a reader (listForRuleDReader)? A public space
+   * there, the viewer not banned from it, where they are on the team or a current client of theirs is a member.
+   */
+  async isRuleDReaderOf(workspaceId: string, viewerId: string): Promise<boolean> {
+    const spaces = await this.prisma.communityCohort.count({
+      where: {
+        workspace_id: workspaceId,
+        ...publicSpaceFor(viewerId),
+        memberships: { some: { OR: [{ user_id: viewerId, status: 'active', role: { in: ['coach', 'assistant'] } },
+          { user: clientOf(viewerId) }] } },
+      },
+    });
+    return spaces > 0;
   }
 
   /**

@@ -186,6 +186,9 @@ export class InMemoryPrisma {
       const [ws, spaces, authors] = values as [string[], string[], string[]];
       return authors.flatMap((a, n) => (this.authorGone(ws[n], spaces[n] || null, a) ? [] : [{ n }]));
     }
+    // FR-1173 rule D report readers (CommunityModerationRepository.listForRuleDReader): this store models no one
+    // on another community's team or coaching a member there; test/rls/community-rule-d-readers-rls.spec.ts runs it.
+    if (sql.includes('"community_moderation_actions" a')) return [];
     if (!sql.includes('app.community_can_access')) throw new Error('InMemoryPrisma: unsupported $queryRaw');
     const [spaces, people, listed] = values as [string[], string[], boolean | undefined];
     return spaces.flatMap((c, i) => {

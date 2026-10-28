@@ -173,6 +173,12 @@ export interface FlaggedItemView {
   reason: string;
   notes: string | null;
   created_at: string;
+  /**
+   * Rule D (FR-1173): true when the caller may act on the report (they run the community, or the platform
+   * owner); false for the space's team and the poster's own coach, who read it only (Hide, Warn, Ban and
+   * Dismiss answer them 404).
+   */
+  can_act: boolean;
 }
 
 interface ResolvedReportTarget {
@@ -417,10 +423,6 @@ export class CommunityModerationService {
     return user.role === 'owner' || (await this.access.isWorkspaceCoach(workspaceId, user.id));
   }
 
-  private async assertModerator(workspaceId: string, user: User): Promise<void> {
-    if (!(await this.isModerator(workspaceId, user))) throw new ForbiddenException(FORBIDDEN);
-  }
-
   async listQueue(
     user: User,
     workspaceId: string,
@@ -428,15 +430,16 @@ export class CommunityModerationService {
   ): Promise<CommunityModerationItemListResponse> {
     const workspace = await this.access.findWorkspace(workspaceId);
     if (!workspace) throw new NotFoundException(NOT_FOUND);
-    await this.assertModerator(workspaceId, user);
-    const rows = await this.moderation.listForWorkspace({
-      workspaceId,
-      status: this.parseStatus(query.status),
-      limit: this.parsePage(query.limit),
-    });
-    return CommunityModerationItemListResponseSchema.parse({
-      items: rows.map((r) => this.itemView(r)),
-    });
+    // Rule D (FR-1173, LS-INBOX2 B1): the space's team and the poster's own coach read the reports on that public
+    // space's rows here too, newest first, the reporter withheld; anyone else, as before, 403.
+    const moderator = await this.isModerator(workspaceId, user);
+    if (!moderator && !(await this.moderation.isRuleDReaderOf(workspaceId, user.id))) throw new ForbiddenException(FORBIDDEN);
+    const params = { workspaceId, status: this.parseStatus(query.status), limit: this.parsePage(query.limit) };
+    const items = moderator
+      ? (await this.moderation.listForWorkspace(params)).map((r) => this.itemView(r))
+      : (await this.moderation.listForRuleDReader({ ...params, viewerId: user.id, newestFirst: true }))
+        .map((r) => ({ ...this.itemView(r), reported_by_user_id: null }));
+    return CommunityModerationItemListResponseSchema.parse({ items });
   }
 
   /**
@@ -764,15 +767,24 @@ export class CommunityModerationService {
       throw new ForbiddenException(FORBIDDEN);
     }
     const workspaceFilter = user.role === 'owner' ? {} : { workspace: { coach_id: user.id } };
-    const rows = await this.prisma.communityModerationAction.findMany({
+    const take = this.parsePage(query.limit);
+    const owned = await this.prisma.communityModerationAction.findMany({
       where: {
         status: 'open',
         target_type: { in: QUEUE_TARGET_TYPES },
         ...workspaceFilter,
       },
       orderBy: { created_at: 'asc' },
-      take: this.parsePage(query.limit),
+      take,
     });
+    // Rule D (FR-1173, LS-INBOX2 B1): and the reports on public-space rows the caller reads as the space's team or
+    // the poster's own coach (to read: can_act false), each report once, oldest first.
+    const actable = new Set(owned.map((r) => r.id));
+    const read = user.role === 'owner' ? []
+      : await this.moderation.listForRuleDReader({ viewerId: user.id, workspaceId: null, status: 'open', limit: take, newestFirst: false });
+    const rows = [...owned, ...read.filter((r) => !actable.has(r.id))]
+      .sort((a, b) => a.created_at.getTime() - b.created_at.getTime() || (a.id < b.id ? -1 : 1))
+      .slice(0, take);
     if (rows.length === 0) return { items: [] };
     const idsOf = (t: CommunityModerationTargetType) =>
       rows.filter((r) => r.target_type === t).map((r) => r.target_id);
@@ -947,6 +959,7 @@ export class CommunityModerationService {
           created_at: r.created_at.toISOString(),
           respond_by: respondBy.toISOString(),
           overdue: respondBy.getTime() < now,
+          can_act: actable.has(r.id),
         };
       }),
     );

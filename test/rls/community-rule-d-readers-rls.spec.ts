@@ -227,9 +227,9 @@ const LISTED: Key[] = ['A', 'T', 'B']; // everyone the inbox lists W's public-sp
       expect(await refused(moderation.listQueue(user('C'), ws.A, {}))).toBe(403);
     });
 
-    it('reading is not acting: the team and the own coach get 403 on Hide and Dismiss, and every report stays open', async () => {
-      expect(await refused(moderation.act(user('B'), rep.w, 'hide', undefined))).toBe(403);
-      expect(await refused(moderation.act(user('T'), rep.n, 'dismiss', undefined))).toBe(403);
+    it('reading is not acting: Hide and Dismiss stay the owner\'s (the same 404 as anyone outside), every report open', async () => {
+      expect(await refused(moderation.act(user('B'), rep.w, 'hide', undefined))).toBe(404);
+      expect(await refused(moderation.act(user('T'), rep.n, 'dismiss', undefined))).toBe(404);
       expect(await prisma.communityModerationAction.count({ where: { id: { in: Object.values(rep) }, status: 'open' } })).toBe(5);
     });
 
