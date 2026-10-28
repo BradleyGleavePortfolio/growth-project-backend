@@ -86,9 +86,12 @@ export const ModerationActionCreatedPayloadSchema = z
   })
   .strict();
 
+// FR-1168R2 B2: sent when a member leaves a space or joins it again (cohortId: that space; null: the whole
+// community). Ids and the change only; the phone draws "{name} left" (D2d) from GET .../left.
 export const MembershipChangedPayloadSchema = z
   .object({
     wsId: z.string(),
+    cohortId: z.string().nullable(),
     userId: z.string(),
     change: z.enum(['joined', 'left', 'promoted', 'demoted']),
   })
