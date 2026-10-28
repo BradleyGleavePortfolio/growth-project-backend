@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AuthModule } from '../../auth/auth.module';
 import { CommunityAccessService } from '../community-access.service';
 import { CommunityFeatureFlagGuard } from '../community-feature-flag.guard';
+import { CommunitySafetyService } from '../safety/community-safety.service';
 import { AckController } from './ack.controller';
 import { AckFeatureFlagGuard } from './ack-flag.guard';
 import { AckRepository } from './ack.repository';
@@ -28,6 +29,9 @@ import { AckService } from './ack.service';
     AckFeatureFlagGuard,
     CommunityFeatureFlagGuard,
     CommunityAccessService,
+    // The read path's visibility gate (block / ban / moved client); it needs
+    // only the @Global() PrismaService.
+    CommunitySafetyService,
   ],
   exports: [AckService],
 })
