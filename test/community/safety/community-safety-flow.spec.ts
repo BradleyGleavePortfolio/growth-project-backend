@@ -39,6 +39,11 @@ import {
   CommunitySafetyService,
 } from '../../../src/community/safety/community-safety.service';
 import { CommunitySafetyController } from '../../../src/community/safety/community-safety.controller';
+import { CommunitySearchController } from '../../../src/community/search/community-search.controller';
+import { CommunitySearchRepository } from '../../../src/community/search/community-search.repository';
+import type { CommunitySearchService } from '../../../src/community/search/community-search.service';
+import { SearchIndexerService } from '../../../src/community/search/search-indexer.service';
+import type { AuthedRequest } from '../../../src/auth/auth-request';
 import type { PrismaService } from '../../../src/prisma.service';
 import type { VoiceUploadProvider } from '../../../src/community/voice/voice-upload.provider';
 import type { CommunityRealtimeService } from '../../../src/community/realtime/community-realtime.service';
@@ -321,6 +326,61 @@ describe('community UGC safety flow (Apple 1.2)', () => {
     const shown = await challenges.listComments(alice, ch, {}, true);
     expect(shown.comments).toEqual([expect.objectContaining({ id: c, body: null, removed_at: expect.any(String), removed_by: byCoach() })]);
     expect((await challenges.listComments(alice, ch, {})).comments).toEqual([]);
+  });
+
+  // LS-1165R4 B1 (owner #178-7 op 1): the coach's DELETE and the queue's Hide take the post's
+  // search copy (the reindex route's row: its title and body words) out of search and erase its
+  // words, in the removal's own transaction. A reply has no search copy and the reindex cannot
+  // make one. The live search, by each word: test/rls/community-removed-post-search-rls.spec.ts.
+  it('a removal takes the post search copy with it in the same transaction; a reply has none', async () => {
+    const search = new CommunitySearchController(stub<CommunitySearchService>({}),
+      new SearchIndexerService(new CommunitySearchRepository(prisma)), new CommunityAccessService(prisma), prisma);
+    const asCoach = stub<AuthedRequest>({ user: coach });
+    const copy = (id: string) => db.table('communitySearchEntry').filter((e) => e.targetId === id);
+    const indexed = async (title: string, body: string) => {
+      const p = (await posts.create(bob, wsId, { title, body })).post;
+      await search.reindex(asCoach, wsId, { kind: 'post', targetId: p.id, title, transcript: body });
+      return p.id;
+    };
+    const direct = await indexed('Kettlebell swing plan', 'deadlift tempo');
+    const queued = await indexed('Kettlebell clean drill', 'thruster grip');
+    const live = await indexed('Kettlebell press ladder', 'goblet squat');
+    const reply = (await posts.addComment(bob, live, 'burpee finisher')).comment.id;
+    await expect(search.reindex(asCoach, wsId, { kind: 'post', targetId: reply, title: 'burpee finisher' }))
+      .rejects.toBeInstanceOf(NotFoundException);
+    // A lost COMMIT of the DELETE rolls the search copy back with the post.
+    db.beforeCommit = () => {
+      throw new Error('connection lost before COMMIT');
+    };
+    await expect(posts.remove(coach, direct, true)).rejects.toThrow('connection lost before COMMIT');
+    expect(copy(direct)).toEqual([expect.objectContaining({ softDeletedAt: null, excerpt: 'Kettlebell swing plan \u2014 deadlift tempo' })]);
+    const committed: string[][] = [];
+    db.beforeCommit = (writes) => {
+      committed.push([...writes]);
+    };
+    await posts.remove(coach, direct, true);
+    for (const [type, id] of [['post', queued], ['comment', reply]] as const) {
+      const r = await moderation.report(alice, type, id, 'harassment', undefined);
+      expect((await moderation.act(coach, r.item.id, 'hide', undefined)).item.status).toBe('actioned');
+    }
+    // The DELETE's transaction and the Hide's each hold the post's removal and its search copy's.
+    expect(committed.filter((w) => w.includes('communitySearchEntry.updateMany'))).toEqual([
+      expect.arrayContaining(['communityPost.updateMany', 'communitySearchEntry.updateMany', 'notification.create']),
+      expect.arrayContaining(['communityModerationAction.updateMany', 'communityPost.updateMany', 'communitySearchEntry.updateMany']),
+    ]);
+    for (const id of [direct, queued]) {
+      expect(copy(id)).toEqual([expect.objectContaining({ softDeletedAt: expect.any(Date), excerpt: '' })]);
+    }
+    expect(copy(live)).toEqual([expect.objectContaining({ softDeletedAt: null, excerpt: 'Kettlebell press ladder \u2014 goblet squat' })]);
+    expect(copy(reply)).toEqual([]);
+    // The placeholders still show.
+    const hall = (await posts.list(alice, wsId, {}, true)).posts;
+    for (const id of [direct, queued]) {
+      expect(hall.find((x) => x.id === id)).toMatchObject({ title: null, body: null, removed_by: byCoach() });
+    }
+    expect((await posts.listComments(alice, live, true)).comments).toEqual([
+      expect.objectContaining({ id: reply, body: null, removed_by: byCoach() }),
+    ]);
   });
 
   it('warn notifies the author and keeps their access', async () => {

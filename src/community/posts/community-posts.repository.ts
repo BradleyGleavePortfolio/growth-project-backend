@@ -94,7 +94,8 @@ export class CommunityPostsRepository {
    * FR-1165R3: a coach's removal of someone else's post. Keeps who removed
    * it, erases the words and the pin, and tells the author once (unless the
    * caller does, `tellAuthor` false: the queue's act()). Only a live post is
-   * written, so a repeat or a race writes and tells nothing.
+   * written, so a repeat or a race writes and tells nothing. LS-1165R4 B1: the
+   * same transaction takes its search copy out of search and erases its words.
    */
   async removeByCoach(
     post: Pick<CommunityPost, 'id' | 'author_id'>,
@@ -107,6 +108,9 @@ export class CommunityPostsRepository {
         where: { id: post.id, deleted_at: null },
         data: { deleted_at: new Date(), visibility: 'hidden', removed_by_user_id: removerId, title: null, body: null, pinned_at: null },
       });
+      if (hit.count > 0) {
+        await t.communitySearchEntry.updateMany({ where: { kind: 'post', targetId: post.id }, data: { softDeletedAt: new Date(), excerpt: '' } });
+      }
       if (hit.count > 0 && tellAuthor) {
         await storeRemovalNotice(t, { recipientId: post.author_id, targetType: 'post', targetId: post.id });
       }
