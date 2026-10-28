@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   Param,
   Patch,
   Post,
@@ -13,6 +14,7 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../../auth/auth-request';
+import { REMOVED_ROWS_HEADER, showsRemoved } from './community-post-removal';
 import { JwtAuthGuard } from '../../auth/auth.guard';
 import { RolesGuard } from '../../auth/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -70,8 +72,9 @@ export class CommunityPostsController {
     @Request() req: AuthedRequest,
     @Param('workspaceId') workspaceId: string,
     @Query() query: ListPostsQueryDto,
+    @Headers(REMOVED_ROWS_HEADER) removedRows?: string,
   ) {
-    return this.posts.list(req.user, workspaceId, query);
+    return this.posts.list(req.user, workspaceId, query, showsRemoved(removedRows));
   }
 
   @Get('posts/:postId')
@@ -80,8 +83,9 @@ export class CommunityPostsController {
   async getOne(
     @Request() req: AuthedRequest,
     @Param('postId') postId: string,
+    @Headers(REMOVED_ROWS_HEADER) removedRows?: string,
   ) {
-    return this.posts.getOne(req.user, postId);
+    return this.posts.getOne(req.user, postId, showsRemoved(removedRows));
   }
 
   @Patch('posts/:postId')
@@ -117,8 +121,9 @@ export class CommunityPostsController {
   async remove(
     @Request() req: AuthedRequest,
     @Param('postId') postId: string,
+    @Headers(REMOVED_ROWS_HEADER) removedRows?: string,
   ) {
-    return this.posts.remove(req.user, postId);
+    return this.posts.remove(req.user, postId, showsRemoved(removedRows));
   }
 
   @Post('posts/:postId/comments')
@@ -146,7 +151,8 @@ export class CommunityPostsController {
   async listComments(
     @Request() req: AuthedRequest,
     @Param('postId') postId: string,
+    @Headers(REMOVED_ROWS_HEADER) removedRows?: string,
   ) {
-    return this.posts.listComments(req.user, postId);
+    return this.posts.listComments(req.user, postId, showsRemoved(removedRows));
   }
 }

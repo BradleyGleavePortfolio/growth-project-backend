@@ -5,6 +5,7 @@ import type { CommunityVoiceNote } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { fullNamesFor } from '../community-space-access';
 import { openClientMessagesReadBy } from '../messages/community-messages.repository';
+import { storeRemovalNotice } from '../safety/community-moderation-notices';
 import {
   attemptVoiceErasures,
   objectTargets,
@@ -82,13 +83,50 @@ export function voiceNoteIdFor(storageKey: string): string {
   return `${x.slice(0, 8)}-${x.slice(8, 12)}-${x.slice(12, 16)}-${x.slice(16, 20)}-${x.slice(20)}`;
 }
 
-/** Hide a space voice note's chat message with the note (author delete, moderation). */
-export async function hideVoiceChatMessage(tx: Prisma.TransactionClient, voiceNoteId: string, at: Date): Promise<void> {
+/**
+ * Hide a space voice note's chat message with the note (author delete,
+ * moderation). REMOVED-BY-BE: `removedBy` (a coach's removal of someone
+ * else's note) is stored on the chat row too, so the space chat keeps the
+ * same placeholder as the voice list.
+ */
+export async function hideVoiceChatMessage(
+  tx: Prisma.TransactionClient,
+  voiceNoteId: string,
+  at: Date,
+  removedBy: string | null = null,
+): Promise<void> {
   await tx.communityMessage.updateMany({
     where: { id: voiceNoteId, kind: 'voice', deleted_at: null },
-    data: { deleted_at: at, visibility: 'hidden' },
+    data: { deleted_at: at, visibility: 'hidden', ...(removedBy ? { removed_by_user_id: removedBy } : {}) },
   });
 }
+
+/**
+ * FR-1165R: a note's soft delete with its search and chat rows, in `tx`, after its erasure is
+ * recorded; the direct DELETE and the queue's Hide both write it. `removedBy` = a coach's
+ * removal (kept: the placeholder). True when this call removed it.
+ */
+export async function removeVoiceNoteRows(tx: Prisma.TransactionClient, noteId: string, at: Date, removedBy: string | null): Promise<boolean> {
+  const hidden = await tx.communityVoiceNote.updateMany({
+    where: { id: noteId, soft_deleted_at: null },
+    data: { soft_deleted_at: at, ...(removedBy ? { removed_by_user_id: removedBy } : {}) },
+  });
+  await tx.communitySearchEntry.updateMany({
+    where: { kind: 'voice_note_transcript', targetId: noteId, softDeletedAt: null },
+    data: { softDeletedAt: at },
+  });
+  await hideVoiceChatMessage(tx, noteId, at, removedBy);
+  return hidden.count > 0;
+}
+
+/**
+ * REMOVED-BY-BE: a removed row a list or read still shows, as a placeholder:
+ * live rows, plus rows a coach removed (removed_by_user_id set). An author's
+ * own delete and every removal from before 20270502009400 stay gone.
+ */
+export const VOICE_SHOWN: Prisma.CommunityVoiceNoteWhereInput = {
+  OR: [{ soft_deleted_at: null }, { removed_by_user_id: { not: null } }],
+};
 
 export interface VoiceListFilter {
   workspaceId: string;
@@ -188,13 +226,25 @@ export class CommunityVoiceRepository {
       workspaceId
         ? this.prisma.communityWorkspace.findUnique({ where: { id: workspaceId }, select: { coach_id: true } })
         : null,
-      this.prisma.user.findMany({ where: { id: { in: [...new Set(rows.map((r) => r.author_id))] } }, select: { id: true, name: true } }),
+      this.prisma.user.findMany({
+        // REMOVED-BY-BE: the remover's name too, for the placeholder's removed_by.
+        where: { id: { in: [...new Set(rows.flatMap((r) => [r.author_id, ...(r.removed_by_user_id ? [r.removed_by_user_id] : [])]))] } },
+        select: { id: true, name: true },
+      }),
       this.prisma.communityVoiceNoteListen.findMany({ where: { user_id: viewerId, voice_note_id: { in: ids } } }),
       this.prisma.communityMessage.findMany({
         where: { id: { in: ids }, kind: 'voice' },
         select: { id: true, parent_message_id: true },
       }),
-      fullNamesFor(this.prisma, viewerId, workspaceId, rows.map((r) => [r.cohort_id, r.author_id] as const)),
+      fullNamesFor(
+        this.prisma,
+        viewerId,
+        workspaceId,
+        rows.flatMap((r) => [
+          [r.cohort_id, r.author_id] as const,
+          ...(r.removed_by_user_id ? [[r.cohort_id, r.removed_by_user_id] as const] : []),
+        ]),
+      ),
     ]);
     return {
       coachId: workspace?.coach_id ?? null,
@@ -268,23 +318,25 @@ export class CommunityVoiceRepository {
    * with nothing changed. Storage is never called inside the transaction.
    * Idempotent: a note that is already soft-deleted keeps its first
    * soft_deleted_at.
+   *
+   * REMOVED-BY-BE (#174-4): `removedBy` = a coach (or the TGP owner) removing
+   * someone else's note. The same transaction then stores who removed it (on
+   * the note and its chat message) and the author's notice (the report
+   * queue's hide notice, once per note; none when the note was already
+   * gone). Null = the author's own delete, unchanged.
    */
   async softDeleteWithErasure(
-    note: Pick<CommunityVoiceNote, 'id' | 'storage_key'>,
+    note: Pick<CommunityVoiceNote, 'id' | 'storage_key' | 'author_id'>,
     reason: VoiceErasureReason,
     at: Date = new Date(),
+    removedBy: string | null = null,
   ): Promise<VoiceErasureRow[]> {
     return this.prisma.$transaction(async (tx) => {
       const work = await recordVoiceErasures(tx, objectTargets([note.storage_key]), reason, at);
-      await tx.communityVoiceNote.updateMany({
-        where: { id: note.id, soft_deleted_at: null },
-        data: { soft_deleted_at: at },
-      });
-      await tx.communitySearchEntry.updateMany({
-        where: { kind: 'voice_note_transcript', targetId: note.id, softDeletedAt: null },
-        data: { softDeletedAt: at },
-      });
-      await hideVoiceChatMessage(tx, note.id, at);
+      const removed = await removeVoiceNoteRows(tx, note.id, at, removedBy);
+      if (removedBy && removed) {
+        await storeRemovalNotice(tx, { recipientId: note.author_id, targetType: 'voice_note', targetId: note.id });
+      }
       return work;
     });
   }
@@ -337,7 +389,8 @@ export class CommunityVoiceRepository {
 
     const where: Prisma.CommunityVoiceNoteWhereInput = {
       workspace_id: filter.workspaceId,
-      soft_deleted_at: null,
+      // REMOVED-BY-BE: a coach's removal keeps its place as a placeholder.
+      AND: [VOICE_SHOWN],
       ...(filter.cohortId !== null ? { cohort_id: filter.cohortId } : {}),
       ...(filter.conversationId !== null ? { conversation_id: filter.conversationId } : {}),
       ...visibility,

@@ -542,8 +542,12 @@ export class CommunityChallengesRepository {
     challengeId: string;
     limit?: number;
     cursor?: string;
+    withRemoved?: boolean; // FR-1165R3: and a coach's removals, for their placeholders
   }): Promise<Page<CommunityMessage>> {
     const limit = clampLimit(params.limit);
+    const shown = params.withRemoved
+      ? { OR: [{ deleted_at: null }, { removed_by_user_id: { not: null } }] }
+      : { deleted_at: null };
 
     let cursorClause: {
       cursor: Prisma.CommunityMessageWhereUniqueInput;
@@ -555,7 +559,7 @@ export class CommunityChallengesRepository {
           id: params.cursor,
           plan_context_type: CHALLENGE_COMMENT_CONTEXT_TYPE,
           plan_context_id: params.challengeId,
-          deleted_at: null,
+          ...shown,
         },
         select: { id: true, created_at: true },
       });
@@ -573,7 +577,7 @@ export class CommunityChallengesRepository {
       where: {
         plan_context_type: CHALLENGE_COMMENT_CONTEXT_TYPE,
         plan_context_id: params.challengeId,
-        deleted_at: null,
+        ...shown,
       },
       orderBy: [{ created_at: 'asc' }, { id: 'asc' }],
       take: limit + 1,
@@ -592,6 +596,12 @@ export class CommunityChallengesRepository {
     return this.prisma.communityMessage.findFirst({
       where: { id: commentId },
     });
+  }
+
+  /** FR-1165R3: stored names, keyed by id, for "Removed by Coach {name}". */
+  async namesByUserId(ids: string[]): Promise<Map<string, string | null>> {
+    const rows = await this.prisma.user.findMany({ where: { id: { in: [...new Set(ids)] } }, select: { id: true, name: true } });
+    return new Map(rows.map((u) => [u.id, u.name]));
   }
 }
 
