@@ -326,4 +326,233 @@ describe('GC-1 pay page GET /p/:token', () => {
       expect(page.keys[1]).toBe(page.keys[0]);
     });
   });
+
+  // GUEST-ELIGIBILITY: the same page script with the code-step nodes too.
+  // `checkout` scripts each checkout answer: 'pay' (client_secret) or 'code'
+  // (403 BUYER_CODE_REQUIRED, the server's answer for a TGP email with no proof).
+  type Answers = {
+    checkout: Array<'pay' | 'code'>;
+    account?: 'new' | 'existing';
+    verify?: { status: number; body: Record<string, unknown> };
+  };
+  const CODE_REQUIRED = { error: 'BUYER_CODE_REQUIRED', message: 'This email already has a TGP account. Enter the code we emailed you to keep going.' };
+  async function bootPage(answers: Answers, email = 'ann@example.com') {
+    const html = (await get(`/p/${A}`)).body;
+    const js = [...html.matchAll(/<script nonce="[^"]+">([\s\S]*?)<\/script>/g)].pop()?.[1] ?? '';
+    const on: Record<string, (e: unknown) => Promise<void>> = {};
+    const nodes: Record<string, Record<string, unknown>> = {};
+    const kinds = ['no_coach', 'same_coach'].map((k) => ({ k, hidden: false, getAttribute: () => k }));
+    const ids = ['cfg', 'pay', 'go', 'msg', 'nm', 'ph', 'em', 'or', 'express', 'f2', 'b2', 'm2', 'cd', 'rs', 'ch', 's3', 'hey', 'sum', 'to', 'inc0'];
+    for (const id of ids) {
+      nodes[id] = {
+        value: '', hidden: ['f2', 's3', 'sum'].includes(id), textContent: id === 'cfg' ? JSON.stringify(cfgOf(html)) : '',
+        setAttribute() {}, focus() {}, querySelectorAll: () => kinds,
+        addEventListener: (t: string, h: never) => (on[`${id}:${t}`] = h),
+      };
+    }
+    const bodies: Record<string, unknown>[] = [];
+    const calls: string[] = [];
+    const reply = (status: number, body: unknown) => ({ ok: status < 400, status, json: async () => body });
+    const sandbox: Record<string, unknown> = {
+      document: { getElementById: (id: string) => nodes[id] },
+      addEventListener() {},
+      setTimeout: (fn: () => void) => fn(),
+      location: { origin: 'https://app.example' },
+      crypto: { randomUUID },
+      sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+      fetch: async (url: string, init: { body: string }) => {
+        const body = JSON.parse(init.body);
+        const route = url.split('/checkout')[1] || 'checkout';
+        calls.push(route);
+        bodies.push({ route, ...body });
+        if (route === '/check-email') return reply(200, { account: answers.account ?? 'existing' });
+        if (route === '/verify-code') return reply(answers.verify?.status ?? 200, answers.verify?.body ?? {});
+        return (answers.checkout.shift() ?? 'pay') === 'code' ? reply(403, CODE_REQUIRED) : reply(200, { client_secret: 'pi_1_secret_1' });
+      },
+      Stripe: () => ({
+        elements: () => ({ create: (type: string) => ({ on: (t: string, h: never) => (on[`${type}:${t}`] = h), mount() {} }), submit: async () => ({}) }),
+        confirmPayment: async () => ({}),
+      }),
+    };
+    sandbox.window = sandbox;
+    vm.runInNewContext(js, sandbox);
+    Object.assign(nodes.nm, { value: 'Ann Buyer' });
+    Object.assign(nodes.ph, { value: '415 555 0100' });
+    Object.assign(nodes.em, { value: email });
+    const flush = () => new Promise((r) => setImmediate(r));
+    const tap = {
+      card: async () => {
+        await on['pay:submit']({ preventDefault() {} });
+        await flush();
+      },
+      wallet: async (walletEmail = email) => {
+        await on['expressCheckout:confirm']({ billingDetails: { name: 'Ann Buyer', email: walletEmail }, paymentFailed() {} });
+        await flush();
+      },
+      code: async (code: string) => {
+        Object.assign(nodes.cd, { value: code });
+        await on['f2:submit']({ preventDefault() {} });
+        await flush();
+      },
+      otherEmail: () => on['ch:click']({}),
+      resend: async () => {
+        await on['rs:click']({});
+        await flush();
+      },
+    };
+    const checkouts = () => bodies.filter((b) => b.route === 'checkout');
+    return { tap, bodies, checkouts, calls, nodes, kinds, msg: () => nodes.msg.textContent };
+  }
+
+  describe('GUEST-ELIGIBILITY: one payment form; a TGP email gets the code, Welcome Back and its summary before it pays', () => {
+    it('renders the payment form as GC-PHONE has it, with the code step and summary hidden above it, both summaries server-escaped', async () => {
+      rows[A] = pkg(A, {}, { name: '<b>Sam</b>' });
+      const html = (await get(`/p/${A}`)).body;
+      expect(html).toMatch(/<form id="pay" class="card">/);
+      expect(html.indexOf('id="f2"')).toBeLessThan(html.indexOf('id="pay"'));
+      expect(html.indexOf('id="s3"')).toBeLessThan(html.indexOf('id="pay"'));
+      for (const id of ['f2', 's3', 'sum']) expect(html).toMatch(new RegExp(`id="${id}"[^>]*hidden`));
+      expect(html).toContain(PAY_PAGE_COPY.appChange('&lt;b&gt;Sam&lt;/b&gt;'));
+      expect(html).toContain(PAY_PAGE_COPY.oneCoach('&lt;b&gt;Sam&lt;/b&gt;'));
+      expect(html).not.toContain('<b>Sam</b>');
+      expect(cfgOf(html).copy.hey).toBe('Hey {N}, Welcome Back!');
+    });
+
+    it.each(['card', 'wallet'] as const)('new email (%s): no check and no code, it pays at once (#170-2)', async (via) => {
+      const page = await bootPage({ checkout: ['pay'], account: 'new' }, 'new@example.com');
+      await page.tap[via]();
+      expect(page.calls).toEqual(['checkout']);
+      expect(page.checkouts()[0]).toMatchObject({ guest_email: 'new@example.com' });
+      expect(page.checkouts()[0]).not.toHaveProperty('buyer_token');
+      expect(page.nodes.f2.hidden).toBe(true);
+    });
+
+    it.each([
+      ['no coach', 'no_coach', [false, true]],
+      ['client of this coach', 'same_coach', [true, false]],
+    ] as const)('existing email, %s: code, "Hey Ann, Welcome Back!", that summary over the form, then pay with the proof (#169-8)', async (_l, summary, hiddenKinds) => {
+      const page = await bootPage({ checkout: ['code', 'pay'], verify: { status: 200, body: { verified: true, first_name: 'Ann', summary, buyer_token: 'proof-1' } } });
+      await page.tap.card();
+      expect(page.calls).toEqual(['checkout', '/check-email']);
+      expect(page.bodies[1]).toMatchObject({ guest_email: 'ann@example.com' });
+      expect(page.nodes.f2.hidden).toBe(false);
+      expect(page.nodes.pay.hidden).toBe(true);
+      expect(page.nodes.to.textContent).toBe('ann@example.com');
+      expect(page.msg()).toBe('');
+      await page.tap.code('12 34');
+      expect(page.nodes.m2.textContent).toBe(PAY_PAGE_COPY.badCode);
+      expect(page.calls).toEqual(['checkout', '/check-email']);
+      await page.tap.code('123456');
+      expect(page.nodes.hey.textContent).toBe('Hey Ann, Welcome Back!');
+      expect(page.nodes.hey.hidden).toBe(true);
+      expect(page.nodes.sum.hidden).toBe(false);
+      expect(page.kinds.map((k) => k.hidden)).toEqual(hiddenKinds);
+      expect(page.nodes.inc0.hidden).toBe(true);
+      expect(page.nodes.f2.hidden).toBe(true);
+      expect(page.nodes.pay.hidden).toBe(false);
+      await page.tap.card();
+      expect(page.calls).toEqual(['checkout', '/check-email', '/verify-code', 'checkout']);
+      expect(page.checkouts()[1]).toMatchObject({ guest_email: 'ann@example.com', guest_phone: '415 555 0100', buyer_token: 'proof-1' });
+    });
+
+    it("a wallet buyer with a TGP email: the wallet's email gets the code, and the next wallet tap carries the proof", async () => {
+      const page = await bootPage({ checkout: ['code', 'pay'], verify: { status: 200, body: { verified: true, first_name: 'Ann', summary: 'no_coach', buyer_token: 'proof-w' } } }, 'typed@example.com');
+      await page.tap.wallet('wallet@example.com');
+      expect(page.calls).toEqual(['checkout', '/check-email']);
+      expect(page.bodies[1]).toMatchObject({ guest_email: 'wallet@example.com' });
+      expect(page.nodes.to.textContent).toBe('wallet@example.com');
+      await page.tap.code('123456');
+      expect(page.bodies[2]).toMatchObject({ route: '/verify-code', guest_email: 'wallet@example.com', code: '123456' });
+      await page.tap.wallet('wallet@example.com');
+      expect(page.checkouts()[1]).toMatchObject({ guest_email: 'wallet@example.com', buyer_token: 'proof-w' });
+    });
+
+    it.each([
+      ['client of another coach', 'BUYER_HAS_COACH', 'Your account already has a coach. To change coaches, contact support from Settings.'],
+      ['coach account', 'BUYER_NOT_CLIENT', 'This email belongs to a coach account, so it can’t buy a coaching package. Use a different email.'],
+    ])('%s: the refusal shows after the code and the payment form stays closed', async (_l, error, message) => {
+      const page = await bootPage({ checkout: ['code'], verify: { status: 409, body: { error, message } } });
+      await page.tap.card();
+      await page.tap.code('123456');
+      expect(page.nodes.m2.textContent).toBe(message);
+      expect(page.nodes.pay.hidden).toBe(true);
+      expect(page.nodes.b2.hidden).toBe(true);
+      expect(page.nodes.rs.hidden).toBe(true);
+      expect(page.calls).toEqual(['checkout', '/check-email', '/verify-code']);
+    });
+
+    it('"Use a different email" reopens the payment form; a new email then pays with no proof', async () => {
+      const page = await bootPage({ checkout: ['code', 'pay'] });
+      await page.tap.card();
+      page.tap.otherEmail();
+      expect(page.nodes.f2.hidden).toBe(true);
+      expect(page.nodes.pay.hidden).toBe(false);
+      Object.assign(page.nodes.em, { value: 'other@example.com' });
+      await page.tap.card();
+      expect(page.checkouts()[1]).toMatchObject({ guest_email: 'other@example.com' });
+      expect(page.checkouts()[1]).not.toHaveProperty('buyer_token');
+    });
+
+    it('"Send a new code" sends one for the same email', async () => {
+      const page = await bootPage({ checkout: ['code'] });
+      await page.tap.card();
+      await page.tap.resend();
+      expect(page.calls).toEqual(['checkout', '/check-email', '/check-email']);
+      expect(page.nodes.m2.textContent).toBe(PAY_PAGE_COPY.resent);
+    });
+
+    it('proof expired at payment (403 BUYER_CODE_REQUIRED again): back to the code step, a new code is sent', async () => {
+      const page = await bootPage({ checkout: ['code', 'code'], verify: { status: 200, body: { verified: true, first_name: '', summary: 'no_coach', buyer_token: 'old' } } });
+      await page.tap.card();
+      await page.tap.code('123456');
+      expect(page.nodes.hey.textContent).toBe('Welcome Back!');
+      await page.tap.card();
+      expect(page.calls).toEqual(['checkout', '/check-email', '/verify-code', 'checkout', '/check-email']);
+      expect(page.checkouts()[1]).toMatchObject({ buyer_token: 'old' });
+      expect(page.nodes.f2.hidden).toBe(false);
+      expect(page.nodes.pay.hidden).toBe(true);
+      expect(page.nodes.sum.hidden).toBe(true);
+    });
+  });
+
+  describe('GUEST-ELIGIBILITY: the confirm-and-download state (/p/:token?confirmed=1)', () => {
+    it('serves the confirm page with the CSP, App Store link and login email; off means 404', async () => {
+      const res = await get(`/p/${A}?confirmed=1`);
+      expect(res.status).toBe(200);
+      expect(res.headers['content-security-policy']).toContain("default-src 'none'");
+      expect(res.body).toContain(PAY_PAGE_COPY.confirmedH);
+      expect(res.body).toContain('<a class="btn" href="https://apps.apple.com/app/id6765847915">Download on the App Store</a>');
+      expect(res.body).toContain(`<strong id="le">${PAY_PAGE_COPY.loginEmailUnknown}</strong>`);
+      expect(res.body).not.toContain('Monthly coaching');
+      env.GUEST_PAY_PAGE_ENABLED = undefined;
+      expect((await get(`/p/${A}?confirmed=1`)).status).toBe(404);
+    });
+
+    async function land(hash: string) {
+      const html = (await get(`/p/${A}?confirmed=1`)).body;
+      const js = [...html.matchAll(/<script nonce="[^"]+">([\s\S]*?)<\/script>/g)].pop()?.[1] ?? '';
+      const nodes: Record<string, Record<string, unknown>> = { ok: { hidden: false }, gone: { hidden: true }, le: { textContent: 'the email you paid with' } };
+      const replaced: string[] = [];
+      vm.runInNewContext(js, {
+        document: { getElementById: (id: string) => nodes[id] },
+        location: { hash, pathname: `/p/${A}`, search: '?confirmed=1' },
+        history: { replaceState: (_s: unknown, _t: string, url: string) => replaced.push(url) },
+        URLSearchParams, atob: (b: string) => Buffer.from(b, 'base64').toString('latin1'), escape, decodeURIComponent,
+      });
+      return { nodes, replaced };
+    }
+
+    it('shows the email from the confirmed session and drops the token from the address bar', async () => {
+      const payload = Buffer.from(JSON.stringify({ email: 'ann@example.com', sub: 'u1' })).toString('base64url');
+      const { nodes, replaced } = await land(`#access_token=h.${payload}.s&type=invite`);
+      expect(nodes.le.textContent).toBe('ann@example.com');
+      expect(nodes.gone.hidden).toBe(true);
+      expect(replaced).toEqual([`/p/${A}?confirmed=1`]);
+    });
+
+    it('an expired or used link shows the run-out state', async () => {
+      const { nodes } = await land('#error=access_denied&error_code=otp_expired');
+      expect([nodes.ok.hidden, nodes.gone.hidden]).toEqual([true, false]);
+    });
+  });
 });
