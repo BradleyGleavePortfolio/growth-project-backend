@@ -6,7 +6,7 @@ import type {
   CommunityModerationTargetType,
 } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
-import { clientOf, publicSpaceFor } from '../community-public-row';
+import { clientOf, PUBLIC_SPACE, unbannedSpaces } from '../community-public-row';
 
 /**
  * Data access for the moderation queue (CommunityModerationAction rows).
@@ -95,15 +95,16 @@ export class CommunityModerationRepository {
    * there, the viewer not banned from it, where they are on the team or a current client of theirs is a member.
    */
   async isRuleDReaderOf(workspaceId: string, viewerId: string): Promise<boolean> {
-    const spaces = await this.prisma.communityCohort.count({
+    const spaces = await this.prisma.communityCohort.findMany({
       where: {
         workspace_id: workspaceId,
-        ...publicSpaceFor(viewerId),
+        ...PUBLIC_SPACE,
         memberships: { some: { OR: [{ user_id: viewerId, status: 'active', role: { in: ['coach', 'assistant'] } },
           { user: clientOf(viewerId) }] } },
       },
+      select: { id: true, workspace_id: true },
     });
-    return spaces > 0;
+    return (await unbannedSpaces(this.prisma, viewerId, spaces)).length > 0;
   }
 
   /**

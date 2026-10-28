@@ -7,7 +7,7 @@ import type {
 } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { authorsWhoLeft } from '../community-space-access';
-import { clientOf, publicSpaceFor } from '../community-public-row';
+import { clientOf, PUBLIC_SPACE, unbannedSpaces } from '../community-public-row';
 
 /**
  * Data access for the coach inbox aggregator.
@@ -192,12 +192,12 @@ export class CommunityCoachInboxRepository {
     const spaces = await this.prisma.communityCohort.findMany({
       where: {
         id: { notIn: cohortIds },
-        ...publicSpaceFor(viewerId),
+        ...PUBLIC_SPACE,
         memberships: { some: { user: clientOf(viewerId) } },
       },
-      select: { id: true },
+      select: { id: true, workspace_id: true },
     });
-    return spaces.map((c) => c.id);
+    return unbannedSpaces(this.prisma, viewerId, spaces);
   }
 }
 

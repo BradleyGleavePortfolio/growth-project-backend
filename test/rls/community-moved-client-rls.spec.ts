@@ -148,7 +148,9 @@ const boardOf = (k: Key) => [...PEOPLE].filter((p) => COACH[k] !== null && COACH
     ...(['A', 'B'] as const).map((c): Read => [`the Hall of ${c}`,
       (k) => read(posts.list(user(k), ws[c], {}), (r) => r.posts.map((p) => p.id)),
       (k) => (OPENS[c === 'A' ? 'hallA' : 'hallB'].includes(k) ? keys(postsIn(c), ([a, p]) => sees(k, a, p)) : null)]),
-    ['a post by id', (k) => byId(Object.keys(POSTS), (r) => posts.getOne(user(k), id[r])), (k) => keys(POSTS, ([a, p]) => sees(k, a, p))],
+    // Rule D (FR-1173 B2): the poster's own coach also opens a current client's post in a public space they are not in.
+    ['a post by id', (k) => byId(Object.keys(POSTS), (r) => posts.getOne(user(k), id[r])),
+      (k) => keys(POSTS, ([a, p]) => sees(k, a, p) || (p in VISIBILITY && VISIBILITY[p as Space] === 'public' && COACH[a] === k))],
     ['the comments on sO', (k) => read(posts.listComments(user(k), id.sO), (r) => r.comments.map((c) => c.id)), (k) => inSpace(k, 'cli', COMMENTS)],
     ['the chat of cli', (k) => read(chat.list(user(k), space.cli, {}), (r) => r.messages.map((m) => m.id)), (k) => inSpace(k, 'cli', CHAT)],
     ['a chat message by id', (k) => byId(Object.keys(CHAT), (r) => chat.getOne(user(k), id[r])), (k) => inSpace(k, 'cli', CHAT) ?? []],

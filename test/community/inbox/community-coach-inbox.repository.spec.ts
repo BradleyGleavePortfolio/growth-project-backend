@@ -12,18 +12,24 @@ const SPACE = '11111111-1111-4111-8111-111111111111';
 const MOVED = 'moved-client';
 const PUB = '22222222-2222-4222-8222-222222222222';
 
-function world(left: Array<{ s: string; a: string }>, theirs: string[] = []) {
+function world(left: Array<{ s: string; a: string }>, theirs: string[] = [], banned: string[] = []) {
   const asked: unknown[][] = [];
+  const banChecks: unknown[][] = [];
   const prisma = {
     $queryRaw: jest.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      // unbannedSpaces (the own-coach arm's ban check): the spaces in `banned` are in a community that banned the coach.
+      if (strings.join('?').includes('AS t("id", "w")')) {
+        banChecks.push(values);
+        return (values[0] as string[]).filter((id) => !banned.includes(id)).map((id) => ({ id }));
+      }
       asked.push([strings.join('?'), ...values]);
       return left;
     }),
     communityMessage: { findMany: jest.fn().mockResolvedValue([]) },
     communityPost: { findMany: jest.fn().mockResolvedValue([]) },
-    communityCohort: { findMany: jest.fn().mockResolvedValue(theirs.map((id) => ({ id }))) },
+    communityCohort: { findMany: jest.fn().mockResolvedValue(theirs.map((id) => ({ id, workspace_id: 'w-1' }))) },
   };
-  return { prisma, asked, repo: new CommunityCoachInboxRepository(stub<PrismaService>(prisma)) };
+  return { prisma, asked, banChecks, repo: new CommunityCoachInboxRepository(stub<PrismaService>(prisma)) };
 }
 
 describe('CommunityCoachInboxRepository: a moved client leaves the former coach\'s inbox', () => {
@@ -47,8 +53,7 @@ describe('CommunityCoachInboxRepository: a moved client leaves the former coach\
     await repo.unansweredMessages({ cohortIds: [SPACE], limit: 2, after: null, viewerId: 'coach-1', withVoice: true });
     await repo.unansweredPosts({ cohortIds: [], limit: 2, after: null, viewerId: 'coach-1' });
     expect(prisma.communityCohort.findMany.mock.calls[0][0].where).toEqual({ id: { notIn: [SPACE] }, visibility: 'public',
-      memberships: { some: { user: { coach_id: 'coach-1', role: 'student' } } },
-      workspace: { bans: { none: { user_id: 'coach-1', lifted_at: null } } } });
+      memberships: { some: { user: { coach_id: 'coach-1', role: 'student' } } } });
     expect(asked.map((a) => a.slice(1))).toEqual([[[SPACE, PUB], [SPACE, PUB], 'coach-1'], [[PUB], [PUB], 'coach-1']]);
     const chat = prisma.communityMessage.findMany.mock.calls[0][0].where;
     expect(chat.AND[0].OR).toEqual([{ cohort_id: { in: [SPACE] } },
@@ -61,10 +66,14 @@ describe('CommunityCoachInboxRepository: a moved client leaves the former coach\
   });
 
   it('B4 (FR-1173, LS-INBOX2): the own-coach arm leaves out public spaces whose community banned the reading coach', async () => {
-    const { prisma, repo } = world([], [PUB]);
+    // The ban is asked through app.community_author_unbanned (SECURITY DEFINER): community_workspace_bans has no
+    // read grant under row security, so a relation filter on it fails there (42501).
+    const { prisma, banChecks, repo } = world([], [PUB], [PUB]);
     await repo.unansweredMessages({ cohortIds: [SPACE], limit: 2, after: null, viewerId: 'coach-1' });
-    expect(prisma.communityCohort.findMany.mock.calls[0][0].where.workspace).toEqual({
-      bans: { none: { user_id: 'coach-1', lifted_at: null } } });
+    expect(prisma.communityCohort.findMany.mock.calls[0][0].where).not.toHaveProperty('workspace');
+    expect(banChecks).toEqual([[[PUB], ['w-1'], 'coach-1']]);
+    const chat = prisma.communityMessage.findMany.mock.calls[0][0].where;
+    expect(chat.AND[0].OR).toEqual([{ cohort_id: { in: [SPACE] } }]);
   });
 
   it('B3 (FR-1173, LS-INBOX2; rule D (d)): an acknowledged message is no longer open, for any coach or the AI triage', async () => {

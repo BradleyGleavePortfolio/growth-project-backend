@@ -9,13 +9,28 @@ import type { PrismaService } from '../prisma.service';
  * app.community_public_row_of_my_client (20270502009800), the report queue's is
  * CommunityModerationRepository.listForRuleDReader.
  */
-type RowDb = Pick<PrismaService, 'communityCohort' | 'communityMembership' | 'user'>;
+type RowDb = Pick<PrismaService, 'communityCohort' | 'communityMembership' | 'user' | '$queryRaw'>;
 
-/** The space side: public, and the reading coach not banned from its community. */
-export const publicSpaceFor = (viewerId: string) => ({
-  visibility: 'public' as const,
-  workspace: { bans: { none: { user_id: viewerId, lifted_at: null } } },
-});
+/** The space side: public. The ban on the reader is asked by unbannedSpaces, never by a relation filter here. */
+export const PUBLIC_SPACE = { visibility: 'public' as const };
+
+/**
+ * The spaces among `spaces` whose community does not ban `viewerId`. Asked through
+ * app.community_author_unbanned (SECURITY DEFINER, 20270502008900): community_workspace_bans has no read grant
+ * for a signed-in role, so a relation filter on it fails under row security (42501).
+ */
+export async function unbannedSpaces(
+  db: Pick<PrismaService, '$queryRaw'>,
+  viewerId: string,
+  spaces: Array<{ id: string; workspace_id: string }>,
+): Promise<string[]> {
+  if (spaces.length === 0) return [];
+  const rows = await db.$queryRaw<Array<{ id: string }>>`
+    SELECT t."id"::text AS "id"
+    FROM unnest(${spaces.map((c) => c.id)}::uuid[], ${spaces.map((c) => c.workspace_id)}::uuid[]) AS t("id", "w")
+    WHERE app.community_author_unbanned(t."w", ${viewerId})`;
+  return rows.map((r) => r.id);
+}
 
 /** The author side: the reading coach's current client. */
 export const clientOf = (viewerId: string) => ({ coach_id: viewerId, role: 'student' as const });
@@ -24,10 +39,10 @@ export const clientOf = (viewerId: string) => ({ coach_id: viewerId, role: 'stud
 export async function isPublicRowOfMyClient(db: RowDb, cohortId: string, viewerId: string, authorId: string): Promise<boolean> {
   if (authorId === viewerId) return false;
   const [space, client] = await Promise.all([
-    db.communityCohort.count({ where: { id: cohortId, ...publicSpaceFor(viewerId) } }),
+    db.communityCohort.findFirst({ where: { id: cohortId, ...PUBLIC_SPACE }, select: { id: true, workspace_id: true } }),
     db.user.count({ where: { id: authorId, ...clientOf(viewerId) } }),
   ]);
-  return space > 0 && client > 0;
+  return !!space && client > 0 && (await unbannedSpaces(db, viewerId, [space])).length > 0;
 }
 
 /** Rule D, the owner's team: an active coach or assistant membership in the space (the inbox's team arm). */

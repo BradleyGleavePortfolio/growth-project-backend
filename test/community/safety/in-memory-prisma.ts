@@ -182,6 +182,12 @@ export class InMemoryPrisma {
         this.table('userBlock').some((b) => (b.blocker_id === viewer && b.blocked_id === p.a) || (b.blocker_id === p.a && b.blocked_id === viewer)))
         .map((p) => ({ s: p.s, a: p.a }));
     }
+    if (sql.includes('AS t("id", "w")')) {
+      // unbannedSpaces (community-public-row.ts): the spaces whose community has no active ban on the viewer.
+      const [ids, ws, viewer] = values as [string[], string[], string];
+      return ids.flatMap((id, n) => (this.table('communityWorkspaceBan').some((b) =>
+        b.workspace_id === ws[n] && b.user_id === viewer && b.lifted_at == null) ? [] : [{ id }]));
+    }
     if (sql.includes('app.community_author_stays')) {
       const [ws, spaces, authors] = values as [string[], string[], string[]];
       return authors.flatMap((a, n) => (this.authorGone(ws[n], spaces[n] || null, a) ? [] : [{ n }]));
