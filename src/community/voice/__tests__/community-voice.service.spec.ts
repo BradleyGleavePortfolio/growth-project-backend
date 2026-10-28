@@ -258,6 +258,21 @@ describe('CommunityVoiceService', () => {
     });
   });
 
+  // ── BPF-1: a member of a public space only (the Hall is closed to them) ──────
+
+  describe('BPF-1: a note for a space meets that space\'s rule, as a text message there', () => {
+    beforeEach(() => access.canAccessWorkspace.mockResolvedValue(false));
+    const forTheSpace = { duration_ms: 5000, bytes: 120000, mime_type: 'audio/mp4' as const, cohort_id: COHORT_A };
+
+    it('B-TEST: the upload for the space is issued and the note there is sent', async () => {
+      await expect(service.issueUploadUrl(member, WS_A, forTheSpace)).resolves.toEqual(
+        expect.objectContaining({ storage_key: `${MEMBER_ID}/1700000000-abc.m4a` }),
+      );
+      expect((await service.create(member, WS_A, VALID_CREATE)).voice_note.id).toBe(NOTE_A);
+      expect(access.canAccessCohort).toHaveBeenCalledWith(expect.objectContaining({ id: COHORT_A }), member);
+    });
+  });
+
   // ── create: bucket binding + durable insert + best-effort ping ───────────────
 
   describe('create', () => {
