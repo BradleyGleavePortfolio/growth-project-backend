@@ -14,7 +14,7 @@
  * (NotificationsService.sendPush): the master switch, quiet hours held to the morning and the lock-screen rule
  * apply as for every other push. Fire-and-forget: it never throws into the write.
  */
-import { ForbiddenException, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { NotificationKind } from '../../notifications/notification-kind';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { PrismaService } from '../../prisma.service';
@@ -61,8 +61,41 @@ export class CommunitySpacePushService implements OnModuleInit {
     cohort: { id: string; workspace_id: string },
     threadId: string | null = null,
   ): Promise<HighAlertAllowance> {
-    const ws = await this.prisma.communityWorkspace.findUnique({ where: { id: cohort.workspace_id }, select: { coach_id: true } });
+    await this.coachOnly(userId, cohort.workspace_id);
+    return this.allowance(userId, cohort, threadId);
+  }
+
+  /** GET .../high-alert/preview (FR-1168R2 C1): the allowance before a High alert is sent. With `replyTo` (the
+   * message a reply answers) the reach is its thread's, by the send path's rule: a reply to a reply joins the first
+   * message's thread, and anything but a live chat message of this space is the message 404. The coach rule runs
+   * first, so no one else learns anything about a message. */
+  async highAlertPreview(userId: string, cohort: { id: string; workspace_id: string }, replyTo: string | null): Promise<HighAlertAllowance> {
+    await this.coachOnly(userId, cohort.workspace_id);
+    return this.allowance(userId, cohort, replyTo ? await this.threadOf(cohort.id, replyTo) : null);
+  }
+
+  private async coachOnly(userId: string, workspaceId: string): Promise<void> {
+    const ws = await this.prisma.communityWorkspace.findUnique({ where: { id: workspaceId }, select: { coach_id: true } });
     if (!ws || ws.coach_id !== userId) throw new ForbiddenException({ code: 'community.high_alert.coach_only' });
+  }
+
+  /** The first message of the thread a reply to `messageId` joins (community-messages.service.ts replyParent). */
+  private async threadOf(cohortId: string, messageId: string): Promise<string> {
+    const tapped = await this.prisma.communityMessage.findFirst({
+      where: { id: messageId, cohort_id: cohortId, scope: 'cohort', plan_context_type: null, deleted_at: null },
+      select: { id: true, parent_message_id: true },
+    });
+    const root = tapped?.parent_message_id
+      ? await this.prisma.communityMessage.findFirst({
+          where: { id: tapped.parent_message_id, cohort_id: cohortId, scope: 'cohort', plan_context_type: null, deleted_at: null },
+          select: { id: true },
+        })
+      : tapped;
+    if (!root) throw new NotFoundException({ code: 'community.message.not_found' });
+    return root.id;
+  }
+
+  private async allowance(userId: string, cohort: { id: string; workspace_id: string }, threadId: string | null): Promise<HighAlertAllowance> {
     const since = new Date();
     since.setUTCHours(0, 0, 0, 0);
     const [used_today, reach] = await Promise.all([
