@@ -50,6 +50,7 @@ import { PrismaService } from '../../prisma.service';
 import { isClientOf, lockClientsForDraftWrite } from '../moved-client-drafts';
 import { PtmService } from '../../ptm/ptm.service';
 import { NotificationsService } from '../../notifications/notifications.service';
+import { lockScreenCopy } from '../../notifications/push/lock-screen-copy';
 import { muteAllStops } from '../../notifications/push/push-preferences';
 import {
   COACH_AI_EFFORT,
@@ -63,6 +64,19 @@ import {
 export const CHURN_ANTHROPIC_CLIENT_TOKEN = 'CHURN_ANTHROPIC_CLIENT';
 
 const ANTHROPIC_TIMEOUT_MS = 10_000;
+// The nudge push's kind: its push data type, its Mute all rule and its lock-screen line.
+// B-LSNOTIFY-2: also the kind of the client's inbox row (Notification), the
+// same kind the approved-AI-draft path already writes (send-notification
+// materialiser), so the phone's inbox shows it as a plain row.
+const NUDGE_PUSH_KIND = 'coach_nudge';
+// The nudge's title: CoachNudge.title and the inbox row's payload.title (the
+// phone shows payload.title as the row title; unchanged words, owner 137-2 row CHURN-W1).
+const NUDGE_TITLE = 'Message from your coach';
+// B-LSNOTIFY-2: where a nudge push opens. The phone routes actionScreen
+// 'NotificationCenter' to the client's Home > NotificationCenter (mobile
+// 1dd970e7 src/services/pushTapRouter.ts:95, decoder pushNotifications.ts:167-179),
+// the screen the Home bell opens, which reads GET /notifications rows.
+const NUDGE_TAP_SCREEN = 'NotificationCenter';
 const MAX_MESSAGE_CHARS = 1000;
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -589,6 +603,8 @@ export class ChurnInterventionService {
     const editedText =
       text !== intervention.draft_text ? text : null;
     const nudgeId = randomUUID();
+    // B-LSNOTIFY-2: the client's inbox row for this nudge (same transaction).
+    const inboxNotificationId = randomUUID();
 
     // Interactive transaction: claim the row atomically, then create the
     // CoachNudge and write its id back in the same transaction. If
@@ -668,8 +684,31 @@ export class ChurnInterventionService {
             id: nudgeId,
             coach_id: coachId,
             client_id: intervention.client_id,
-            title: 'Message from your coach',
+            title: NUDGE_TITLE,
             body: text,
+          },
+        });
+        // B-LSNOTIFY-2 (b#1171 AUDIT 6426427779): the client reads messages in
+        // the inbox the Home bell opens (NotificationCenter -> GET
+        // /notifications -> Notification rows), not in CoachNudge (only the
+        // legacy Notifications screen reads that, and nothing opens it). So
+        // the nudge's full text is ALSO stored there, in this transaction, so
+        // the message and its inbox row commit or roll back together and an
+        // idempotent replay never writes a second row (claim.count === 0
+        // throws above). Written directly, not via createNotification: that
+        // cuts the body to 160 chars and gates by notification settings (this
+        // kind falls to the digest setting), and the coach's message is sent
+        // either way (owner #171-3: Mute all stops the push, the message stays
+        // sent). Same pattern as send-notification.materialiser.ts:147-161.
+        await tx.notification.create({
+          data: {
+            id: inboxNotificationId,
+            user_id: intervention.client_id,
+            kind: NUDGE_PUSH_KIND,
+            channel: 'inapp',
+            body: text,
+            deep_link: null,
+            payload: { title: NUDGE_TITLE, nudge_id: nudgeId },
           },
         });
       });
@@ -711,14 +750,26 @@ export class ChurnInterventionService {
     // Fire push AFTER the transaction commits. Failure cannot un-send
     // the message; we log and move on. FR-1154R3 (B-LS1154-2): an ordinary
     // push, so Mute all stops it (the shared rule); the message stays sent.
+    // The lock screen gets the copy table's line for this kind, never the
+    // coach's text (anyone holding the phone can read it); the text stays
+    // inside the app, in the inbox row written above.
+    // B-LSNOTIFY-2: the data carries a tap target the phone knows — `kind`
+    // (no actionScreen would fall back to NotificationCenter for any kind,
+    // pushNotifications.ts:159-165) and an explicit actionScreen
+    // 'NotificationCenter' — plus the inbox row id. `type` and `nudge_id`
+    // stay for older builds.
     if (
       this.notifications &&
       !(await this.muteAllStopsNudgePush(intervention.client_id, nudgeId))
     ) {
+      const copy = lockScreenCopy(NUDGE_PUSH_KIND, text);
       void this.notifications
-        .pushToUser(intervention.client_id, 'Message from your coach', text.slice(0, 120), {
-          type: 'coach_nudge',
+        .pushToUser(intervention.client_id, copy.title, copy.body, {
+          type: NUDGE_PUSH_KIND,
+          kind: NUDGE_PUSH_KIND,
+          actionScreen: NUDGE_TAP_SCREEN,
           nudge_id: nudgeId,
+          notification_id: inboxNotificationId,
         })
         .catch((err) => {
           this.logger.warn(
@@ -742,7 +793,7 @@ export class ChurnInterventionService {
         where: { user_id: clientId },
         select: { muted: true },
       });
-      return muteAllStops(prefs, 'coach_nudge', 'push');
+      return muteAllStops(prefs, NUDGE_PUSH_KIND, 'push');
     } catch {
       this.logger.warn(`Push skipped for nudge=${nudgeId}: preference read failed`);
       return true;
