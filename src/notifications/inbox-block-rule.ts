@@ -19,8 +19,11 @@ const MESSAGE_LINK = 'tgp://messages/';
  *   - their churn nudge to this client (payload.coach_id);
  *   - a notice they approved from an AI draft (send-notification
  *     materialiser, payload.approvedByCoachId);
- *   - a message notice for the chat with them (tgp://messages/<their id>,
- *     the coach's side, where the chat is the client).
+ *   - a message notice for the chat with them: on the coach's side
+ *     tgp://messages/<their id> (the chat is the client); on the client's
+ *     side, when they are the client's coach, tgp://messages/<the reader's
+ *     own id> (the same chat, messaging.service.ts notifyNewMessage and the
+ *     broadcast dispatcher both use threadId: clientId).
  * No new row of these kinds can be written during a block (assertPairOpen
  * on every send path), so this read rule is the whole of it.
  *
@@ -40,6 +43,8 @@ export class InboxBlockRule {
   async where(userId: string): Promise<Prisma.NotificationWhereInput[]> {
     const closed = await everyoneInBlockWith(this.prisma, userId);
     if (closed.length === 0) return [];
+    const reader = await this.prisma.user.findUnique({ where: { id: userId }, select: { coach_id: true } });
+    const chats = reader?.coach_id && closed.includes(reader.coach_id) ? [...closed, userId] : closed;
     const named = await this.prisma.notification.findMany({
       where: {
         user_id: userId,
@@ -55,8 +60,8 @@ export class InboxBlockRule {
         OR: [
           { deep_link: null },
           {
-            deep_link: { notIn: closed.map((id) => MESSAGE_LINK + id) },
-            NOT: closed.map((id) => ({ deep_link: { startsWith: `${MESSAGE_LINK}${id}/` } })),
+            deep_link: { notIn: chats.map((id) => MESSAGE_LINK + id) },
+            NOT: chats.map((id) => ({ deep_link: { startsWith: `${MESSAGE_LINK}${id}/` } })),
           },
         ],
       },
