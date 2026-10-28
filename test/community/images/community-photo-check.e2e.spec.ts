@@ -29,6 +29,7 @@ import type { SupabaseService } from '../../../src/supabase/supabase.service';
 import { assertEnv, PHOTO_CHECK_KEY_GHOST } from '../../../src/common/env-validation';
 import { safetyWithBlocks } from '../safety/safety-test-helpers';
 import { egressWithGrants } from '../../ai-egress/ai-egress.fakes';
+import { JFIF, jpeg } from './jpeg-fixtures';
 
 function stub<T>(v: unknown): T {
   return v as T;
@@ -41,7 +42,8 @@ const ME = 'aaaaaaaa-0000-4000-8000-000000000001';
 const COACH = 'cccccccc-0000-4000-8000-000000000009';
 const me = stub<User>({ id: ME, role: 'student', coach_id: COACH });
 const CAPTION = 'after the long run';
-const PHOTO = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(2048, 7)]);
+// A real JPEG layout with no location (main's PHOTO-GPS upload check reads to SOS first).
+const PHOTO = Buffer.from(jpeg(JFIF));
 const MODERATION_URL = 'https://api.openai.com/v1/moderations';
 const URGENT_PUSH = 'Urgent safety alert for one of your clients. Open TGP to see details.';
 
@@ -76,7 +78,7 @@ const scoring = (photo: Scores = {}, caption: Scores = {}, flags: Record<string,
   respond([result(part, part === 'image' ? photo : caption, part === 'text' ? flags : {})]);
 
 function world(
-  opts: { reply?: Reply; statSize?: number; alerts?: Partial<CoachAlertsService> | null; stallSignAt?: number; stallBody?: boolean } = {},
+  opts: { reply?: Reply; shortBody?: boolean; alerts?: Partial<CoachAlertsService> | null; stallSignAt?: number; stallBody?: boolean } = {},
 ) {
   const objects = new Map<string, Buffer>();
   const messages: CommunityMessage[] = [];
@@ -92,7 +94,7 @@ function world(
     info: async (key: string) => {
       const o = objects.get(key);
       return o
-        ? { data: { size: opts.statSize ?? o.length, contentType: 'image/jpeg' }, error: null }
+        ? { data: { size: o.length, contentType: 'image/jpeg' }, error: null }
         : { data: null, error: { message: 'Object not found', statusCode: '404' } };
     },
     copy: async (src: string, dst: string) => {
@@ -120,6 +122,8 @@ function world(
       // The headers arrive, then the body never ends.
       return new Response(new ReadableStream({ start: (c) => c.enqueue(whole.subarray(0, 8)) }));
     }
+    // The upload check's ranged read sees the whole file; the photo check's own download comes up one byte short.
+    if (opts.shortBody && !new Headers(init?.headers).has('range')) return new Response(whole.subarray(0, whole.length - 1));
     return new Response(whole);
   });
   const prisma = {
@@ -341,7 +345,7 @@ describe('the automatic photo check on a space chat photo send (PHOTO-CHECK-BE)'
     });
   });
 
-  const unavailable: Array<[string, { reply?: Reply; statSize?: number; key?: string }]> = [
+  const unavailable: Array<[string, { reply?: Reply; shortBody?: boolean; key?: string }]> = [
     ['no key is set', { key: '' }],
     ['the key is still the ghost value', { key: PHOTO_CHECK_KEY_GHOST }],
     ['the check times out', { reply: () => Promise.reject(new DOMException('The operation timed out.', 'TimeoutError')) }],
@@ -351,7 +355,7 @@ describe('the automatic photo check on a space chat photo send (PHOTO-CHECK-BE)'
     ['the answer has no results', { reply: () => respond([]) }],
     ['the answer is missing a score', { reply: (part) => respond([{ ...result(part), category_scores: {} }]) }],
     ['only the caption check fails', { reply: (part) => (part === 'text' ? new Response('{}', { status: 500 }) : scoring()(part)) }],
-    ['the download is not the whole checked upload', { statSize: PHOTO.length + 1 }],
+    ['the download is not the whole checked upload', { shortBody: true }],
   ];
   it.each(unavailable)('fails closed when %s: 503 PHOTO_CHECK_UNAVAILABLE, nothing written, upload kept', async (_why, opts) => {
     const w = world(opts);
