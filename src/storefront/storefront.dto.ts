@@ -71,6 +71,13 @@ export class GuestCheckoutDto {
     message: 'session_id must be url-safe alphanumeric.',
   })
   session_id?: string;
+
+  // GUEST-ELIGIBILITY — proof from POST …/checkout/verify-code. Required
+  // when guest_email already has a TGP account; ignored for a new email.
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  buyer_token?: string;
 }
 
 // r48 #4 — POST /v1/packages/public/join/:token/checkout/resume body.
@@ -107,4 +114,14 @@ export class SendRecoveryLinkDto {
     typeof value === 'string' ? value.toLowerCase().trim() : value,
   )
   guest_email!: string;
+}
+
+// GUEST-ELIGIBILITY — POST …/checkout/check-email body (same shape).
+export class CheckBuyerEmailDto extends SendRecoveryLinkDto {}
+
+// GUEST-ELIGIBILITY — POST …/checkout/verify-code body.
+export class VerifyBuyerCodeDto extends SendRecoveryLinkDto {
+  @Transform(({ value }) => (typeof value === 'string' ? value.replace(/\s+/g, '') : value))
+  @Matches(/^\d{6}$/, { message: 'Enter the 6-digit code from the email.' })
+  code!: string;
 }

@@ -30,7 +30,7 @@ import {
  * fellow active member may read the (sanitized) roster; the service then
  * decides coach-vs-member view and 404s a non-member. Assign/remove are
  * @Roles('coach','owner') and additionally gated by the service's
- * assertWorkspaceCoach (per-workspace ownership, derived from the JWT user).
+ * assertSpaceCoach (per-workspace ownership, derived from the JWT user).
  */
 @ApiTags('community')
 @Controller('community')

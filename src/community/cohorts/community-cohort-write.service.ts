@@ -107,6 +107,22 @@ export class CommunityCohortWriteService {
   }
 
   /**
+   * SPACE-404-CLASS (#168-16): a coach-only change to one space. A caller who
+   * cannot read the space (another coach, someone removed or banned) gets the
+   * same 404 as a space that does not exist; one who can read it but not manage
+   * it keeps the 403.
+   */
+  private async assertSpaceCoach(
+    cohort: Pick<CohortWithPackages, 'id' | 'workspace_id'>,
+    user: User,
+  ): Promise<void> {
+    if (user.role === 'owner') return;
+    if (await this.access.isWorkspaceCoach(cohort.workspace_id, user.id)) return;
+    if (!(await this.access.canAccessCohort(cohort, user))) throw new NotFoundException(NOT_FOUND);
+    throw new ForbiddenException(FORBIDDEN);
+  }
+
+  /**
    * C6-BVIS (#COMMUNITY-ACCESS): the coach picks who a space opens to. A package
    * space takes one or more of the workspace coach's own live packages (C6-ACCESS:
    * not archived, not switched off); any other takes none. Every miss is the
@@ -191,7 +207,7 @@ export class CommunityCohortWriteService {
     // Cross-workspace / cross-cohort attack gate: the caller must own THIS
     // cohort's workspace, resolved from the persisted row (never the URL or
     // body), so a coach of workspace A cannot mutate a cohort of workspace B.
-    await this.assertWorkspaceCoach(cohort.workspace_id, user);
+    await this.assertSpaceCoach(cohort, user);
     // C6-BVIS: a deleted space stays deleted; PATCH cannot reopen or reshape it.
     if (cohort.archived_at) throw new ConflictException(ARCHIVED);
 
@@ -247,7 +263,7 @@ export class CommunityCohortWriteService {
   ): Promise<CommunityCohortAdminResponse> {
     const cohort = await this.repo.findById(cohortId);
     if (!cohort) throw new NotFoundException(NOT_FOUND);
-    await this.assertWorkspaceCoach(cohort.workspace_id, user);
+    await this.assertSpaceCoach(cohort, user);
 
     // Idempotent: archiving an already-archived cohort is a no-op success.
     if (cohort.status === 'archived' && cohort.archived_at) {
