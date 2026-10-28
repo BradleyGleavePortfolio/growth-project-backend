@@ -1,4 +1,23 @@
 // Jest bootstrap. AuthService's constructor calls `createClient(process.env.SUPABASE_URL, ...)`
+// ALL-ON-SMOKE-BE scratch rehearsal only. Lists are not boolean switches.
+// Set defaults before test modules import; individual flag-off tests retain
+// their explicit overrides, so kill-switch contracts still run unchanged.
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const allOnRegistry = readFileSync(
+  join(__dirname, '../src/common/env-validation.ts'),
+  'utf8',
+);
+const allOnListNames = new Set([
+  'FEATURE_COMMUNITY_API_ALLOWLIST',
+  'FEATURE_SCOUT_PILOT_COACH_IDS',
+]);
+for (const match of allOnRegistry.matchAll(/name: '(FEATURE_[A-Z0-9_]+)'/g)) {
+  if (!allOnListNames.has(match[1])) process.env[match[1]] = 'true';
+}
+
+// Jest bootstrap. AuthService's constructor calls `createClient(process.env.SUPABASE_URL, ...)`
 // which throws synchronously if the URL is missing. Unit tests do not hit Supabase —
 // they inject a mock via `(service as any).supabaseAdmin = mock` after construction —
 // so providing any non-empty URL is sufficient to let construction succeed.
