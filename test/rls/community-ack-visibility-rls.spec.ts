@@ -6,13 +6,19 @@
 // (banned from A's community), M (moves to B), R (stamped, then banned, then the ban is lifted). In A's public
 // space P: M. M also has a DM with A. A hidden message answers the same 404 as an absent one and nothing is
 // stamped; each refusal follows its control (a 200 before, or a 200 once the block or ban is gone).
+// FR-1174 (LS-1174 B1): the full read rule per kind. A (a coach member of S; DMs on by default) has DMs with M and
+// D; O and R have one of their own. A DM passes the DM reader's rule (in it, both still members, DMs on for both);
+// post comments, challenge comments and the leaderboard sentinel are never acked; W is the platform owner.
 import { randomUUID } from 'crypto';
 import { NotFoundException } from '@nestjs/common';
 import { Prisma, PrismaClient } from '@prisma/client';
 import type { AnalyticsService } from '../../src/analytics/analytics.service';
 import { AckRepository } from '../../src/community/ack/ack.repository';
 import { type AckActor, AckService } from '../../src/community/ack/ack.service';
+import { CHALLENGE_COMMENT_CONTEXT_TYPE, CHALLENGE_OPTIN_CONTEXT_TYPE } from '../../src/community/challenges/community-challenges.repository';
 import { CommunityAccessService } from '../../src/community/community-access.service';
+import { CommunityDmsRepository } from '../../src/community/dms/community-dms.repository';
+import { COMMENT_CONTEXT_TYPE } from '../../src/community/messages/community-messages.repository';
 import { CommunitySafetyService } from '../../src/community/safety/community-safety.service';
 import type { PrismaService } from '../../src/prisma.service';
 import { stub } from '../utils/trial-fakes';
@@ -23,10 +29,10 @@ if (!DB_URL && process.env.CI === 'true') {
   throw new Error('community-ack-visibility-rls: CI=true but no TEST_DATABASE_URL; refusing to skip.');
 }
 
-type Key = 'A' | 'B' | 'O' | 'X' | 'V' | 'Y' | 'M' | 'R';
-const PEOPLE: Key[] = ['A', 'B', 'O', 'X', 'V', 'Y', 'M', 'R']; // coaches first: clients reference them
-const CLIENTS: Key[] = ['O', 'X', 'V', 'Y', 'M', 'R'];
-const ROLE = (k: Key) => (k === 'A' || k === 'B' ? 'coach' : 'student');
+type Key = 'A' | 'B' | 'W' | 'O' | 'X' | 'V' | 'Y' | 'M' | 'R' | 'D';
+const PEOPLE: Key[] = ['A', 'B', 'W', 'O', 'X', 'V', 'Y', 'M', 'R', 'D']; // coaches first: clients reference them
+const CLIENTS: Key[] = ['O', 'X', 'V', 'Y', 'M', 'R', 'D'];
+const ROLE = (k: Key) => (k === 'A' || k === 'B' ? 'coach' : k === 'W' ? 'owner' : 'student');
 const ROUTES = ['seen', 'acked', 'replied'] as const;
 type Route = (typeof ROUTES)[number];
 
@@ -42,9 +48,17 @@ type Route = (typeof ROUTES)[number];
   const run = randomUUID().slice(0, 8);
   const row: Record<string, string> = {};
   const coachA: AckActor = { id: id.A, role: 'coach' };
-  const mark = (key: string, to: Route) => ack.applyTransition(coachA, row[key], to);
-  const refusal = (messageId: string, to: Route) =>
-    ack.applyTransition(coachA, messageId, to).then(() => 'stamped', (e) => e);
+  const ownerW: AckActor = { id: id.W, role: 'owner' };
+  const mark = (key: string, to: Route, who = coachA) => ack.applyTransition(who, row[key], to);
+  const refusal = (messageId: string, to: Route, who = coachA) =>
+    ack.applyTransition(who, messageId, to).then(() => 'stamped', (e) => e);
+  const NONE = { coach_seen_at: null, coach_acked_at: null, coach_replied_at: null };
+  const dmKey = (a: Key, b: Key) => CommunityDmsRepository.dmKey(ws.A, id[a], id[b]);
+  const say = async (k: Key, data: Partial<Prisma.CommunityMessageUncheckedCreateInput> = {}) =>
+    (await prisma.communityMessage.create({ data: { workspace_id: ws.A, cohort_id: space.S, scope: 'cohort',
+      sender_id: id[k], body: `words of ${k}`, ...data } })).id;
+  const memberD = (data: Prisma.CommunityMembershipUpdateManyMutationInput) =>
+    prisma.communityMembership.updateMany({ where: { workspace_id: ws.A, user_id: id.D }, data });
   // community_messages is keyed (id, created_at) (partitioned), so the id alone is a findFirst.
   const stamps = (key: string) => prisma.communityMessage.findFirstOrThrow({ where: { id: row[key] },
     select: { coach_seen_at: true, coach_acked_at: true, coach_replied_at: true } });
@@ -61,10 +75,10 @@ type Route = (typeof ROUTES)[number];
   let absent: object;
 
   // Every hidden message, on every route: a 404 whose body is the absent message's body.
-  const expectRefused = async (key: string, routes: readonly Route[] = ROUTES) => {
+  const expectRefused = async (key: string, routes: readonly Route[] = ROUTES, who = coachA) => {
     const seen: string[] = [];
     for (const to of routes) {
-      const e = await refusal(row[key], to);
+      const e = await refusal(row[key], to, who);
       seen.push(`${key} ${to} ${e instanceof NotFoundException ? `${e.getStatus()} ${JSON.stringify(e.getResponse())}` : String(e)}`);
     }
     expect(seen).toEqual(routes.map((to) => `${key} ${to} 404 ${JSON.stringify(absent)}`));
@@ -77,16 +91,17 @@ type Route = (typeof ROUTES)[number];
         VALUES (${id[k]}, ${sub[k]}, ${`ack-visibility-${id[k]}`}, ${`RLS person ${k}`}, ${ROLE(k)}::"Role", ${coach})`;
     }
     for (const c of ['A', 'B'] as const) {
-      await prisma.$executeRaw`INSERT INTO "community_workspaces" ("id", "coach_id", "name", "slug", "updated_at")
-        VALUES (${ws[c]}::uuid, ${id[c]}, 'RLS workspace', ${`ack-visibility-${run}-${c}`}, now())`;
+      await prisma.$executeRaw`INSERT INTO "community_workspaces" ("id", "coach_id", "name", "slug", "dm_enabled_default", "updated_at")
+        VALUES (${ws[c]}::uuid, ${id[c]}, 'RLS workspace', ${`ack-visibility-${run}-${c}`}, true, now())`;
     }
     for (const [s, visibility] of [['S', 'clients'], ['P', 'public']] as const) {
       await prisma.$executeRawUnsafe(`INSERT INTO "community_cohorts" ("id", "workspace_id", "name", "visibility", "status", "updated_at")
         VALUES ($1::uuid, $2::uuid, $3, $4::"CommunitySpaceVisibility", 'active', now())`, space[s], ws.A, `RLS space ${s}`, visibility);
     }
-    for (const [k, s] of [...CLIENTS.map((k) => [k, 'S'] as const), ['M', 'P'] as const]) {
+    for (const [k, s] of [...CLIENTS.map((k) => [k, 'S'] as const), ['M', 'P'] as const, ['A', 'S'] as const]) {
       await prisma.$executeRawUnsafe(`INSERT INTO "community_memberships" ("id", "workspace_id", "cohort_id", "user_id", "role", "status", "updated_at")
-        VALUES ($1::uuid, $2::uuid, $3::uuid, $4, 'student', 'active', now())`, randomUUID(), ws.A, space[s], id[k]);
+        VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5::"CommunityMembershipRole", 'active', now())`, randomUUID(), ws.A, space[s], id[k],
+      k === 'A' ? 'coach' : 'student');
     }
     await prisma.userBlock.create({ data: { blocker_id: id.A, blocked_id: id.X } });
     await prisma.userBlock.create({ data: { blocker_id: id.V, blocked_id: id.A } });
@@ -97,8 +112,13 @@ type Route = (typeof ROUTES)[number];
     }
     row.pM = (await prisma.communityMessage.create({ data: { workspace_id: ws.A, cohort_id: space.P, scope: 'cohort',
       sender_id: id.M, body: 'public words of M' } })).id;
-    row.dM = (await prisma.communityMessage.create({ data: { workspace_id: ws.A, scope: 'dm', dm_key: `ack-visibility-${run}`,
-      recipient_user_id: id.A, sender_id: id.M, body: 'DM from M' } })).id;
+    for (const [key, from, to] of [['dM', 'M', 'A'], ['dD', 'D', 'A'], ['dOR', 'O', 'R']] as const) {
+      row[key] = await say(from, { cohort_id: null, scope: 'dm', dm_key: dmKey(from, to), recipient_user_id: id[to] });
+    }
+    row.cP = await say('O', { plan_context_type: COMMENT_CONTEXT_TYPE, plan_context_id: randomUUID() });
+    row.cC = await say('O', { plan_context_type: CHALLENGE_COMMENT_CONTEXT_TYPE, plan_context_id: randomUUID() });
+    row.cL = await say('O', { plan_context_type: CHALLENGE_OPTIN_CONTEXT_TYPE, plan_context_id: randomUUID() });
+    row.wO = await say('O');
     absent = (await refusal(randomUUID(), 'seen')).getResponse();
   });
   afterAll(() => prisma.$disconnect());
@@ -148,6 +168,41 @@ type Route = (typeof ROUTES)[number];
     expect(await stamps('mR')).toEqual(before);
     await prisma.communityWorkspaceBan.updateMany({ where: { workspace_id: ws.A, user_id: id.R }, data: { lifted_at: new Date() } });
     expect((await mark('mR', 'replied')).ack.state).toBe('replied');
+  });
+
+  it('a DM between two other people (O and R): every route 404s for the coach and the owner, nothing stamped', async () => {
+    await expectRefused('dOR');
+    await expectRefused('dOR', ROUTES, ownerW);
+    expect(await stamps('dOR')).toEqual(NONE);
+  });
+
+  it('A\'s DM with D: DMs off for D, DMs off by default, D removed — each refused, even a retry; each control restores', async () => {
+    expect((await mark('dD', 'seen')).ack.state).toBe('seen'); // control: the DM reader's rule passes
+    const before = await stamps('dD');
+    await memberD({ dm_enabled: false });
+    await expectRefused('dD');
+    await memberD({ dm_enabled: null });
+    await prisma.communityWorkspace.update({ where: { id: ws.A }, data: { dm_enabled_default: false } });
+    await expectRefused('dD');
+    await prisma.communityWorkspace.update({ where: { id: ws.A }, data: { dm_enabled_default: true } });
+    await memberD({ status: 'removed' });
+    await expectRefused('dD');
+    expect(await stamps('dD')).toEqual(before);
+    await memberD({ status: 'active' });
+    expect((await mark('dD', 'acked')).ack.state).toBe('acked');
+  });
+
+  it('post comments, challenge comments and the leaderboard sentinel are never acked: 404 for coach and owner', async () => {
+    for (const key of ['cP', 'cC', 'cL']) {
+      await expectRefused(key);
+      await expectRefused(key, ROUTES, ownerW);
+      expect(await stamps(key)).toEqual(NONE);
+    }
+  });
+
+  it('the owner acks a plain space row and is refused on a DM they are not in', async () => {
+    expect((await mark('wO', 'seen', ownerW)).ack.state).toBe('seen');
+    await expectRefused('dD', ['replied'], ownerW);
   });
 
   it('the refusals were the gate: once the blocks and the ban are gone, A acks X, V and Y', async () => {
