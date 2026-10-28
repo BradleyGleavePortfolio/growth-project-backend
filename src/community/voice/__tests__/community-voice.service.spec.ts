@@ -258,6 +258,78 @@ describe('CommunityVoiceService', () => {
     });
   });
 
+  // ── BPF-1: a member of a public space only (the Hall is closed to them) ──────
+
+  describe('BPF-1: a note for a space meets that space\'s rule, as a text message there', () => {
+    beforeEach(() => access.canAccessWorkspace.mockResolvedValue(false));
+    const forTheSpace = { duration_ms: 5000, bytes: 120000, mime_type: 'audio/mp4' as const, cohort_id: COHORT_A };
+
+    it('B-TEST: the upload for the space is issued and the note there is sent', async () => {
+      await expect(service.issueUploadUrl(member, WS_A, forTheSpace)).resolves.toEqual(
+        expect.objectContaining({ storage_key: `${MEMBER_ID}/1700000000-abc.m4a` }),
+      );
+      expect((await service.create(member, WS_A, VALID_CREATE)).voice_note.id).toBe(NOTE_A);
+      expect(access.canAccessCohort).toHaveBeenCalledWith(expect.objectContaining({ id: COHORT_A }), member);
+    });
+
+    const forTheHall = { duration_ms: 5000, bytes: 120000, mime_type: 'audio/mp4' as const };
+
+    it('a space the member may not enter, or of another workspace, or gone: the same 404, no URL, no row', async () => {
+      access.canAccessCohort.mockResolvedValueOnce(false);
+      await expect(service.issueUploadUrl(member, WS_A, forTheSpace)).rejects.toBeInstanceOf(NotFoundException);
+      access.findCohort.mockResolvedValueOnce({ id: COHORT_A, workspace_id: '12121212-1212-4212-8212-121212121212' });
+      await expect(service.issueUploadUrl(member, WS_A, forTheSpace)).rejects.toBeInstanceOf(NotFoundException);
+      access.findCohort.mockResolvedValueOnce(null);
+      await expect(service.create(member, WS_A, VALID_CREATE)).rejects.toBeInstanceOf(NotFoundException);
+      access.findWorkspace.mockResolvedValueOnce(null);
+      await expect(service.list(member, WS_A, { cohort_id: COHORT_A })).rejects.toBeInstanceOf(NotFoundException);
+      expect(upload.createSignedUploadWithKey).not.toHaveBeenCalled();
+      expect(repo.createVoiceNote).not.toHaveBeenCalled();
+    });
+
+    it('without a space, the Hall rule stays: upload, note and list are 404', async () => {
+      await expect(service.issueUploadUrl(member, WS_A, forTheHall)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.create(member, WS_A, { ...VALID_CREATE, cohort_id: undefined })).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      await expect(service.list(member, WS_A, {})).rejects.toBeInstanceOf(NotFoundException);
+      expect(access.canAccessCohort).not.toHaveBeenCalled();
+    });
+
+    it('the space list answers to the space rule', async () => {
+      await service.list(member, WS_A, { cohort_id: COHORT_A });
+      expect(repo.list).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: WS_A, cohortId: COHORT_A }));
+    });
+
+    it('the upload checks access only; the note also meets the posting policy', async () => {
+      access.assertCanPost.mockRejectedValueOnce(new ForbiddenException({ code: 'community.space.read_only' }));
+      await expect(service.create(member, WS_A, VALID_CREATE)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(service.issueUploadUrl(member, WS_A, forTheSpace)).resolves.toBeDefined();
+      expect(access.assertCanPost).toHaveBeenCalledTimes(1);
+      expect(repo.createVoiceNote).not.toHaveBeenCalled();
+    });
+
+    it('a space and a direct message at once is 400 ambiguous_target', async () => {
+      const err = await service.create(member, WS_A, { ...VALID_CREATE, conversation_id: CONV_A }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(BadRequestException);
+      expect((err as BadRequestException).getResponse()).toEqual(
+        expect.objectContaining({ code: 'community.voice.ambiguous_target' }),
+      );
+      expect(repo.createVoiceNote).not.toHaveBeenCalled();
+    });
+
+    it('entitlement on: a space note needs no Hall membership; a Hall note still does; the plan check stays', async () => {
+      process.env.FEATURE_COMMUNITY_VOICE_NOTES_REQUIRE_ENTITLEMENT = 'true';
+      access.membershipInWorkspace.mockResolvedValue(null);
+      await expect(service.issueUploadUrl(member, WS_A, forTheSpace)).resolves.toBeDefined();
+      expect((await service.create(member, WS_A, VALID_CREATE)).voice_note.id).toBe(NOTE_A);
+      access.canAccessWorkspace.mockResolvedValue(true);
+      await expect(service.issueUploadUrl(member, WS_A, forTheHall)).rejects.toBeInstanceOf(NotFoundException);
+      const freeMember: User = Object.assign(makeUser({ id: MEMBER_ID, role: 'student' }), { plan_tier: 'free' });
+      await expect(service.issueUploadUrl(freeMember, WS_A, forTheSpace)).rejects.toBeInstanceOf(ForbiddenException);
+    });
+  });
+
   // ── create: bucket binding + durable insert + best-effort ping ───────────────
 
   describe('create', () => {
@@ -636,11 +708,26 @@ describe('CommunityVoiceService', () => {
         at: new Date('2026-02-28T00:00:00.000Z'),
       });
       const rootAt = new Date('2026-02-27T00:00:00.000Z');
-      repo.findChatMessage.mockResolvedValue(
-        chatMessage({ parent_message_id: ROOT_ID, parent_message_at: rootAt }),
+      repo.findChatMessage.mockImplementation(async (id: string) =>
+        id === ROOT_ID
+          ? chatMessage({ id: ROOT_ID, created_at: rootAt })
+          : chatMessage({ parent_message_id: ROOT_ID, parent_message_at: rootAt }),
       );
       await service.create(member, WS_A, { ...VALID_CREATE, parent_message_id: PARENT_ID });
       expect(repo.createVoiceNote.mock.calls[1][0].parent).toEqual({ id: ROOT_ID, at: rootAt });
+    });
+
+    it('BPF-1: a reply to a reply also needs the first message live, as a text reply does', async () => {
+      repo.findChatMessage.mockImplementation(async (id: string) =>
+        id === ROOT_ID
+          ? chatMessage({ id: ROOT_ID, deleted_at: new Date() })
+          : chatMessage({ parent_message_id: ROOT_ID, parent_message_at: new Date() }),
+      );
+      await expect(
+        service.create(member, WS_A, { ...VALID_CREATE, parent_message_id: PARENT_ID }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(repo.findChatMessage).toHaveBeenCalledWith(ROOT_ID);
+      expect(repo.createVoiceNote).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -678,8 +765,12 @@ describe('CommunityVoiceService', () => {
       ['a reply whose parent is in another space is 404', 'announcement', 'coach', chatMessage({ cohort_id: ELSEWHERE }), 'community.message.not_found'],
       ['a reply whose parent is in another tenant is 404', 'announcement', 'coach', chatMessage({ workspace_id: ELSEWHERE, cohort_id: ELSEWHERE }), 'community.message.not_found'],
       ['a reply in a section is refused', 'section', 'all', chatMessage(), 'community.space.read_only'],
+      // BPF-1: as a text reply there, a member replies only in a thread the coach started.
+      ['a client voice reply in a member thread in Announcements is refused', 'announcement', 'coach',
+        chatMessage({ sender_id: STRANGER_ID }), 'community.space.read_only'],
     ])('%s', async (_case, kind, posting_policy, parent, outcome) => {
       access.findCohort.mockResolvedValue({ id: COHORT_A, workspace_id: WS_A, kind, posting_policy });
+      access.isWorkspaceCoach.mockImplementation(async (_ws: string, userId: string) => userId === COACH_A_ID);
       access.assertCanPost.mockImplementation((c: unknown, u: unknown) =>
         // @ts-expect-error the real start rule, run over the mocked isWorkspaceCoach (false for a member)
         CommunityAccessService.prototype.assertCanPost.call(access, c, u),
