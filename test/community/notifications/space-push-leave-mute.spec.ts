@@ -158,12 +158,6 @@ describe.each(['muted', 'left'])('a thread %s: no push from its replies', (state
     expect(sent().filter((t) => t === TOKEN.bo)).toHaveLength(1);
   });
 
-  it('a High alert sent as a reply there skips them too (the thread is quiet for them)', async () => {
-    const { s, write, queuedFor } = world();
-    s.threads['bo:p1'] = state;
-    expect(queuedFor(await write({ reply: true, highAlert: true }))).toEqual([['ana', 'high_alert'], ['cy', 'high_alert']]);
-  });
-
   it('quieted after the reply push was queued: dropped at sending; undone, the next reply goes', async () => {
     const { s, delivery, write, row } = world();
     const first = await write({ reply: true });
@@ -190,6 +184,52 @@ describe.each(['muted', 'left'])('a thread %s: no push from its replies', (state
     expect(row('bo', next)).toMatchObject({ status: 'sent' });
     expect(row('ana', next)).toMatchObject({ status: 'sent' });
     expect(row('bo', queuedWhileQuiet)).toBeUndefined();
+  });
+});
+
+// FR-1168R2 B1 (LS-1168R1 B1; plan §9.2 R3 "Mute does not stop a coach High alert", §9.5 "muted thread: no reply
+// push, High alert still sends"; owner #168-18): a muted thread stops its replies, never the coach's High alert. A
+// thread or a space the member LEFT stays silent, High alerts too (the job's rule). Mute all still stops everything.
+describe('a coach High alert sent as a reply in a thread', () => {
+  it('muted thread: it still reaches them, when queued and at sending (muted after it was queued too)', async () => {
+    const { s, delivery, write, queuedFor, row, threadPrefs } = world();
+    s.threads['bo:p1'] = 'muted';
+    const alert = await write({ reply: true, highAlert: true });
+    expect(queuedFor(alert)).toEqual([['ana', 'high_alert'], ['bo', 'high_alert'], ['cy', 'high_alert']]);
+    expect(threadPrefs).toHaveBeenLastCalledWith({
+      where: { cohort_id: 'c1', thread_message_id: 'p1', user_id: { in: [...PEOPLE] }, state: { in: ['left'] } },
+      select: { user_id: true },
+    });
+    const queued = await write({ reply: true, highAlert: true });
+    s.threads['cy:p1'] = 'muted'; // muted after the High alert was queued
+    await delivery.drain();
+    expect(row('bo', alert)).toMatchObject({ status: 'sent' });
+    expect(row('cy', queued)).toMatchObject({ status: 'sent' });
+    expect(queuedFor(await write({ reply: true }))).toEqual([['ana', 'reply']]); // control: an ordinary reply stays quiet
+  });
+
+  it('left thread: it stays silent, when queued and at sending (left after it was queued)', async () => {
+    const { s, delivery, write, queuedFor, row } = world();
+    s.threads['bo:p1'] = 'left';
+    expect(queuedFor(await write({ reply: true, highAlert: true }))).toEqual([['ana', 'high_alert'], ['cy', 'high_alert']]);
+    const queued = await write({ reply: true, highAlert: true });
+    s.threads['cy:p1'] = 'left';
+    await delivery.drain();
+    expect(row('cy', queued)).toMatchObject({ status: 'dropped', result_code: 'obsolete' });
+    expect(row('ana', queued)).toMatchObject({ status: 'sent' });
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('reason=space-thread-off'));
+  });
+
+  it('left space: a High alert queued before the leave is dropped at sending; Mute all stops it in a muted thread', async () => {
+    const { s, delivery, write, queuedFor, row } = world();
+    const queued = await write({ reply: true, highAlert: true });
+    s.reads.ana.left_at = new Date();
+    await delivery.drain();
+    expect(row('ana', queued)).toMatchObject({ status: 'dropped', result_code: 'obsolete' });
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('reason=space-left-space'));
+    s.threads['bo:p1'] = 'muted';
+    s.reads.bo.notify_mode = 'mute_all';
+    expect(queuedFor(await write({ reply: true, highAlert: true }))).toEqual([['cy', 'high_alert']]);
   });
 });
 
