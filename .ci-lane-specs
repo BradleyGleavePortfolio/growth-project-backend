@@ -1,0 +1,4 @@
+test/module-graph.spec.ts
+test/openapi-spec.spec.ts
+test/roles-enforced.spec.ts
+test/product-rules/product-rules.contract.spec.ts
