@@ -107,6 +107,8 @@ export class CommunityCoachInboxRepository {
         plan_context_type: null,
         ...(params.withVoice ? {} : { kind: { not: 'voice' as const } }),
         coach_replied_at: null,
+        // Rule D (d): one coach's Acknowledge clears the row for every coach and the AI triage (Seen does not).
+        coach_acked_at: null,
         sender: { role: { notIn: ['coach', 'owner'] } },
       },
       orderBy: [{ created_at: 'asc' }, { id: 'asc' }],
