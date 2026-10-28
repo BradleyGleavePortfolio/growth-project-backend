@@ -517,11 +517,13 @@ export class CommunityMessagesService {
     // v1-6 coach-inbox producer: a coach/owner message into the cohort answers
     // the cohort's outstanding client messages, so stamp coach_replied_at on
     // them (the inbox message arm keys "unanswered" off that column). Bounded to
-    // the write result's cohort_id (never request params) and to client senders.
+    // the write result's cohort_id (never request params), to client senders and
+    // to rows this sender can read.
     if (user.role === 'coach' || user.role === 'owner') {
       await this.repo.markCohortClientMessagesReplied({
         cohortId: created.cohort_id ?? cohort.id,
         repliedAt: created.created_at,
+        viewerId: user.id,
       });
     }
     // v1-4 post-write tail: best-effort realtime ping (IDs only) to everyone who
