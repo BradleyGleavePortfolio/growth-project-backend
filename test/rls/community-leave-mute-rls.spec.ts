@@ -17,6 +17,9 @@ import { CommunityService } from '../../src/community/community.service';
 import { CommunityLeaveMuteController } from '../../src/community/leave-mute/community-leave-mute.controller';
 import { CommunityLeaveMuteService } from '../../src/community/leave-mute/community-leave-mute.service';
 import { CommunitySafetyService } from '../../src/community/safety/community-safety.service';
+import { CommunityRealtimeService } from '../../src/community/realtime/community-realtime.service';
+import type { SupabaseService } from '../../src/supabase/supabase.service';
+import type { AnalyticsService } from '../../src/analytics/analytics.service';
 import { CommunityMessagesRepository } from '../../src/community/messages/community-messages.repository';
 import { CommunityVoiceRepository } from '../../src/community/voice/community-voice.repository';
 import type { PrismaService } from '../../src/prisma.service';
@@ -40,7 +43,31 @@ const DENIED = '42501';
   const prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
   const db = stub<PrismaService>(prisma);
   const safety = new CommunitySafetyService(db);
-  const routes = new CommunityLeaveMuteController(new CommunityLeaveMuteService(db, new CommunityAccessService(db), safety));
+  // FR-1168R2 B2: the real realtime service (its audience is decided on this database); only the Supabase
+  // client is a fake that records each private-topic send. Every broadcast is awaited through `pings`.
+  const sent: { topic: string; event: string; payload: unknown }[] = [];
+  const client = {
+    channel: (topic: string) => ({
+      httpSend: async (event: string, payload: unknown) => {
+        sent.push({ topic, event, payload });
+        return { success: true };
+      },
+    }),
+    removeChannel: async () => 'ok',
+  };
+  const realtime = new CommunityRealtimeService(stub<SupabaseService>({ getClient: () => client }), stub<AnalyticsService>({ capture: () => undefined }), db);
+  const pings: Promise<void>[] = [];
+  const broadcast = realtime.broadcastCommunityEvent.bind(realtime);
+  jest.spyOn(realtime, 'broadcastCommunityEvent').mockImplementation((...args) => {
+    const p = broadcast(...args);
+    pings.push(p);
+    return p;
+  });
+  const heard = async () => {
+    await Promise.all(pings.splice(0));
+    return sent.splice(0);
+  };
+  const routes = new CommunityLeaveMuteController(new CommunityLeaveMuteService(db, new CommunityAccessService(db), safety, realtime));
   const community = new CommunityService(db, new CommunityRepository(db), safety);
   const cohortMembers = new CommunityCohortMembersService(new CommunityAccessService(db), new CommunityCohortMembersRepository(db), safety);
   const ids = <K extends string>(list: readonly K[]) => Object.fromEntries(list.map((k) => [k, randomUUID()])) as Record<K, string>;
@@ -327,6 +354,37 @@ const DENIED = '42501';
     await routes.join(req('O'), space.mem);
     expect(await roster('A')).toEqual(all);
     expect(await members('V')).toEqual([3, 3, 3]);
+  });
+
+  it('FR-1168R2 B2: a leave pings at once everyone who reads the space (ids only), so an open chat shows the line; join pings too', async () => {
+    const flag = process.env.FEATURE_COMMUNITY_REALTIME;
+    process.env.FEATURE_COMMUNITY_REALTIME = 'true';
+    try {
+      await heard(); // nothing left over from earlier cases
+      const readers = [id.A, id.O, id.V].map((u) => `community:user:${u}`).sort(); // O still reads the space
+      await routes.leave(req('O'), space.mem);
+      const left = await heard();
+      expect(left.map((s) => s.topic).sort()).toEqual(readers); // not N (no access), not X (another coach)
+      for (const s of left) {
+        expect(s.event).toBe('community.membership.changed');
+        expect(s.payload).toEqual({ wsId: ws.A, cohortId: space.mem, userId: id.O, change: 'left' }); // ids only, no name
+      }
+      const line = (await routes.left(req('V'), space.mem)).left;
+      expect(line[line.length - 1]).toMatchObject({ user_id: id.O, name: 'Olive' }); // what the phone reads on the ping
+      await routes.leave(req('O'), space.mem); // already out: no new line, no ping
+      expect(await heard()).toEqual([]);
+      await routes.join(req('O'), space.mem);
+      const back = await heard();
+      expect(back.map((s) => s.topic).sort()).toEqual(readers);
+      for (const s of back) expect(s.payload).toEqual({ wsId: ws.A, cohortId: space.mem, userId: id.O, change: 'joined' });
+      await routes.join(req('O'), space.mem); // already in: no ping
+      expect(await heard()).toEqual([]);
+      expect(await code(routes.leave(req('V'), space.ann))).toBe('community.space.cannot_leave'); // a refused leave pings nobody
+      expect(await heard()).toEqual([]);
+    } finally {
+      if (flag === undefined) delete process.env.FEATURE_COMMUNITY_REALTIME;
+      else process.env.FEATURE_COMMUNITY_REALTIME = flag;
+    }
   });
 
   it('a thread is a chat message of that space the caller can see; anything else answers 404', async () => {
