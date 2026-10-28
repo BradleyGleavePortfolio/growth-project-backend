@@ -59,6 +59,13 @@ describe('CommunityCoachInboxRepository: a moved client leaves the former coach\
       { cohort_id: { in: [PUB] }, author: { coach_id: 'coach-1', role: 'student' } }]);
   });
 
+  it('B4 (FR-1173, LS-INBOX2): the own-coach arm leaves out public spaces whose community banned the reading coach', async () => {
+    const { prisma, repo } = world([], [PUB]);
+    await repo.unansweredMessages({ cohortIds: [SPACE], limit: 2, after: null, viewerId: 'coach-1' });
+    expect(prisma.communityCohort.findMany.mock.calls[0][0].where.workspace).toEqual({
+      bans: { none: { user_id: 'coach-1', lifted_at: null } } });
+  });
+
   it('leaves the moved client\'s posts out in the query', async () => {
     const { prisma, repo } = world([{ s: SPACE, a: MOVED }]);
     await repo.unansweredPosts({ cohortIds: [SPACE], limit: 2, after: null });
