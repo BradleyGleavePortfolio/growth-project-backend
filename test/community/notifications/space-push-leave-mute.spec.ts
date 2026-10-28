@@ -58,7 +58,12 @@ function world() {
       .map((user_id) => ({ user_id })),
   );
   const prisma = {
-    communityMessage: { findFirst: async ({ where }: { where: Where }) => s.messages.find((m) => m.id === where.id && !m.deleted_at) ?? null },
+    communityMessage: {
+      findFirst: async ({ where }: { where: Where }) =>
+        s.messages.find((m) => m.id === where.id && !m.deleted_at && (!where.cohort_id || m.cohort_id === where.cohort_id)) ?? null,
+      count: async () => 0, // no High alert yet today
+    },
+    communityWorkspace: { findUnique: async () => ({ coach_id: 'sam' }) }, // sam coaches the community
     communityCohort: { findUnique: async () => ({ name: 'Team' }), findUniqueOrThrow: async () => ({ kind: 'chat' }), findMany: async () => [] },
     communityWorkspaceBan: { findFirst: async () => null },
     user: { findUnique: async () => ({ name: 'Sam Rivers' }) },
@@ -243,6 +248,37 @@ describe('a coach High alert sent as a reply in a thread', () => {
     expect(queuedFor(await write({ reply: true, highAlert: true }))).toHaveLength(2);
     s.reads.cy.notify_mode = 'mute_all';
     await expect(svc.highAlertReach('sam', 'w', 'c1', 'p1')).resolves.toBe(1);
+  });
+
+  // FR-1168R2 C1, the preview half (LS-1168R1 C1: "preview/allowance"): before a High alert reply the coach's phone
+  // asks GET .../high-alert/preview?reply_to=<the message it answers>. Its thread is the send path's: a reply to a
+  // reply joins the first message's thread. Anything that is not a live chat message of this space is the message 404.
+  it('the preview for a reply counts its thread, a reply to a reply too; a message elsewhere is 404', async () => {
+    const { s, svc, write } = world();
+    s.threads['bo:p1'] = 'left';
+    s.threads['cy:p1'] = 'muted';
+    const space = { id: 'c1', workspace_id: 'w' };
+    const answer = await write({ reply: true }); // a reply in p1's thread
+    await expect(svc.highAlertPreview('sam', space, null)).resolves.toEqual({ reach: 3, used_today: 0, limit: 3 });
+    await expect(svc.highAlertPreview('sam', space, 'p1')).resolves.toEqual({ reach: 2, used_today: 0, limit: 3 });
+    await expect(svc.highAlertPreview('sam', space, answer)).resolves.toEqual({ reach: 2, used_today: 0, limit: 3 });
+    s.messages.push({ id: 'x1', workspace_id: 'w', cohort_id: 'c2', sender_id: 'ana', parent_message_id: null, high_alert: false });
+    for (const elsewhere of ['x1', 'gone']) {
+      await expect(svc.highAlertPreview('sam', space, elsewhere)).rejects.toMatchObject({
+        status: 404,
+        response: { code: 'community.message.not_found' },
+      });
+    }
+  });
+
+  it('only the coach gets a preview: anyone else is 403 first, so it tells them nothing about a message', async () => {
+    const { svc } = world();
+    for (const id of ['p1', 'gone']) {
+      await expect(svc.highAlertPreview('ana', { id: 'c1', workspace_id: 'w' }, id)).rejects.toMatchObject({
+        status: 403,
+        response: { code: 'community.high_alert.coach_only' },
+      });
+    }
   });
 });
 

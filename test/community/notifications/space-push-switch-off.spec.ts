@@ -54,6 +54,7 @@ function build() {
   // Today's 3 are used: with the switch on this send is refused (429).
   const spacePush = {
     highAlertAllowance: jest.fn(async () => ({ reach: 4, used_today: 3, limit: 3 })),
+    highAlertPreview: jest.fn(async () => ({ reach: 4, used_today: 3, limit: 3 })),
     markHighAlert: jest.fn(async () => undefined),
   };
   const service = new CommunityMessagesService(
@@ -103,6 +104,7 @@ describe('Opus C-6: the space switch off', () => {
     });
     expect(access.findCohort).not.toHaveBeenCalled();
     expect(spacePush.highAlertAllowance).not.toHaveBeenCalled();
+    expect(spacePush.highAlertPreview).not.toHaveBeenCalled();
   });
 });
 
@@ -138,5 +140,17 @@ describe('the space switch on (unchanged)', () => {
   it('the preview route answers the allowance', async () => {
     const { controller } = build();
     await expect(controller.preview(stub<AuthedRequest>({ user: coach }), COHORT)).resolves.toEqual({ reach: 4, used_today: 3, limit: 3 });
+  });
+
+  // FR-1168R2 C1: the preview takes the message a High alert reply answers (?reply_to=), so the reach the coach sees
+  // before sending is the thread's, as it is after sending; a new message sends none.
+  it('the preview route passes reply_to on, and nothing for a new message', async () => {
+    const { controller, spacePush } = build();
+    const req = stub<AuthedRequest>({ user: coach });
+    const answers = 'eeeeeeee-0000-0000-0000-0000000000a2';
+    await expect(controller.preview(req, COHORT, answers)).resolves.toEqual({ reach: 4, used_today: 3, limit: 3 });
+    expect(spacePush.highAlertPreview).toHaveBeenLastCalledWith(COACH, expect.objectContaining({ id: COHORT }), answers);
+    await controller.preview(req, COHORT);
+    expect(spacePush.highAlertPreview).toHaveBeenLastCalledWith(COACH, expect.objectContaining({ id: COHORT }), null);
   });
 });
