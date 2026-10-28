@@ -2,6 +2,11 @@
  * B-LSNOTIFY-1 (FR-NOTIFY2, agent 177; b#1169 AUDIT 6426424702): a coach's
  * SECOND paid purchase commits on real Postgres.
  *
+ * B-LSNOTIFY3-1 (FR-NOTIFY4; b#1169 LS-NOTIFY3 6455999632): a FAILED notice
+ * (a real SQL error at the inbox row or the queued push) no longer fails the
+ * purchase. The step runs behind a savepoint and rolls back to it: the claim
+ * goes with the notice and the coach's next paid purchase sends it once.
+ *
  * CoachFirstPaymentService runs inside the interactive purchase transaction.
  * It used to INSERT the once-ever ledger row and catch the duplicate's P2002 in
  * JS. On Postgres a failed statement aborts the whole transaction (25P02) even
@@ -34,17 +39,19 @@ if (!DB_URL && process.env.CI === 'true') {
   throw new Error('first-payment-second-purchase-rls: CI=true but no TEST_DATABASE_URL; refusing to skip.');
 }
 
-type Key = 'K' | 'L' | 'M' | 'A' | 'B' | 'C';
-const ROLE: Record<Key, string> = { K: 'coach', L: 'coach', M: 'coach', A: 'student', B: 'student', C: 'student' };
-const COACH_OF: Partial<Record<Key, Key>> = { A: 'K', B: 'K', C: 'M' };
+type Key = 'K' | 'L' | 'M' | 'N' | 'A' | 'B' | 'C' | 'D';
+const ROLE: Record<Key, string> = {
+  K: 'coach', L: 'coach', M: 'coach', N: 'coach', A: 'student', B: 'student', C: 'student', D: 'student',
+};
+const COACH_OF: Partial<Record<Key, Key>> = { A: 'K', B: 'K', C: 'M', D: 'N' };
 const FIRST_PAYMENT = NotificationKind.FIRST_PAYMENT;
 
 (DB_URL ? describe : describe.skip)('B-LSNOTIFY-1: the second paid purchase commits on Postgres', () => {
   const prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
-  const keys: Key[] = ['K', 'L', 'M', 'A', 'B', 'C']; // clients last: they reference their coach
+  const keys: Key[] = ['K', 'L', 'M', 'N', 'A', 'B', 'C', 'D']; // clients last: they reference their coach
   const id = Object.fromEntries(keys.map((k) => [k, randomUUID()])) as Record<Key, string>;
   const sub = Object.fromEntries(keys.map((k) => [k, randomUUID()])) as Record<Key, string>;
-  const pkg = { K: randomUUID(), M: randomUUID() };
+  const pkg = { K: randomUUID(), M: randomUUID(), N: randomUUID() };
 
   const send = jest.fn(async (m: unknown[]) => m.map((_x, i) => ({ status: 'ok', id: `ticket-${i}` })));
   const delivery = new PushDeliveryService(
@@ -62,7 +69,7 @@ const FIRST_PAYMENT = NotificationKind.FIRST_PAYMENT;
 
   // One paid purchase: the purchase row, the first-payment step, then the
   // write the webhook makes after the step. Returns the purchase id.
-  const purchase = async (coach: 'K' | 'M', client: 'A' | 'B' | 'C', amount: number) => {
+  const purchase = async (coach: 'K' | 'M' | 'N', client: 'A' | 'B' | 'C' | 'D', amount: number) => {
     const saleId = randomUUID();
     await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await tx.$executeRaw`INSERT INTO "ClientPurchase" ("id", "client_user_id", "coach_user_id", "package_id",
@@ -90,7 +97,7 @@ const FIRST_PAYMENT = NotificationKind.FIRST_PAYMENT;
       await prisma.$executeRaw`INSERT INTO "User" ("id", "supabase_id", "email", "name", "role", "coach_id")
         VALUES (${id[k]}, ${sub[k]}, ${`first-payment-${id[k]}`}, 'RLS user', ${ROLE[k]}::"Role", ${coach})`;
     }
-    for (const c of ['K', 'M'] as const) {
+    for (const c of ['K', 'M', 'N'] as const) {
       await prisma.coachPackage.create({ data: { id: pkg[c], coach_id: id[c], name: 'RLS plan', amount_cents: 4900 } });
     }
   });
@@ -136,6 +143,22 @@ const FIRST_PAYMENT = NotificationKind.FIRST_PAYMENT;
     expect(c.inbox.every((n) => n.deep_link === `tgp://coach/clients/${id.A}`)).toBe(true);
     expect(c.push).toHaveLength(1);
     expect(c.push[0]).toMatchObject({ dedupe_key: `first_payment:${id.K}`, status: 'pending' });
+
+    // B-LSNOTIFY3-2 envelope: the coach's row exactly as GET /notifications
+    // lists it (the push twin is hidden). The phone PR's decode test
+    // (growth-project-mobile op180/first-payment-m) uses this shape.
+    const list = await notifications.listNotifications(id.K, {});
+    const rows = list.items.filter((n) => n.kind === FIRST_PAYMENT);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      kind: 'first_payment',
+      channel: 'inapp',
+      body: 'You just landed your first client. Your first payment is on its way.',
+      deep_link: `tgp://coach/clients/${id.A}`,
+      read_at: null,
+    });
+    // Amount in minor units (cents), lower-case ISO code, the paying client.
+    expect(rows[0].payload).toEqual({ amount: 4900, currency: 'usd', clientId: id.A });
   });
 
   it('(failed before) the same coach\'s second paid purchase commits and sends nothing new', async () => {
@@ -177,27 +200,61 @@ const FIRST_PAYMENT = NotificationKind.FIRST_PAYMENT;
     expect(await prisma.pushOutbox.count({ where: { user_id: fresh, kind: FIRST_PAYMENT } })).toBe(1);
   });
 
-  it('a failed push outbox insert rolls the whole purchase back; the Stripe retry sends exactly once', async () => {
+  it('(failed before) B-LSNOTIFY3-1: a failed push outbox insert keeps the purchase; the claim rolls back with the notice', async () => {
     // A real Postgres error inside the purchase tx at the outbox step (NOT NULL
-    // violation), the way a broken outbox write would fail in production.
+    // violation), the way a broken outbox write would fail in production. The
+    // first-payment step rolls back to its savepoint: the purchase and the
+    // webhook's write after the step commit; no ledger row, no inbox row, no push.
     const enqueue = jest.spyOn(delivery, 'enqueue').mockImplementationOnce(async (_push, tx) => {
       if (!tx) throw new Error('first-payment push must ride the purchase transaction');
       await tx.$executeRawUnsafe('INSERT INTO "PushOutbox" ("id") VALUES (NULL)');
       throw new Error('unreachable');
     });
-    await expect(purchase('M', 'C', 4900)).rejects.toBeDefined();
+    // Resolving means the UPDATE after the step ran and the transaction
+    // committed: on an aborted transaction that UPDATE fails with 25P02.
+    const first = await purchase('M', 'C', 4900);
+    expect(await prisma.clientPurchase.count({ where: { id: first } })).toBe(1);
     let c = await counts('M');
-    expect(c).toMatchObject({ sales: 0, ledger: [], inbox: [], push: [] });
+    expect(c).toMatchObject({ sales: 1, ledger: [], inbox: [], push: [] });
 
-    // Redelivery: the real outbox write this time.
+    // The coach's next paid purchase sends the once-ever notice, exactly once.
     await purchase('M', 'C', 4900);
     c = await counts('M');
     expect(enqueue).toHaveBeenCalledTimes(2);
-    expect(c.sales).toBe(1);
+    expect(c.sales).toBe(2);
     expect(c.ledger).toHaveLength(1);
     expect(c.inbox.map((n) => n.channel)).toEqual(['inapp', 'push']);
     expect(c.push).toHaveLength(1);
+    // And never again.
+    await purchase('M', 'C', 4900);
+    c = await counts('M');
+    expect(c.sales).toBe(3);
+    expect(c.ledger).toHaveLength(1);
+    expect(c.push).toHaveLength(1);
     enqueue.mockRestore();
+  });
+
+  it('(failed before) B-LSNOTIFY3-1: a failed inbox row insert keeps the purchase the same way', async () => {
+    // A real Postgres error at the Notification insert (NOT NULL violation).
+    const create = jest
+      .spyOn(notifications, 'createNotification')
+      .mockImplementationOnce(async (_input, tx) => {
+        if (!tx) throw new Error('first-payment inbox row must ride the purchase transaction');
+        await tx.$executeRawUnsafe('INSERT INTO "Notification" ("id") VALUES (NULL)');
+        throw new Error('unreachable');
+      });
+    await purchase('N', 'D', 2500);
+    let c = await counts('N');
+    expect(c).toMatchObject({ sales: 1, ledger: [], inbox: [], push: [] });
+    create.mockRestore();
+
+    await purchase('N', 'D', 2500);
+    c = await counts('N');
+    expect(c.sales).toBe(2);
+    expect(c.ledger).toHaveLength(1);
+    expect(c.ledger[0]).toMatchObject({ amount: 2500, currency: 'usd', clientId: id.D });
+    expect(c.inbox.map((n) => n.channel)).toEqual(['inapp', 'push']);
+    expect(c.push).toHaveLength(1);
   });
 
   it('tenancy: no coach or client request can read the ledger row; the server role reads it (control)', async () => {

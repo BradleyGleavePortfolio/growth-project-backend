@@ -48,6 +48,22 @@ type CoachFirstPaymentDelegate = Pick<
 type MockTx = CoachFirstPaymentDelegate & Prisma.TransactionClient;
 
 /**
+ * The step's transaction control (B-LSNOTIFY3-1): records each SAVEPOINT /
+ * RELEASE SAVEPOINT / ROLLBACK TO SAVEPOINT statement. `rollbackFails` models a
+ * dead connection, where even the rollback to the savepoint fails.
+ */
+function makeSavepoints(opts: { rollbackFails?: Error } = {}) {
+  const statements: string[] = [];
+  const $executeRaw = jest.fn(async (sql: TemplateStringsArray) => {
+    const text = sql.join('?');
+    statements.push(text);
+    if (opts.rollbackFails && text.startsWith('ROLLBACK TO')) throw opts.rollbackFails;
+    return 0;
+  });
+  return { $executeRaw, statements };
+}
+
+/**
  * Builds a mock transaction client whose coachFirstPaymentNotification.createMany
  * enforces a UNIQUE(coachId) like the real DB under ON CONFLICT DO NOTHING:
  * the first insert for a coachId counts 1; a second insert for the same coachId
@@ -69,11 +85,16 @@ function makeTxWithUniqueConstraint() {
   // Typed delegate stub — only `coachFirstPaymentNotification.createMany` is
   // wired; widened to the tx shape through the single `asStub` seam (no `as
   // unknown as`). The local annotation keeps the createMany() shape checked.
-  const surface: { coachFirstPaymentNotification: { createMany: typeof create } } = {
+  const { $executeRaw, statements } = makeSavepoints();
+  const surface: {
+    coachFirstPaymentNotification: { createMany: typeof create };
+    $executeRaw: typeof $executeRaw;
+  } = {
     coachFirstPaymentNotification: { createMany: create },
+    $executeRaw,
   };
   const tx = asStub<MockTx>(surface);
-  return { tx, create, insertedCoachIds };
+  return { tx, create, insertedCoachIds, statements };
 }
 
 function makeEmitter() {
@@ -195,13 +216,16 @@ describe('CoachFirstPaymentService.tryEmitFirstPayment', () => {
     expect(create).toHaveBeenCalledTimes(1);
   });
 
-  it('rethrows real DB errors and does NOT enqueue (outer tx rolls back, Stripe retries)', async () => {
+  it('a lost connection rethrows the first error and does NOT enqueue (outer tx rolls back, Stripe retries)', async () => {
+    // The connection is gone, so even the rollback to the savepoint fails: the
+    // purchase cannot commit, and the caller sees the ORIGINAL error.
     const dbError = new PrismaClientKnownRequestError('connection reset', {
       code: 'P1001',
       clientVersion: 'test',
     });
     const createMany = jest.fn().mockRejectedValue(dbError);
-    const tx = asStub<MockTx>({ coachFirstPaymentNotification: { createMany } });
+    const { $executeRaw } = makeSavepoints({ rollbackFails: new Error('Server has closed the connection.') });
+    const tx = asStub<MockTx>({ coachFirstPaymentNotification: { createMany }, $executeRaw });
     const { emitter, emit } = makeEmitter();
     const svc = new CoachFirstPaymentService(emitter);
 
@@ -209,29 +233,67 @@ describe('CoachFirstPaymentService.tryEmitFirstPayment', () => {
     expect(emit).not.toHaveBeenCalled();
   });
 
-  it('B-LSNOTIFY-1: never relies on catching a unique violation (a caught P2002 still aborts a Postgres tx)', async () => {
-    // The old code caught P2002 from create() and carried on inside the
-    // purchase transaction, which Postgres had already aborted (25P02). The
-    // service must not have a P2002 catch at all: if a unique violation ever
-    // did surface, it propagates so the caller's transaction fails loudly
-    // instead of committing nothing after a "success".
+  it('(failed before) B-LSNOTIFY3-1: a failed notice rolls back to the savepoint and resolves; no audit entry', async () => {
+    // The emitter's inbox row or queued push failed with a real SQL error.
+    // Postgres has aborted the purchase transaction; the rollback to the
+    // step's savepoint clears that and undoes the claim, so the purchase goes
+    // on and the next paid purchase sends the notice.
+    const { tx, statements, insertedCoachIds } = makeTxWithUniqueConstraint();
+    const sqlError = new PrismaClientKnownRequestError('Null constraint violation', {
+      code: 'P2011',
+      clientVersion: 'test',
+    });
+    const emit = jest.fn<Promise<void>, Parameters<FirstPaymentEmitter['emit']>>(() => Promise.reject(sqlError));
+    const write = jest.fn();
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const svc = new CoachFirstPaymentService(asStub<FirstPaymentEmitter>({ emit }), asStub<AuditService>({ write }));
+
+    await expect(svc.tryEmitFirstPayment(tx, INPUT)).resolves.toBeUndefined();
+    expect(insertedCoachIds.has(INPUT.coachId)).toBe(true); // the fake keeps it; Postgres undoes it
+    expect(statements).toEqual(['SAVEPOINT first_payment_notice', 'ROLLBACK TO SAVEPOINT first_payment_notice']);
+    expect(write).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith({ event: 'first_payment_notice_failed', coachId: INPUT.coachId, code: 'P2011' });
+    warn.mockRestore();
+  });
+
+  it('(failed before) B-LSNOTIFY3-1: the winning path releases the savepoint after the notice', async () => {
+    const { tx, statements } = makeTxWithUniqueConstraint();
+    const { emitter, emit } = makeEmitter();
+    const svc = new CoachFirstPaymentService(emitter);
+
+    await svc.tryEmitFirstPayment(tx, INPUT);
+    expect(emit).toHaveBeenCalledTimes(1);
+    expect(statements).toEqual(['SAVEPOINT first_payment_notice', 'RELEASE SAVEPOINT first_payment_notice']);
+  });
+
+  it('(failed before) B-LSNOTIFY-1 + B-LSNOTIFY3-1: a unique violation is never caught in place; it rolls back to the savepoint', async () => {
+    // The round-1 bug: catching P2002 and carrying on inside the purchase
+    // transaction, which Postgres had already aborted (25P02). The insert uses
+    // ON CONFLICT DO NOTHING so this should not happen; if a violation ever
+    // did surface, the step now rolls back to its savepoint (which clears the
+    // abort) and the purchase goes on without the notice.
     const unique = new PrismaClientKnownRequestError('Unique constraint failed', {
       code: 'P2002',
       clientVersion: 'test',
       meta: { target: ['coachId'] },
     });
     const createMany = jest.fn().mockRejectedValue(unique);
-    const tx = asStub<MockTx>({ coachFirstPaymentNotification: { createMany } });
+    const { $executeRaw, statements } = makeSavepoints();
+    const tx = asStub<MockTx>({ coachFirstPaymentNotification: { createMany }, $executeRaw });
     const { emitter, emit } = makeEmitter();
     const svc = new CoachFirstPaymentService(emitter);
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
 
-    await expect(svc.tryEmitFirstPayment(tx, INPUT)).rejects.toBe(unique);
+    await expect(svc.tryEmitFirstPayment(tx, INPUT)).resolves.toBeUndefined();
+    expect(statements).toEqual(['SAVEPOINT first_payment_notice', 'ROLLBACK TO SAVEPOINT first_payment_notice']);
     expect(emit).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it('B-LSNOTIFY-1: count 0 (already emitted) skips audit and emit and resolves', async () => {
     const createMany = jest.fn().mockResolvedValue({ count: 0 });
-    const tx = asStub<MockTx>({ coachFirstPaymentNotification: { createMany } });
+    const { $executeRaw } = makeSavepoints();
+    const tx = asStub<MockTx>({ coachFirstPaymentNotification: { createMany }, $executeRaw });
     const { emitter, emit } = makeEmitter();
     const write = jest.fn<Promise<void>, [unknown]>(() => Promise.resolve());
     const svc = new CoachFirstPaymentService(emitter, asStub<AuditService>({ write }));
