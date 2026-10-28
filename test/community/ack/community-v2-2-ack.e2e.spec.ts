@@ -290,7 +290,8 @@ describe('community v2-2 ack non-leak + eligibility (HTTP, real service)', () =>
     findSenderRole: jest.fn(),
     stampAck: jest.fn(),
   };
-  const access = { isWorkspaceCoach: jest.fn() };
+  // FR-1174: getOne's space rule (findCohort + canAccessCohort) runs on a space row.
+  const access = { isWorkspaceCoach: jest.fn(), findCohort: jest.fn(), canAccessCohort: jest.fn() };
   const analytics = { capture: jest.fn() };
   // The read path's visibility gate (block / ban / moved client). When it hides
   // a message it throws 404 with the body the caller hands it, as the real one does.
@@ -308,6 +309,9 @@ describe('community v2-2 ack non-leak + eligibility (HTTP, real service)', () =>
       cohort_id: COHORT,
       scope: 'cohort',
       sender_id: CLIENT.id,
+      dm_key: null,
+      recipient_user_id: null,
+      plan_context_type: null,
       deleted_at: null,
       coach_seen_at: null,
       coach_acked_at: null,
@@ -378,6 +382,8 @@ describe('community v2-2 ack non-leak + eligibility (HTTP, real service)', () =>
     CURRENT_USER = { ...COACH };
     jest.clearAllMocks();
     access.isWorkspaceCoach.mockResolvedValue(true);
+    access.findCohort.mockResolvedValue({ id: COHORT, workspace_id: WORKSPACE });
+    access.canAccessCohort.mockResolvedValue(true);
     repo.findSenderRole.mockResolvedValue('student');
     safety.assertVisibleTo.mockReset();
     safety.assertVisibleTo.mockResolvedValue(undefined);
@@ -450,6 +456,21 @@ describe('community v2-2 ack non-leak + eligibility (HTTP, real service)', () =>
     expect(res.status).toBe(404);
     expect(JSON.stringify(res.body)).not.toMatch(/2026-01-0[23]|seen_at|acked_at/);
     expect(repo.stampAck).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a post comment', { plan_context_type: 'community_post_comment' }],
+    ['a DM between the client and someone else', { scope: 'dm', cohort_id: null, dm_key: `${WORKSPACE}:x:y`, recipient_user_id: 'someone-else' }],
+  ])('FR-1174: %s → the SAME 404 body as an absent one on every route, no stamp', async (_n, over) => {
+    repo.findById.mockResolvedValueOnce(null);
+    const absent = await call('POST', `/api/community/ack/${MSG_ID}/seen`);
+    for (const to of ['seen', 'acked', 'replied']) {
+      repo.findById.mockResolvedValueOnce(rowFor(over));
+      const res = await call('POST', `/api/community/ack/${MSG_ID}/${to}`);
+      expect([res.status, res.body]).toEqual([404, absent.body]);
+    }
+    expect(repo.stampAck).not.toHaveBeenCalled();
+    expect(analytics.capture).not.toHaveBeenCalled();
   });
 
   it('client-authored, owned, eligible message → 200 (stamps + emits)', async () => {
