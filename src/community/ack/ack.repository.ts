@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { CommunityMessage, Role } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
+import { isPublicRowOfMyClient, isSpaceTeam } from '../community-public-row';
 
 /** The three ack timestamp columns this repo may stamp. */
 export type AckColumn =
@@ -59,6 +60,16 @@ export class AckRepository {
       select: { sender: { select: { role: true } } },
     });
     return row?.sender?.role ?? null;
+  }
+
+  /** Rule D (FR-1173): is the user the poster's own coach for this space row (community-public-row.ts)? */
+  isPublicRowOfMyClient(cohortId: string, userId: string, authorId: string): Promise<boolean> {
+    return isPublicRowOfMyClient(this.prisma, cohortId, userId, authorId);
+  }
+
+  /** Rule D (FR-1173): is the user on the space's team (an active coach or assistant membership)? */
+  isSpaceTeam(cohortId: string, userId: string): Promise<boolean> {
+    return isSpaceTeam(this.prisma, cohortId, userId);
   }
 
   /**
