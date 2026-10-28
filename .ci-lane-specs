@@ -1,0 +1,3 @@
+test/community/cohorts/community-cohort-members.repository.spec.ts
+test/community/leave-mute/community-leave-mute-realtime.spec.ts
+test/community/realtime/broadcast-ping-contract.spec.ts
