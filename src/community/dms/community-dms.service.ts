@@ -27,8 +27,8 @@ import { CommunitySafetyService, DM_UNAVAILABLE } from '../safety/community-safe
 const DEFAULT_PAGE = 30;
 const MAX_PAGE = 100;
 
-// Same body as the block refusal seen by a blocked member (DM_UNAVAILABLE),
-// so "not there" and "blocked you" are indistinguishable.
+// A member who is not there (left, banned, never joined). A block is told
+// apart since #169-5 CLOSED-LINE (403 blocked_by_you / blocked_by_them).
 const DM_NOT_FOUND = DM_UNAVAILABLE;
 
 const DM_DISABLED = {
@@ -257,7 +257,9 @@ export class CommunityDmsService {
       userId: user.id,
       limit: this.parsePage(query.limit),
     });
-    // #168-4: the other member's place in this community too (left, or banned).
+    // #168-4: the other member's place in this community too (left, or banned). Owner 10-23
+    // "Dissapear": a block either way drops the thread from both lists (no row, no name, no time);
+    // unblock brings it back. Opening it another way answers 403 blocked_by_you / blocked_by_them.
     const visible = await this.safety.filterBlocked(
       user.id,
       rows,

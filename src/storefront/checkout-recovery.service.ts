@@ -14,8 +14,24 @@ import { PrismaService } from '../prisma.service';
 import { EmailService } from '../email/email.service';
 import { EmailTemplateKey } from '../email/email.types';
 import { describeFailure } from '../observability/log-pii';
-import { MIN_CHECKOUT_RECOVERY_SECRET_LENGTH } from '../common/env-validation';
 import { resumeUrl } from './storefront-links';
+import { SELLING_COACH } from '../packages/coach-selling';
+import {
+  CODE_INVALID_MESSAGE,
+  CODE_MAX_WRONG,
+  CODE_TTL_SECONDS,
+  buyerRefusal,
+  buyerVerdict,
+  codeSlot,
+  findBuyerAccount,
+  firstNameOf,
+  hashCode,
+  mintBuyerToken,
+  newCode,
+  recoverySecretKey,
+  sameHash,
+  type BuyerVerdict,
+} from './buyer-check';
 
 // r48 #5 — magic-link recovery for abandoned checkouts.
 //
@@ -69,6 +85,9 @@ const RECOVERY_TYPE = 'checkout_recovery';
 // worth the brief disruption to in-flight magic links.
 const RECOVERY_JTI_REDIS_PREFIX = 'co:rec:jti:';
 const RECOVERY_MEMORY_CAP = 1024;
+// GUEST-ELIGIBILITY — hashed buyer codes and their try counters.
+const BUYER_CODE_PREFIX = 'co:bv:code:';
+const BUYER_TRIES_PREFIX = 'co:bv:try:';
 
 interface RecoveryClaims extends JWTPayload {
   st: string; // share_token
@@ -92,6 +111,8 @@ export class CheckoutRecoveryService implements OnModuleInit, OnModuleDestroy {
    * process only — production MUST set REDIS_URL or replays across
    * Fly machines remain possible. */
   private readonly memory = new Map<string, number>(); // key -> expiresAtMs
+  /** GUEST-ELIGIBILITY — in-memory code store for dev/test (hashed values only). */
+  private readonly codes = new Map<string, { v: string; exp: number }>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -474,6 +495,7 @@ export class CheckoutRecoveryService implements OnModuleInit, OnModuleDestroy {
       );
     }
     this.memory.clear();
+    this.codes.clear();
   }
 
   /**
@@ -524,6 +546,157 @@ export class CheckoutRecoveryService implements OnModuleInit, OnModuleDestroy {
    * cannot distinguish them via the wire response. The class doc on
    * verifyToken promises this contract; this helper enforces it.
    */
+  // ── GUEST-ELIGIBILITY: the email code (owner #170-2) ─────────────────
+  // POST …/checkout/check-email. Says only whether the email has a TGP
+  // account. Both answers return after the same two indexed reads; the code
+  // email is sent off the response path so "existing" is not slower.
+  async checkBuyerEmail(
+    shareToken: string,
+    email: string,
+  ): Promise<{ account: 'new' | 'existing' }> {
+    await this.sellingPackage(shareToken);
+    const account = await findBuyerAccount(this.prisma, email);
+    if (!account) return { account: 'new' };
+    void this.sendBuyerCode(shareToken, email, account.name).catch((err) => {
+      this.logger.error(`buyer code send crashed: ${describeFailure(err)}`);
+    });
+    return { account: 'existing' };
+  }
+
+  /** Mints, stores (hashed) and emails a fresh code; at most 3 per email per hour. */
+  async sendBuyerCode(shareToken: string, email: string, name: string): Promise<boolean> {
+    if (!this.email) return false;
+    const to = email.toLowerCase();
+    const recent = await this.prisma.emailSendLog.count({
+      where: {
+        recipient_email: to,
+        template_key: EmailTemplateKey.BUYER_EMAIL_CODE,
+        created_at: { gte: new Date(Date.now() - RATE_LIMIT_WINDOW_MS) },
+      },
+    });
+    if (recent >= RATE_LIMIT_MAX) {
+      this.logger.warn(`buyer code rate-limit hit (count=${recent})`);
+      return false;
+    }
+    const key = this.getTokenKey();
+    const slot = codeSlot(key, to, shareToken);
+    const code = newCode();
+    await this.kvSet(`${BUYER_CODE_PREFIX}${slot}`, hashCode(key, slot, code));
+    await this.kvDel(`${BUYER_TRIES_PREFIX}${slot}`);
+    await this.email.send({
+      to,
+      template: EmailTemplateKey.BUYER_EMAIL_CODE,
+      // One key per minted code: a resend replaces the stored code, so it must
+      // never be deduped into the earlier email (EmailService skips a reused key).
+      idempotencyKey: `buyer-code:${randomUUID()}`,
+      data: { first_name: firstNameOf(name), code },
+    });
+    return true;
+  }
+
+  /**
+   * POST …/checkout/verify-code. Single use, 10-minute expiry, 5 tries per
+   * code. A right code for an eligible buyer returns the first name, the
+   * summary kind (#169-8) and the proof createIntent needs; a right code for
+   * an ineligible buyer gets the refusal — only after the code.
+   */
+  async verifyBuyerCode(
+    shareToken: string,
+    email: string,
+    code: string,
+  ): Promise<{ verified: true; first_name: string; summary: BuyerVerdict; buyer_token: string }> {
+    const pkg = await this.sellingPackage(shareToken);
+    const key = this.getTokenKey();
+    const to = email.toLowerCase();
+    const slot = codeSlot(key, to, shareToken);
+    if (!(await this.consumeCode(key, slot, code))) {
+      throw new BadRequestException({ error: 'BUYER_CODE_INVALID', message: CODE_INVALID_MESSAGE });
+    }
+    const account = await findBuyerAccount(this.prisma, to);
+    const verdict = buyerVerdict(account, pkg.coach_id);
+    const refusal = buyerRefusal(verdict);
+    if (refusal) throw refusal;
+    if (!account) {
+      throw new BadRequestException({ error: 'BUYER_CODE_INVALID', message: CODE_INVALID_MESSAGE });
+    }
+    return {
+      verified: true,
+      first_name: firstNameOf(account.name),
+      summary: verdict,
+      buyer_token: mintBuyerToken(key, to, shareToken),
+    };
+  }
+
+  private async sellingPackage(shareToken: string): Promise<{ coach_id: string }> {
+    const pkg = await this.prisma.coachPackage.findUnique({
+      where: { share_token: shareToken, coach: SELLING_COACH },
+      select: { coach_id: true },
+    });
+    if (!pkg) {
+      throw new NotFoundException({
+        error: 'PACKAGE_UNAVAILABLE',
+        message:
+          'This plan is no longer offered. Message the coach who shared this link for the current one.',
+      });
+    }
+    return pkg;
+  }
+
+  private async consumeCode(key: Uint8Array, slot: string, code: string): Promise<boolean> {
+    try {
+      const tries = await this.kvIncr(`${BUYER_TRIES_PREFIX}${slot}`);
+      const codeKey = `${BUYER_CODE_PREFIX}${slot}`;
+      if (tries > CODE_MAX_WRONG) {
+        await this.kvDel(codeKey);
+        return false;
+      }
+      const stored = await this.kvGet(codeKey);
+      if (!stored || !sameHash(stored, hashCode(key, slot, code))) return false;
+      // DEL is the single-use claim: of two racing right answers only one wins.
+      if ((await this.kvDel(codeKey)) !== 1) return false;
+      await this.kvDel(`${BUYER_TRIES_PREFIX}${slot}`);
+      return true;
+    } catch (err) {
+      // Fail closed, same as the recovery single-use guard.
+      this.logger.error(`buyer code check failed closed: ${describeFailure(err)}`);
+      return false;
+    }
+  }
+
+  private async kvSet(k: string, v: string): Promise<void> {
+    if (this.redis) {
+      await this.redis.set(k, v, 'EX', CODE_TTL_SECONDS);
+      return;
+    }
+    this.codes.set(k, { v, exp: Date.now() + CODE_TTL_SECONDS * 1000 });
+  }
+
+  private async kvGet(k: string): Promise<string | null> {
+    if (this.redis) return this.redis.get(k);
+    const hit = this.codes.get(k);
+    return hit && hit.exp > Date.now() ? hit.v : null;
+  }
+
+  private async kvDel(k: string): Promise<number> {
+    if (this.redis) return Number(await this.redis.del(k));
+    const hit = this.codes.get(k);
+    this.codes.delete(k);
+    return hit && hit.exp > Date.now() ? 1 : 0;
+  }
+
+  private async kvIncr(k: string): Promise<number> {
+    if (this.redis) {
+      const n = Number(await this.redis.incr(k));
+      if (n === 1) await this.redis.expire(k, CODE_TTL_SECONDS);
+      return n;
+    }
+    const hit = this.codes.get(k);
+    const live = hit && hit.exp > Date.now() ? hit : undefined;
+    const n = (live ? Number(live.v) : 0) + 1;
+    this.codes.set(k, { v: String(n), exp: live?.exp ?? Date.now() + CODE_TTL_SECONDS * 1000 });
+    return n;
+  }
+
   private invalidTokenError(): NotFoundException {
     return new NotFoundException({
       error: 'RECOVERY_TOKEN_INVALID',
@@ -588,26 +761,9 @@ export class CheckoutRecoveryService implements OnModuleInit, OnModuleDestroy {
   }
 
   private getTokenKey(): Uint8Array {
-    // Audit A276-F3-P2-1 — share the entropy floor with the boot validator
-    // (MIN_CHECKOUT_RECOVERY_SECRET_LENGTH = 43 → ≥256 bits per RFC 7518
-    // §3.2 for HS256). Trim defensively so a trailing newline from an
-    // operator paste doesn't slip through here while boot rejects it.
-    const raw =
-      this.config.get<string>('CHECKOUT_RECOVERY_SECRET') ??
-      process.env.CHECKOUT_RECOVERY_SECRET ??
-      '';
-    const secret = raw.trim();
-    if (!secret || secret.length < MIN_CHECKOUT_RECOVERY_SECRET_LENGTH) {
-      // Refuse to mint / verify with a weak secret.  Throwing here is
-      // the lesser evil — better to fail loudly than to silently sign
-      // tokens with a guessable key.  Production env validation will
-      // catch this at boot; the throw is the runtime safety net.
-      throw new BadRequestException({
-        error: 'CHECKOUT_RECOVERY_NOT_CONFIGURED',
-        message: `Recovery secret not configured. Set CHECKOUT_RECOVERY_SECRET to a ${MIN_CHECKOUT_RECOVERY_SECRET_LENGTH}+ char value (256-bit entropy per RFC 7518 §3.2).`,
-      });
-    }
-    return new TextEncoder().encode(secret);
+    // GUEST-ELIGIBILITY — body moved verbatim to buyer-check.ts so the
+    // buyer proof (createIntent gate) signs with the same key and floor.
+    return recoverySecretKey(this.config);
   }
 
   private formatAmount(row: { package_snapshot: unknown }): string {

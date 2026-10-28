@@ -85,6 +85,18 @@ export interface ResolvedThread {
   otherPartyId: string;
 }
 
+/**
+ * GET /coach/messages/unread-count. NEEDS-YOU-BE: `oldest_unread_at_by_client`
+ * is keyed exactly like `by_client` and built from the same rows: when the
+ * oldest client message still unread was sent (ISO, UTC). No entry at 0.
+ */
+export interface CoachUnreadCount {
+  total: number;
+  by_client: Record<string, number>;
+  oldest_unread_at_by_client: Record<string, string>;
+  closed_client_ids: string[];
+}
+
 /** Max quoted-preview length carried on `reply_to` (characters). */
 export const REPLY_PREVIEW_MAX = 160;
 
@@ -1290,7 +1302,7 @@ export class MessagingService {
   //
   // Phase 11: sub-coaches see only the unread counts for clients they're
   // currently assigned to, scoped through the SubCoachAssignment overlay.
-  async unreadCountForCoach(coachId: string) {
+  async unreadCountForCoach(coachId: string): Promise<CoachUnreadCount> {
     let threadCoachId = coachId;
     let clientFilter: { in: string[] } | undefined = undefined;
     if (this.subCoachScope) {
@@ -1301,7 +1313,9 @@ export class MessagingService {
         // assigned clients only.
         threadCoachId = headCoachId;
         const ids = await this.subCoachScope.getAuthorizedClientIds(coachId);
-        if (ids.length === 0) return { total: 0, by_client: {}, closed_client_ids: [] };
+        if (ids.length === 0) {
+          return { total: 0, by_client: {}, oldest_unread_at_by_client: {}, closed_client_ids: [] };
+        }
         clientFilter = { in: ids };
       }
     }
@@ -1337,6 +1351,7 @@ export class MessagingService {
         ...(isMessagingCoreV2Enabled() ? { deleted_at: null } : {}),
       },
       _count: { _all: true },
+      _min: { created_at: true },
     });
     // Apple 1.2 — drop blocked clients from the unread count so the coach's
     // badge doesn't trail forever when they've blocked someone. Cheap lookup
@@ -1345,6 +1360,7 @@ export class MessagingService {
     // pre-existing un-filtered count.
     const blockedIds = await this.hiddenIdsFor(coachId); // #168-4: either way
     const by_client: Record<string, number> = {};
+    const oldest_unread_at_by_client: Record<string, string> = {};
     let total = 0;
     for (const g of groups) {
       if (g.client_id !== null && blockedIds.has(g.client_id)) {
@@ -1357,12 +1373,20 @@ export class MessagingService {
       // recipient to badge against).
       if (g.client_id !== null) {
         by_client[g.client_id] = g._count._all;
+        // NEEDS-YOU-BE: same row, so the same keys as by_client.
+        const oldest = g._min?.created_at;
+        if (oldest) oldest_unread_at_by_client[g.client_id] = oldest.toISOString();
       }
       total += g._count._all;
     }
     // FR-1141 (LO-872 B1): the roster clients in a block either way, ids only,
     // so the coach's list leaves them out too ("Dissapear"); unblock clears it.
-    return { total, by_client, closed_client_ids: clientIds.filter((id) => blockedIds.has(id)).sort() };
+    return {
+      total,
+      by_client,
+      oldest_unread_at_by_client,
+      closed_client_ids: clientIds.filter((id) => blockedIds.has(id)).sort(),
+    };
   }
 
   async unreadCountForClient(clientId: string) {

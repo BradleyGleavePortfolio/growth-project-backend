@@ -139,6 +139,8 @@ async function guestCheckout(account: Row, retrieveAccount: jest.Mock, pkgOverri
   const prisma = {
     coachPackage: { findUnique: jest.fn(async () => makePkg(account, pkgOverrides)) },
     coachLandingPage: { findFirst: jest.fn(async () => null) },
+    // GUEST-ELIGIBILITY: no TGP account for this email (the new-email path).
+    user: { findFirst: jest.fn(async () => null) },
     guestCheckout: {
       findUnique: jest.fn(async () => null),
       create: jest.fn(async () => ({ id: 'gc-1', idempotency_key: KEY })),
