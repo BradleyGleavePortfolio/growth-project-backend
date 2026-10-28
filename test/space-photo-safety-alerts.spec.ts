@@ -17,6 +17,8 @@ import { CoachAlertsService, type CoachAlertType } from '../src/coach/coach-aler
 import { CoachAlertsController } from '../src/coach/coach-alerts.controller';
 import { CommandCenterService } from '../src/coach/command-center/command-center.service';
 import { CommandCenterController } from '../src/coach/command-center/command-center.controller';
+import { CoachService } from '../src/coach/coach.service';
+import type { AuditService } from '../src/audit/audit.service';
 import type { ChurnInterventionService } from '../src/coach/command-center/churn-intervention.service';
 import type { AdminPtmService } from '../src/admin/ptm/admin-ptm.service';
 import type { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
@@ -132,7 +134,13 @@ async function world(lead: Lead = 'leads') {
     user: {
       findUnique: jest.fn(async () => ({ role: 'coach', coach_id: null })),
       findMany: jest.fn(async ({ where }: { where: { coach_id: string } }) => users.filter((u) => u.coach_id === where.coach_id)),
+      findFirst: jest.fn(async ({ where }: { where: unknown }) => users.find((u) => fits(u, where)) ?? null),
     },
+    // The client card's other reads (CoachService.getClientSummary): none here.
+    loggedFoodEntry: { findMany: jest.fn(async () => []) },
+    weightLog: { findMany: jest.fn(async () => []) },
+    workoutSession: { findMany: jest.fn(async () => []) },
+    clientWorkoutAssignment: { findMany: jest.fn(async () => []) },
     userBlock: { findMany: jest.fn(async () => []) },
     subCoachAssignment: { findMany: jest.fn(async () => []) },
     coachingSession: { findMany: jest.fn(async () => []) },
@@ -183,6 +191,7 @@ async function world(lead: Lead = 'leads') {
     list: new CoachAlertsController(svc),
     cc: new CommandCenterController(cc, fakeOf<ChurnInterventionService>({})),
     notes: new NotificationsController(new NotificationsService(fakeOf<PrismaService>(prisma))),
+    card: new CoachService(fakeOf<PrismaService>(prisma), fakeOf<AuditService>({ write: async () => undefined })),
   };
 }
 type W = Awaited<ReturnType<typeof world>>;
@@ -282,6 +291,13 @@ describe('B1 (rule D): a public-space photo safety alert reaches the space owner
     await expect(w.cc.getSafetyAlert(req(STRANGER), 'a-6')).rejects.toBeInstanceOf(NotFoundException);
     await expect(w.list.acknowledge(req(STRANGER), 'a-6')).rejects.toBeInstanceOf(NotFoundException);
   });
+
+  it('the client card stays resident-only: the owner opens no card for Sam, and Jane\'s card shows her coach\'s own copy', async () => {
+    const w = await world();
+    await expect(w.card.getClientSummary(OWNER, SAM)).resolves.toEqual({ error: 'Client not found' });
+    await expect(w.card.getClientSummary(OWNER, JANE)).resolves.toEqual({ error: 'Client not found' });
+    expect(await w.card.getClientSummary(RESIDENT, JANE)).toMatchObject({ open_safety_alert: { alert_id: 'a-4' } });
+  });
 });
 
 // The push worker re-renders the lock screen from the stored context and
@@ -309,6 +325,8 @@ describe('B1 (rule D): the space owner\'s phone gets the space copy', () => {
       ...w.db,
       // The worker re-checks a coach's push (pushStillCurrent); OWNER is a coach.
       user: { ...w.db.user, findUnique: jest.fn(async (args: { where: { id: string } }) => ({ ...(await w.db.user.findUnique(args)), role: 'coach' })) },
+      // A client-link push's re-check (the roster rule) reads these too: OWNER runs no sessions.
+      coachingSession: { ...w.db.coachingSession, findMany: jest.fn(async () => []) },
       communityCohort: { findMany: jest.fn(async ({ where }: { where: unknown }) => [space].filter((c) => fits(c, where))) },
       notification: { create: jest.fn(async ({ data }: { data: object }) => ({ id: 'n1', ...data })) },
       coachAlert: {

@@ -89,6 +89,7 @@ describe('the photo safety alert in the Command Center', () => {
         findFirst: jest.fn(async (_a: unknown) => alert),
       },
       romanMessage: { findMany: jest.fn(async (_a: unknown) => [{ id: 'm1', user_id: 'client-1', content: 'never shown', created_at: new Date() }]) },
+      communityCohort: { findMany: jest.fn(async () => []) }, // FR-1152R3 B1: leads no public space
     };
     const scope = {
       getAuthorizedClientIds: jest.fn(async () => ['client-1']),

@@ -40,6 +40,7 @@ function buildPrisma(initial: Partial<FakeRows> = {}): any {
   return {
     rows,
     userBlock: { findMany: jest.fn(async () => []) }, // #168-4: no blocks
+    communityCohort: { findMany: jest.fn(async () => []) }, // FR-1152R3 B1: leads no public space
     user: {
       findMany: jest.fn(async ({ where, select: _ }: any) => {
         return rows.users.filter((u) => {
