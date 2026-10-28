@@ -1,0 +1,12 @@
+test/community
+src/community
+src/notifications
+test/ai-egress
+test/ai-consent/consent-crisis-sentence.spec.ts
+test/crisis-router-gym-talk.spec.ts
+test/crisis-router-not-breathing.spec.ts
+test/crisis-router-gym-talk-125.spec.ts
+test/ai-crisis-router.spec.ts
+test/messages-safety.service.spec.ts
+test/aib3-program-safety.spec.ts
+test/command-center.controller.spec.ts
