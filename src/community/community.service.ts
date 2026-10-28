@@ -4,11 +4,11 @@ import { PrismaService } from '../prisma.service';
 import { CommunityRepository } from './community.repository';
 import { CommunitySafetyService } from './safety/community-safety.service';
 import { memberName } from './member-display-name';
-import { fullNamesFor } from './community-space-access';
+import { fullNamesFor, membersNow } from './community-space-access';
 import { isBannedFromWorkspace } from './community-ban';
 import { communityTabUnread, spaceUnreadCounts } from './space-reads/community-space-reads.service';
-// FR-1168 (LO-1168 B1, owner R7): member_count leaves out the people who left the space.
-import { leftSpaces, membersNow } from './leave-mute/community-leave-mute.service';
+// FR-1168 (LO-1168 B1, owner R7): member_count leaves out the people who left the space (membersNow).
+import { leftSpaces } from './leave-mute/community-leave-mute.service';
 import { CommunityCohortListWithLeftSchema, type CommunityCohortListWithLeft } from './leave-mute/community-leave-mute.dto';
 import {
   WIN_NOT_FOUND,

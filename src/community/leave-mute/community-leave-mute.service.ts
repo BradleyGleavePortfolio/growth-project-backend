@@ -7,7 +7,8 @@
  * reused. FR-1168: a thread row stays after unmute or follow again as 'followed' with since = that moment, so
  * the replies that came while it was muted or left stay read (owner R2); a reply of your own follows a left
  * thread again (the 20270502009600 trigger); "{name} left" lines are their own rows, kept when the person
- * joins again; the people of a space (member_count) leave out the people who left it (owner R7).
+ * joins again; the people of a space (member_count, the member list: membersNow) leave out the people who
+ * left it (owner R7).
  * Every route answers 404 community.cohort.not_found for a space the caller cannot read now (the b#1137 rule),
  * so these routes never confirm that a space exists.
  */
@@ -15,7 +16,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import type { CommunityCohort, User } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { CommunityAccessService } from '../community-access.service';
-import { fullNamesFor, placeOf, readersNow } from '../community-space-access';
+import { fullNamesFor, placeOf } from '../community-space-access';
 import { memberName } from '../member-display-name';
 import { CommunitySafetyService } from '../safety/community-safety.service';
 import type { LeftMembers, SpaceLeave, ThreadState, ThreadStates } from './community-leave-mute.dto';
@@ -38,23 +39,6 @@ export async function leftSpaces(prisma: PrismaService, userId: string, cohortId
     select: { cohort_id: true, left_at: true },
   });
   return new Map(rows.map((r) => [r.cohort_id, r.left_at as Date]));
-}
-
-/** FR-1168 (LO-1168 B1, owner R7): the people of a space now (the access rule, readersNow) without those who
- *  left it, so its member count drops by one when someone leaves and comes back when they join again. */
-export async function membersNow(
-  prisma: PrismaService,
-  cohort: Pick<CommunityCohort, 'id' | 'workspace_id'>,
-  listed = false,
-): Promise<string[]> {
-  const ids = await readersNow(prisma, cohort.workspace_id, cohort.id, listed);
-  if (ids.length === 0) return ids;
-  const left = await prisma.communitySpaceRead.findMany({
-    where: { cohort_id: cohort.id, user_id: { in: ids }, left_at: { not: null } },
-    select: { user_id: true },
-  });
-  const gone = new Set(left.map((r) => r.user_id));
-  return ids.filter((id) => !gone.has(id));
 }
 
 @Injectable()
