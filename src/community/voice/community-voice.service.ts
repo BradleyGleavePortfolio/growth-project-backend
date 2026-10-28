@@ -8,6 +8,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import type { CommunityVoiceNote, User } from '@prisma/client';
+import { z } from 'zod';
 import { AnalyticsService } from '../../analytics/analytics.service';
 import { CommunityAccessService } from '../community-access.service';
 import {
@@ -16,6 +17,7 @@ import {
   classifyTelemetryError,
 } from '../community-events';
 import { CommunityRealtimeService } from '../realtime/community-realtime.service';
+import { MessageRemovedPayloadSchema, type MessageRemovedPayload } from '../realtime/community-realtime.types';
 import {
   CreateVoiceNoteDto,
   IssueVoiceUploadDto,
@@ -34,7 +36,7 @@ import {
   type VoiceNoteMimeType,
   type VoiceNoteResponse,
   VoiceNoteResponseSchema,
-  type VoiceNoteView,
+  VoiceNoteViewSchema,
   type VoiceUploadTarget,
   VoiceUploadTargetSchema,
 } from './community-voice.dto';
@@ -49,6 +51,29 @@ import { VoiceUploadProvider } from './voice-upload.provider';
 import { verifyPublishableVoiceKey } from './voice-storage-key';
 import { CommunitySafetyService } from '../safety/community-safety.service';
 import { placeOf } from '../community-space-access';
+
+/**
+ * REMOVED-BY-BE (#174-4): who removed a note, on a coach-removed note only
+ * (absent on every live note). The name follows the author_name rule for that
+ * coach in that place; `role` is always 'coach' (the TGP owner shows as one).
+ * Kept here, next to the only code that builds it, as the voice DTO file
+ * belongs to another lane.
+ */
+export const RemovedBySchema = z
+  .object({ role: z.literal('coach'), user_id: z.string(), name: z.string() })
+  .strict();
+const VoiceNoteRowSchema = VoiceNoteViewSchema.extend({
+  removed_at: z.string().datetime().optional(),
+  removed_by: RemovedBySchema.optional(),
+}).strict();
+export type VoiceNoteRow = z.infer<typeof VoiceNoteRowSchema>;
+const VoiceNoteRowResponseSchema = VoiceNoteResponseSchema.extend({ voice_note: VoiceNoteRowSchema }).strict();
+const VoiceNoteRowFeedSchema = VoiceNoteFeedResponseSchema.extend({ voice_notes: z.array(VoiceNoteRowSchema) }).strict();
+
+/** A coach's removal of someone else's note (shown as a placeholder), not an author's delete. */
+function coachRemoved(row: CommunityVoiceNote): row is CommunityVoiceNote & { soft_deleted_at: Date; removed_by_user_id: string } {
+  return !!row.soft_deleted_at && !!row.removed_by_user_id;
+}
 
 const NOT_FOUND = {
   error: 'not_found',
@@ -115,6 +140,40 @@ export const VOICE_NOT_AUTHOR = {
   message:
     'Only the person who recorded this voice note, or your coach, can delete it. You can report it instead.',
 } as const;
+
+/** A removed row as its removal ping needs it: a voice note, or a space chat message. */
+export type RemovedRow = Pick<CommunityVoiceNote, 'id' | 'workspace_id' | 'cohort_id' | 'created_at'> & {
+  kind: MessageRemovedPayload['kind'];
+  sender_id: string;
+};
+
+/**
+ * REMOVED-BY-BE / FR-1165R (B2): a coach's (or the TGP owner's) removal of someone else's
+ * item, live, to everyone who may read it now: a space's readers (channelKind 'cohort') or,
+ * for a Hall note, the Hall's readers (cohortId null, channelKind 'workspace', as Hall posts).
+ * Same event name as an edit; ids and times only. The direct DELETE and the queue's Hide send
+ * it after the commit, so a failed ping never undoes the removal.
+ */
+export async function publishRemoval(realtime: CommunityRealtimeService, row: RemovedRow, removedBy: string, at: Date): Promise<void> {
+  const payload = MessageRemovedPayloadSchema.parse({
+    id: row.id,
+    workspaceId: row.workspace_id,
+    cohortId: row.cohort_id,
+    updatedAt: at.toISOString(),
+    removedAt: at.toISOString(),
+    createdAt: row.created_at.toISOString(),
+    kind: row.kind,
+    authorId: row.sender_id,
+    removedBy: { role: 'coach', userId: removedBy },
+  });
+  const channelKind = row.cohort_id ? 'cohort' : 'workspace';
+  await realtime.broadcastCommunityEvent(
+    { workspaceId: row.workspace_id, cohortId: row.cohort_id },
+    COMMUNITY_BROADCAST_EVENTS.messageUpdated,
+    payload,
+    { distinctId: removedBy, channelKind },
+  );
+}
 
 /**
  * Community voice notes (v3-3): audio attachments coaches and members send into
@@ -324,13 +383,14 @@ export class CommunityVoiceService {
   // ── Views ──────────────────────────────────────────────────────────────────
 
   /** One workspace's notes as `viewerId` sees them (VOICE-BE extras in one batch). */
-  private async noteViews(viewerId: string, rows: CommunityVoiceNote[]): Promise<VoiceNoteView[]> {
+  private async noteViews(viewerId: string, rows: CommunityVoiceNote[]): Promise<VoiceNoteRow[]> {
     if (rows.length === 0) return [];
     const extras = await this.repo.viewExtras(viewerId, rows);
     return Promise.all(rows.map((row) => this.noteView(row, extras)));
   }
 
-  private async noteView(row: CommunityVoiceNote, x: VoiceViewExtras): Promise<VoiceNoteView> {
+  private async noteView(row: CommunityVoiceNote, x: VoiceViewExtras): Promise<VoiceNoteRow> {
+    if (coachRemoved(row)) return this.placeholderView(row, x);
     // A-610-1: signed only for a canonical key inside the AUTHOR's folder.
     const url = await this.upload.createSignedDownload(row.storage_key, undefined, row.author_id);
     const chat = x.chat.get(row.id);
@@ -352,6 +412,44 @@ export class CommunityVoiceService {
       heard_at: x.heardAt.get(row.id)?.toISOString() ?? null,
       message_id: chat ? row.id : null,
       parent_message_id: chat?.parent_message_id ?? null,
+    };
+  }
+
+  /**
+   * REMOVED-BY-BE (#174-4): a coach-removed note keeps its place as a
+   * placeholder: who sent it and when, when and by whom it was removed. Every
+   * audio field is emptied and nothing is signed (the recording is erased).
+   */
+  private placeholderView(
+    row: CommunityVoiceNote & { soft_deleted_at: Date; removed_by_user_id: string },
+    x: VoiceViewExtras,
+  ): VoiceNoteRow {
+    const chat = x.chat.get(row.id);
+    const remover = row.removed_by_user_id;
+    return {
+      id: row.id,
+      workspace_id: row.workspace_id,
+      cohort_id: row.cohort_id,
+      conversation_id: row.conversation_id,
+      author_id: row.author_id,
+      url: null,
+      duration_ms: 0,
+      bytes: 0,
+      mime_type: row.mime_type,
+      has_waveform: false,
+      created_at: row.created_at.toISOString(),
+      author_name: memberName(x.names.get(row.author_id), x.fullName(row.cohort_id, row.author_id)),
+      author_is_coach: row.author_id === x.coachId,
+      waveform_peaks: null,
+      heard_at: null,
+      message_id: chat ? row.id : null,
+      parent_message_id: chat?.parent_message_id ?? null,
+      removed_at: row.soft_deleted_at.toISOString(),
+      removed_by: {
+        role: 'coach',
+        user_id: remover,
+        name: memberName(x.names.get(remover), x.fullName(row.cohort_id, remover)),
+      },
     };
   }
 
@@ -497,7 +595,7 @@ export class CommunityVoiceService {
       });
     });
 
-    return VoiceNoteResponseSchema.parse({
+    return VoiceNoteRowResponseSchema.parse({
       voice_note: (await this.noteViews(user.id, [row]))[0],
     });
   }
@@ -578,10 +676,11 @@ export class CommunityVoiceService {
   // ── Reads ──────────────────────────────────────────────────────────────────
 
   async getOne(user: User, voiceNoteId: string): Promise<VoiceNoteResponse> {
-    const row = await this.readableNote(user, voiceNoteId);
+    // REMOVED-BY-BE: a coach-removed note reads as its placeholder.
+    const row = await this.readableNote(user, voiceNoteId, { placeholder: true });
     // Two-way block: a direct id read cannot go around the list filter.
     await this.safety.assertVisibleTo(user.id, row.author_id, NOT_FOUND, placeOf(row));
-    return VoiceNoteResponseSchema.parse({
+    return VoiceNoteRowResponseSchema.parse({
       voice_note: (await this.noteViews(user.id, [row]))[0],
     });
   }
@@ -590,11 +689,18 @@ export class CommunityVoiceService {
    * Resolve a voice note the caller may READ, or 404. Coach/owner reads any
    * non-deleted note in their workspace; a member reads a channel note in a
    * cohort/workspace they belong to, or a DM note they authored. Anything else
-   * is an identical 404 so existence never leaks.
+   * is an identical 404 so existence never leaks. REMOVED-BY-BE: with
+   * `placeholder` (the single read only), a coach-removed note passes the
+   * same rules so it reads as its placeholder; every other path (heard,
+   * delete) still treats it as missing.
    */
-  private async readableNote(user: User, voiceNoteId: string): Promise<CommunityVoiceNote> {
+  private async readableNote(
+    user: User,
+    voiceNoteId: string,
+    opts: { placeholder?: boolean } = {},
+  ): Promise<CommunityVoiceNote> {
     const row = await this.repo.findById(voiceNoteId);
-    if (!row || row.soft_deleted_at !== null) {
+    if (!row || (row.soft_deleted_at !== null && !(opts.placeholder && coachRemoved(row)))) {
       throw new NotFoundException(NOT_FOUND);
     }
     if (await this.isCoach(row.workspace_id, user)) return row;
@@ -661,7 +767,7 @@ export class CommunityVoiceService {
       placeOf,
     );
     const voiceNotes = await this.noteViews(user.id, visibleRows);
-    return VoiceNoteFeedResponseSchema.parse({
+    return VoiceNoteRowFeedSchema.parse({
       voice_notes: voiceNotes,
       next_cursor: page.nextCursor,
     });
@@ -729,16 +835,30 @@ export class CommunityVoiceService {
       await this.safety.assertVisibleTo(user.id, row.author_id, NOT_FOUND, placeOf(row));
       throw new ForbiddenException(VOICE_NOT_AUTHOR);
     }
-    await this.deleteAndErase(row);
+    // REMOVED-BY-BE (#174-4): the coach's removal of someone else's note is
+    // moderation, stores who removed it (placeholder) and tells the author.
+    const removedAt = new Date();
+    await this.deleteAndErase(row, user.id, removedAt);
+    // The removal's live update (space or Hall); a DM note sends none (its create sends none).
+    const ping = { ...row, kind: 'voice' as const, sender_id: row.author_id };
+    if (row.conversation_id === null) void publishRemoval(this.realtime, ping, user.id, removedAt).catch((err: unknown) => {
+      this.track(user.id, COMMUNITY_TELEMETRY_EVENTS.voicePublishFailed, {
+        workspace_id: row.workspace_id,
+        error_code: classifyTelemetryError(err),
+      });
+    });
     return { deleted: true };
   }
 
   /**
    * One transaction records the erasure and soft-deletes the rows
-   * (C-610-10); storage is tried only after it commits.
+   * (C-610-10); storage is tried only after it commits. `removedBy` set =
+   * a coach's removal (reason 'moderation', who and when kept, author told).
    */
-  private async deleteAndErase(row: CommunityVoiceNote): Promise<void> {
-    const work = await this.repo.softDeleteWithErasure(row, 'author_delete');
+  private async deleteAndErase(row: CommunityVoiceNote, removedBy: string | null = null, at?: Date): Promise<void> {
+    const work = removedBy
+      ? await this.repo.softDeleteWithErasure(row, 'moderation', at, removedBy)
+      : await this.repo.softDeleteWithErasure(row, 'author_delete');
     await this.runErasure(row, work);
   }
 

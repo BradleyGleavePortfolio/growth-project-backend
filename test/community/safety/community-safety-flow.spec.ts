@@ -32,11 +32,18 @@ import { CommunityDmsRepository } from '../../../src/community/dms/community-dms
 import { CommunityModerationService } from '../../../src/community/moderation/community-moderation.service';
 import { CommunityModerationRepository } from '../../../src/community/moderation/community-moderation.repository';
 import { CommunityModerationController } from '../../../src/community/moderation/community-moderation.controller';
+import { CommunityChallengesService } from '../../../src/community/challenges/community-challenges.service';
+import { CommunityChallengesRepository } from '../../../src/community/challenges/community-challenges.repository';
 import {
   COMMUNITY_REPORT_REASONS,
   CommunitySafetyService,
 } from '../../../src/community/safety/community-safety.service';
 import { CommunitySafetyController } from '../../../src/community/safety/community-safety.controller';
+import { CommunitySearchController } from '../../../src/community/search/community-search.controller';
+import { CommunitySearchRepository } from '../../../src/community/search/community-search.repository';
+import type { CommunitySearchService } from '../../../src/community/search/community-search.service';
+import { SearchIndexerService } from '../../../src/community/search/search-indexer.service';
+import type { AuthedRequest } from '../../../src/auth/auth-request';
 import type { PrismaService } from '../../../src/prisma.service';
 import type { VoiceUploadProvider } from '../../../src/community/voice/voice-upload.provider';
 import type { CommunityRealtimeService } from '../../../src/community/realtime/community-realtime.service';
@@ -208,14 +215,172 @@ describe('community UGC safety flow (Apple 1.2)', () => {
     await expect(moderation.listFlagged(alice, {})).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it('hide removes the content for everyone and closes the item', async () => {
-    const m = await messages.send(bob, cohortId, 'rude but not filtered');
-    const r = await moderation.report(alice, 'message', m.message.id, 'harassment', undefined);
+  // FR-1165R (LS-1165 B1/B2, #174-4): the queue's Hide is the same removal as
+  // the coach's direct DELETE: on the next read, the attributed placeholder
+  // with no content; one author notice; the photo's erasure recorded; one
+  // live removal ping to the space.
+  it.each(['text', 'photo'] as const)('hide of a %s message leaves the attributed placeholder and closes the item', async (kind) => {
+    const id =
+      kind === 'text'
+        ? (await messages.send(bob, cohortId, 'rude but not filtered')).message.id
+        : String(db.seed('communityMessage', { workspace_id: wsId, cohort_id: cohortId, scope: 'cohort', kind: 'image', sender_id: bob.id, body: 'rude caption', visibility: 'visible', deleted_at: null, plan_context_type: null }).id);
+    if (kind === 'photo') {
+      db.seed('communityMessageImage', { message_id: id, cohort_id: cohortId, author_id: bob.id, storage_key: `${bob.id}/${cohortId}-1.sent.jpg`, width: 1, height: 1 });
+    }
+    const r = await moderation.report(alice, 'message', id, 'harassment', undefined);
+    realtime.broadcastCommunityEvent.mockClear();
     const acted = await moderation.act(coach, r.item.id, 'hide', undefined);
     expect(acted.item.status).toBe('actioned');
-    const list = await messages.list(alice, cohortId, {});
-    expect(list.messages.map((x) => x.id)).not.toContain(m.message.id);
+    const row = (await messages.list(alice, cohortId, {})).messages.find((x) => x.id === id);
+    expect(row).toMatchObject({ deleted: true, body: null, voice_note: null, removed_by: { role: 'coach', user_id: coach.id, name: expect.any(String) } });
+    expect(JSON.stringify(row)).not.toMatch(/rude|\.jpg|https?:/);
+    expect(db.table('communityMessage').find((x) => x.id === id)).toMatchObject({ body: null, removed_by_user_id: coach.id });
+    expect(db.table('notification').filter((n) => n.user_id === bob.id)).toHaveLength(1);
+    expect(push.sendCommunityPush.mock.calls.filter(([p]) => p.recipientId === bob.id)).toHaveLength(1);
+    if (kind === 'photo') {
+      const target = `${bob.id}/${cohortId}-1.sent.jpg`;
+      expect(db.table('communityVoiceErasure')).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'image_object', target, reason: 'moderation' })]));
+    }
+    const pings = (realtime.broadcastCommunityEvent.mock.calls as unknown[][]).filter((c) => c[1] === 'community.message.updated');
+    expect(pings).toEqual([[
+      { workspaceId: wsId, cohortId },
+      'community.message.updated',
+      expect.objectContaining({ id, workspaceId: wsId, cohortId, authorId: bob.id, removedBy: { role: 'coach', userId: coach.id } }),
+      { distinctId: coach.id, channelKind: 'cohort' },
+    ]]);
     expect((await moderation.listFlagged(coach, {})).items).toHaveLength(0);
+  });
+
+  // FR-1165R3 (owner B "3.) b", LS-1165R2 B1): a coach's removal of a post,
+  // a post comment or a challenge comment is the attributed placeholder for
+  // the phone that asks (REMOVED_ROWS_HEADER, REMOVED-BY-M3); today's phone,
+  // which does not ask, keeps today's behaviour (left out).
+  const postPing = (id: string) => [
+    { workspaceId: wsId, cohortId: null },
+    'community.post.updated',
+    { id, workspaceId: wsId, updatedAt: expect.any(String) },
+    { distinctId: coach.id, channelKind: 'workspace' },
+  ];
+  const byCoach = () => ({ role: 'coach', user_id: coach.id, name: expect.any(String) });
+
+  it("a coach's DELETE of a member's post leaves the placeholder, tells the author once and pings the post", async () => {
+    const p = (await posts.create(bob, wsId, { title: 'Rude title', body: 'rude words' })).post;
+    realtime.broadcastCommunityEvent.mockClear();
+    const del = await posts.remove(coach, p.id, true);
+    expect(del.post).toMatchObject({ id: p.id, deleted: true, title: null, body: null, removed_by: byCoach() });
+    expect(db.table('communityPost').find((x) => x.id === p.id)).toMatchObject({ title: null, body: null, removed_by_user_id: coach.id });
+    const row = (await posts.list(alice, wsId, {}, true)).posts.find((x) => x.id === p.id);
+    expect(row).toMatchObject({ deleted: true, title: null, body: null, pinned: false, reactions: [], removed_at: expect.any(String), removed_by: byCoach() });
+    expect(JSON.stringify(row)).not.toMatch(/rude/i);
+    expect((await posts.getOne(alice, p.id, true)).post.removed_by).toEqual(byCoach());
+    expect((await posts.listComments(alice, p.id, true)).comments).toEqual([]);
+    // Today's phone: left out, as before.
+    expect((await posts.list(alice, wsId, {})).posts.map((x) => x.id)).not.toContain(p.id);
+    await expect(posts.getOne(alice, p.id)).rejects.toBeInstanceOf(NotFoundException);
+    expect(db.table('notification').filter((n) => n.user_id === bob.id)).toHaveLength(1);
+    expect(realtime.broadcastCommunityEvent.mock.calls).toEqual([postPing(p.id)]);
+    // A second DELETE finds nothing; an author's own delete still vanishes.
+    await expect(posts.remove(coach, p.id, true)).rejects.toBeInstanceOf(NotFoundException);
+    const own = (await posts.create(bob, wsId, { title: 'Mine', body: 'mine' })).post;
+    await posts.remove(bob, own.id, true);
+    expect((await posts.list(alice, wsId, {}, true)).posts.map((x) => x.id)).not.toContain(own.id);
+    expect(db.table('notification').filter((n) => n.user_id === bob.id)).toHaveLength(1);
+  });
+
+  it('the queue Hide of a post and of a post comment leaves placeholders and pings the post once each', async () => {
+    const host = (await posts.create(coach, wsId, { title: 'Check in', body: 'How was the week' })).post;
+    const c = (await posts.addComment(bob, host.id, 'rude reply')).comment;
+    const kept = (await posts.addComment(carol, host.id, 'kind reply')).comment;
+    const p = (await posts.create(bob, wsId, { title: 'Mine', body: 'rude post' })).post;
+    for (const [type, id, pinged] of [['comment', c.id, host.id], ['post', p.id, p.id]] as const) {
+      const r = await moderation.report(alice, type, id, 'harassment', undefined);
+      realtime.broadcastCommunityEvent.mockClear();
+      expect((await moderation.act(coach, r.item.id, 'hide', undefined)).item.status).toBe('actioned');
+      const pings = (realtime.broadcastCommunityEvent.mock.calls as unknown[][]).filter((x) => x[1] === 'community.post.updated');
+      expect(pings).toEqual([postPing(pinged)]);
+    }
+    const replies = (await posts.listComments(alice, host.id, true)).comments;
+    expect(replies).toEqual([
+      expect.objectContaining({ id: c.id, body: null, reactions: [], removed_at: expect.any(String), removed_by: byCoach() }),
+      expect.objectContaining({ id: kept.id, body: 'kind reply' }),
+    ]);
+    expect(replies[1]).not.toHaveProperty('removed_by');
+    expect((await posts.listComments(alice, host.id)).comments.map((x) => x.id)).toEqual([kept.id]);
+    expect((await posts.list(alice, wsId, {}, true)).posts.find((x) => x.id === p.id)).toMatchObject({ title: null, body: null, removed_by: byCoach() });
+    expect(db.table('notification').filter((n) => n.user_id === bob.id)).toHaveLength(2);
+  });
+
+  it('the queue Hide of a challenge comment leaves the placeholder for the phone that asks', async () => {
+    const challenges = new CommunityChallengesService(
+      new CommunityAccessService(prisma),
+      new CommunityChallengesRepository(prisma),
+      moderation,
+      stub<CommunityRealtimeService>(realtime),
+      stub<CommunityNotificationsService>(push),
+      safety,
+    );
+    const ch = String(db.seed('communityChallenge', { workspace_id: wsId, cohort_id: cohortId, created_by_id: coach.id, title: 'Steps', status: 'active', archived_at: null }).id);
+    const c = String(db.seed('communityMessage', { workspace_id: wsId, cohort_id: cohortId, scope: 'cohort', kind: 'text', sender_id: bob.id, body: 'rude cheer', visibility: 'active', plan_context_type: 'community_challenge_comment', plan_context_id: ch }).id);
+    const r = await moderation.report(alice, 'comment', c, 'harassment', undefined);
+    await moderation.act(coach, r.item.id, 'hide', undefined);
+    const shown = await challenges.listComments(alice, ch, {}, true);
+    expect(shown.comments).toEqual([expect.objectContaining({ id: c, body: null, removed_at: expect.any(String), removed_by: byCoach() })]);
+    expect((await challenges.listComments(alice, ch, {})).comments).toEqual([]);
+  });
+
+  // LS-1165R4 B1 (owner #178-7 op 1): the coach's DELETE and the queue's Hide take the post's
+  // search copy (the reindex route's row: its title and body words) out of search and erase its
+  // words, in the removal's own transaction. A reply has no search copy and the reindex cannot
+  // make one. The live search, by each word: test/rls/community-removed-post-search-rls.spec.ts.
+  it('a removal takes the post search copy with it in the same transaction; a reply has none', async () => {
+    const search = new CommunitySearchController(stub<CommunitySearchService>({}),
+      new SearchIndexerService(new CommunitySearchRepository(prisma)), new CommunityAccessService(prisma), prisma);
+    const asCoach = stub<AuthedRequest>({ user: coach });
+    const copy = (id: string) => db.table('communitySearchEntry').filter((e) => e.targetId === id);
+    const indexed = async (title: string, body: string) => {
+      const p = (await posts.create(bob, wsId, { title, body })).post;
+      await search.reindex(asCoach, wsId, { kind: 'post', targetId: p.id, title, transcript: body });
+      return p.id;
+    };
+    const direct = await indexed('Kettlebell swing plan', 'deadlift tempo');
+    const queued = await indexed('Kettlebell clean drill', 'thruster grip');
+    const live = await indexed('Kettlebell press ladder', 'goblet squat');
+    const reply = (await posts.addComment(bob, live, 'burpee finisher')).comment.id;
+    await expect(search.reindex(asCoach, wsId, { kind: 'post', targetId: reply, title: 'burpee finisher' }))
+      .rejects.toBeInstanceOf(NotFoundException);
+    // A lost COMMIT of the DELETE rolls the search copy back with the post.
+    db.beforeCommit = () => {
+      throw new Error('connection lost before COMMIT');
+    };
+    await expect(posts.remove(coach, direct, true)).rejects.toThrow('connection lost before COMMIT');
+    expect(copy(direct)).toEqual([expect.objectContaining({ softDeletedAt: null, excerpt: 'Kettlebell swing plan \u2014 deadlift tempo' })]);
+    const committed: string[][] = [];
+    db.beforeCommit = (writes) => {
+      committed.push([...writes]);
+    };
+    await posts.remove(coach, direct, true);
+    for (const [type, id] of [['post', queued], ['comment', reply]] as const) {
+      const r = await moderation.report(alice, type, id, 'harassment', undefined);
+      expect((await moderation.act(coach, r.item.id, 'hide', undefined)).item.status).toBe('actioned');
+    }
+    // The DELETE's transaction and the Hide's each hold the post's removal and its search copy's.
+    expect(committed.filter((w) => w.includes('communitySearchEntry.updateMany'))).toEqual([
+      expect.arrayContaining(['communityPost.updateMany', 'communitySearchEntry.updateMany', 'notification.create']),
+      expect.arrayContaining(['communityModerationAction.updateMany', 'communityPost.updateMany', 'communitySearchEntry.updateMany']),
+    ]);
+    for (const id of [direct, queued]) {
+      expect(copy(id)).toEqual([expect.objectContaining({ softDeletedAt: expect.any(Date), excerpt: '' })]);
+    }
+    expect(copy(live)).toEqual([expect.objectContaining({ softDeletedAt: null, excerpt: 'Kettlebell press ladder \u2014 goblet squat' })]);
+    expect(copy(reply)).toEqual([]);
+    // The placeholders still show.
+    const hall = (await posts.list(alice, wsId, {}, true)).posts;
+    for (const id of [direct, queued]) {
+      expect(hall.find((x) => x.id === id)).toMatchObject({ title: null, body: null, removed_by: byCoach() });
+    }
+    expect((await posts.listComments(alice, live, true)).comments).toEqual([
+      expect.objectContaining({ id: reply, body: null, removed_by: byCoach() }),
+    ]);
   });
 
   it('warn notifies the author and keeps their access', async () => {
