@@ -20,7 +20,7 @@ import { CommunityImageStore, mintImageKey, sentImageKey } from '../../../src/co
 import { PHOTO_CHECK_RULES } from '../../../src/community/images/community-photo-check';
 import { CommunityMessagesService } from '../../../src/community/messages/community-messages.service';
 import { CommunityMessagesRepository } from '../../../src/community/messages/community-messages.repository';
-import type { CommunityAccessService } from '../../../src/community/community-access.service';
+import { CommunityAccessService } from '../../../src/community/community-access.service';
 import type { CommunityRealtimeService } from '../../../src/community/realtime/community-realtime.service';
 import type { PlanContextService } from '../../../src/community/plan-context/plan-context.service';
 import type { CommunityNotificationsService } from '../../../src/community/notifications/community-notifications.service';
@@ -77,8 +77,27 @@ type Reply = (part: Part) => Response | Promise<Response>;
 const scoring = (photo: Scores = {}, caption: Scores = {}, flags: Record<string, boolean> = {}): Reply => (part) =>
   respond([result(part, part === 'image' ? photo : caption, part === 'text' ? flags : {})]);
 
+// A Prisma where over plain rows: equality, `in` and a nested relation.
+const fits = (row: unknown, where: unknown): boolean =>
+  Object.entries((where ?? {}) as Record<string, unknown>).every(([k, c]) => {
+    const v = (row as Record<string, unknown>)[k];
+    if (c === null || typeof c !== 'object') return v === c;
+    const o = c as Record<string, unknown>;
+    return 'in' in o ? (o.in as unknown[]).includes(v) : fits(v, o);
+  });
+
+type SpaceOpts = { visibility: string; owner: string; team: Array<Record<string, unknown>> };
+
 function world(
-  opts: { reply?: Reply; shortBody?: boolean; alerts?: Partial<CoachAlertsService> | null; stallSignAt?: number; stallBody?: boolean } = {},
+  opts: {
+    reply?: Reply;
+    shortBody?: boolean;
+    alerts?: Partial<CoachAlertsService> | null;
+    stallSignAt?: number;
+    stallBody?: boolean;
+    space?: SpaceOpts; // the space's visibility, workspace owner and memberships
+    blocks?: Array<[string, string]>;
+  } = {},
 ) {
   const objects = new Map<string, Buffer>();
   const messages: CommunityMessage[] = [];
@@ -147,18 +166,24 @@ function world(
       create: async ({ data }: { data: Record<string, unknown> }) => (rows.push(data), data),
       findMany: async () => rows,
     },
-    communityWorkspace: { findUnique: async () => ({ coach_id: 'coach-1' }) },
+    communityWorkspace: { findUnique: async () => ({ coach_id: opts.space?.owner ?? 'coach-1' }) },
     user: { findMany: async () => [] },
-    communityMembership: { findMany: async () => [] },
+    communityMembership: {
+      findMany: async (args?: { where?: unknown }) => (opts.space?.team ?? []).filter((m) => fits(m, args?.where)),
+    },
     communityCohort: { findMany: async () => [] },
     $queryRaw: async () => [],
   };
-  const access = stub<CommunityAccessService>({
-    findCohort: async (id: string) => (id === SPACE ? { id, workspace_id: WS, kind: 'group' } : null),
-    canAccessCohort: async () => true,
-    assertCanPost: async () => undefined,
-    isWorkspaceCoach: async () => false,
-  });
+  // The real access service over the fake rows, with the post checks stubbed.
+  const access = stub<CommunityAccessService>(
+    Object.assign(Object.create(new CommunityAccessService(stub<PrismaService>(prisma))), {
+      findCohort: async (id: string) =>
+        id === SPACE ? { id, workspace_id: WS, kind: 'group', ...(opts.space ? { visibility: opts.space.visibility } : {}) } : null,
+      canAccessCohort: async () => true,
+      assertCanPost: async () => undefined,
+      isWorkspaceCoach: async () => false,
+    }),
+  );
   const createAlert = jest.fn(async (_input: Record<string, unknown>) => ({ id: 'alert-1' }));
   const alerts = opts.alerts === undefined ? { createAlert } : opts.alerts;
   const moduleRef = stub<ModuleRef>({
@@ -174,7 +199,7 @@ function world(
     new CommunityMessagesRepository(stub<PrismaService>(prisma)),
     stub<CommunityRealtimeService>({ channels: { cohort: () => 'c' }, cohortShard: () => 0, broadcastCommunityEvent: async () => undefined }),
     stub<PlanContextService>({ validate: async () => null }),
-    safetyWithBlocks(),
+    safetyWithBlocks(opts.blocks),
     stub<CommunityNotificationsService>({ pushEnabled: () => false }),
     store,
     undefined, // main's space push (SC-PUSH): not under test here
@@ -489,7 +514,7 @@ describe('the coach alert for a self-harm refusal (#172-5 op 2)', () => {
     expect(w.createAlert).not.toHaveBeenCalled();
   });
 
-  it('no coach, no alert, and the refusal stands; the same for a coach or a failed alert write', async () => {
+  it('outside a public space: no coach, no alert, and the refusal stands; the same for a coach or a failed alert write', async () => {
     const reply = scoring({ 'self-harm/intent': 0.9 });
     for (const who of [stub<User>({ id: ME, role: 'student', coach_id: null }), stub<User>({ id: ME, role: 'coach', coach_id: COACH })]) {
       const w = world({ reply });
@@ -509,6 +534,80 @@ describe('the coach alert for a self-harm refusal (#172-5 op 2)', () => {
     w.setReply(scoring({}, { 'self-harm/intent': 0.95 }));
     expect(await codeOf(w.edit(id, 'new caption'))).toBe('422 CAPTION_NOT_ALLOWED');
     expect(w.createAlert).not.toHaveBeenCalled();
+  });
+});
+
+// FR-1152R3 B1 (LS-1152R3; owner rule D, 10-26): "ALL alerts and information go to the space
+// owner and their team, plus your resident coach (or just the space owner if coachless)".
+describe('B1 (rule D): in a public space the owner and the team get the alert too', () => {
+  const OWNER = 'dddddddd-0000-4000-8000-000000000001';
+  const TEAM = 'dddddddd-0000-4000-8000-000000000002';
+  const OTHER = 'dddddddd-0000-4000-8000-000000000003'; // another coach; not in the space
+  const member = (user_id: string, role: string, userRole = 'coach', status = 'active') =>
+    ({ cohort_id: SPACE, user_id, role, status, user: { role: userRole } });
+  const PUBLIC: SpaceOpts = { visibility: 'public', owner: OWNER, team: [member(TEAM, 'assistant')] };
+  // Wording row SPACE-PUSH (owner rule 137-2).
+  const SPACE_PUSH = 'Urgent safety alert in one of your spaces. Open TGP to see details.';
+  const spaceCopy = (coachId: string) =>
+    ({ coachId, clientId: ME, alertType: 'community_photo_safety', severity: 'critical', message: SPACE_PUSH, payload: { space_id: SPACE } });
+  const resident = (coachId: string) =>
+    ({ coachId, clientId: ME, alertType: 'community_photo_safety', severity: 'critical', message: URGENT_PUSH });
+  const SELF_HARM = scoring({ 'self-harm/intent': 0.9 });
+  const poster = (coach_id: string | null) => stub<User>({ id: ME, role: 'student', coach_id });
+  const byCoach = (xs: Array<Record<string, unknown>>) => [...xs].sort((a, b) => String(a.coachId).localeCompare(String(b.coachId)));
+  const written = (calls: Array<[Record<string, unknown>]>) => byCoach(calls.map(([input]) => input));
+
+  it.each<[string, string | null, Array<Record<string, unknown>>]>([
+    ['a coachless poster: the owner and the team', null, [spaceCopy(OWNER), spaceCopy(TEAM)]],
+    ["another coach's client: that coach, the owner and the team", OTHER, [resident(OTHER), spaceCopy(OWNER), spaceCopy(TEAM)]],
+    ["the owner's own client: one copy for the owner, a space copy", OWNER, [spaceCopy(OWNER), spaceCopy(TEAM)]],
+    ["the team member's own client: one copy for them, a space copy", TEAM, [spaceCopy(OWNER), spaceCopy(TEAM)]],
+  ])('%s', async (_who, coachId, want) => {
+    const w = world({ reply: SELF_HARM, space: PUBLIC });
+    expect(await codeOf(w.send(CAPTION, poster(coachId)))).toBe('422 PHOTO_NOT_ALLOWED');
+    expect(written(w.createAlert.mock.calls)).toEqual(byCoach(want));
+  });
+
+  it('a caption edit refused for self-harm alerts them too', async () => {
+    const w = world({ space: PUBLIC });
+    const id = (await w.send(CAPTION, poster(null))).message.id;
+    w.setReply(scoring({}, { 'self-harm/intent': 0.95 }));
+    expect(await codeOf(w.edit(id, 'new caption', poster(null)))).toBe('422 CAPTION_NOT_ALLOWED');
+    expect(written(w.createAlert.mock.calls)).toEqual(byCoach([spaceCopy(OWNER), spaceCopy(TEAM)]));
+  });
+
+  it('not to anyone in a block with the poster either way, a removed member, or a member who is a client', async () => {
+    const [BLOCKED, BLOCKER, GONE, CLIENT] = ['4', '5', '6', '7'].map((n) => `dddddddd-0000-4000-8000-00000000000${n}`);
+    const team = [member(TEAM, 'assistant'), member(BLOCKED, 'coach'), member(BLOCKER, 'assistant'), member(GONE, 'coach', 'coach', 'removed'), member(CLIENT, 'assistant', 'student')];
+    const w = world({ reply: SELF_HARM, space: { ...PUBLIC, team }, blocks: [[ME, BLOCKED], [BLOCKER, ME]] });
+    expect(await codeOf(w.send(CAPTION, poster(null)))).toBe('422 PHOTO_NOT_ALLOWED');
+    expect(written(w.createAlert.mock.calls)).toEqual(byCoach([spaceCopy(OWNER), spaceCopy(TEAM)]));
+    const ownerBlocked = world({ reply: SELF_HARM, space: PUBLIC, blocks: [[OWNER, ME]] });
+    expect(await codeOf(ownerBlocked.send(CAPTION, poster(COACH)))).toBe('422 PHOTO_NOT_ALLOWED');
+    expect(written(ownerBlocked.createAlert.mock.calls)).toEqual(byCoach([resident(COACH), spaceCopy(TEAM)]));
+  });
+
+  it('a space that is not public: the resident copy only, as before', async () => {
+    for (const visibility of ['clients', 'package', 'members']) {
+      const w = world({ reply: SELF_HARM, space: { ...PUBLIC, visibility } });
+      expect(await codeOf(w.send())).toBe('422 PHOTO_NOT_ALLOWED');
+      expect(w.createAlert.mock.calls).toEqual([[resident(COACH)]]);
+    }
+  });
+
+  it('other refusals and a coach poster raise none; one failed copy does not stop the others or the refusal', async () => {
+    const other = world({ reply: scoring({ sexual: 0.99, 'violence/graphic': 0.99 }, { hate: 0.99 }), space: PUBLIC });
+    expect(await codeOf(other.send(CAPTION, poster(null)))).toBe('422 PHOTO_NOT_ALLOWED');
+    const coach = world({ reply: SELF_HARM, space: PUBLIC });
+    expect(await codeOf(coach.send(CAPTION, stub<User>({ id: ME, role: 'coach', coach_id: null })))).toBe('422 PHOTO_NOT_ALLOWED');
+    expect([...other.createAlert.mock.calls, ...coach.createAlert.mock.calls]).toEqual([]);
+    const createAlert = jest.fn(async (input: Record<string, unknown>) => {
+      if (input.coachId === OWNER) throw new Error('db down');
+      return { id: 'alert-2' };
+    });
+    const failing = world({ reply: SELF_HARM, space: PUBLIC, alerts: stub<CoachAlertsService>({ createAlert }) });
+    expect(await codeOf(failing.send(CAPTION, poster(null)))).toBe('422 PHOTO_NOT_ALLOWED');
+    expect(written(createAlert.mock.calls)).toEqual(byCoach([spaceCopy(OWNER), spaceCopy(TEAM)]));
   });
 });
 
