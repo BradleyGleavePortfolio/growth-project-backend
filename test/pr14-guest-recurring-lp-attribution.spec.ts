@@ -82,6 +82,7 @@ function buildPrismaMocks() {
     },
     user: {
       findUnique: jest.fn(),
+      findFirst: jest.fn().mockResolvedValue(null), // GUEST-ELIGIBILITY: a new email
       create: jest.fn(),
       update: jest.fn(),
       upsert: jest.fn(),
