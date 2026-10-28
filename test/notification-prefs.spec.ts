@@ -22,6 +22,7 @@ const mockPrisma = {
   user: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn().mockResolvedValue(null) },
   subCoachAssignment: { findMany: jest.fn().mockResolvedValue([]) },
   coachingSession: { findMany: jest.fn().mockResolvedValue([]) },
+  communityCohort: { findMany: jest.fn().mockResolvedValue([]) }, // FR-1152R3 B1: leads no public space
   notificationPreferences: {
     findUnique: jest.fn(({ where }: { where: { user_id: string } }) =>
       Promise.resolve(storedPrefs.get(where.user_id) ?? null),
