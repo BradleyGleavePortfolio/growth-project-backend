@@ -1,0 +1,5 @@
+test/community/
+src/community/
+test/community.service.spec.ts
+test/report-alerts/report-alert.spec.ts
+test/account-deletion
