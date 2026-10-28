@@ -12,6 +12,13 @@
  * (notification_owner_access, 20270410000000) as the request role: the client
  * reads it (control); another client, the coach and another coach read none.
  *
+ * B-LONOTIFY3-1 / B-LSNOTIFY3-3 (FR-NOTIFY4, owner #169-5 "Dissapear"; block
+ * contract b#1141 6354139283): while the coach and the client are in a block,
+ * either way, the nudge is not listed, not counted and not marked; nothing is
+ * deleted and unblock brings it back. The same rule covers the AI-drafted
+ * notice the coach approved and the coach's message notices for that chat.
+ * CPC-W2 (owner 10-27 DECISIONS #178-3): the lock screen reads as a new message.
+ *
  * Gate: TEST_DATABASE_URL. No URL -> skip, except under CI=true (hard failure).
  */
 import { randomUUID } from 'crypto';
@@ -42,6 +49,7 @@ const MESSAGE = `Hi, your weigh-in is up 3 kg this week. ${'Call me tonight and 
   const id = Object.fromEntries(keys.map((k) => [k, randomUUID()])) as Record<Key, string>;
   const sub = Object.fromEntries(keys.map((k) => [k, randomUUID()])) as Record<Key, string>;
   const interventionId = randomUUID();
+  const interventionB = randomUUID();
   const sendKey = randomUUID();
   const notifications = new NotificationsService(stub<ConstructorParameters<typeof NotificationsService>[0]>(prisma));
   const service = new ChurnInterventionService(
@@ -77,6 +85,9 @@ const MESSAGE = `Hi, your weigh-in is up 3 kg this week. ${'Call me tonight and 
     await prisma.churnIntervention.create({
       data: { id: interventionId, coach_id: id.K, client_id: id.A, draft_text: 'Hi', idempotency_key: randomUUID() },
     });
+    await prisma.churnIntervention.create({
+      data: { id: interventionB, coach_id: id.K, client_id: id.B, draft_text: 'Hi', idempotency_key: randomUUID() },
+    });
   });
   afterAll(async () => {
     jest.restoreAllMocks();
@@ -100,19 +111,20 @@ const MESSAGE = `Hi, your weigh-in is up 3 kg this week. ${'Call me tonight and 
       deep_link: null,
       read_at: null,
       inbox_hidden: false,
-      payload: { title: 'Message from your coach', nudge_id: nudgeId },
+      // B-LONOTIFY3-1: the row names its coach, so a block can hide it.
+      payload: { title: 'Message from your coach', nudge_id: nudgeId, coach_id: id.K },
     });
     rowId = rows[0].id;
     expect((await prisma.churnIntervention.findUnique({ where: { id: interventionId } }))?.status).toBe('sent');
   });
 
-  it('the push (no token here) names that row and the inbox screen; the lock screen line is generic', async () => {
+  it('the push (no token here) names that row and the inbox screen; the lock screen reads as a new message (CPC-W2)', async () => {
     expect(pushes).toHaveBeenCalledTimes(1);
     const [to, title, body, data] = pushes.mock.calls[0];
     expect(to).toBe(id.A);
     expect({ title, body }).toEqual({
-      title: 'The Growth Project',
-      body: 'You have a new notification. Open the app to see it.',
+      title: 'New message',
+      body: 'You have a new message. Open the app to read it.',
     });
     expect(data).toEqual({
       type: 'coach_nudge',
@@ -144,5 +156,84 @@ const MESSAGE = `Hi, your weigh-in is up 3 kg this week. ${'Call me tonight and 
     expect(await inboxRowsAs('B', rowId)).toBe(0);
     expect(await inboxRowsAs('K', rowId)).toBe(0);
     expect(await inboxRowsAs('L', rowId)).toBe(0);
+  });
+  it('(failed before) B-LONOTIFY3-1: a block either way hides the nudge from the list, the badge and the read marks; unblock restores it', async () => {
+    // Controls that must stay listed for the client through a block: a row with
+    // no payload, and a coach_nudge row whose payload has no coach_id (a JSON
+    // path that is SQL NULL). And another client of the same coach.
+    const plain = await prisma.notification.create({
+      data: { user_id: id.A, kind: 'milestone_reached', channel: 'inapp', body: 'You hit a milestone' },
+    });
+    const other = await prisma.notification.create({
+      data: { user_id: id.A, kind: 'coach_nudge', channel: 'inapp', body: 'From the app', payload: { title: 'Update' } },
+    });
+    await service.sendIntervention(id.K, interventionB, { message_text: 'Hi B', idempotency_key: randomUUID() });
+    const listed = async (who: Key) =>
+      (await notifications.listNotifications(id[who], {})).items.map((n) => n.id).sort();
+    const visible = [plain.id, other.id].sort();
+
+    for (const [blocker, blocked] of [['A', 'K'], ['K', 'A']] as const) {
+      await prisma.userBlock.create({ data: { blocker_id: id[blocker], blocked_id: id[blocked] } });
+      expect(await listed('A')).toEqual(visible);
+      expect(await notifications.getUnreadCount(id.A)).toBe(2); // the bell badge counts the nudge 0
+      await expect(notifications.markRead(rowId, id.A)).rejects.toThrow('Notification not found');
+      // Control: the coach's other client is not in a block and still has theirs.
+      const b = await notifications.listNotifications(id.B, {});
+      expect(b.items.map((n) => n.body)).toEqual(['Hi B']);
+      await prisma.userBlock.deleteMany({ where: { blocker_id: id[blocker], blocked_id: id[blocked] } });
+      // Unblock: back as it was, still unread.
+      expect(await listed('A')).toEqual([...visible, rowId].sort());
+      expect(await notifications.getUnreadCount(id.A)).toBe(3);
+    }
+
+    // Mark all read during a block leaves the hidden row unread.
+    await prisma.userBlock.create({ data: { blocker_id: id.A, blocked_id: id.K } });
+    expect(await notifications.markAllRead(id.A)).toEqual({ updated: 2 });
+    await prisma.userBlock.deleteMany({ where: { blocker_id: id.A, blocked_id: id.K } });
+    expect(await notifications.getUnreadCount(id.A)).toBe(1);
+    expect((await prisma.notification.findUniqueOrThrow({ where: { id: rowId } })).read_at).toBeNull();
+    expect(await prisma.notification.count({ where: { user_id: id.A, kind: 'coach_nudge' } })).toBe(2);
+  });
+
+  it('(failed before) the same rule hides what else names the other person: the AI notice they approved, and the chat\'s message notices', async () => {
+    // The AI-drafted notice the coach approved (send-notification materialiser
+    // shape, payload.approvedByCoachId) in the client's inbox.
+    const ai = await prisma.notification.create({
+      data: {
+        user_id: id.A, kind: 'coach_nudge', channel: 'push', body: 'A note from your coach',
+        payload: { aiDraftId: randomUUID(), authoredBy: 'ai', approvedByCoachId: id.K },
+      },
+    });
+    // The coach's message notices (MessageReceivedEmitter shape: the thread is
+    // the client) for the chat with A, and for the chat with B (control).
+    const withA = await prisma.notification.create({
+      data: {
+        user_id: id.K, kind: 'message_received', channel: 'inapp', body: 'New message from RLS user',
+        deep_link: `tgp://messages/${id.A}`, payload: { senderName: 'RLS user', threadId: id.A },
+      },
+    });
+    const withB = await prisma.notification.create({
+      data: {
+        user_id: id.K, kind: 'message_received', channel: 'inapp', body: 'New message from RLS user',
+        deep_link: `tgp://messages/${id.B}`, payload: { senderName: 'RLS user', threadId: id.B },
+      },
+    });
+    const listed = async (who: Key) =>
+      (await notifications.listNotifications(id[who], {})).items.map((n) => n.id);
+    expect(await listed('A')).toContain(ai.id);
+    expect(await listed('K')).toEqual(expect.arrayContaining([withA.id, withB.id]));
+
+    await prisma.userBlock.create({ data: { blocker_id: id.K, blocked_id: id.A } });
+    expect(await listed('A')).not.toContain(ai.id);
+    const coach = await listed('K');
+    expect(coach).not.toContain(withA.id);
+    expect(coach).toContain(withB.id);
+    const coachUnread = await notifications.getUnreadCount(id.K);
+    await expect(notifications.markRead(withA.id, id.K)).rejects.toThrow('Notification not found');
+
+    await prisma.userBlock.deleteMany({ where: { blocker_id: id.K, blocked_id: id.A } });
+    expect(await listed('A')).toContain(ai.id);
+    expect(await listed('K')).toEqual(expect.arrayContaining([withA.id, withB.id]));
+    expect(await notifications.getUnreadCount(id.K)).toBe(coachUnread + 1);
   });
 });

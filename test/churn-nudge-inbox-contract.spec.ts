@@ -3,13 +3,14 @@ import { Logger } from '@nestjs/common';
 import { Expo, ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk';
 import { ChurnInterventionService } from '../src/coach/command-center/churn-intervention.service';
 import { NotificationsService } from '../src/notifications/notifications.service';
-import { lockScreenCopy } from '../src/notifications/push/lock-screen-copy';
 import { stub } from './utils/trial-fakes';
 
 // B-LSNOTIFY-2 (FR-NOTIFY2, agent 177; b#1171 AUDIT 6426427779) — contract:
-// coach sends a churn nudge -> the client's phone gets the generic lock-screen
-// line -> the tap opens the inbox the Home bell opens -> that inbox lists the
-// nudge with the coach's whole message.
+// coach sends a churn nudge -> the client's phone gets the new-message
+// lock-screen line (CPC-W2, owner DECISIONS #178-3) -> the tap opens the inbox
+// the Home bell opens -> that inbox lists the nudge with the coach's whole
+// message. B-LONOTIFY3-1 (FR-NOTIFY4): while the two are in a block either way
+// the row is not listed, counted or marked; unblock brings it back.
 //
 // Real ChurnInterventionService.sendIntervention, real
 // NotificationsService.pushToUser (Expo transport spied) and the real inbox
@@ -60,6 +61,7 @@ function matches(row: Row, where: Row | undefined): boolean {
 function world(opts: { muted?: boolean; token?: string | null } = {}) {
   const inbox: Row[] = [];
   const nudges: Row[] = [];
+  const blocks: Row[] = [];
   const intervention = {
     id: 'int-1', coach_id: COACH, client_id: CLIENT, status: 'draft', draft_text: 'Hi',
     send_idempotency_key: null as string | null, nudge_id: null as string | null, sent_at: null as Date | null,
@@ -73,6 +75,16 @@ function world(opts: { muted?: boolean; token?: string | null } = {}) {
     findMany: jest.fn(async (a: { where: Row }) => inbox.filter((r) => matches(r, a.where))),
     count: jest.fn(async (a: { where: Row }) => inbox.filter((r) => matches(r, a.where)).length),
     findUnique: jest.fn(async () => null),
+    findFirst: jest.fn(async (a: { where: Row }) => inbox.find((r) => matches(r, a.where)) ?? null),
+    update: jest.fn(async (a: { where: { id: string }; data: Row }) => {
+      const row = inbox.find((r) => r.id === a.where.id);
+      return Object.assign(row ?? {}, a.data);
+    }),
+    updateMany: jest.fn(async (a: { where: Row; data: Row }) => {
+      const hit = inbox.filter((r) => matches(r, a.where));
+      hit.forEach((r) => Object.assign(r, a.data));
+      return { count: hit.length };
+    }),
   };
   const tx = {
     $queryRaw: jest.fn(async () => [{ id: CLIENT, coach_id: COACH, role: 'student', deleted_at: null }]),
@@ -99,7 +111,7 @@ function world(opts: { muted?: boolean; token?: string | null } = {}) {
       ),
     },
     notificationPreferences: { findUnique: jest.fn(async () => (opts.muted ? { muted: true } : null)) },
-    userBlock: { findMany: jest.fn(async () => []) },
+    userBlock: { findMany: jest.fn(async (a: { where: Row }) => blocks.filter((b) => matches(b, a.where))) },
     user: {
       findUnique: jest.fn(async () => ({
         role: 'student',
@@ -131,6 +143,7 @@ function world(opts: { muted?: boolean; token?: string | null } = {}) {
   return {
     inbox,
     nudges,
+    blocks,
     notifications,
     send: (text: string) => svc.sendIntervention(COACH, 'int-1', { message_text: text, idempotency_key: key }),
     /** What reached the Expo transport, after the fire-and-forget push settles. */
@@ -166,17 +179,19 @@ describe('B-LSNOTIFY-2 contract: churn nudge -> generic push -> client inbox row
   });
   afterAll(() => jest.restoreAllMocks());
 
-  it('unmuted with a token: the lock screen gets the generic line; the tap opens the inbox; the inbox has the whole message', async () => {
+  it('unmuted with a token: the lock screen gets the new-message line; the tap opens the inbox; the inbox has the whole message', async () => {
     const w = world();
     const out = await w.send(MESSAGE);
     const { results, sent } = await w.delivered();
     expect(results).toEqual([{ delivered: true, code: 'delivered' }]);
     expect(sent).toHaveLength(1);
 
-    // 1) Lock screen: the copy table's generic line, nothing from the message.
-    const line = lockScreenCopy('coach_nudge', MESSAGE);
-    expect(line).toEqual({ title: 'The Growth Project', body: 'You have a new notification. Open the app to see it.' });
-    expect({ title: sent[0].title, body: sent[0].body }).toEqual(line);
+    // 1) Lock screen (CPC-W2, owner 10-27 DECISIONS #178-3): the new-message
+    //    line, nothing from the message.
+    expect({ title: sent[0].title, body: sent[0].body }).toEqual({
+      title: 'New message',
+      body: 'You have a new message. Open the app to read it.',
+    });
     expect(`${sent[0].title} ${sent[0].body}`).not.toMatch(/Alice|weigh-in|3 kg|sessions|Call me|coach/i);
 
     // 2) Tap target the phone knows: an explicit NotificationCenter, and a kind
@@ -199,7 +214,7 @@ describe('B-LSNOTIFY-2 contract: churn nudge -> generic push -> client inbox row
       kind: 'coach_nudge',
       channel: 'inapp',
       body: MESSAGE,
-      payload: { title: 'Message from your coach', nudge_id: out.nudge_id },
+      payload: { title: 'Message from your coach', nudge_id: out.nudge_id, coach_id: COACH },
     });
     expect(MESSAGE.length).toBe(1000);
     expect(page.unreadCount).toBe(1);
@@ -239,5 +254,40 @@ describe('B-LSNOTIFY-2 contract: churn nudge -> generic push -> client inbox row
     const { sent } = await w.delivered();
     expect(sent).toHaveLength(1);
     expect((await w.notifications.listNotifications(CLIENT, {})).items).toHaveLength(1);
+  });
+  it('(failed before) B-LONOTIFY3-1: a block either way hides the nudge from the list, the badge and the read marks; unblock restores it', async () => {
+    const w = world();
+    const out = await w.send(MESSAGE);
+    // Control: the client's other rows stay (no payload at all, and a payload without coach_id).
+    w.inbox.push(
+      { id: 'n-plain', user_id: CLIENT, kind: 'milestone_reached', channel: 'inapp', body: 'You hit a milestone',
+        deep_link: null, payload: null, read_at: null, inbox_hidden: false, created_at: new Date() },
+      { id: 'n-other', user_id: CLIENT, kind: 'coach_nudge', channel: 'inapp', body: 'From the app',
+        deep_link: null, payload: { title: 'Update' }, read_at: null, inbox_hidden: false, created_at: new Date() },
+    );
+    const nudgeRow = w.inbox.find((r) => (r.payload as Row | null)?.nudge_id === out.nudge_id);
+    expect(nudgeRow).toBeDefined();
+    const rowId = String(nudgeRow?.id);
+    const listed = async () => (await w.notifications.listNotifications(CLIENT, {})).items.map((n) => n.id).sort();
+
+    for (const block of [{ blocker_id: CLIENT, blocked_id: COACH }, { blocker_id: COACH, blocked_id: CLIENT }]) {
+      w.blocks.push(block);
+      expect(await listed()).toEqual(['n-other', 'n-plain']);
+      expect(await w.notifications.getUnreadCount(CLIENT)).toBe(2); // the bell badge counts the nudge 0
+      await expect(w.notifications.markRead(rowId, CLIENT)).rejects.toThrow('Notification not found');
+      w.blocks.length = 0;
+      // Unblock: back as it was, still unread.
+      expect(await listed()).toEqual(['n-other', 'n-plain', rowId].sort());
+      expect(await w.notifications.getUnreadCount(CLIENT)).toBe(3);
+    }
+
+    // Mark all read during a block leaves the hidden row unread; unblock shows it unread.
+    w.blocks.push({ blocker_id: CLIENT, blocked_id: COACH });
+    expect(await w.notifications.markAllRead(CLIENT)).toEqual({ updated: 2 });
+    w.blocks.length = 0;
+    expect(await w.notifications.getUnreadCount(CLIENT)).toBe(1);
+    expect(nudgeRow?.read_at).toBeNull();
+    // Nothing was deleted.
+    expect(w.inbox).toHaveLength(3);
   });
 });

@@ -12,7 +12,6 @@ import { Prisma } from '@prisma/client';
 import { egressWithGrants, fakeOf, grantAllEgress } from './ai-egress/ai-egress.fakes';
 import { AnthropicHandle, type AnthropicMessagesClient } from '../src/ai-egress/ai-egress.service';
 import { AiConsentRequiredException } from '../src/ai-egress/ai-consent-required.exception';
-import { lockScreenCopy } from '../src/notifications/push/lock-screen-copy';
 
 class FakeP2002 extends Prisma.PrismaClientKnownRequestError {
   constructor(target: string) {
@@ -725,10 +724,13 @@ describe('ChurnInterventionService.sendIntervention', () => {
     return { notif, text, send };
   }
 
-  it("the client's lock screen shows the copy table's line, never the coach's text", async () => {
+  it("(failed before) CPC-W2: the client's lock screen shows the approved new-message line, never the coach's text", async () => {
+    // Owner 10-27 15:58, DECISIONS #178-3 (wording approved): a nudge reads as
+    // a new message on the lock screen; push kind, Mute all rule and data stay coach_nudge.
     const { notif, text, send } = sendWith(buildSendTestPrisma());
     const out = await send();
-    const line = lockScreenCopy('coach_nudge', text);
+    const line = { title: 'New message', body: 'You have a new message. Open the app to read it.' };
+    expect(text).toMatch(/Alice/);
     expect(notif.pushToUser).toHaveBeenCalledTimes(1);
     expect(notif.pushToUser).toHaveBeenCalledWith('u1', line.title, line.body, {
       type: 'coach_nudge',
@@ -759,7 +761,8 @@ describe('ChurnInterventionService.sendIntervention', () => {
       channel: 'inapp',
       body: long, // the whole message, not cut to 160
       deep_link: null,
-      payload: { title: 'Message from your coach', nudge_id: out.nudge_id },
+      // B-LONOTIFY3-1: the row names its coach, so a block can hide it.
+      payload: { title: 'Message from your coach', nudge_id: out.nudge_id, coach_id: 'c1' },
     });
     expect(prisma.rows.nudges[0].body).toBe(long);
     expect(notif.pushToUser).toHaveBeenCalledTimes(1);
