@@ -42,9 +42,10 @@ export const InboxItemSchema = z
     preview: z.string().max(200),
     created_at: z.string().datetime(),
     item_url_path: z.string(),
-    // VOICE-INBOX: 'voice' for a client's space voice note (id = the note's id; preview is "Voice note"), 'text'
-    // for every other row. voice is present only on a voice row.
-    kind: z.enum(['text', 'voice']),
+    // VOICE-INBOX: 'voice' for a client's space voice note (id = the note's id; preview is "Voice note"); INBOX-PHOTO:
+    // 'photo' for a space photo (preview is its caption, or "Photo" with none); 'text' for every other row. voice is
+    // present only on a voice row.
+    kind: z.enum(['text', 'voice', 'photo']),
     voice: z.object({ note_id: z.guid(), duration_ms: z.number().int().nonnegative() }).strict().optional(),
     // v2-2: see InboxAckSummarySchema. .optional() so the key is simply absent
     // when the flag is off.

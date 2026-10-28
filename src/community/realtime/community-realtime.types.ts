@@ -31,6 +31,31 @@ export const MessageUpdatedPayloadSchema = z
   })
   .strict();
 
+/**
+ * REMOVED-BY-BE (#174-4): a coach's (or the TGP owner's) removal of someone
+ * else's space message or voice note. Sent under the existing
+ * `community.message.updated` event name (so a phone that only refetches on
+ * it keeps working) and carries the placeholder: whose item, when it was
+ * sent and removed, and who removed it, by id only (no name, no text; the
+ * name is on the GET placeholder).
+ * FR-1165R: a Hall voice note's removal has cohortId null and goes to the
+ * Hall's readers; workspaceId is set on every voice note and report-queue
+ * removal (the text/photo DELETE ping omits it; its cohortId is always set).
+ */
+export const MessageRemovedPayloadSchema = z
+  .object({
+    id: z.string(),
+    workspaceId: z.string().optional(),
+    cohortId: z.string().nullable(),
+    updatedAt: z.string(),
+    removedAt: z.string(),
+    createdAt: z.string(),
+    kind: z.enum(['text', 'voice', 'system', 'image']),
+    authorId: z.string(),
+    removedBy: z.object({ role: z.literal('coach'), userId: z.string() }).strict(),
+  })
+  .strict();
+
 export const PostCreatedPayloadSchema = z
   .object({
     id: z.string(),
@@ -101,6 +126,7 @@ export const MembershipChangedPayloadSchema = z
 
 export type MessageCreatedPayload = z.infer<typeof MessageCreatedPayloadSchema>;
 export type MessageUpdatedPayload = z.infer<typeof MessageUpdatedPayloadSchema>;
+export type MessageRemovedPayload = z.infer<typeof MessageRemovedPayloadSchema>;
 export type PostCreatedPayload = z.infer<typeof PostCreatedPayloadSchema>;
 export type PostUpdatedPayload = z.infer<typeof PostUpdatedPayloadSchema>;
 export type ReactionChangedPayload = z.infer<
@@ -123,6 +149,7 @@ export type MembershipChangedPayload = z.infer<
 export type CommunityBroadcastPayload =
   | MessageCreatedPayload
   | MessageUpdatedPayload
+  | MessageRemovedPayload
   | PostCreatedPayload
   | PostUpdatedPayload
   | ReactionChangedPayload

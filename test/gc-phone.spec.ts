@@ -1,8 +1,8 @@
 /**
- * GC-PHONE — the buyer's phone on the web pay page (name, phone, email, then
- * checkout). The checkout body's guest_phone is required, normalised to E.164
- * (no + means +1) and stored on GuestCheckout; the page asks for it between
- * name and email, the wallet sheet asks for it too, and Stripe gets it as the
+ * GC-PHONE — the buyer's phone on the web pay page (email first, then name and
+ * phone, then checkout: WEB-BUYER-FLOW #172-8). The checkout body's guest_phone
+ * is required, normalised to E.164 (no + means +1) and stored on GuestCheckout;
+ * the page asks for it after the name, the wallet sheet asks for it too, and Stripe gets it as the
  * billing phone. The 13-month PII scrub and account deletion clear it
  * (test/guest-checkout-pii-scrub.service.spec.ts covers the scrub's update).
  */
@@ -102,25 +102,35 @@ describe('GC-PHONE: the phone the buyer gives at checkout', () => {
       due_today_cents: 14900,
       recurring: null,
     };
-    const html = renderPayPage(pkg, { token: 'tokAAAAAAAAAAAAAAAAAA', lp: null, onBehalfOf: 'acct_x', nonce: 'n0' });
+    const html = renderPayPage(pkg, {
+      token: 'tokAAAAAAAAAAAAAAAAAA',
+      lp: null,
+      onBehalfOf: 'acct_x',
+      nonce: 'n0',
+      returnUrl: 'https://app.trygrowthproject.com/p/tokAAAAAAAAAAAAAAAAAA/done',
+    });
 
-    it('asks for the phone between name and email, as a phone field', () => {
+    it('asks for the phone after the name, as a phone field; the email comes from step 1, fixed', () => {
       const form = /<form id="pay"[\s\S]*?<\/form>/.exec(html)?.[0] ?? '';
       const fields = [...form.matchAll(/<label for="(\w+)">([^<]+)<\/label>/g)].map((m) => [m[1], m[2]]);
-      expect(fields).toEqual([['nm', 'Name'], ['ph', 'Phone'], ['em', 'Email']]);
+      expect(fields).toEqual([['nm', 'Name'], ['ph', 'Phone']]);
+      expect(form).toContain('<p class="who"><span>Email</span><strong id="pe"></strong></p>');
+      const step1 = /<form id="f1"[\s\S]*?<\/form>/.exec(html)?.[0] ?? '';
+      expect([...step1.matchAll(/<label for="(\w+)">([^<]+)<\/label>/g)].map((m) => [m[1], m[2]])).toEqual([['e1', 'Email']]);
       expect(form).toContain(
         '<input id="ph" type="tel" inputmode="tel" autocomplete="tel" required maxlength="32">',
       );
     });
 
     // The page's own script with stand-ins for the DOM, Stripe.js and fetch.
-    function boot() {
+    async function boot() {
       const js = [...html.matchAll(/<script nonce="[^"]+">([\s\S]*?)<\/script>/g)].pop()?.[1] ?? '';
       const cfg = /<script type="application\/json" id="cfg">([\s\S]*?)<\/script>/.exec(html)?.[1] ?? '{}';
       const on: Record<string, (e: unknown) => Promise<void>> = {};
       const nodes: Record<string, Record<string, unknown>> = {};
-      for (const id of ['cfg', 'pay', 'go', 'msg', 'nm', 'ph', 'em', 'or', 'express']) {
-        nodes[id] = { value: '', textContent: id === 'cfg' ? cfg : '', setAttribute() {}, focus() {}, addEventListener: (t: string, h: never) => (on[`${id}:${t}`] = h) };
+      const ids = ['cfg', 'f1', 'e1', 'b1', 'm1', 'pay', 'go', 'msg', 'nm', 'ph', 'pe', 'ce', 'or', 'express', 'f2', 'b2', 'm2', 'cd', 'rs', 'ch', 's3', 'hey', 'sum', 'to', 'inc0'];
+      for (const id of ids) {
+        nodes[id] = { value: '', textContent: id === 'cfg' ? cfg : '', setAttribute() {}, focus() {}, select() {}, addEventListener: (t: string, h: never) => (on[`${id}:${t}`] = h) };
       }
       const sent: Record<string, unknown>[] = [];
       const billed: unknown[] = [];
@@ -131,7 +141,8 @@ describe('GC-PHONE: the phone the buyer gives at checkout', () => {
         location: { origin: 'https://app.example' },
         crypto: { randomUUID },
         sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} },
-        fetch: async (_url: string, init: { body: string }) => {
+        fetch: async (url: string, init: { body: string }) => {
+          if (url.endsWith('/check-email')) return { ok: true, json: async () => ({ account: 'new' }) };
           sent.push(JSON.parse(init.body));
           return { ok: true, json: async () => ({ client_secret: 'pi_1_secret_1' }) };
         },
@@ -150,29 +161,30 @@ describe('GC-PHONE: the phone the buyer gives at checkout', () => {
       vm.runInNewContext(js, sandbox);
       Object.assign(nodes.nm, { value: ' Ann Buyer ' });
       Object.assign(nodes.ph, { value: ' (415) 555-0100 ' });
-      Object.assign(nodes.em, { value: 'ann@example.com' });
+      Object.assign(nodes.e1, { value: 'ann@example.com' });
+      await on['f1:submit']({ preventDefault() {} });
       return { on, sent, billed, options };
     }
 
     it('the card form sends the typed phone to checkout and to Stripe as the billing phone', async () => {
-      const page = boot();
+      const page = await boot();
       await page.on['pay:submit']({ preventDefault() {} });
       expect(page.sent).toHaveLength(1);
       expect(page.sent[0]).toMatchObject({ guest_name: 'Ann Buyer', guest_phone: '(415) 555-0100', guest_email: 'ann@example.com' });
       expect(page.billed).toEqual([{ name: 'Ann Buyer', phone: '(415) 555-0100', email: 'ann@example.com' }]);
     });
 
-    it("the wallet sheet asks for the phone, and the wallet's phone is the one sent", async () => {
-      const page = boot();
-      expect(page.options.expressCheckout).toMatchObject({ emailRequired: true, phoneNumberRequired: true });
+    it("the wallet sheet asks for the phone, and the wallet's phone is the one sent (the email stays the step-1 one)", async () => {
+      const page = await boot();
+      expect(page.options.expressCheckout).toMatchObject({ emailRequired: false, phoneNumberRequired: true });
       const billingDetails = { name: 'Ann Wallet', email: 'wallet@example.com', phone: '+14155550199' };
       await page.on['expressCheckout:confirm']({ billingDetails, paymentFailed() {} });
-      expect(page.sent[0]).toMatchObject({ guest_name: 'Ann Wallet', guest_phone: '+14155550199', guest_email: 'wallet@example.com' });
-      expect(page.billed).toEqual([billingDetails]);
+      expect(page.sent[0]).toMatchObject({ guest_name: 'Ann Wallet', guest_phone: '+14155550199', guest_email: 'ann@example.com' });
+      expect(page.billed).toEqual([{ name: 'Ann Wallet', phone: '+14155550199', email: 'ann@example.com' }]);
     });
 
     it('a wallet that gives no phone falls back to the phone field', async () => {
-      const page = boot();
+      const page = await boot();
       await page.on['expressCheckout:confirm']({ billingDetails: { name: 'Ann Wallet', email: 'wallet@example.com' }, paymentFailed() {} });
       expect(page.sent[0]).toMatchObject({ guest_phone: '(415) 555-0100' });
     });
