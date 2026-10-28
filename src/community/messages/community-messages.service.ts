@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   ForbiddenException,
   HttpException,
   HttpStatus,
@@ -50,6 +51,7 @@ import { AiEgressService } from '../../ai-egress/ai-egress.service';
 import { assertCaptionAllowed, assertPhotoAllowed } from '../images/community-photo-check';
 import { CoachAlertsService } from '../../coach/coach-alerts.service';
 import { SAFETY_ALERT_PUSH_BODY, SPACE_SAFETY_ALERT_PUSH_BODY } from '../../notifications/push/lock-screen-copy';
+import { IDEMPOTENCY_KEY_REUSED, keyedMessageId } from './message-idempotency';
 
 /** SC-BE3: a photo message as the send route takes it. */
 export interface ImageSend {
@@ -482,6 +484,7 @@ export class CommunityMessagesService {
     parentId?: string,
     image?: ImageSend,
     highAlert?: boolean,
+    idempotencyKey?: string | null,
   ): Promise<CommunityMessageResponse & { high_alert_reach?: number }> {
     const cohort = await this.access.findCohort(cohortId);
     // Treat a missing cohort and an unauthorised cohort identically (404).
@@ -505,16 +508,27 @@ export class CommunityMessagesService {
     if (alert && alert.used_today >= alert.limit) {
       throw new HttpException({ code: 'community.high_alert.limit', limit: alert.limit }, HttpStatus.TOO_MANY_REQUESTS);
     }
-    const created = image
-      ? await this.createImage(user, cohort, body, parent, image, planContext)
-      : await this.repo.createCohortMessage({
-          workspaceId: cohort.workspace_id,
-          cohortId: cohort.id,
-          senderId: user.id,
-          body,
-          planContext,
-          parent,
-        });
+    const data = { workspaceId: cohort.workspace_id, cohortId: cohort.id, senderId: user.id, body, planContext, parent };
+    // FX-IDEM: a resend of a text message with the same Idempotency-Key (same author, same space) answers with the
+    // first message and repeats none of the side effects below (High alert mark, coach-replied stamp, realtime ping,
+    // push); the same key on a different message is refused. A photo send is not keyed (SC-BE3 checks its upload).
+    let created: CommunityMessage;
+    if (image) {
+      created = await this.createImage(user, cohort, body, parent, image, planContext);
+    } else if (idempotencyKey) {
+      const { row, replayed } = await this.repo.createKeyedCohortMessage(
+        keyedMessageId(user.id, cohort.id, idempotencyKey), data);
+      if (replayed) {
+        const same = row.sender_id === user.id && row.cohort_id === cohort.id && row.kind === 'text'
+          && row.body === body && row.parent_message_id === (parent?.id ?? null);
+        if (!same) throw new ConflictException(IDEMPOTENCY_KEY_REUSED);
+        const first = CommunityMessageResponseSchema.parse({ message: this.view(row) });
+        return alert && row.high_alert ? { ...first, high_alert_reach: alert.reach } : first;
+      }
+      created = row;
+    } else {
+      created = await this.repo.createCohortMessage(data);
+    }
     if (alert) await this.spacePush?.markHighAlert(created.id);
     // v1-6 coach-inbox producer: a coach/owner message into the cohort answers
     // the cohort's outstanding client messages, so stamp coach_replied_at on

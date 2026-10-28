@@ -1,0 +1,179 @@
+/**
+ * FX-IDEM: the space chat send honours Idempotency-Key. The phone's outbox (m#871 useSpaceChat) keeps one key per
+ * pending row and sends it again after a timeout or a lost reply; the second send must answer with the first
+ * message, never post a second one. The real service and repository run over an in-memory table (no DB); the
+ * race under one key and the cross-tenant reads run live in test/rls/community-message-idempotency.live.spec.ts.
+ * The first describe failed on the code before FX-IDEM (two rows, no 409); the second pins the header and the id.
+ */
+import { randomUUID } from 'crypto';
+import { BadRequestException, ParseUUIDPipe } from '@nestjs/common';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
+import type { CommunityMessage, User } from '@prisma/client';
+import { CommunityMessagesController } from '../../../src/community/messages/community-messages.controller';
+import { CommunityMessagesRepository } from '../../../src/community/messages/community-messages.repository';
+import { CommunityMessagesService } from '../../../src/community/messages/community-messages.service';
+import { CreateMessageDto } from '../../../src/community/dto/community-message.dto';
+import { CreateVoiceNoteDto } from '../../../src/community/voice/community-voice.dto';
+import { keyedMessageId, messageKey } from '../../../src/community/messages/message-idempotency';
+import { safetyWithBlocks } from '../safety/safety-test-helpers';
+import { noCommunityPush } from './community-push-test-helpers';
+import { stub } from '../../utils/trial-fakes';
+
+type Deps = ConstructorParameters<typeof CommunityMessagesService>;
+type RepoDeps = ConstructorParameters<typeof CommunityMessagesRepository>;
+type RouteDeps = ConstructorParameters<typeof CommunityMessagesController>;
+type Route = CommunityMessagesController['send'];
+
+const WORKSPACE = '22222222-2222-4222-8222-222222222222';
+const SPACE = '11111111-1111-4111-8111-111111111111';
+const OTHER_SPACE = '33333333-3333-4333-8333-333333333333';
+const KEY = '6f1c2b0e-8d4a-4c1e-9b7a-2d3e4f5a6b7c';
+const olive = stub<User>({ id: '0a11ce00-0000-4000-8000-000000000001', role: 'student' });
+const vera = stub<User>({ id: '0a11ce00-0000-4000-8000-000000000002', role: 'student' });
+
+function harness() {
+  const rows: CommunityMessage[] = [];
+  const communityMessage = {
+    create: jest.fn(async ({ data }: { data: Partial<CommunityMessage> }) => {
+      const at = new Date();
+      const row = { id: randomUUID(), created_at: at, updated_at: at, deleted_at: null, ...data } as CommunityMessage;
+      rows.push(row);
+      return row;
+    }),
+    findFirst: jest.fn(async ({ where }: { where: { id: string } }) => rows.find((r) => r.id === where.id) ?? null),
+    updateMany: jest.fn(async () => ({ count: 0 })),
+  };
+  const prisma: Record<string, unknown> = { communityMessage, $executeRaw: jest.fn(async () => 1) };
+  prisma.$transaction = jest.fn(async (fn: (tx: unknown) => unknown) => fn(prisma));
+  const access = {
+    findCohort: jest.fn(async (id: string) => ({ id, workspace_id: WORKSPACE, kind: 'cohort' })),
+    canAccessCohort: jest.fn(async () => true),
+    assertCanPost: jest.fn(async () => undefined),
+  };
+  const realtime = { broadcastCommunityEvent: jest.fn(async () => undefined) };
+  // SC-PUSH (main): the High alert gate; the coach may send, 4 people would get it, none sent today.
+  const spacePush = {
+    highAlertAllowance: jest.fn(async () => ({ reach: 4, used_today: 0, limit: 3 })),
+    markHighAlert: jest.fn(async (id: string) => {
+      for (const r of rows) if (r.id === id) r.high_alert = true;
+    }),
+  };
+  const repo = new CommunityMessagesRepository(stub<RepoDeps[0]>(prisma));
+  const service = new CommunityMessagesService(stub<Deps[0]>(access), repo, stub<Deps[2]>(realtime), stub<Deps[3]>({}),
+    safetyWithBlocks(), noCommunityPush(), undefined, stub<Deps[7]>(spacePush));
+  const send = (u: User, body: string, key?: string, space = SPACE) =>
+    service.send(u, space, body, undefined, undefined, undefined, undefined, key).then((r) => r.message);
+  const alert = (u: User, body: string, key: string) =>
+    service.send(u, SPACE, body, undefined, undefined, undefined, true, key);
+  return { rows, realtime, spacePush, communityMessage, send, alert };
+}
+
+const status = (p: Promise<unknown>) => p.then(() => 200, (e: { status?: number }) => e.status ?? 500);
+
+describe('FX-IDEM: POST /community/cohorts/:id/messages with Idempotency-Key', () => {
+  it('the same key twice from one author in one space returns the first message and writes one row', async () => {
+    const h = harness();
+    const first = await h.send(olive, 'Leg day done', KEY);
+    const again = await h.send(olive, 'Leg day done', KEY);
+    expect(again).toEqual(first);
+    expect(h.rows).toHaveLength(1);
+    // The replay has no side effects: one realtime ping, for the first write only.
+    expect(h.realtime.broadcastCommunityEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it('the same key with different words is refused (409) and writes nothing', async () => {
+    const h = harness();
+    await h.send(olive, 'Leg day done', KEY);
+    expect(await status(h.send(olive, 'Rest day', KEY))).toBe(409);
+    expect(h.rows).toHaveLength(1);
+  });
+
+  it('a key belongs to one author in one space: another author or another space gets its own message', async () => {
+    const h = harness();
+    const mine = await h.send(olive, 'Leg day done', KEY);
+    const hers = await h.send(vera, 'Leg day done', KEY);
+    const elsewhere = await h.send(olive, 'Leg day done', KEY, OTHER_SPACE);
+    expect(new Set([mine.id, hers.id, elsewhere.id]).size).toBe(3);
+    expect(hers.sender_user_id).toBe(vera.id);
+    expect(h.rows).toHaveLength(3);
+  });
+
+  it('with no key every send is a new message, as before', async () => {
+    const h = harness();
+    await h.send(olive, 'Leg day done');
+    await h.send(olive, 'Leg day done');
+    expect(h.rows).toHaveLength(2);
+  });
+
+  it('FR-1144: a coach resending a High alert under its key marks it once and answers alike', async () => {
+    const was = process.env.FEATURE_COMMUNITY_SPACE_PUSH;
+    process.env.FEATURE_COMMUNITY_SPACE_PUSH = 'true';
+    try {
+      const h = harness();
+      const coach = stub<User>({ id: '0a11ce00-0000-4000-8000-0000000000c0', role: 'coach' });
+      const first = await h.alert(coach, 'Class moved to 6pm', KEY);
+      const again = await h.alert(coach, 'Class moved to 6pm', KEY);
+      expect(again).toEqual(first);
+      expect(first.high_alert_reach).toBe(4);
+      expect(h.rows).toHaveLength(1);
+      // The mark, the coach-replied stamp and the realtime ping (which carries the space push) ran once.
+      expect(h.spacePush.markHighAlert).toHaveBeenCalledTimes(1);
+      expect(h.communityMessage.updateMany).toHaveBeenCalledTimes(1);
+      expect(h.realtime.broadcastCommunityEvent).toHaveBeenCalledTimes(1);
+    } finally {
+      if (was === undefined) delete process.env.FEATURE_COMMUNITY_SPACE_PUSH;
+      else process.env.FEATURE_COMMUNITY_SPACE_PUSH = was;
+    }
+  });
+});
+
+describe('FX-IDEM: the header and the id it names', () => {
+  it('no header or a blank one means no dedupe; a UUID is read case-blind; anything else is a 400', () => {
+    expect(messageKey(undefined)).toBeNull();
+    expect(messageKey('  ')).toBeNull();
+    expect(messageKey(KEY.toUpperCase())).toBe(KEY);
+    expect(messageKey([KEY, 'second'])).toBe(KEY);
+    let refused: unknown;
+    try { messageKey('send-1'); } catch (e) { refused = e; }
+    expect((refused as BadRequestException).getResponse()).toEqual({ error: 'bad_request', code: 'community.message.idempotency_key_invalid' });
+  });
+
+  it('one author, space and key always name the same UUID; change any one and the id changes', () => {
+    const idOf = keyedMessageId(olive.id, SPACE, KEY);
+    expect(idOf).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(keyedMessageId(olive.id, SPACE, KEY)).toBe(idOf);
+    const others = [keyedMessageId(vera.id, SPACE, KEY), keyedMessageId(olive.id, OTHER_SPACE, KEY),
+      keyedMessageId(olive.id, SPACE, randomUUID())];
+    expect(new Set([idOf, ...others]).size).toBe(4);
+  });
+
+  it('the route passes the read key to the send, and refuses a bad key before any send', async () => {
+    const send = jest.fn(async () => ({ message: {} }));
+    const route = new CommunityMessagesController(stub<RouteDeps[0]>({ send }));
+    const req = stub<Parameters<Route>[0]>({ user: olive });
+    await route.send(req, SPACE, stub<CreateMessageDto>({ body: 'Leg day done' }), KEY.toUpperCase());
+    expect(send).toHaveBeenCalledWith(olive, SPACE, 'Leg day done', undefined, undefined, undefined, undefined, KEY);
+    await route.send(req, SPACE, stub<CreateMessageDto>({ body: 'Leg day done' }), undefined);
+    expect(send).toHaveBeenLastCalledWith(olive, SPACE, 'Leg day done', undefined, undefined, undefined, undefined, null);
+    await expect(route.send(req, SPACE, stub<CreateMessageDto>({ body: 'x' }), 'nope')).rejects.toBeInstanceOf(BadRequestException);
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('FX-IDEM: a keyed message is repliable like any other (every version 4 id check accepts its id)', () => {
+  const idOf = keyedMessageId(olive.id, SPACE, KEY);
+
+  it('a text reply and a voice reply may name it as their parent', async () => {
+    const text = plainToInstance(CreateMessageDto, { body: 'On it', parent_message_id: idOf });
+    expect(await validate(text)).toEqual([]);
+    const voice = plainToInstance(CreateVoiceNoteDto, {
+      cohort_id: SPACE, storage_key: 'k', duration_ms: 1000, bytes: 10, mime_type: 'audio/m4a', parent_message_id: idOf,
+    });
+    expect((await validate(voice)).filter((e) => e.property === 'parent_message_id')).toEqual([]);
+  });
+
+  it('the ack routes take it (ParseUUIDPipe version 4)', async () => {
+    await expect(new ParseUUIDPipe({ version: '4' }).transform(idOf, { type: 'param' })).resolves.toBe(idOf);
+  });
+});
