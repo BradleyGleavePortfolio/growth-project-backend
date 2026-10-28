@@ -45,6 +45,7 @@ async function chain() {
     communityWorkspaceBan: { findFirst: async () => null }, user: { findUnique: async () => ({ name: 'Sam Rivers' }) }, userBlock: { findMany: async () => [] },
     communitySpaceRead: { findMany: async () => [{ user_id: 'space-muted', notify_mode: 'mute_all', silenced_until: null },
       { user_id: 'silenced', notify_mode: 'all', silenced_until: new Date(Date.now() + 3_600_000) }] },
+    communityThreadPref: { findMany: async () => [] }, // LEAVE-MUTE-PUSH: no muted or left thread
     $queryRaw: queryRaw, // readersNow, then one unread count per reader on All
   };
   const realtime = stub<CommunityRealtimeService>({ onSpaceMessageStored: jest.fn() });

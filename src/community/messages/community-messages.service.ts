@@ -431,8 +431,10 @@ export class CommunityMessagesService {
     // (flag-off drops it; malformed → 422; missing entity → 422; foreign → 403).
     const planContext = await this.resolveIncomingPlanContext(user, planContextRaw);
     // SC-PUSH: a High alert only from the space's coach, at most 3 there a day. Opus C-6: with the space
-    // switch off it does nothing (no mark, no count against the 3, no reach).
-    const alert = highAlert && this.spacePush && spacePushOn() ? await this.spacePush.highAlertAllowance(user.id, cohort) : null;
+    // switch off it does nothing (no mark, no count against the 3, no reach). FR-1168R2 C1: a reply's reach
+    // is its thread's (who left that thread is not rung).
+    const alert =
+      highAlert && this.spacePush && spacePushOn() ? await this.spacePush.highAlertAllowance(user.id, cohort, parent?.id ?? null) : null;
     if (alert && alert.used_today >= alert.limit) {
       throw new HttpException({ code: 'community.high_alert.limit', limit: alert.limit }, HttpStatus.TOO_MANY_REQUESTS);
     }
