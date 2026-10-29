@@ -1,4 +1,5 @@
 import { MessagingService } from '../src/messaging/messaging.service';
+import { MessagesSafetyService } from '../src/messages-safety/messages-safety.service';
 
 // Adjacent legacy/off-mode note, not a new inbox leak: reading an empty
 // closed thread must not acknowledge message notices that were not visible.
@@ -14,12 +15,23 @@ describe('LS-NOTIFY5B legacy empty closed-thread read note', () => {
         findUnique: jest.fn().mockResolvedValue({ id: clientId, role: 'student', coach_id: coachId }),
       },
       userBlock: {
-        findFirst: jest.fn().mockResolvedValue(block ? {
-          blocker_id: block === 'client' ? clientId : coachId,
-          blocked_id: block === 'client' ? coachId : clientId,
-        } : null),
+        findMany: jest.fn().mockImplementation(async ({ where }) => {
+          if (block === 'client' && where.blocker_id === clientId) {
+            return [{ blocker_id: clientId, blocked_id: coachId }];
+          }
+          if (block === 'coach' && where.blocked_id === clientId) {
+            return [{ blocker_id: coachId, blocked_id: clientId }];
+          }
+          return [];
+        }),
       },
-      coachMessage: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+      coachMessage: {
+        findMany: jest.fn().mockResolvedValue([{
+          id: 'message-1', sender_id: coachId, card: null,
+          body: 'A saved message', created_at: new Date('2026-10-28T00:00:00Z'),
+        }]),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
       notification: {
         updateMany: jest.fn().mockImplementation(async ({ data }) => {
           row.read_at = data.read_at;
@@ -35,6 +47,7 @@ describe('LS-NOTIFY5B legacy empty closed-thread read note', () => {
       {} as never,
       {} as never,
       {} as never,
+      new MessagesSafetyService(prisma as never, {} as never, {} as never),
     );
     return { service, row, prisma };
   }
@@ -43,7 +56,9 @@ describe('LS-NOTIFY5B legacy empty closed-thread read note', () => {
     'keeps an unseen notice unread after a legacy read of a %s-blocked empty thread',
     async (side) => {
       const { service, row } = setup(side);
-      await expect(service.listThreadForClient(clientId, {})).resolves.toEqual([]);
+      const onClosed = jest.fn();
+      await expect(service.listThreadForClient(clientId, {}, onClosed)).resolves.toEqual([]);
+      expect(onClosed).toHaveBeenCalledWith(side === 'client' ? 'blocked_by_you' : 'blocked_by_them');
       await service.markReadByClient(clientId);
       expect(row.read_at).toBeNull();
     },
