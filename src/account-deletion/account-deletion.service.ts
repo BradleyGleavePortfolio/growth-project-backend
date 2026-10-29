@@ -715,8 +715,20 @@ export class AccountDeletionService {
       );
     }
 
+    // The operator's count of deleted accounts whose vendor erasure is still
+    // pending (failed, or held for missing erasure keys; STORE-B3).
+    let vendorPending: number | string = 'unknown';
+    try {
+      const [row] = await this.prisma.$queryRaw<{ n: number }[]>`
+        SELECT count(*)::int AS "n" FROM "deletion_audit"
+         WHERE "event" = ${DeletionAuditEvent.VENDOR_ERASURE_PENDING}`;
+      vendorPending = row?.n ?? 0;
+    } catch (err) {
+      this.logger.error(`AccountDeletion vendor pending count failed: ${describeFailure(err)}`);
+    }
+
     this.logger.log(
-      `AccountDeletion finalize cron: finalized=${finalized} skipped=${skipped} errors=${errors} auth_retries=${pendingAuth.length} receipts_dropped=${receiptsDropped}`,
+      `AccountDeletion finalize cron: finalized=${finalized} skipped=${skipped} errors=${errors} auth_retries=${pendingAuth.length} receipts_dropped=${receiptsDropped} vendor_pending=${vendorPending}`,
     );
     return { finalized, skipped, errors };
   }
@@ -910,8 +922,9 @@ export class AccountDeletionService {
   /**
    * Ask each vendor still listed in the work row to erase the person, record
    * the outcomes under a random subject id, then drop the work row or narrow
-   * it to the vendors that failed (the nightly cron retries those). Never
-   * throws and never touches the committed deletion.
+   * it to the vendors that failed or are held for missing erasure keys (the
+   * nightly cron retries those). Never throws and never touches the committed
+   * deletion.
    */
   private async eraseAtVendors(userId: string, work: VendorWork): Promise<void> {
     try {

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import {
   StripeConnectApiError,
@@ -12,6 +12,11 @@ import { describeFailure } from '../observability/log-pii';
  * copies, so after the database deletion commits each vendor is asked once.
  * Every step is idempotent: a person the vendor no longer has counts as done
  * (`not_found`), so a retry after a partial failure is safe.
+ *
+ * A vendor in use whose erasure keys are missing records `not_configured` and
+ * stays in the pending work, like a failure, so the nightly retry erases the
+ * person once the keys are set (STORE-B3). Only a vendor this deployment never
+ * used (`not_applicable`) or a Stripe person with no customer completes.
  *
  *   posthog  persons/bulk_delete by distinct id (the user id), events too
  *   crisp    every conversation of the email, then the people profile
@@ -33,6 +38,33 @@ export type VendorWork = {
   stripe_customer_ids: string[];
 };
 
+/** Keys each vendor's erasure needs, and the settings that show it is in use. */
+const ERASURE_KEYS = {
+  posthog: ['POSTHOG_PERSONAL_API_KEY', 'POSTHOG_PROJECT_ID'],
+  crisp: ['CRISP_WEBSITE_ID', 'CRISP_API_TOKEN'],
+} as const;
+const IN_USE_KEYS = {
+  posthog: ['POSTHOG_KEY', ...ERASURE_KEYS.posthog],
+  crisp: ERASURE_KEYS.crisp,
+} as const;
+type KeyedVendor = keyof typeof ERASURE_KEYS;
+
+const isSet = (name: string) => !!process.env[name]?.trim();
+
+/**
+ * Vendors that may hold people's data but cannot be asked to erase it now.
+ * The app collects into PostHog and Crisp with its own keys, which the backend
+ * cannot see; its release config requires both (mobile
+ * scripts/validate-app-config.js), so production counts both as in use.
+ */
+export function heldVendors(): KeyedVendor[] {
+  return (['posthog', 'crisp'] as const).filter(
+    (v) =>
+      !ERASURE_KEYS[v].every(isSet) &&
+      (process.env.NODE_ENV === 'production' || IN_USE_KEYS[v].some(isSet)),
+  );
+}
+
 const TIMEOUT_MS = 10_000;
 const CRISP_MAX_PAGES = 50;
 
@@ -47,10 +79,21 @@ async function send(vendor: Vendor, url: string, init: RequestInit): Promise<Res
 }
 
 @Injectable()
-export class AccountDeletionVendorsService {
+export class AccountDeletionVendorsService implements OnModuleInit {
   private readonly logger = new Logger(AccountDeletionVendorsService.name);
 
   constructor(private readonly stripe: StripeConnectApiService) {}
+
+  /** A warning, never a failed start: deletions hold these vendors until the keys are set. */
+  onModuleInit(): void {
+    const held = heldVendors().map(
+      (v) => `${v} (${ERASURE_KEYS[v].filter((k) => !isSet(k)).join(', ')})`,
+    );
+    if (held.length === 0) return;
+    this.logger.warn(
+      `account deletion: in use without erasure keys: ${held.join('; ')}; deletions keep that vendor pending and retry nightly`,
+    );
+  }
 
   /** Inside the finalization transaction, while the rows holding the customer ids still exist. */
   async collect(tx: Prisma.TransactionClient, userId: string, email: string): Promise<VendorWork> {
@@ -81,7 +124,7 @@ export class AccountDeletionVendorsService {
     return { vendors: [...VENDORS], email, stripe_customer_ids: [...ids] };
   }
 
-  /** One attempt per listed vendor; never throws. `left` is the work still to retry, or null. */
+  /** One attempt per listed vendor; never throws. `left` is the work still to retry (failed or held), or null. */
   async erase(
     userId: string,
     work: VendorWork,
@@ -108,7 +151,14 @@ export class AccountDeletionVendorsService {
         );
       }
     }
-    const vendors = work.vendors.filter((v) => outcomes[v] === 'failed');
+    // No person data in this line: the operator's signal that work is held.
+    const held = work.vendors.filter((v) => outcomes[v] === 'not_configured');
+    if (held.length) {
+      this.logger.warn(
+        `account deletion: vendor erasure held for ${held.join(', ')} (erasure keys not set); kept pending and retried nightly`,
+      );
+    }
+    const vendors = work.vendors.filter((v) => outcomes[v] === 'failed' || held.includes(v));
     if (vendors.length === 0) return { outcomes, left: null };
     return {
       outcomes,
@@ -120,10 +170,15 @@ export class AccountDeletionVendorsService {
     };
   }
 
+  /** Without its keys: held if the vendor is in use, otherwise it never had the data. */
+  private unready(vendor: KeyedVendor): VendorOutcome {
+    return heldVendors().includes(vendor) ? 'not_configured' : 'not_applicable';
+  }
+
   private async posthog(userId: string): Promise<VendorOutcome> {
     const key = process.env.POSTHOG_PERSONAL_API_KEY;
     const project = process.env.POSTHOG_PROJECT_ID;
-    if (!key || !project) return 'not_configured';
+    if (!key || !project) return this.unready('posthog');
     // Events are ingested at us.i.posthog.com; the private API is us.posthog.com.
     const host = (process.env.POSTHOG_HOST ?? 'https://us.i.posthog.com').replace(
       '.i.posthog.com',
@@ -147,7 +202,7 @@ export class AccountDeletionVendorsService {
   private async crisp(email: string | null): Promise<VendorOutcome> {
     const site = process.env.CRISP_WEBSITE_ID;
     const token = process.env.CRISP_API_TOKEN;
-    if (!site || !token) return 'not_configured';
+    if (!site || !token) return this.unready('crisp');
     if (!email) return 'not_found';
     const base = `https://api.crisp.chat/v1/website/${encodeURIComponent(site)}`;
     const people = encodeURIComponent(email);
@@ -178,6 +233,7 @@ export class AccountDeletionVendorsService {
 
   private async stripeCustomers(ids: string[]): Promise<VendorOutcome> {
     if (ids.length === 0) return 'not_found';
+    // Customers on file: Stripe has this person's data, so unconfigured holds.
     if (!this.stripe.isConfigured()) return 'not_configured';
     let deleted = 0;
     for (const id of ids) {
