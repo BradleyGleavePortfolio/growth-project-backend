@@ -13,7 +13,7 @@ import { CommunityCohortMembersService } from '../../src/community/cohorts/commu
 import { CommunityCohortWriteRepository } from '../../src/community/cohorts/community-cohort-write.repository';
 import { CommunityCohortWriteService } from '../../src/community/cohorts/community-cohort-write.service';
 import { CommunityAccessService } from '../../src/community/community-access.service';
-import { readersNow } from '../../src/community/community-space-access';
+import { membersNow, readersNow } from '../../src/community/community-space-access';
 import { CommunityRepository } from '../../src/community/community.repository';
 import { CommunityService } from '../../src/community/community.service';
 import { CommunityMessagesRepository } from '../../src/community/messages/community-messages.repository';
@@ -153,7 +153,7 @@ const sorted = (xs: string[]) => [...xs].sort();
     ['realtime: who is pinged', (s) => readersNow(db, ws[coachOf(s)], space[s]), (s) => ids(OPEN[s])],
     ['members: who the roster lists', async (s) => (await members.list(user(coachOf(s)), space[s], {})).members.map((m) => m.user_id),
       (s) => ids(LISTED[s])],
-    ['members: the count', async (s) => [String(await foundation.cohortMemberCount({ id: space[s], workspace_id: ws[coachOf(s)] }))],
+    ['members: the count', async (s) => [String((await membersNow(db, { id: space[s], workspace_id: ws[coachOf(s)] })).length)],
       (s) => [String(OPEN[s].length)]],
     ['push: who a message reaches (an active row; B3 widens it)', async (s) =>
       (await messages.listCohortPushRecipients({ workspaceId: ws[coachOf(s)], cohortId: space[s], senderId: id[coachOf(s)] })).map((r) => r.user_id),

@@ -4,9 +4,12 @@ import { PrismaService } from '../prisma.service';
 import { CommunityRepository } from './community.repository';
 import { CommunitySafetyService } from './safety/community-safety.service';
 import { memberName } from './member-display-name';
-import { fullNamesFor } from './community-space-access';
+import { fullNamesFor, membersNow } from './community-space-access';
 import { isBannedFromWorkspace } from './community-ban';
 import { communityTabUnread, spaceUnreadCounts } from './space-reads/community-space-reads.service';
+// FR-1168 (LO-1168 B1, owner R7): member_count leaves out the people who left the space (membersNow).
+import { leftSpaces } from './leave-mute/community-leave-mute.service';
+import { CommunityCohortListWithLeftSchema, type CommunityCohortListWithLeft } from './leave-mute/community-leave-mute.dto';
 import {
   WIN_NOT_FOUND,
   WIN_POSTING_REMOVED,
@@ -25,8 +28,6 @@ import {
   CommunityWorkspaceResponseSchema,
 } from './dto/community-workspace.dto';
 import {
-  CommunityCohortListResponse,
-  CommunityCohortListResponseSchema,
   CommunityCohortResponse,
   CommunityCohortResponseSchema,
 } from './dto/community-cohort.dto';
@@ -251,7 +252,7 @@ export class CommunityService {
       ? {
           id: cohort.id,
           name: cohort.name,
-          member_count: await this.repo.cohortMemberCount(cohort),
+          member_count: (await membersNow(this.prisma, cohort)).length,
         }
       : null;
 
@@ -321,12 +322,16 @@ export class CommunityService {
 
   // ── GET /community/cohorts ────────────────────────────────────────────────
 
-  async getCohorts(user: User): Promise<CommunityCohortListResponse> {
+  /** LEAVE-MUTE-BE (owner D2): a space the caller left drops out; with includeLeft every row carries left_at
+   *  (null = in it), for "Spaces you left". */
+  async getCohorts(user: User, includeLeft = false): Promise<CommunityCohortListWithLeft> {
     const role = this.effectiveRole(user);
-    const cohorts = await this.repo.findCohortsForUser({
+    const readable = await this.repo.findCohortsForUser({
       userId: user.id,
       role: this.scopingRole(user),
     });
+    const left = await leftSpaces(this.prisma, user.id, readable.map((c) => c.id));
+    const cohorts = includeLeft ? readable : readable.filter((c) => !left.has(c.id));
     // SC-BE2: each space's unread badge (one round trip for the list).
     const unread = await spaceUnreadCounts(this.prisma, user.id, cohorts.map((c) => c.id));
 
@@ -339,13 +344,14 @@ export class CommunityService {
         kind: c.kind,
         posting_policy: c.posting_policy,
         visibility: c.visibility,
-        member_count: await this.repo.cohortMemberCount(c),
+        member_count: (await membersNow(this.prisma, c)).length,
         my_role: role,
         unread_count: unread.get(c.id) ?? 0,
+        ...(includeLeft ? { left_at: left.get(c.id)?.toISOString() ?? null } : {}),
       })),
     );
 
-    return CommunityCohortListResponseSchema.parse({
+    return CommunityCohortListWithLeftSchema.parse({
       feature_flag_state: 'enabled',
       cohorts: summaries,
     });
@@ -379,7 +385,7 @@ export class CommunityService {
       posting_policy: cohort.posting_policy,
       visibility: cohort.visibility,
       package_ids: coachView ? cohort.packages.map((l) => l.package_id) : null, // C6-ACCESS: coach only
-      member_count: await this.repo.cohortMemberCount(cohort),
+      member_count: (await membersNow(this.prisma, cohort)).length,
       created_at: cohort.created_at.toISOString(),
       my_membership:
         membership && membership.status === 'active'

@@ -13,14 +13,26 @@
  *    identically (no 403-vs-404 existence oracle), platform owner bypass;
  *  - eligibility (R1): only client (student) authored messages are ackable —
  *    coach/owner/system-authored messages 404 identically;
+ *  - visibility (LS-1134D): a message the coach's read path hides (the
+ *    CommunitySafetyService.assertVisibleTo gate) 404s identically, retries
+ *    included — the live block / ban / moved-client cases are in
+ *    test/rls/community-ack-visibility-rls.spec.ts;
+ *  - read rule per kind (FR-1174): a DM passes the DM reader's rule
+ *    (assertDmReadable on the caller's own thread), a space row getOne's rule;
+ *    comments and the leaderboard sentinel 404;
  *  - read-side state derivation + SLA envelope.
  *
  * Fakes come from the typed `ack.test-fixtures` builders (R0: no `as unknown
  * as`). The atomic `stampAck` now returns `{ advanced, message }`; the repo
  * mock honours the `{ [column]: null }` compare-and-set semantics.
  */
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import type { CommunityMessage, Role } from '@prisma/client';
+import { stub } from '../../../test/utils/trial-fakes';
+import { CHALLENGE_COMMENT_CONTEXT_TYPE, CHALLENGE_OPTIN_CONTEXT_TYPE } from '../challenges/community-challenges.repository';
+import { CommunityDmsRepository } from '../dms/community-dms.repository';
+import { COMMENT_CONTEXT_TYPE } from '../messages/community-messages.repository';
+import type { CommunitySafetyService } from '../safety/community-safety.service';
 import { ACK_TRANSITION_EVENT, AckService } from './ack.service';
 import type { StampResult } from './ack.repository';
 import {
@@ -62,9 +74,13 @@ describe('AckService', () => {
     findById: jest.Mock;
     findSenderRole: jest.Mock;
     stampAck: jest.Mock;
+    isPublicRowOfMyClient: jest.Mock;
+    isSpaceTeam: jest.Mock;
   };
-  let access: { isWorkspaceCoach: jest.Mock };
+  let access: { isWorkspaceCoach: jest.Mock; findCohort: jest.Mock; canAccessCohort: jest.Mock;
+    findWorkspace: jest.Mock; membershipInWorkspace: jest.Mock };
   let analytics: { capture: jest.Mock };
+  let safety: { assertVisibleTo: jest.Mock; assertDmAllowed: jest.Mock };
   let service: AckService;
 
   beforeEach(() => {
@@ -74,10 +90,24 @@ describe('AckService', () => {
       // otherwise.
       findSenderRole: jest.fn(async (): Promise<Role> => 'student'),
       stampAck: jest.fn(),
+      // Default: the caller is neither the poster's own coach nor on the space's team (rule D, FR-1173).
+      isPublicRowOfMyClient: jest.fn(async () => false),
+      isSpaceTeam: jest.fn(async () => false),
     };
-    access = { isWorkspaceCoach: jest.fn(async () => true) };
+    // Default: the space exists and the caller may enter it (getOne's rule);
+    // DMs are on by default and both people hold a membership (the DM rule).
+    access = {
+      isWorkspaceCoach: jest.fn(async () => true),
+      findCohort: jest.fn(async () => ({ id: FIXTURE_IDS.cohort, workspace_id: FIXTURE_IDS.workspace })),
+      canAccessCohort: jest.fn(async () => true),
+      findWorkspace: jest.fn(async () => ({ id: FIXTURE_IDS.workspace, dm_enabled_default: true })),
+      membershipInWorkspace: jest.fn(async () => ({ dm_enabled: null })),
+    };
     analytics = { capture: jest.fn() };
-    service = new AckService(repo as never, access as never, analytics as never);
+    // Default: the coach can read the message (the gate passes).
+    safety = { assertVisibleTo: jest.fn(async () => undefined), assertDmAllowed: jest.fn(async () => undefined) };
+    service = new AckService(repo as never, access as never, analytics as never,
+      stub<CommunitySafetyService>(safety));
   });
 
   describe('authorization (non-leak: no 403-vs-404 oracle)', () => {
@@ -179,6 +209,210 @@ describe('AckService', () => {
       expect((absent as NotFoundException).getResponse()).toEqual(
         (ineligible as NotFoundException).getResponse(),
       );
+    });
+  });
+
+  describe('visibility (the read path\'s gate, LS-1134D)', () => {
+    const hidden = (body: object) => {
+      safety.assertVisibleTo.mockImplementation(async () => {
+        throw new NotFoundException(body);
+      });
+    };
+
+    it('asks the read path\'s gate with the caller, the author, the ack not-found body and the row\'s place', async () => {
+      const m = msg();
+      repo.findById.mockResolvedValue(m);
+      repo.stampAck.mockImplementation(stampAckFrom(m));
+      await service.applyTransition(coach, MSG_ID, 'seen');
+      expect(safety.assertVisibleTo).toHaveBeenCalledWith(coach.id, m.sender_id,
+        { error: 'not_found', code: 'community.ack.message_not_found' }, [m.workspace_id, m.cohort_id]);
+    });
+
+    it('a DM row is asked about with no space (the Hall/DM place)', async () => {
+      const m = msg({ scope: 'dm', cohort_id: null, recipient_user_id: coach.id,
+        dm_key: CommunityDmsRepository.dmKey(FIXTURE_IDS.workspace, coach.id, FIXTURE_IDS.clientSender) });
+      repo.findById.mockResolvedValue(m);
+      repo.stampAck.mockImplementation(stampAckFrom(m));
+      await service.applyTransition(coach, MSG_ID, 'acked');
+      expect(safety.assertVisibleTo.mock.calls[0][3]).toEqual([m.workspace_id, null]);
+    });
+
+    it.each(['seen', 'acked', 'replied'] as const)('%s on a hidden message: the same 404 as absent, nothing stamped, no telemetry', async (to) => {
+      repo.findById.mockResolvedValueOnce(null);
+      const absent = await service.applyTransition(coach, MSG_ID, to).catch((e) => e);
+      repo.findById.mockResolvedValueOnce(msg());
+      hidden({ error: 'not_found', code: 'community.ack.message_not_found' });
+      const gated = await service.applyTransition(coach, MSG_ID, to).catch((e) => e);
+      expect(gated).toBeInstanceOf(NotFoundException);
+      expect((gated as NotFoundException).getResponse()).toEqual((absent as NotFoundException).getResponse());
+      expect(repo.stampAck).not.toHaveBeenCalled();
+      expect(analytics.capture).not.toHaveBeenCalled();
+    });
+
+    it('an already-stamped message that is now hidden 404s: the idempotent retry hands back no timestamps', async () => {
+      repo.findById.mockResolvedValue(msg({ coach_seen_at: new Date(), coach_acked_at: new Date() }));
+      hidden({ error: 'not_found', code: 'community.ack.message_not_found' });
+      const res = await service.applyTransition(coach, MSG_ID, 'acked').catch((e) => e);
+      expect(res).toBeInstanceOf(NotFoundException);
+      expect((res as NotFoundException).getResponse()).toEqual({ error: 'not_found', code: 'community.ack.message_not_found' });
+      expect(JSON.stringify((res as NotFoundException).getResponse())).not.toMatch(/seen_at|acked_at|replied_at/);
+      expect(repo.stampAck).not.toHaveBeenCalled();
+    });
+
+    it('the platform owner passes the gate too (as on the read path)', async () => {
+      repo.findById.mockResolvedValue(msg());
+      hidden({ error: 'not_found', code: 'community.ack.message_not_found' });
+      await expect(service.applyTransition(owner, MSG_ID, 'seen')).rejects.toBeInstanceOf(NotFoundException);
+      expect(safety.assertVisibleTo).toHaveBeenCalledWith(owner.id, expect.any(String), expect.anything(), expect.anything());
+      expect(repo.stampAck).not.toHaveBeenCalled();
+    });
+
+    it('the gate runs after the cheaper checks: an absent, foreign or ineligible message never reaches it', async () => {
+      repo.findById.mockResolvedValueOnce(null);
+      await service.applyTransition(coach, MSG_ID, 'seen').catch((e) => e);
+      repo.findById.mockResolvedValueOnce(msg());
+      access.isWorkspaceCoach.mockResolvedValueOnce(false);
+      await service.applyTransition(foreignCoach, MSG_ID, 'seen').catch((e) => e);
+      repo.findById.mockResolvedValueOnce(msg());
+      repo.findSenderRole.mockResolvedValueOnce('coach');
+      await service.applyTransition(coach, MSG_ID, 'seen').catch((e) => e);
+      expect(safety.assertVisibleTo).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('rule D readers (FR-1173, LS-INBOX2 B2): whoever the inbox lists a space row to may acknowledge it', () => {
+    beforeEach(() => {
+      access.isWorkspaceCoach.mockResolvedValue(false);
+      repo.findById.mockResolvedValue(msg());
+      repo.stampAck.mockImplementation(stampAckFrom(msg()));
+    });
+
+    it('the space\'s team (an active coach or assistant membership) acks under the space\'s own read rule', async () => {
+      repo.isSpaceTeam.mockResolvedValue(true);
+      expect((await service.applyTransition(foreignCoach, MSG_ID, 'acked')).ack.state).toBe('acked');
+      expect(repo.isSpaceTeam).toHaveBeenCalledWith(FIXTURE_IDS.cohort, foreignCoach.id);
+      expect(access.canAccessCohort).toHaveBeenCalled();
+    });
+
+    it('the poster\'s own coach acks that row with no way into the space, behind the same visibility gate', async () => {
+      repo.isPublicRowOfMyClient.mockResolvedValue(true);
+      access.canAccessCohort.mockResolvedValue(false);
+      expect((await service.applyTransition(foreignCoach, MSG_ID, 'acked')).ack.state).toBe('acked');
+      expect(repo.isPublicRowOfMyClient).toHaveBeenCalledWith(FIXTURE_IDS.cohort, foreignCoach.id, FIXTURE_IDS.clientSender);
+      expect(safety.assertVisibleTo).toHaveBeenCalledWith(foreignCoach.id, FIXTURE_IDS.clientSender, expect.anything(), expect.anything());
+    });
+
+    it('neither: 404 before any stamp; a DM never asks either arm', async () => {
+      await expect(service.applyTransition(foreignCoach, MSG_ID, 'acked')).rejects.toBeInstanceOf(NotFoundException);
+      repo.findById.mockResolvedValue(msg({ scope: 'dm', cohort_id: null }));
+      repo.isPublicRowOfMyClient.mockClear();
+      repo.isSpaceTeam.mockClear();
+      await expect(service.applyTransition(foreignCoach, MSG_ID, 'acked')).rejects.toBeInstanceOf(NotFoundException);
+      expect([repo.isPublicRowOfMyClient.mock.calls.length, repo.isSpaceTeam.mock.calls.length]).toEqual([0, 0]);
+      expect(repo.stampAck).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('read rule per kind (FR-1174, LS-1174 B1)', () => {
+    const NOT_FOUND = { error: 'not_found', code: 'community.ack.message_not_found' };
+    const OTHER = 'bbbbbbbb-0000-4000-8000-00000000000e';
+    const dmWith = (me: string, over: Partial<CommunityMessage> = {}): CommunityMessage => msg({
+      scope: 'dm', cohort_id: null, recipient_user_id: me,
+      dm_key: CommunityDmsRepository.dmKey(FIXTURE_IDS.workspace, me, FIXTURE_IDS.clientSender), ...over });
+    const TO = ['seen', 'acked', 'replied'] as const;
+    const refused = async (who: typeof coach, to: (typeof TO)[number], m: CommunityMessage) => {
+      repo.findById.mockResolvedValue(m);
+      const e: unknown = await service.applyTransition(who, MSG_ID, to).catch((x: unknown) => x);
+      expect(e).toBeInstanceOf(NotFoundException);
+      expect((e as NotFoundException).getResponse()).toEqual(NOT_FOUND);
+      expect(repo.stampAck).not.toHaveBeenCalled();
+      expect(analytics.capture).not.toHaveBeenCalled();
+    };
+
+    it.each(TO)('%s on a DM between two other people 404s (coach and owner)', async (to) => {
+      await refused(coach, to, dmWith(OTHER));
+      await refused(owner, to, dmWith(OTHER));
+      expect(access.membershipInWorkspace).not.toHaveBeenCalled();
+    });
+
+    it.each(TO)('%s on a DM row with no thread key 404s (the key is derived from caller + author)', async (to) => {
+      await refused(coach, to, dmWith(coach.id, { dm_key: null }));
+    });
+
+    it.each(TO)('%s on the coach\'s DM after the author lost their membership 404s', async (to) => {
+      access.membershipInWorkspace.mockImplementation(async (_w: string, who: string) =>
+        (who === FIXTURE_IDS.clientSender ? null : { dm_enabled: null }));
+      await refused(coach, to, dmWith(coach.id));
+    });
+
+    it.each(TO)('%s on the coach\'s DM with DMs off (workspace default off, no override) 404s', async (to) => {
+      access.findWorkspace.mockResolvedValue({ id: FIXTURE_IDS.workspace, dm_enabled_default: false });
+      await refused(coach, to, dmWith(coach.id));
+    });
+
+    it.each(TO)('%s on the coach\'s DM with the author\'s DMs switched off 404s', async (to) => {
+      access.membershipInWorkspace.mockImplementation(async (_w: string, who: string) =>
+        ({ dm_enabled: who === FIXTURE_IDS.clientSender ? false : null }));
+      await refused(coach, to, dmWith(coach.id));
+    });
+
+    it.each(TO)('%s on the coach\'s DM across a block (assertDmAllowed refuses) 404s', async (to) => {
+      safety.assertDmAllowed.mockRejectedValue(new ForbiddenException({ code: 'community.dm.blocked' }));
+      await refused(coach, to, dmWith(coach.id));
+    });
+
+    it('an already-stamped DM the coach can no longer read hands back no timestamps', async () => {
+      access.findWorkspace.mockResolvedValue({ id: FIXTURE_IDS.workspace, dm_enabled_default: false });
+      await refused(coach, 'acked', dmWith(coach.id, { coach_seen_at: new Date(), coach_acked_at: new Date() }));
+    });
+
+    it('a database failure inside the DM rule is not masked as not found', async () => {
+      access.membershipInWorkspace.mockRejectedValue(new Error('db down'));
+      repo.findById.mockResolvedValue(dmWith(coach.id));
+      await expect(service.applyTransition(coach, MSG_ID, 'seen')).rejects.toThrow('db down');
+      expect(repo.stampAck).not.toHaveBeenCalled();
+    });
+
+    it.each([['coach', coach], ['owner', owner]] as const)('the %s acks a DM they are in that they can read', async (_n, who) => {
+      const m = dmWith(who.id);
+      repo.findById.mockResolvedValue(m);
+      repo.stampAck.mockImplementation(stampAckFrom(m));
+      const res = await service.applyTransition(who, MSG_ID, 'acked');
+      expect(res.ack.state).toBe('acked');
+      expect(access.membershipInWorkspace).toHaveBeenCalledWith(FIXTURE_IDS.workspace, who.id);
+      expect(access.membershipInWorkspace).toHaveBeenCalledWith(FIXTURE_IDS.workspace, FIXTURE_IDS.clientSender);
+      expect(safety.assertDmAllowed).toHaveBeenCalledWith(who.id, FIXTURE_IDS.clientSender);
+      expect(analytics.capture).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([COMMENT_CONTEXT_TYPE, CHALLENGE_COMMENT_CONTEXT_TYPE, CHALLENGE_OPTIN_CONTEXT_TYPE])(
+      'a %s row is never acked: 404 on every route, coach and owner', async (type) => {
+        for (const to of TO) {
+          await refused(coach, to, msg({ plan_context_type: type }));
+          await refused(owner, to, msg({ plan_context_type: type }));
+        }
+        expect(access.findCohort).not.toHaveBeenCalled();
+      });
+
+    it.each(TO)('%s on a space row in a space the caller may not enter 404s (getOne\'s rule)', async (to) => {
+      access.canAccessCohort.mockResolvedValue(false);
+      await refused(coach, to, msg());
+      expect(access.canAccessCohort).toHaveBeenCalledWith(expect.objectContaining({ id: FIXTURE_IDS.cohort }), coach);
+    });
+
+    it('a space row whose space is gone, or a space row with no space, 404s', async () => {
+      access.findCohort.mockResolvedValue(null);
+      await refused(coach, 'seen', msg());
+      await refused(coach, 'seen', msg({ cohort_id: null }));
+    });
+
+    it('the owner acks a plain space row (canAccessCohort is asked with the owner)', async () => {
+      const m = msg();
+      repo.findById.mockResolvedValue(m);
+      repo.stampAck.mockImplementation(stampAckFrom(m));
+      const res = await service.applyTransition(owner, MSG_ID, 'seen');
+      expect(res.ack.state).toBe('seen');
+      expect(access.canAccessCohort).toHaveBeenCalledWith(expect.anything(), owner);
     });
   });
 

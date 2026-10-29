@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  HttpException,
   Injectable,
   Logger,
   NotFoundException,
@@ -7,6 +8,10 @@ import {
 import type { CommunityMessage, User } from '@prisma/client';
 import { AnalyticsService } from '../../analytics/analytics.service';
 import { CommunityAccessService } from '../community-access.service';
+import { placeOf } from '../community-space-access';
+import { CommunityDmsRepository } from '../dms/community-dms.repository';
+import { assertDmReadable } from '../dms/community-dms.service';
+import { CommunitySafetyService } from '../safety/community-safety.service';
 import { AckRepository } from './ack.repository';
 import {
   ACK_STATE_RANK,
@@ -78,6 +83,7 @@ export class AckService {
     private readonly repo: AckRepository,
     private readonly access: CommunityAccessService,
     private readonly analytics: AnalyticsService,
+    private readonly safety: CommunitySafetyService,
   ) {}
 
   /** Highest reached ack state from the stamped columns. */
@@ -119,6 +125,11 @@ export class AckService {
    * cohort/DM message may be acked. Coach/owner/system-authored messages are
    * not ackable and 404 identically — preventing nonsensical client-visible
    * ack state on messages that should never carry a coach acknowledgement.
+   *
+   * Visibility: a message hidden from the coach's read path (block either way,
+   * banned author, moved-away client outside a public space) 404s identically
+   * too — the ack routes act only on what the coach can read (FR-1174: the
+   * full read rule of the row's kind, below).
    */
   private async authorize(
     user: AckActor,
@@ -129,14 +140,16 @@ export class AckService {
       throw new NotFoundException(NOT_FOUND);
     }
     // Tenant visibility: a platform owner sees all; any other caller must coach
-    // the message's workspace. A caller who cannot read the message gets the
-    // not-found response — never a 403 that would confirm the ID exists.
-    if (user.role !== 'owner') {
-      const isCoach = await this.access.isWorkspaceCoach(
-        m.workspace_id,
-        user.id,
-      );
-      if (!isCoach) {
+    // the message's workspace, or be one the inbox lists this space row to
+    // (rule D, FR-1173 LS-INBOX2 B2): the space's team, or in a public space
+    // the poster's own coach (that row only, read and acknowledge). A caller
+    // who cannot read the message gets the not-found response — never a 403
+    // that would confirm the ID exists.
+    let ownCoach = false;
+    if (user.role !== 'owner' && !(await this.access.isWorkspaceCoach(m.workspace_id, user.id))) {
+      const space = m.scope === 'dm' ? null : m.cohort_id;
+      ownCoach = space !== null && (await this.repo.isPublicRowOfMyClient(space, user.id, m.sender_id));
+      if (!ownCoach && !(space !== null && (await this.repo.isSpaceTeam(space, user.id)))) {
         throw new NotFoundException(NOT_FOUND);
       }
     }
@@ -147,6 +160,34 @@ export class AckService {
     if (senderRole !== 'student') {
       throw new NotFoundException(NOT_FOUND);
     }
+    // Read rule (FR-1174): an ack write passes the full rule the caller's read
+    // of this row passes, per kind. A DM: the DM reader's rule
+    // (assertDmReadable) on the thread the reader derives from the caller and
+    // the author, so only the DM's other person may ack it, while both still
+    // hold a membership, neither blocked the other and DMs are on for both. A
+    // space row: CommunityMessagesService.getOne's rule — a plain chat row in a
+    // space the caller may enter. Post comments, challenge comments and the
+    // leaderboard opt-in sentinel (plan_context_type set) are never acked by
+    // the app (it acks coach-inbox rows only) and 404.
+    if (m.scope === 'dm') {
+      const ws = m.dm_key === CommunityDmsRepository.dmKey(m.workspace_id, user.id, m.sender_id)
+        ? await this.access.findWorkspace(m.workspace_id) : null;
+      if (!ws) throw new NotFoundException(NOT_FOUND);
+      await assertDmReadable(this.access, this.safety, ws, user.id, m.sender_id).catch((e: unknown) => {
+        throw e instanceof HttpException ? new NotFoundException(NOT_FOUND) : e;
+      });
+    } else {
+      const cohort = m.cohort_id && m.plan_context_type === null ? await this.access.findCohort(m.cohort_id) : null;
+      if (!cohort || !(ownCoach || (await this.access.canAccessCohort(cohort, user)))) throw new NotFoundException(NOT_FOUND);
+    }
+    // Visibility (LS-1134D): then the gate getOne calls —
+    // CommunitySafetyService.assertVisibleTo with the row's place (a block
+    // either way, the author banned from this community, or a client who moved
+    // away writing in the Hall, a DM or a space that is not public). Every
+    // refusal answers the same 404 as an absent message, before the idempotent
+    // no-op below, so a retry on an already-stamped message hands back no
+    // timestamps either.
+    await this.safety.assertVisibleTo(user.id, m.sender_id, NOT_FOUND, placeOf(m));
     return m;
   }
 

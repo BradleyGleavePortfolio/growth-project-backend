@@ -46,6 +46,7 @@ function build() {
     assertCanPost: jest.fn(async () => undefined),
   };
   const repo = {
+    findById: jest.fn(async (_id: string): Promise<CommunityMessage | null> => null),
     createCohortMessage: jest.fn(async () => message),
     markCohortClientMessagesReplied: jest.fn(async () => undefined),
     listCohortPushRecipients: jest.fn(async () => []),
@@ -53,6 +54,7 @@ function build() {
   // Today's 3 are used: with the switch on this send is refused (429).
   const spacePush = {
     highAlertAllowance: jest.fn(async () => ({ reach: 4, used_today: 3, limit: 3 })),
+    highAlertPreview: jest.fn(async () => ({ reach: 4, used_today: 3, limit: 3 })),
     markHighAlert: jest.fn(async () => undefined),
   };
   const service = new CommunityMessagesService(
@@ -60,13 +62,17 @@ function build() {
     stub<CommunityMessagesRepository>(repo),
     stub<CommunityRealtimeService>({ broadcastCommunityEvent: jest.fn(async () => undefined) }),
     stub<PlanContextService>({ validate: jest.fn(async () => null) }),
-    stub<CommunitySafetyService>({ assertAllowed: jest.fn(), hiddenFromViewer: jest.fn(async () => new Set()) }),
+    stub<CommunitySafetyService>({
+      assertAllowed: jest.fn(),
+      hiddenFromViewer: jest.fn(async () => new Set()),
+      assertVisibleTo: jest.fn(async () => undefined),
+    }),
     stub<CommunityNotificationsService>({ pushEnabled: () => false, sendCommunityPush: jest.fn() }),
     undefined,
     stub<CommunitySpacePushService>(spacePush),
   );
   const controller = new CommunitySpacePushController(stub<CommunityAccessService>(access), stub<CommunitySpacePushService>(spacePush));
-  return { access, spacePush, service, controller };
+  return { access, repo, spacePush, service, controller };
 }
 
 const coach = stub<User>({ id: COACH, role: 'coach' });
@@ -98,6 +104,7 @@ describe('Opus C-6: the space switch off', () => {
     });
     expect(access.findCohort).not.toHaveBeenCalled();
     expect(spacePush.highAlertAllowance).not.toHaveBeenCalled();
+    expect(spacePush.highAlertPreview).not.toHaveBeenCalled();
   });
 });
 
@@ -115,8 +122,35 @@ describe('the space switch on (unchanged)', () => {
     expect(spacePush.markHighAlert).toHaveBeenCalledWith(message.id);
   });
 
+  // FR-1168R2 C1: the reach returned for a High alert reply is the reach in its thread (the thread's first message;
+  // tapping a reply joins that thread), so it leaves out who left the thread, as the push does.
+  it('a High alert sent as a reply asks the reach for its thread; a new message asks for the whole space', async () => {
+    const { repo, spacePush, service } = build();
+    spacePush.highAlertAllowance.mockResolvedValue({ reach: 2, used_today: 0, limit: 3 });
+    const root = stub<CommunityMessage>({ ...message, id: 'eeeeeeee-0000-0000-0000-0000000000a1', sender_id: COACH });
+    const reply = stub<CommunityMessage>({ ...message, id: 'eeeeeeee-0000-0000-0000-0000000000a2', parent_message_id: root.id });
+    repo.findById.mockImplementation(async (id: string) => [root, reply].find((m) => m.id === id) ?? null);
+    const sent = await service.send(coach, COHORT, 'team call moved to 6', undefined, reply.id, undefined, true);
+    expect(sent).toMatchObject({ high_alert_reach: 2 });
+    expect(spacePush.highAlertAllowance).toHaveBeenLastCalledWith(COACH, expect.objectContaining({ id: COHORT }), root.id);
+    await service.send(coach, COHORT, 'team call moved to 6', undefined, undefined, undefined, true);
+    expect(spacePush.highAlertAllowance).toHaveBeenLastCalledWith(COACH, expect.objectContaining({ id: COHORT }), null);
+  });
+
   it('the preview route answers the allowance', async () => {
     const { controller } = build();
     await expect(controller.preview(stub<AuthedRequest>({ user: coach }), COHORT)).resolves.toEqual({ reach: 4, used_today: 3, limit: 3 });
+  });
+
+  // FR-1168R2 C1: the preview takes the message a High alert reply answers (?reply_to=), so the reach the coach sees
+  // before sending is the thread's, as it is after sending; a new message sends none.
+  it('the preview route passes reply_to on, and nothing for a new message', async () => {
+    const { controller, spacePush } = build();
+    const req = stub<AuthedRequest>({ user: coach });
+    const answers = 'eeeeeeee-0000-0000-0000-0000000000a2';
+    await expect(controller.preview(req, COHORT, answers)).resolves.toEqual({ reach: 4, used_today: 3, limit: 3 });
+    expect(spacePush.highAlertPreview).toHaveBeenLastCalledWith(COACH, expect.objectContaining({ id: COHORT }), answers);
+    await controller.preview(req, COHORT);
+    expect(spacePush.highAlertPreview).toHaveBeenLastCalledWith(COACH, expect.objectContaining({ id: COHORT }), null);
   });
 });

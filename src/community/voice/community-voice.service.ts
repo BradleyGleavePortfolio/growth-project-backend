@@ -7,7 +7,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import type { CommunityVoiceNote, User } from '@prisma/client';
+import type { CommunityCohort, CommunityVoiceNote, User } from '@prisma/client';
 import { z } from 'zod';
 import { AnalyticsService } from '../../analytics/analytics.service';
 import { CommunityAccessService } from '../community-access.service';
@@ -302,7 +302,7 @@ export class CommunityVoiceService {
    * check reads only the already-loaded User + a single workspace-coach lookup,
    * so it adds no dependency on the checkout module (R77 scope).
    */
-  private async assertEntitled(workspaceId: string, user: User): Promise<void> {
+  private async assertEntitled(workspaceId: string, user: User, inSpace: boolean): Promise<void> {
     if (!resolveVoiceEntitlementRequired()) return;
     if (user.role === 'owner') return;
     if (await this.access.isWorkspaceCoach(workspaceId, user.id)) return;
@@ -310,7 +310,9 @@ export class CommunityVoiceService {
     // that workspace's members. Resolve the owning coach's tier.
     const workspace = await this.access.findWorkspace(workspaceId);
     if (!workspace) throw new NotFoundException(NOT_FOUND);
-    const entitled = await this.access.membershipInWorkspace(workspaceId, user.id);
+    // BPF-1: a note for a space has met that space's rule (targetFor), a public
+    // space's included; only a Hall note needs a membership here.
+    const entitled = inSpace || (await this.access.membershipInWorkspace(workspaceId, user.id));
     if (!entitled) throw new NotFoundException(NOT_FOUND);
     // Default-deny: require an explicit paid entitlement signal on the member.
     const tier = (user as { plan_tier?: string }).plan_tier ?? 'flat_300';
@@ -332,21 +334,39 @@ export class CommunityVoiceService {
   }
 
   /**
+   * BPF-1: the place a voice upload, note or list is for, or the same 404.
+   * With `cohortId`, that space of this workspace under its own rule
+   * (canAccessCohort, the check a text message there passes), so a member of
+   * a public space only reaches it; without one, the Hall (null) under the
+   * workspace rule, as before.
+   */
+  private async targetFor(
+    user: User,
+    workspaceId: string,
+    cohortId: string | undefined,
+  ): Promise<CommunityCohort | null> {
+    const workspace = await this.access.findWorkspace(workspaceId);
+    if (workspace && !cohortId && (await this.access.canAccessWorkspace(workspaceId, user))) return null;
+    const space = workspace && cohortId ? await this.access.findCohort(cohortId) : null;
+    if (space && space.workspace_id === workspaceId && (await this.access.canAccessCohort(space, user))) return space;
+    throw new NotFoundException(NOT_FOUND);
+  }
+
+  /**
    * Resolve the target scope (cohort / conversation) for a write and assert the
-   * caller may post into it. A channel note targets a cohort the caller can
-   * access (or the workspace hall when neither cohort nor conversation given).
+   * caller may post into it. `space` is what targetFor resolved: a space the
+   * caller can access, or null for the workspace hall (its rule already met).
    * A DM note targets a conversation; participant resolution is the author's
    * own thread membership (the conversation roster lives in the messaging
    * domain — out of this lane's OWNS — so we scope DM writes to the author).
    */
   private async resolveWriteScope(
-    workspaceId: string,
     user: User,
-    cohortId: string | undefined,
+    space: CommunityCohort | null,
     conversationId: string | undefined,
     reply: boolean,
   ): Promise<{ cohortId: string | null; conversationId: string | null }> {
-    if (cohortId && conversationId) {
+    if (space && conversationId) {
       throw new BadRequestException({
         error: 'bad_request',
         code: 'community.voice.ambiguous_target',
@@ -359,24 +379,14 @@ export class CommunityVoiceService {
       // any row is written.
       throw new BadRequestException(VOICE_DM_NOT_SUPPORTED);
     }
-    if (cohortId) {
-      const cohort = await this.access.findCohort(cohortId);
-      if (!cohort || cohort.workspace_id !== workspaceId) {
-        throw new NotFoundException(NOT_FOUND);
-      }
-      if (!(await this.access.canAccessCohort(cohort, user))) {
-        throw new NotFoundException(NOT_FOUND);
-      }
+    if (space) {
       // FIX-1122-R1: a reply (its parent is checked next by replyParent, 404
       // unless live and in this space) needs only access, as a text reply does;
       // a top-level note needs the start permission; a section takes neither.
-      if (!reply || cohort.kind === 'section') await this.access.assertCanPost(cohort, user);
-      return { cohortId: cohort.id, conversationId: null };
+      if (!reply || space.kind === 'section') await this.access.assertCanPost(space, user);
+      return { cohortId: space.id, conversationId: null };
     }
     // Workspace-hall note — any member of the workspace may post.
-    if (!(await this.access.canAccessWorkspace(workspaceId, user))) {
-      throw new NotFoundException(NOT_FOUND);
-    }
     return { cohortId: null, conversationId: null };
   }
 
@@ -467,11 +477,10 @@ export class CommunityVoiceService {
     workspaceId: string,
     dto: IssueVoiceUploadDto,
   ): Promise<VoiceUploadTarget> {
-    const workspace = await this.access.findWorkspace(workspaceId);
-    if (!workspace || !(await this.access.canAccessWorkspace(workspaceId, user))) {
-      throw new NotFoundException(NOT_FOUND);
-    }
-    await this.assertEntitled(workspaceId, user);
+    // BPF-1: access to the place only; create() adds the posting policy and
+    // the reply parent, which only it knows.
+    const space = await this.targetFor(user, workspaceId, dto.cohort_id);
+    await this.assertEntitled(workspaceId, user, space !== null);
     this.assertWithinLimits(dto);
 
     const mime: VoiceNoteMimeType = dto.mime_type;
@@ -509,21 +518,17 @@ export class CommunityVoiceService {
     workspaceId: string,
     dto: CreateVoiceNoteDto,
   ): Promise<VoiceNoteResponse> {
-    const workspace = await this.access.findWorkspace(workspaceId);
-    if (!workspace || !(await this.access.canAccessWorkspace(workspaceId, user))) {
-      throw new NotFoundException(NOT_FOUND);
-    }
-    await this.assertEntitled(workspaceId, user);
+    const space = await this.targetFor(user, workspaceId, dto.cohort_id);
+    await this.assertEntitled(workspaceId, user, space !== null);
     this.assertWithinLimits(dto);
 
     const scope = await this.resolveWriteScope(
-      workspaceId,
       user,
-      dto.cohort_id,
+      space,
       dto.conversation_id,
       Boolean(dto.parent_message_id), // the same test replyParent uses
     );
-    const parent = await this.replyParent(user, scope.cohortId, dto.parent_message_id);
+    const parent = await this.replyParent(user, space, dto.parent_message_id);
 
     // A-610-1 bucket binding: only a key the server minted for THIS caller
     // (valid issuance MAC, canonical shape, recent) is accepted, checked after
@@ -632,21 +637,31 @@ export class CommunityVoiceService {
    * plain chat message in the same space whose author the caller can see; a
    * reply to a reply joins the first message's thread (one level, Slack-like).
    * Anything else, a Hall note included, is the message 404 (no new words).
+   * BPF-1: the rule a text reply there meets (CommunityMessagesService
+   * .replyParent): the first message is checked the same way, and in a
+   * coach-only space a member replies only in a thread the coach started.
    */
   private async replyParent(
     user: User,
-    cohortId: string | null,
+    space: CommunityCohort | null,
     parentId: string | undefined,
   ): Promise<{ id: string; at: Date } | null> {
     if (!parentId) return null;
-    const m = cohortId ? await this.repo.findChatMessage(parentId) : null;
-    if (!m || m.scope !== 'cohort' || m.cohort_id !== cohortId || m.deleted_at || m.plan_context_type !== null) {
+    const tapped = await this.liveParent(user, space, parentId);
+    const root = tapped.parent_message_id ? await this.liveParent(user, space, tapped.parent_message_id) : tapped;
+    if (space?.posting_policy === 'coach' && !(await this.access.isWorkspaceCoach(space.workspace_id, root.sender_id))) {
+      await this.access.assertCanPost(space, user);
+    }
+    return { id: root.id, at: root.created_at };
+  }
+
+  private async liveParent(user: User, space: CommunityCohort | null, messageId: string) {
+    const m = space ? await this.repo.findChatMessage(messageId) : null;
+    if (!m || m.scope !== 'cohort' || m.cohort_id !== space?.id || m.deleted_at || m.plan_context_type !== null) {
       throw new NotFoundException(PARENT_NOT_FOUND);
     }
     await this.safety.assertVisibleTo(user.id, m.sender_id, PARENT_NOT_FOUND, placeOf(m));
-    return m.parent_message_id && m.parent_message_at
-      ? { id: m.parent_message_id, at: m.parent_message_at }
-      : { id: m.id, at: m.created_at };
+    return m;
   }
 
   /**
@@ -689,7 +704,8 @@ export class CommunityVoiceService {
    * Resolve a voice note the caller may READ, or 404. Coach/owner reads any
    * non-deleted note in their workspace; a member reads a channel note in a
    * cohort/workspace they belong to, or a DM note they authored. Anything else
-   * is an identical 404 so existence never leaks. REMOVED-BY-BE: with
+   * is an identical 404 so existence never leaks. Rule D (FR-1173R2): a live
+   * note of a public space reads for its author's own coach too. REMOVED-BY-BE: with
    * `placeholder` (the single read only), a coach-removed note passes the
    * same rules so it reads as its placeholder; every other path (heard,
    * delete) still treats it as missing.
@@ -712,10 +728,14 @@ export class CommunityVoiceService {
     }
     if (row.cohort_id) {
       const cohort = await this.access.findCohort(row.cohort_id);
-      if (!cohort || !(await this.access.canAccessCohort(cohort, user))) {
-        throw new NotFoundException(NOT_FOUND);
+      if (!cohort) throw new NotFoundException(NOT_FOUND);
+      if (await this.access.canAccessCohort(cohort, user)) return row;
+      // Rule D (FR-1173R2, LS-1173R2 B2): a public space's live note by the caller's own client reads for that
+      // coach too, outside the space (community-public-row.ts; the row layer's community_voice_notes_public_own_coach).
+      if (row.soft_deleted_at === null && (await this.repo.isPublicRowOfMyClient(cohort.id, user.id, row.author_id))) {
+        return row;
       }
-      return row;
+      throw new NotFoundException(NOT_FOUND);
     }
     if (!(await this.access.canAccessWorkspace(row.workspace_id, user))) {
       throw new NotFoundException(NOT_FOUND);
@@ -728,28 +748,12 @@ export class CommunityVoiceService {
     workspaceId: string,
     query: ListVoiceNotesQueryDto,
   ): Promise<VoiceNoteFeedResponse> {
-    const workspace = await this.access.findWorkspace(workspaceId);
-    if (!workspace || !(await this.access.canAccessWorkspace(workspaceId, user))) {
-      throw new NotFoundException(NOT_FOUND);
-    }
-
-    let cohortFilter: string | null = null;
-    if (query.cohort_id) {
-      const cohort = await this.access.findCohort(query.cohort_id);
-      if (
-        !cohort ||
-        cohort.workspace_id !== workspaceId ||
-        !(await this.access.canAccessCohort(cohort, user))
-      ) {
-        throw new NotFoundException(NOT_FOUND);
-      }
-      cohortFilter = cohort.id;
-    }
+    const space = await this.targetFor(user, workspaceId, query.cohort_id);
 
     const isCoach = await this.isCoach(workspaceId, user);
     const page = await this.repo.list({
       workspaceId,
-      cohortId: cohortFilter,
+      cohortId: space?.id ?? null,
       conversationId: query.conversation_id ?? null,
       visibleCohortIds: isCoach
         ? undefined

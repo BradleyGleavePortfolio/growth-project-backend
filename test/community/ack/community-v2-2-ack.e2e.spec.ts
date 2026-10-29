@@ -24,6 +24,7 @@ import {
   CanActivate,
   ExecutionContext,
   INestApplication,
+  NotFoundException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -36,6 +37,7 @@ import { AckFeatureFlagGuard } from '../../../src/community/ack/ack-flag.guard';
 import { AckService } from '../../../src/community/ack/ack.service';
 import { AckRepository } from '../../../src/community/ack/ack.repository';
 import { CommunityAccessService } from '../../../src/community/community-access.service';
+import { CommunitySafetyService } from '../../../src/community/safety/community-safety.service';
 import { AnalyticsService } from '../../../src/analytics/analytics.service';
 import { CommunityCoachInboxController } from '../../../src/community/inbox/community-coach-inbox.controller';
 import { CommunityCoachInboxService } from '../../../src/community/inbox/community-coach-inbox.service';
@@ -273,9 +275,10 @@ describe('community v2-2 coach ack signals (HTTP)', () => {
  * Wires the REAL AckService (so the authorize() non-leak + client-authored
  * eligibility rules execute) behind the real route + full guard chain, with
  * the repository / access / analytics dependencies mocked (no DB). Proves that
- * an absent message, a foreign-workspace message, and an ineligible
- * (coach/owner-authored) message ALL surface the SAME 404 over HTTP — no
- * 403-vs-404 existence oracle.
+ * an absent message, a foreign-workspace message, an ineligible
+ * (coach/owner-authored) message, and (LS-1134D) a message the coach's read
+ * path hides, ALL surface the SAME 404 over HTTP — no 403-vs-404 existence
+ * oracle.
  */
 describe('community v2-2 ack non-leak + eligibility (HTTP, real service)', () => {
   let app: INestApplication;
@@ -286,9 +289,20 @@ describe('community v2-2 ack non-leak + eligibility (HTTP, real service)', () =>
     findById: jest.fn(),
     findSenderRole: jest.fn(),
     stampAck: jest.fn(),
+    // FR-1173 (rule D): the poster's own coach and the space's team; neither unless a test says so.
+    isPublicRowOfMyClient: jest.fn(),
+    isSpaceTeam: jest.fn(),
   };
-  const access = { isWorkspaceCoach: jest.fn() };
+  // FR-1174: getOne's space rule (findCohort + canAccessCohort) runs on a space row.
+  const access = { isWorkspaceCoach: jest.fn(), findCohort: jest.fn(), canAccessCohort: jest.fn() };
   const analytics = { capture: jest.fn() };
+  // The read path's visibility gate (block / ban / moved client). When it hides
+  // a message it throws 404 with the body the caller hands it, as the real one does.
+  const safety = { assertVisibleTo: jest.fn() };
+  const hide = () =>
+    safety.assertVisibleTo.mockImplementation(async (_viewer: string, _author: string, body: object) => {
+      throw new NotFoundException(body);
+    });
 
   function rowFor(overrides: Record<string, unknown> = {}) {
     return {
@@ -298,6 +312,9 @@ describe('community v2-2 ack non-leak + eligibility (HTTP, real service)', () =>
       cohort_id: COHORT,
       scope: 'cohort',
       sender_id: CLIENT.id,
+      dm_key: null,
+      recipient_user_id: null,
+      plan_context_type: null,
       deleted_at: null,
       coach_seen_at: null,
       coach_acked_at: null,
@@ -342,6 +359,7 @@ describe('community v2-2 ack non-leak + eligibility (HTTP, real service)', () =>
         { provide: AckRepository, useValue: repo },
         { provide: CommunityAccessService, useValue: access },
         { provide: AnalyticsService, useValue: analytics },
+        { provide: CommunitySafetyService, useValue: safety },
       ],
     })
       .overrideGuard(JwtAuthGuard)
@@ -367,7 +385,13 @@ describe('community v2-2 ack non-leak + eligibility (HTTP, real service)', () =>
     CURRENT_USER = { ...COACH };
     jest.clearAllMocks();
     access.isWorkspaceCoach.mockResolvedValue(true);
+    access.findCohort.mockResolvedValue({ id: COHORT, workspace_id: WORKSPACE });
+    access.canAccessCohort.mockResolvedValue(true);
     repo.findSenderRole.mockResolvedValue('student');
+    repo.isPublicRowOfMyClient.mockResolvedValue(false);
+    repo.isSpaceTeam.mockResolvedValue(false);
+    safety.assertVisibleTo.mockReset();
+    safety.assertVisibleTo.mockResolvedValue(undefined);
   });
 
   it('absent message → 404, no stamp', async () => {
@@ -409,6 +433,49 @@ describe('community v2-2 ack non-leak + eligibility (HTTP, real service)', () =>
     const foreign = await call('POST', `/api/community/ack/${MSG_ID}/seen`);
     expect(absent.status).toBe(foreign.status);
     expect(absent.body).toEqual(foreign.body);
+  });
+
+  it.each(['seen', 'acked', 'replied'])(
+    'LS-1134D: a message the read path hides → %s answers the SAME 404 body as an absent one, no stamp',
+    async (to) => {
+      repo.findById.mockResolvedValueOnce(null);
+      const absent = await call('POST', `/api/community/ack/${MSG_ID}/${to}`);
+      repo.findById.mockResolvedValueOnce(rowFor());
+      hide();
+      const hidden = await call('POST', `/api/community/ack/${MSG_ID}/${to}`);
+      expect(hidden.status).toBe(404);
+      expect(hidden.body).toEqual(absent.body);
+      expect(hidden.body).toMatchObject({ code: 'community.ack.message_not_found' });
+      expect(safety.assertVisibleTo).toHaveBeenCalledWith(COACH.id, CLIENT.id, expect.anything(), [WORKSPACE, COHORT]);
+      expect(repo.stampAck).not.toHaveBeenCalled();
+      expect(analytics.capture).not.toHaveBeenCalled();
+    },
+  );
+
+  it('LS-1134D: a retry on an already-stamped message that is now hidden → 404, no timestamps in the answer', async () => {
+    repo.findById.mockResolvedValue(
+      rowFor({ coach_seen_at: new Date('2026-01-02T00:00:00.000Z'), coach_acked_at: new Date('2026-01-03T00:00:00.000Z') }),
+    );
+    hide();
+    const res = await call('POST', `/api/community/ack/${MSG_ID}/acked`);
+    expect(res.status).toBe(404);
+    expect(JSON.stringify(res.body)).not.toMatch(/2026-01-0[23]|seen_at|acked_at/);
+    expect(repo.stampAck).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a post comment', { plan_context_type: 'community_post_comment' }],
+    ['a DM between the client and someone else', { scope: 'dm', cohort_id: null, dm_key: `${WORKSPACE}:x:y`, recipient_user_id: 'someone-else' }],
+  ])('FR-1174: %s → the SAME 404 body as an absent one on every route, no stamp', async (_n, over) => {
+    repo.findById.mockResolvedValueOnce(null);
+    const absent = await call('POST', `/api/community/ack/${MSG_ID}/seen`);
+    for (const to of ['seen', 'acked', 'replied']) {
+      repo.findById.mockResolvedValueOnce(rowFor(over));
+      const res = await call('POST', `/api/community/ack/${MSG_ID}/${to}`);
+      expect([res.status, res.body]).toEqual([404, absent.body]);
+    }
+    expect(repo.stampAck).not.toHaveBeenCalled();
+    expect(analytics.capture).not.toHaveBeenCalled();
   });
 
   it('client-authored, owned, eligible message → 200 (stamps + emits)', async () => {

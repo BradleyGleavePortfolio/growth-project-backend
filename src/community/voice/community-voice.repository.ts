@@ -4,7 +4,8 @@ import { Prisma } from '@prisma/client';
 import type { CommunityVoiceNote } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { fullNamesFor } from '../community-space-access';
-import { openClientMessagesOf } from '../messages/community-messages.repository';
+import { isPublicRowOfMyClient } from '../community-public-row';
+import { openClientMessagesReadBy } from '../messages/community-messages.repository';
 import { storeRemovalNotice } from '../safety/community-moderation-notices';
 import {
   attemptVoiceErasures,
@@ -146,6 +147,11 @@ export interface VoiceListFilter {
 export class CommunityVoiceRepository {
   constructor(private readonly prisma: PrismaService) {}
 
+  /** Rule D (FR-1173R2): is the viewer the note author's own coach for this public space note (community-public-row.ts)? */
+  isPublicRowOfMyClient(cohortId: string, viewerId: string, authorId: string): Promise<boolean> {
+    return isPublicRowOfMyClient(this.prisma, cohortId, viewerId, authorId);
+  }
+
   /**
    * Insert a voice note in one transaction. VOICE-BE: a space note also gets
    * its chat message (kind 'voice', sharing the note's id and time), so the
@@ -166,7 +172,10 @@ export class CommunityVoiceRepository {
     }
   }
 
-  private insertVoiceNote(seed: VoiceNoteSeed): Promise<CommunityVoiceNote> {
+  private async insertVoiceNote(seed: VoiceNoteSeed): Promise<CommunityVoiceNote> {
+    // FR-1174: a coach's space note answers only the open client messages the coach can read.
+    const open = seed.answersClients && seed.cohortId
+      ? await openClientMessagesReadBy(this.prisma, seed.cohortId, seed.authorId) : null;
     return this.prisma.$transaction(async (tx) => {
       const created = await tx.communityVoiceNote.create({
         data: {
@@ -199,9 +208,9 @@ export class CommunityVoiceRepository {
             parent_message_at: seed.parent?.at ?? null,
           },
         });
-        if (seed.answersClients) {
+        if (open) {
           await tx.communityMessage.updateMany({
-            where: openClientMessagesOf(created.cohort_id),
+            where: open,
             data: { coach_replied_at: created.created_at },
           });
         }
