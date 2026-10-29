@@ -205,6 +205,24 @@ describe('FR-1144B: one send-once rule for photos and for the third High alert',
     expect(h.photos).toHaveLength(1);
     expect(h.images.publish).toHaveBeenCalledTimes(1);
   });
+
+  it('B2: the third High alert of the day, resent under its key, returns the first message, not 429', async () => {
+    const h = harness(2);
+    const first = await h.alert(coach, 'Class moved to 6pm', KEY);
+    expect(first.high_alert_reach).toBe(4);
+    const again = await h.alert(coach, 'Class moved to 6pm', KEY);
+    expect(again).toEqual(first);
+    expect(h.rows).toHaveLength(1);
+    expect(h.spacePush.markHighAlert).toHaveBeenCalledTimes(1);
+    expect(h.communityMessage.updateMany).toHaveBeenCalledTimes(1);
+    expect(h.realtime.broadcastCommunityEvent).toHaveBeenCalledTimes(1);
+    expect(h.push.pushEnabled).toHaveBeenCalledTimes(1);
+    // A new fourth alert is still over the limit, and the coach rule still runs first on a resend.
+    expect(await status(h.alert(coach, 'Another one', randomUUID()))).toBe(429);
+    h.spacePush.highAlertAllowance.mockRejectedValueOnce(Object.assign(new Error('coach only'), { status: 403 }));
+    expect(await status(h.alert(coach, 'Class moved to 6pm', KEY))).toBe(403);
+    expect(h.rows).toHaveLength(1);
+  });
 });
 
 describe('FX-IDEM: the header and the id it names', () => {
