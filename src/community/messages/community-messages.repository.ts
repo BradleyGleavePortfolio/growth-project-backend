@@ -16,6 +16,44 @@ import {
   type VoiceErasureRow,
   type VoiceErasureStorage,
 } from '../voice/voice-erasure';
+import { LOCK_NS_COMMUNITY_MESSAGE_KEY } from './message-idempotency';
+
+/** A new text message in a space. */
+export interface NewCohortMessage {
+  workspaceId: string;
+  cohortId: string;
+  senderId: string;
+  body: string;
+  // v2-1: a validated plan-context tag to persist into plan_context_payload
+  // (JsonB). Null/undefined writes a SQL NULL — the common, untagged case and
+  // the only case when FEATURE_COMMUNITY_PLAN_TAGS is off (tag dropped on send).
+  planContext?: PlanContextTag | null;
+  // SC-BE1: the thread's first message this reply answers, or none.
+  parent?: { id: string; at: Date } | null;
+}
+
+/** SC-BE3: a new photo message (caption in `body`) and its photo. */
+export interface NewImageMessage extends NewCohortMessage {
+  image: { key: string; width: number; height: number; sizeBytes: number };
+  /** FX-1139: copies the upload to its sent key; runs after the rows, so a reused key never copies. */
+  publish: () => Promise<void>;
+}
+
+const cohortMessageData = (params: NewCohortMessage): Prisma.CommunityMessageUncheckedCreateInput => ({
+  workspace_id: params.workspaceId,
+  cohort_id: params.cohortId,
+  scope: 'cohort',
+  kind: 'text',
+  sender_id: params.senderId,
+  body: params.body,
+  visibility: 'active',
+  parent_message_id: params.parent?.id ?? null,
+  parent_message_at: params.parent?.at ?? null,
+  plan_context_payload:
+    params.planContext == null
+      ? Prisma.JsonNull
+      : (params.planContext as unknown as Prisma.InputJsonValue),
+});
 
 /** A space's client messages still waiting on a coach reply (the coach inbox message arm) that
  * `viewerId` can read (FR-1174): the authors authorsWhoLeft names for this space — moved away, banned,
@@ -90,35 +128,32 @@ export class CommunityMessagesRepository {
     return { parents, coachId: workspace?.coach_id ?? null, people, fullName };
   }
 
-  async createCohortMessage(params: {
-    workspaceId: string;
-    cohortId: string;
-    senderId: string;
-    body: string;
-    // v2-1: a validated plan-context tag to persist into plan_context_payload
-    // (JsonB). Null/undefined writes a SQL NULL — the common, untagged case and
-    // the only case when FEATURE_COMMUNITY_PLAN_TAGS is off (tag dropped on send).
-    planContext?: PlanContextTag | null;
-    // SC-BE1: the thread's first message this reply answers, or none.
-    parent?: { id: string; at: Date } | null;
-  }): Promise<CommunityMessage> {
-    return this.prisma.communityMessage.create({
-      data: {
-        workspace_id: params.workspaceId,
-        cohort_id: params.cohortId,
-        scope: 'cohort',
-        kind: 'text',
-        sender_id: params.senderId,
-        body: params.body,
-        visibility: 'active',
-        parent_message_id: params.parent?.id ?? null,
-        parent_message_at: params.parent?.at ?? null,
-        plan_context_payload:
-          params.planContext == null
-            ? Prisma.JsonNull
-            : (params.planContext as unknown as Prisma.InputJsonValue),
-      },
-    });
+  async createCohortMessage(params: NewCohortMessage): Promise<CommunityMessage> {
+    return this.prisma.communityMessage.create({ data: cohortMessageData(params) });
+  }
+
+  /**
+   * FX-IDEM: the keyed send. One transaction lock per message id (the id an author's Idempotency-Key names in
+   * a space, message-idempotency.ts), then the first row with that id is returned as is, or the row is written
+   * under that id. Racing resends wait on the lock and read the first row; no unique index is needed.
+   */
+  async createKeyedCohortMessage(
+    id: string,
+    params: NewCohortMessage,
+  ): Promise<{ row: CommunityMessage; replayed: boolean }> {
+    return this.prisma.$transaction((tx) =>
+      this.keyed(tx, id, () => tx.communityMessage.create({ data: { ...cohortMessageData(params), id } })));
+  }
+
+  /** FX-IDEM: under the transaction lock on a keyed id, the first row with it (a replay), else `write`'s new row. */
+  private async keyed(
+    tx: Prisma.TransactionClient,
+    id: string,
+    write: () => Promise<CommunityMessage>,
+  ): Promise<{ row: CommunityMessage; replayed: boolean }> {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${LOCK_NS_COMMUNITY_MESSAGE_KEY}::int4, hashtext(${id}))`;
+    const first = await tx.communityMessage.findFirst({ where: { id } });
+    return first ? { row: first, replayed: true } : { row: await write(), replayed: false };
   }
 
   /**
@@ -343,49 +378,31 @@ export class CommunityMessagesRepository {
   // ── SC-BE3: photos in the space chat ───────────────────────────────────────
 
   /** A kind 'image' message (caption in `body`) and its photo row, in one transaction. */
-  async createImageMessage(params: {
-    workspaceId: string;
-    cohortId: string;
-    senderId: string;
-    body: string;
-    /** FR-1139 (Sol C): the validated plan tag, stored as createCohortMessage stores it. */
-    planContext?: PlanContextTag | null;
-    parent?: { id: string; at: Date } | null;
-    image: { key: string; width: number; height: number; sizeBytes: number };
-    /** FX-1139: copies the upload to its sent key; runs after the rows, so a reused key never copies. */
-    publish: () => Promise<void>;
-  }): Promise<CommunityMessage> {
-    return this.prisma.$transaction(async (tx) => {
-      const m = await tx.communityMessage.create({
-        data: {
-          workspace_id: params.workspaceId,
-          cohort_id: params.cohortId,
-          scope: 'cohort',
-          kind: 'image',
-          sender_id: params.senderId,
-          body: params.body,
-          visibility: 'active',
-          parent_message_id: params.parent?.id ?? null,
-          parent_message_at: params.parent?.at ?? null,
-          // FX-1156-R75: the zod-typed tag is already Prisma JSON, so it is stored with no cast.
-          plan_context_payload: params.planContext ?? Prisma.JsonNull,
-        },
-      });
-      await tx.communityMessageImage.create({
-        data: {
-          message_id: m.id,
-          cohort_id: params.cohortId,
-          author_id: params.senderId,
-          storage_key: sentImageKey(params.image.key),
-          width: params.image.width,
-          height: params.image.height,
-          size_bytes: params.image.sizeBytes,
-          mime: 'image/jpeg',
-        },
-      });
-      await params.publish();
-      return m;
-    }, { timeout: 15_000 });
+  async createImageMessage(params: NewImageMessage): Promise<CommunityMessage> {
+    return this.prisma.$transaction((tx) => this.imageRows(tx, params), { timeout: 15_000 });
+  }
+
+  /** FR-1144B (Sol B1): a photo under an Idempotency-Key, by createKeyedCohortMessage's rule; a replay copies nothing. */
+  async createKeyedImageMessage(id: string, params: NewImageMessage): Promise<{ row: CommunityMessage; replayed: boolean }> {
+    return this.prisma.$transaction((tx) => this.keyed(tx, id, () => this.imageRows(tx, params, id)), { timeout: 15_000 });
+  }
+
+  private async imageRows(tx: Prisma.TransactionClient, params: NewImageMessage, id?: string): Promise<CommunityMessage> {
+    const m = await tx.communityMessage.create({ data: { ...cohortMessageData(params), kind: 'image', ...(id ? { id } : {}) } });
+    await tx.communityMessageImage.create({
+      data: {
+        message_id: m.id,
+        cohort_id: params.cohortId,
+        author_id: params.senderId,
+        storage_key: sentImageKey(params.image.key),
+        width: params.image.width,
+        height: params.image.height,
+        size_bytes: params.image.sizeBytes,
+        mime: 'image/jpeg',
+      },
+    });
+    await params.publish();
+    return m;
   }
 
   /** The photo rows behind these image messages. */

@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   ForbiddenException,
   HttpException,
   HttpStatus,
@@ -45,11 +46,13 @@ import {
   IMAGE_READ_TTL_SEC,
   isOwnImage,
   isPublishableImageKey,
+  sentImageKey,
 } from '../images/community-image-store';
 import { AiEgressService } from '../../ai-egress/ai-egress.service';
 import { assertCaptionAllowed, assertPhotoAllowed } from '../images/community-photo-check';
 import { CoachAlertsService } from '../../coach/coach-alerts.service';
 import { SAFETY_ALERT_PUSH_BODY, SPACE_SAFETY_ALERT_PUSH_BODY } from '../../notifications/push/lock-screen-copy';
+import { IDEMPOTENCY_KEY_REUSED, keyedMessageId } from './message-idempotency';
 
 /** SC-BE3: a photo message as the send route takes it. */
 export interface ImageSend {
@@ -279,7 +282,8 @@ export class CommunityMessagesService {
     parent: { id: string; at: Date } | null,
     image: ImageSend,
     planContext: PlanContextTag | null,
-  ): Promise<CommunityMessage> {
+    keyedId: string | null,
+  ): Promise<{ row: CommunityMessage; replayed: boolean }> {
     if (!communityImagesEnabled()) throw IMAGE_REJECTED('community.image.disabled');
     if (!isPublishableImageKey(image.key, user.id, cohort.id)) throw IMAGE_REJECTED('community.image.key_invalid');
     const images = this.images;
@@ -297,17 +301,20 @@ export class CommunityMessagesService {
         this.alertCoachOfPhotoSafety(user, cohort),
       );
     }
+    const params = {
+      workspaceId: cohort.workspace_id,
+      cohortId: cohort.id,
+      senderId: user.id,
+      body,
+      planContext,
+      parent,
+      image: { key: image.key, width: image.width, height: image.height, sizeBytes: size },
+      publish: () => images.publish(image.key),
+    };
     try {
-      return await this.repo.createImageMessage({
-        workspaceId: cohort.workspace_id,
-        cohortId: cohort.id,
-        senderId: user.id,
-        body,
-        planContext,
-        parent,
-        image: { key: image.key, width: image.width, height: image.height, sizeBytes: size },
-        publish: () => images.publish(image.key),
-      });
+      // FR-1144B (Sol B1): a keyed photo is written by the text rule (a racing resend gets the first message).
+      if (keyedId) return await this.repo.createKeyedImageMessage(keyedId, params);
+      return { row: await this.repo.createImageMessage(params), replayed: false };
     } catch (e) {
       if ((e as { code?: string }).code === 'P2002') throw IMAGE_REJECTED('community.image.key_used');
       throw e;
@@ -482,6 +489,7 @@ export class CommunityMessagesService {
     parentId?: string,
     image?: ImageSend,
     highAlert?: boolean,
+    idempotencyKey?: string | null,
   ): Promise<CommunityMessageResponse & { high_alert_reach?: number }> {
     const cohort = await this.access.findCohort(cohortId);
     // Treat a missing cohort and an unauthorised cohort identically (404).
@@ -502,19 +510,24 @@ export class CommunityMessagesService {
     // is its thread's (who left that thread is not rung).
     const alert =
       highAlert && this.spacePush && spacePushOn() ? await this.spacePush.highAlertAllowance(user.id, cohort, parent?.id ?? null) : null;
+    // FX-IDEM: a resend with the same Idempotency-Key (same author, same space; text, photo, reply or High alert)
+    // answers with the first message and repeats none of the side effects below (High alert mark, coach-replied
+    // stamp, realtime ping, push); the same key on a different message is refused. FR-1144B (Sol B1, B2): the first
+    // message is looked up before the daily High alert limit and before the photo's upload is checked again, so
+    // only a new message counts against the 3 and an upload is used once.
+    const keyedId = idempotencyKey ? keyedMessageId(user.id, cohort.id, idempotencyKey) : null;
+    const sentBefore = keyedId ? await this.repo.findById(keyedId) : null;
+    if (sentBefore) return this.replay(sentBefore, user, cohort, body, parent, image, alert);
     if (alert && alert.used_today >= alert.limit) {
       throw new HttpException({ code: 'community.high_alert.limit', limit: alert.limit }, HttpStatus.TOO_MANY_REQUESTS);
     }
-    const created = image
-      ? await this.createImage(user, cohort, body, parent, image, planContext)
-      : await this.repo.createCohortMessage({
-          workspaceId: cohort.workspace_id,
-          cohortId: cohort.id,
-          senderId: user.id,
-          body,
-          planContext,
-          parent,
-        });
+    const data = { workspaceId: cohort.workspace_id, cohortId: cohort.id, senderId: user.id, body, planContext, parent };
+    const { row: created, replayed } = image
+      ? await this.createImage(user, cohort, body, parent, image, planContext, keyedId)
+      : keyedId
+        ? await this.repo.createKeyedCohortMessage(keyedId, data)
+        : { row: await this.repo.createCohortMessage(data), replayed: false };
+    if (replayed) return this.replay(created, user, cohort, body, parent, image, alert);
     if (alert) await this.spacePush?.markHighAlert(created.id);
     // v1-6 coach-inbox producer: a coach/owner message into the cohort answers
     // the cohort's outstanding client messages, so stamp coach_replied_at on
@@ -548,6 +561,25 @@ export class CommunityMessagesService {
     void this.pushCohortMessage(created, cohort.workspace_id, created.cohort_id ?? cohort.id);
     const sent = CommunityMessageResponseSchema.parse({ message: this.view(created, undefined, undefined, await this.imagesOf([created])) });
     return alert ? { ...sent, high_alert_reach: alert.reach } : sent;
+  }
+
+  /** FX-IDEM: the answer to a resend; its first message if it is that message (author, space, kind, words, thread
+   * and, for a photo, the same upload), else 409 idempotency_key_reused. */
+  private async replay(
+    row: CommunityMessage,
+    user: User,
+    cohort: CommunityCohort,
+    body: string,
+    parent: { id: string; at: Date } | null,
+    image: ImageSend | undefined,
+    alert: { reach: number } | null,
+  ): Promise<CommunityMessageResponse & { high_alert_reach?: number }> {
+    const photo = !image || (await this.repo.imagesFor([row.id]))[0]?.storage_key === sentImageKey(image.key);
+    const same = row.sender_id === user.id && row.cohort_id === cohort.id && row.kind === (image ? 'image' : 'text')
+      && row.body === body && row.parent_message_id === (parent?.id ?? null) && photo;
+    if (!same) throw new ConflictException(IDEMPOTENCY_KEY_REUSED);
+    const first = CommunityMessageResponseSchema.parse({ message: this.view(row, undefined, undefined, await this.imagesOf([row])) });
+    return alert && row.high_alert ? { ...first, high_alert_reach: alert.reach } : first;
   }
 
   /**
