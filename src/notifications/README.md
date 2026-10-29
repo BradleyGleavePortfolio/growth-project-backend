@@ -1,6 +1,6 @@
 # Notifications Module
 
-The notifications module is the single place all communication with users and coaches flows through. It manages the in-app notification inbox, push delivery, email digest scheduling, and per-user channel preferences. Every other module (check-ins, weight, messaging, build-week, PTM alerts) calls into this module's emitters rather than writing their own notification logic, so policy changes (mute, quiet hours, rate limits) apply automatically everywhere.
+The notifications module holds the in-app notification inbox, push delivery, the email digests and per-user channel preferences. Most senders go through it: an emitter in `emitters/`, `NotificationsService.createNotification` or `NotificationsService.sendPush`, so the per-kind switches, Mute all and push quiet hours are applied there. A few senders write `Notification` rows with Prisma themselves (`checkout/plan-renewal/switch-tell.ts`, `onboarding/onboarding.service.ts`, `onboarding/flagged-join-alert.ts`, `community/safety/community-moderation-notices.ts`, `ai/gateway/materialisers/send-notification.materialiser.ts`), so the `createNotification` gate does not run for those rows.
 
 ---
 
@@ -8,7 +8,7 @@ The notifications module is the single place all communication with users and co
 
 | Kind | In-app | Push | Email | Setting | Mute all | Who receives |
 | ---- | ------ | ---- | ----- | ------- | -------- | ------------ |
-| `milestone_reached` | on | on | off | `milestone_*` | row kept, push muted | Client |
+| `milestone_reached` | on | on | on | `milestone_*` | row kept, push muted | Client |
 | `message_received` | on | on | off | `message_*` | row kept, push muted | Client |
 | `missed_checkin` | on | on | off | `missed_checkin_*` | row kept, push muted | Client + Coach |
 | `weight_trend_alert` | on | on | off | `weight_trend_*` | row kept, push muted | Client |
@@ -34,7 +34,10 @@ The notifications module is the single place all communication with users and co
 | `plan_renewal` | n/a | on | n/a | `plan_renewal_*` | passes (money) | Client (push only, no inbox row) |
 | `contract_signed`, `contract_declined`, `contract_expired` | off | off | on | `digest_*` | no sender yet | Coach (B5 contracts; no sender on main yet) |
 
-Defaults live in `NotificationsService.getPreferences`. Each channel flag can be toggled independently via `PATCH /notifications/preferences`.
+Defaults live in `NotificationsService.getPreferences`. The Email column is the saved default of the `_email` flag; only the digests
+(`digest_email`) and the nudges (`nudge_*_email`) read an email flag before they send. `PATCH /notifications/preferences` sets
+each channel flag in `UpdateNotificationPreferencesDto`; the DTO has no `drip_released_*` field, so a PATCH that sends one is
+rejected with 400, and those three flags cannot be changed through this endpoint.
 Setting is the column family `notificationPrefsPrefix` picks for the kind (`src/notifications/push/push-preferences.ts`). `none` means
 the kind has no column of its own: only `muted` (Mute all) stops it at the core gate, and only its push. A kind with no line there falls to `digest_*`,
 whose in-app and push are off by default, so every money or safety kind has its own line. `test/dunning-kind-fix-notification-kinds.spec.ts`
@@ -106,13 +109,18 @@ is built only from pre-approved short context.
 
 | Method  | Path                           | Auth           | Request                            | Response                             |
 | ------- | ------------------------------ | -------------- | ---------------------------------- | ------------------------------------ |
-| `GET`   | `/notifications`               | JWT (any role) | `?limit&cursor&filter=all\|unread` | `{ items, nextCursor, unreadCount }` |
-| `POST`  | `/notifications/:id/read`      | JWT (any role) | —                                  | Updated notification row             |
+| `GET`   | `/notifications`               | JWT (any role) | `?limit&cursor&filter=all\|unread` | `{ items, nextCursor, unreadCount, emptyState }` |
+| `POST`  | `/notifications/:id/read`      | JWT (any role) | —                                  | The notification row (404 if it is not the caller's) |
 | `POST`  | `/notifications/mark-all-read` | JWT (any role) | —                                  | `{ updated: number }`                |
+| `GET`   | `/notifications/unread-count`  | JWT (any role) | —                                  | `{ count }`                          |
 | `GET`   | `/notifications/preferences`   | JWT (any role) | —                                  | NotificationPreferences row          |
-| `PATCH` | `/notifications/preferences`   | JWT (any role) | `UpdateNotificationPreferencesDto` | Updated preferences row              |
+| `PATCH` | `/notifications/preferences`   | JWT (any role) | `UpdateNotificationPreferencesDto` | Updated preferences row (30 writes per minute) |
+| `PUT`   | `/notifications/timezone`      | JWT (any role) | `UpdateTimeZoneDto` (IANA name)    | Stored zone result (30 writes per minute) |
+| `GET`   | `/email/unsubscribe`           | Public, signed `?t=` token | —                      | HTML confirm page (`digest-unsubscribe.controller.ts`) |
+| `POST`  | `/email/unsubscribe`           | Public, signed `?t=` token | —                      | Sets `digest_email` to false, HTML done page |
 
-All endpoints derive `user_id` from the JWT — clients can only access their own notifications.
+The `/notifications` endpoints take `user_id` from the JWT, so a user reaches only their own notifications. The unsubscribe
+endpoints take the user from the signed token instead.
 
 ---
 
@@ -120,29 +128,35 @@ All endpoints derive `user_id` from the JWT — clients can only access their ow
 
 | Model                     | Key fields                                                                  | Notes                                                                              |
 | ------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `Notification`            | `id, user_id, kind, payload, body, deep_link, channel, read_at, created_at` | In-app inbox. One row per delivered notification. Never stores another user's PII. |
-| `NotificationDigestLog`   | `id, user_id, digest_kind, window_date, status, sent_at, error`             | Idempotency guard. Unique on `(user_id, digest_kind, window_date)`.                |
-| `NotificationPreferences` | `user_id, muted, milestone_push, …`                                         | Per-user channel toggles. 9 kinds × 3 channels = 27 flags + `muted` global.        |
+| `Notification`            | `id, user_id, kind, payload, body, deep_link, channel, read_at, inbox_hidden, created_at` | In-app inbox. `inbox_hidden` keeps a `push` twin of an `inapp` row out of the inbox and the unread counts. |
+| `NotificationDigestLog`   | `id, user_id, digest_kind, window_date, status, sent_at, error, created_at` | Idempotency guard. Unique on `(user_id, digest_kind, window_date)`. Status is `sending`, then `sent` or `failed`. |
+| `NotificationPreferences` | `user_id, muted, milestone_push, …`                                         | Per-user settings: an `_inapp`, `_push` and `_email` flag for each setting family, `muted` (Mute all), the older `*_enabled` reminder switches, `new_client_alerts`, `quiet_hours_start` / `quiet_hours_end` and the time zone. |
 
-`Notification.body` is capped to 160 chars by `NotificationsService.createNotification`. `Notification.deep_link` uses the `tgp://` scheme so the mobile app routes to the right screen.
+`Notification.body` is capped to 160 chars by `NotificationsService.createNotification`. The emitters set `Notification.deep_link` with the `tgp://` scheme so the mobile app routes to the right screen.
 
 ---
 
 ## Emitters
 
-Each emitter lives in `src/notifications/emitters/` and is a self-contained `@Injectable()` service. Callers import just the emitter they need — no circular imports.
+Each emitter lives in `src/notifications/emitters/` and is a self-contained `@Injectable()` service. Callers inject just the emitter they need.
 
 | Emitter file                         | Kind emitted              | Called from                      |
 | ------------------------------------ | ------------------------- | -------------------------------- |
-| `milestone-reached.emitter.ts`       | `milestone_reached`       | WeightService, CheckInsService   |
-| `message-received.emitter.ts`        | `message_received`        | MessagingService                 |
-| `missed-checkin.emitter.ts`          | `missed_checkin`          | PtmService (checkin_miss signal) |
-| `weight-trend-alert.emitter.ts`      | `weight_trend_alert`      | WeightService                    |
-| `checkin-submitted.emitter.ts`       | `checkin_submitted`       | CheckInsService                  |
-| `build-week-day-unlocked.emitter.ts` | `build_week_day_unlocked` | BuildWeekService                 |
-| `coach-alert.emitter.ts`             | `coach_alert`             | CoachAlertsService               |
+| `milestone-reached.emitter.ts`       | `milestone_reached`       | no caller on main (`packages/milestone.service.ts` names it only in a comment) |
+| `message-received.emitter.ts`        | `message_received`        | MessagingService, BroadcastDispatcherService |
+| `missed-checkin.emitter.ts`          | `missed_checkin`          | no caller on main                |
+| `weight-trend-alert.emitter.ts`      | `weight_trend_alert`      | no caller on main                |
+| `checkin-submitted.emitter.ts`       | `checkin_submitted`       | no caller on main                |
+| `build-week-day-unlocked.emitter.ts` | `build_week_day_unlocked` | no caller on main                |
+| `coach-alert.emitter.ts`             | `coach_alert`             | CoachAlertsService, `checkout/dunning-v2/dunning-v2.dispatcher.ts` |
+| `booking.emitter.ts`                 | the ten `booking_*` kinds | SchedulingService, `scheduling-session-lifecycle.service.ts`, `jobs/reminder.job.ts`, `jobs/request-expiry.job.ts` |
+| `first-payment.emitter.ts`           | `first_payment`           | CoachFirstPaymentService         |
 
-All emitters are **fire-and-forget** — they catch every error internally and log at WARN level. Callers do not `await` the emitter result.
+Error handling differs by emitter. The milestone, message, missed check-in, weight trend, check-in and build-week emitters
+catch delivery errors and log a warning. `CoachAlertEmitter` returns a delivery result (`inapp` and `push`: `sent`, `skipped`
+or `failed`), and CoachAlertsService and the dunning dispatcher await it. `BookingEmitter` returns a `BookingDeliveryOutcome`.
+`FirstPaymentEmitter` catches nothing and throws on a bad payload; `CoachFirstPaymentService` awaits it with the purchase
+transaction, so its rows commit or roll back with the first-payment ledger row and the `ClientPurchase`.
 
 ---
 
@@ -159,7 +173,10 @@ All emitters are **fire-and-forget** — they catch every error internally and l
 
 3. `DigestService` builds the template data (check-in counts, streak, weight delta for clients; roster snapshot for coaches) and compiles the Handlebars template.
 
-4. The HTML email is sent via the configured transport (`EMAIL_TRANSPORT`).
+4. The HTML email is sent via the configured transport (`EMAIL_TRANSPORT`). Its links come from `digest-links.ts`, never from
+   `APP_URL` or `CONSOLE_URL`: the open-app link and the signed `/email/unsubscribe?t=` link both use this backend's fixed
+   public origin (`DIGEST_PUBLIC_ORIGIN`). The unsubscribe token is signed with a key derived from `RECENT_AUTH_SECRET`;
+   without it no link can be made, the user's send is recorded as failed and no digest goes out.
 
 5. On success: `markDigestSent(logId)`. On failure: `markDigestFailed(logId, error)`.
 
@@ -172,7 +189,11 @@ All emitters are **fire-and-forget** — they catch every error internally and l
 
 ## Rate Limiting
 
-Push notifications are rate-limited to **1 push per user per kind per 60 seconds** via an in-process Map. At scale (multi-replica), migrate to a Redis sorted-set TTL key: `notif:rate:<userId>:<kind>`.
+`createNotification` with `channel: 'push'` and no transaction keeps **1 row per user per kind (and `throttle_key`) per 60 seconds**,
+tracked in an in-process Map (`recentPushes`, one per replica); inside a transaction it does not throttle. Device pushes from
+`sendPush` go through `PushDeliveryService` (`push/push-delivery.service.ts`), which never drops a distinct event: repeats in one
+conversation collapse within `COLLAPSE_WINDOW_MS` (60 s), and a per-user cap (`USER_WINDOW_MAX` = 8 per `USER_WINDOW_MS` = 10 min)
+defers non-urgent pushes until the window has room.
 
 ---
 
@@ -191,8 +212,8 @@ Push notifications are rate-limited to **1 push per user per kind per 60 seconds
 | `RESEND_API_KEY`              | —                                      | Required when `EMAIL_TRANSPORT=resend`                           |
 | `SENDGRID_API_KEY`            | —                                      | Required when `EMAIL_TRANSPORT=sendgrid`                         |
 | `POSTMARK_SERVER_TOKEN`       | —                                      | Required when `EMAIL_TRANSPORT=postmark`                         |
-| `APP_URL`                     | `https://app.thegrowthproject.app`     | Base URL for client digest CTA and unsubscribe links             |
-| `CONSOLE_URL`                 | `https://console.thegrowthproject.app` | Base URL for coach digest CTA links                              |
+| `RECENT_AUTH_SECRET`          | — (required at production boot)        | Key source for the signed digest unsubscribe link; without it no digest is sent |
+| `APP_URL`                     | `https://app.thegrowthproject.app`     | Base of the nudge email links (`app_url`, `preferences_url`); not used by digest links |
 
 ---
 
@@ -200,17 +221,16 @@ Push notifications are rate-limited to **1 push per user per kind per 60 seconds
 
 | File                                     | What it asserts                                                                                                                                                      |
 | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tests/notification-emitters.spec.ts`    | Every emitter: correct kind, body ≤ 160 chars, no emoji, tgp:// deep-link, payload shape, graceful error handling                                                    |
-| `tests/notifications.controller.spec.ts` | Every endpoint: 401 without auth, 200 with valid JWT, whitelist stripping, validation errors                                                                         |
-| `tests/digest.cron.spec.ts`              | Template snapshot (renders, contains fixture data, no emoji), idempotency logic (second claim returns false), subject line format (numeric, plural correct)          |
-| `tests/notification-prefs.spec.ts`       | getPreferences defaults, updatePreferences create + partial update, mute suppresses createNotification, per-kind channel gate, markRead 404 guard, markAllRead count |
+| `test/notification-emitters.spec.ts`     | The seven older emitters (not booking or first payment): kind, recipient, body content and ≤ 160 chars, tgp:// deep link, payload; the milestone emitter does not throw when createNotification rejects |
+| `test/notifications.controller.spec.ts`  | Every HTTP endpoint case is a placeholder (its supertest calls are commented out); only the smoke tests run: the app is defined, and on a mocked service the list shape, prefs carry `user_id`, markAllRead returns the count |
+| `test/digest.cron.spec.ts`               | Template snapshot (renders, contains fixture data, no emoji, unsubscribe link), idempotency logic (second claim returns false), subject line format (numeric, plural correct) |
+| `test/notification-prefs.spec.ts`        | getPreferences defaults, updatePreferences create + partial update, Mute all keeps the in-app row (MUTE-PAY), per-kind channel gate, markRead 404 guard, markAllRead count |
 
 ---
 
 ## Future Work
 
-- Replace the in-process push rate-limit Map with Redis sorted sets when the app scales beyond a single Fly machine.
-- Add `User.push_token` column and wire real APNs/FCM SDK calls in `NotificationsService.pushToCoach`.
+- Replace the in-process `createNotification` push throttle Map with Redis sorted sets (`notif:rate:<userId>:<kind>`) when the app scales beyond a single Fly machine.
 - Add `GET /notifications/digest-log` (owner-only) to inspect send history for debugging.
 - Migrate digest cron to `SchedulerRegistry` dynamic registration so schedules can be changed at runtime without a redeploy.
-- Add weekly digest for client wins section (currently returns empty array — needs CommunityWin query).
+- Fill the coach digest's Recent wins section (`_buildCoachDigestData` always passes `recentWins: []`).
