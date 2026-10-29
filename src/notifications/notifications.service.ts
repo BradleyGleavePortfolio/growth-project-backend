@@ -35,6 +35,7 @@ import {
   muteAllStops,
   notificationPrefsPrefix,
   pushAllowedByPreferences,
+  RenewalOffer,
 } from './push/push-preferences';
 import { RomanCopyPayload } from '../roman/voice/voice-policy.constants';
 import { describeFailure } from '../observability/log-pii';
@@ -210,6 +211,7 @@ export class NotificationsService implements OnModuleInit {
         workout_reminder_push: true,
         workout_reminder_inapp: true,
         plan_renewal_push: true, // RENEWAL-BE (schema default)
+        plan_renewal_offers_opt_in_at: null, // STORE-B2: no yes to renewal offers yet
         // PR-15A — COACH_NEW_PURCHASE defaults match the migration:
         // selling coach gets push + in-app on every new entitlement,
         // email off (no transactional channel today).
@@ -337,6 +339,13 @@ export class NotificationsService implements OnModuleInit {
     const existing = await this.prisma.notificationPreferences.findUnique({
       where: { user_id: userId },
     });
+    // STORE-B2 (App Store 4.5.4): the in-app yes to renewal offers is the time the person turned the switch on
+    // (kept when it is already on); turning it off clears it. Absent from the PATCH, it is left as it is.
+    if (data.plan_renewal_offers !== undefined) {
+      (definedFields as Record<string, unknown>).plan_renewal_offers_opt_in_at = data.plan_renewal_offers
+        ? (existing?.plan_renewal_offers_opt_in_at ?? new Date())
+        : null;
+    }
 
     const result = existing
       ? await this.prisma.notificationPreferences.update({
@@ -585,7 +594,7 @@ export class NotificationsService implements OnModuleInit {
       kind: NotificationKindValue;
       body: string;
       deep_link?: string;
-      context?: (PushContext & MuteAllPass) | null;
+      context?: (PushContext & MuteAllPass & RenewalOffer) | null;
       dedupe_key?: string | null;
       urgent?: boolean;
     },
