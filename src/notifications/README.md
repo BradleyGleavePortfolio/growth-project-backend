@@ -16,12 +16,12 @@ only `muted`. `NotificationsService.pushToCoach` has no caller outside its spec.
 
 | Kind | In-app | Push | Email | Setting | Mute all | Who receives |
 | ---- | ------ | ---- | ----- | ------- | -------- | ------------ |
-| `milestone_reached` | on | on | on | `milestone_*` | row kept, push muted | Client |
-| `message_received` | on | on | off | `message_*` | row kept, push muted | Client |
-| `missed_checkin` | on | on | off | `missed_checkin_*` | row kept, push muted | Client + Coach |
-| `weight_trend_alert` | on | on | off | `weight_trend_*` | row kept, push muted | Client |
-| `checkin_submitted` | on | off | off | `checkin_submitted_*` | row kept, push muted | Coach |
-| `build_week_day_unlocked` | on | on | on | `build_week_*` | row kept, push muted | Client |
+| `milestone_reached` | on | on | on | `milestone_*` | row kept, push muted | No sender on main (`milestone-reached.emitter.ts` has no caller; it would tell the client) |
+| `message_received` | on | on | off | `message_*` | row kept, push muted | Client and Coach (a coach's message or broadcast tells the client; a client's reply tells their assigned coach; with messaging core v2 on, `MessagingService` tells no one about a thread they muted) |
+| `missed_checkin` | on | on | off | `missed_checkin_*` | row kept, push muted | No sender on main (`missed-checkin.emitter.ts` has no caller; it would tell the client and the coach) |
+| `weight_trend_alert` | on | on | off | `weight_trend_*` | row kept, push muted | No sender on main (`weight-trend-alert.emitter.ts` has no caller; it would tell the client) |
+| `checkin_submitted` | on | off | off | `checkin_submitted_*` | row kept, push muted | No sender on main (`checkin-submitted.emitter.ts` has no caller; it would tell the coach) |
+| `build_week_day_unlocked` | on | on | on | `build_week_*` | row kept, push muted | No sender on main (`build-week-day-unlocked.emitter.ts` has no caller; it would tell the client) |
 | `coach_alert` | on | on | off | `coach_alert_*` | row kept, push muted except safety and money alerts (note 1) | Coach |
 | `coach_client_moved` | on | n/a | n/a | none | row kept | Coach (the coach a client left for TGP's house coach; SWITCH-TELL-BE; one in-app row written with Prisma, no push) |
 | `client_digest` | off | off | on | `digest_*` | email muted | Client |
@@ -32,15 +32,22 @@ only `muted`. `NotificationsService.pushToCoach` has no caller outside its spec.
 | `drip_released` | on | on | off | `drip_released_*` | row kept, push muted | Client (buyer) |
 | `coach_new_purchase` | on | on | off | `coach_new_purchase_*` | passes (money) | Coach |
 | `booking_requested`, `booking_confirmed`, `booking_declined`, `booking_cancelled`, `booking_rescheduled`, `booking_reminder_24h`, `booking_reminder_1h`, `booking_link_needed`, `booking_link_ready`, `booking_request_expired` | on | on | off | `booking_*` | row kept, push muted | Client + Coach |
-| `nudge_missed_checkin` | on | on | off | `nudge_missed_checkin_*` | row kept, push and email muted (note 2) | Client |
-| `nudge_streak_broken` | on | on | off | `nudge_practice_paused_*` | row kept, push and email muted (note 2) | Client |
-| `nudge_onboarding_abandoned` | on | on | on | `nudge_onboarding_abandoned_*` | row kept, push and email muted (note 2) | Client |
-| `nudge_inactive` | on | on | on | `nudge_inactive_*` | row kept, push and email muted (note 2) | Client |
+| `nudge_missed_checkin` | on | on | off | `nudge_missed_checkin_*` | row kept, push and email muted (note 2) | Client or Coach: any user whose last check-in is at least 2 and under 7 days old (note 3) |
+| `nudge_streak_broken` | on | on | off | `nudge_practice_paused_*` | row kept, push and email muted (note 2) | Client or Coach: any user whose run of 7 or more daily check-ins stopped 1 or 2 days ago (note 3) |
+| `nudge_onboarding_abandoned` | on | on | on | `nudge_onboarding_abandoned_*` | row kept, push and email muted (note 2) | Client or Coach: any user whose account is 48 to 96 hours old and has not finished onboarding (note 3) |
+| `nudge_inactive` | on | on | on | `nudge_inactive_*` | row kept, push and email muted (note 2) | Client or Coach: any user whose last check-in or read notification is 7 to 14 days old (note 3) |
 | `dunning_blocker` | on | n/a | n/a | none | passes (money) | Client (the Day 3, Day 7 and dispute payment blocker, and the full-refund notice; the payment push and emails come from `dunning-v2.dispatcher.ts` through `pushToUser` and `EmailService`, outside this kind) |
 | `first_payment` | on | n/a | n/a | none | passes (money) | Coach (an in-app row plus a hidden `push` twin row; no device push is sent) |
 | `trial_ending` | on | on | on | none | passes (money) | Client (`TrialNoticeService` writes the row, sends the push with `pushToUser` and sends the trial email; it reads no email flag) |
 | `plan_renewal` | n/a | on | n/a | `plan_renewal_*` | passes (money) | Client (push only, no inbox row; the family has only `plan_renewal_push`) |
 | `contract_signed`, `contract_declined`, `contract_expired` | off | off | on | `digest_*` | no sender yet | Coach (B5 contracts; no sender on main yet) |
+
+Two senders write kinds that are in neither table. A community moderator's hide, warn or ban writes one in-app row of kind
+`community_moderation_notice` with Prisma to the member it acted on (`community/safety/community-moderation-notices.ts`); that
+file sends no push. An approved AI `draft.send_notification` writes one row with Prisma to a client on the coach's roster
+(`ai/gateway/materialisers/send-notification.materialiser.ts`); its kind is free text the draft chooses (for example
+`coach_nudge`), its channel is `push` unless the draft says `inapp`, no setting or Mute all gate runs, and no device push is
+sent: the push outbox never reads `Notification` rows.
 
 Defaults live in `NotificationsService.getPreferences` and match the schema defaults. For a kind with a Setting family, on and off
 are the saved default of that family's `_inapp`, `_push` or `_email` flag, and n/a means the family has no flag for that channel.
@@ -73,6 +80,11 @@ and drives every safety key and every money sender with Mute all on.
   in-app channel on is `suppressed_muted`) and `community/notifications/community-notifications.service.ts` (the push obeys Mute all; it writes its
   inbox row only when it goes on to try the push, see the community section below).
   `packages/trials/trial-notice.service.ts` passes `MUTE_ALL_PASS` and `checkout/plan-renewal/switch-tell.ts` no longer reads `muted`.
+- Note 3: the nudge detectors (`notifications/nudges/nudge-detector.service.ts`) have no role filter, and the nudge engine sends
+  to the user each detector picks. A coach or the owner can log check-ins through the client `/check-ins` route, and the
+  onboarding and inactivity detectors read every account, so a coach can get any of the four nudges. Before sending, `scanAll` drops
+  a coach whose `CoachSubscription` is not `active` or `trialing` and a client whose `ClientPurchase` rows are all inactive;
+  a user with no such row is kept.
 
 ### Community v1-4 push kinds
 
