@@ -72,7 +72,8 @@ function pushWorld() {
 /** A preferences PATCH body as the route receives it (the field is new in STORE-B2). */
 const patch = (body: object) => body as unknown as UpdateNotificationPreferencesDto;
 
-const offerPush = (user: string, context: object | undefined = OFFER) => ({
+/** A plan renewal push; `null` context is the Day 0 notice. */
+const offerPush = (user: string, context: object | null = OFFER) => ({
   user_id: user,
   kind: PLAN_RENEWAL,
   body: 'Your plan has ended.',
@@ -162,8 +163,8 @@ describe('STORE-B2: enqueue (NotificationsService.sendPush)', () => {
     w.tokens.a = TOKEN;
     w.tokens.b = TOKEN;
     w.prefs.b = { muted: true };
-    expect(await w.svc.sendPush(offerPush('a', undefined))).not.toBeNull();
-    expect(await w.svc.sendPush(offerPush('b', undefined))).not.toBeNull();
+    expect(await w.svc.sendPush(offerPush('a', null))).not.toBeNull();
+    expect(await w.svc.sendPush(offerPush('b', null))).not.toBeNull();
     expect(w.rows.map((r) => r.context)).toEqual([null, null]);
   });
 });
@@ -200,7 +201,7 @@ describe('STORE-B2: send time (the worker re-reads the yes)', () => {
   it('the Day 0 notice still passes Mute all at send time', async () => {
     const w = pushWorld();
     w.tokens.d = TOKEN;
-    expect(await w.svc.sendPush(offerPush('d', undefined))).not.toBeNull();
+    expect(await w.svc.sendPush(offerPush('d', null))).not.toBeNull();
     w.prefs.d = { muted: true };
     await w.delivery.drain();
     expect(w.rows.map((r) => [r.status, r.result_code])).toEqual([['sent', 'sent']]);
