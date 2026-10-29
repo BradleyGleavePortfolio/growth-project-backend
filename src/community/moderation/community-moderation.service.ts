@@ -761,8 +761,13 @@ export class CommunityModerationService {
    * can decide without another round trip. Voice notes carry a short-lived
    * playback link (`media`). Content of already-removed targets is shown as
    * "Removed" with `removed: true`.
+   *
+   * FR-1173R2 (LO-1173R2 B1): the shipped phone draws Dismiss, Warn, Hide and
+   * Ban on every item and never reads `can_act`, so by default this route
+   * serves only reports the caller can act on. The rule D reports (to read:
+   * the space's team, the poster's own coach) come only with `read_only=1`.
    */
-  async listFlagged(user: User, query: { limit?: string }): Promise<{ items: FlaggedItemView[] }> {
+  async listFlagged(user: User, query: { limit?: string; read_only?: string }): Promise<{ items: FlaggedItemView[] }> {
     if (user.role !== 'coach' && user.role !== 'owner') {
       throw new ForbiddenException(FORBIDDEN);
     }
@@ -777,10 +782,10 @@ export class CommunityModerationService {
       orderBy: { created_at: 'asc' },
       take,
     });
-    // Rule D (FR-1173, LS-INBOX2 B1): and the reports on public-space rows the caller reads as the space's team or
-    // the poster's own coach (to read: can_act false), each report once, oldest first.
+    // Rule D (FR-1173, LS-INBOX2 B1): and, when asked for (`read_only=1`), the reports on public-space rows the caller
+    // reads as the space's team or the poster's own coach (to read: can_act false), each report once, oldest first.
     const actable = new Set(owned.map((r) => r.id));
-    const read = user.role === 'owner' ? []
+    const read = user.role === 'owner' || query.read_only !== '1' ? []
       : await this.moderation.listForRuleDReader({ viewerId: user.id, workspaceId: null, status: 'open', limit: take, newestFirst: false });
     const rows = [...owned, ...read.filter((r) => !actable.has(r.id))]
       .sort((a, b) => a.created_at.getTime() - b.created_at.getTime() || (a.id < b.id ? -1 : 1))

@@ -37,6 +37,51 @@ function emptyPrisma(over: Record<string, Record<string, unknown>> = {}) {
 }
 
 describe('LO-1173R2 B1: the flagged route and the shipped phone', () => {
+  const readOnlyReport = () => ({
+    id: REPORT,
+    workspace_id: OTHER_WS,
+    target_type: 'message',
+    target_id: MESSAGE,
+    reason: 'spam',
+    notes: null,
+    status: 'open',
+    action: null,
+    reported_by_user_id: null,
+    created_at: new Date('2026-10-28T10:00:00Z'),
+  });
+  const serviceWith = (moderationRepo: unknown) =>
+    new CommunityModerationService(
+      stub({}),
+      stub(moderationRepo),
+      stub({}),
+      stub({}),
+      stub({}),
+      stub({}),
+      stub(
+        emptyPrisma({
+          communityMessage: {
+            findMany: jest.fn(async () => [
+              { id: MESSAGE, kind: 'text', body: 'hello', sender_id: 'w', cohort_id: SPACE, deleted_at: null },
+            ]),
+          },
+        }),
+      ),
+      stub({ createSignedDownload: jest.fn(async () => null) }),
+    );
+
+  it('FR-1173R2: the read-only reports still come to a caller that asks (read_only=1), marked can_act false', async () => {
+    const moderationRepo = { listForRuleDReader: jest.fn(async () => [readOnlyReport()]) };
+    const coach = stub<User>({ id: OWN_COACH, role: 'coach' });
+    const service = serviceWith(moderationRepo);
+
+    expect((await service.listFlagged(coach, { read_only: '1' })).items).toEqual([
+      expect.objectContaining({ id: REPORT, can_act: false, content: 'hello' }),
+    ]);
+    moderationRepo.listForRuleDReader.mockClear();
+    expect((await service.listFlagged(coach, {})).items).toEqual([]);
+    expect(moderationRepo.listForRuleDReader).not.toHaveBeenCalled(); // the default route does not even ask
+  });
+
   it('serves a coach only reports they can act on by default (the phone draws Dismiss, Warn, Hide and Ban on every item)', async () => {
     const readOnly = {
       id: REPORT,

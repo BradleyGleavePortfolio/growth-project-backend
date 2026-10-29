@@ -217,7 +217,9 @@ const LISTED: Key[] = ['A', 'T', 'B']; // everyone the inbox lists W's public-sp
     const report = async (type: 'message' | 'post' | 'voice_note', target: string, by: Key, n: number) =>
       (await prisma.communityModerationAction.create({ data: { workspace_id: ws.A, target_type: type, target_id: target,
         reported_by_id: id[by], reason: 'harassment', notes: `report by ${by}`, created_at: new Date(t0 + n * 1000) } })).id;
-    const flagged = async (k: Key) => (await moderation.listFlagged(user(k), {})).items;
+    // FR-1173R2 (LO-1173R2 B1): the reports a rule D reader may only read come on the flagged route when asked for.
+    const flagged = async (k: Key) => (await moderation.listFlagged(user(k), { read_only: '1' })).items;
+    const actable = async (k: Key) => (await moderation.listFlagged(user(k), {})).items;
     const view = (keys: string[], canAct: boolean) => keys.map((k) => expect.objectContaining({ id: rep[k], can_act: canAct }));
     const queue = async (k: Key) => (await moderation.listQueue(user(k), ws.A, {})).items
       .map((i) => `${Object.entries(rep).find(([, v]) => v === i.id)?.[0]} ${PEOPLE.find((k) => id[k] === i.reported_by_user_id) ?? 'none'}`);
@@ -236,6 +238,10 @@ const LISTED: Key[] = ['A', 'T', 'B']; // everyone the inbox lists W's public-sp
 
     it('the owner\'s team in P gets the reports on P\'s rows, to read; not the clients space\'s', async () => {
       expect(await flagged('T')).toEqual(view(['w', 'n', 'v', 'o'], false));
+    });
+
+    it('the flagged route by default (the shipped phone): the owner gets every report, the readers none', async () => {
+      expect([await actable('A'), await actable('T'), await actable('B')]).toEqual([view(['w', 'n', 's', 'v', 'o'], true), [], []]);
     });
 
     it('W\'s own coach gets the reports on W\'s rows only, to read; an unrelated coach gets none', async () => {
