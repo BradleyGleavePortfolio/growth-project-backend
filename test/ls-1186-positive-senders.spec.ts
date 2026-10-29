@@ -12,6 +12,12 @@ export function rawHttpSender() {
   const post = fetch;
   return post(endpoint, { method: 'POST', body: '{}' });
 }
+import { Expo as AliasedExpoClient } from 'expo-server-sdk';
+export function rawSdkSender() {
+  const client = new AliasedExpoClient();
+  const send = client.sendPushNotificationsAsync.bind(client);
+  return send([]);
+}
 `);
 
 // The unchanged registry must be red, with the new sender and direct transport named.
@@ -22,5 +28,6 @@ it('LS-1186 positive scanner controls include file, function and line', () => {
   expect(hits).toEqual(expect.arrayContaining([
     expect.objectContaining({ file: FIXTURE_REL, fn: 'newSender', via: 'sendPush', line: 5 }),
     expect.objectContaining({ file: FIXTURE_REL, fn: 'rawHttpSender', via: 'transport', line: 8 }),
+    expect.objectContaining({ file: FIXTURE_REL, fn: '<module>', via: 'transport' }),
   ]));
 });
