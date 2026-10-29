@@ -176,9 +176,20 @@ Admin: any state ──POST /admin/users/:id/delete──► DELETED
    record `not_applicable` (transactional mail only; Sentry gets no person
    data). Outcomes (`done`, `not_found`, `not_configured`, `not_applicable`,
    `failed`) go to a `vendor_erasure` row with a random subject id. The work
-   row is then deleted, or narrowed to the failed vendors and only what they
-   need; the next nightly run retries those without touching the database
-   deletion. A missing key records `not_configured` and is not retried.
+   row is then deleted, or narrowed to the failed or held vendors and only
+   what they need; the next nightly run retries those without touching the
+   database deletion. A vendor in use without its erasure keys (PostHog: any
+   of `POSTHOG_KEY`, `POSTHOG_PROJECT_ID`, `POSTHOG_PERSONAL_API_KEY` set;
+   Crisp: either Crisp key set; both always in production and staging, where
+   the app ships with them; Stripe: customers on file) records `not_configured`,
+   is held in the work row with a warning log and is erased by the retry once
+   the keys are set. Missing keys never release held work: a retry of pending
+   work stays `not_configured` until the vendor answers. Only the first attempt,
+   outside production and staging with none of the vendor's settings, records
+   `not_applicable`; that is a configuration check, not a record that the
+   vendor never had the person's data. Startup
+   warns (never fails) for each vendor in use without its erasure keys, and
+   the cron summary line carries `vendor_pending=<n>` (STORE-B3).
 
 ## Erasure manifest
 
@@ -249,7 +260,7 @@ and a bookmark therefore no longer opens anything.
 | `DELETION_FINALIZE_CRON`                                                                                                  | `0 3 * * *`                  | Nightly finalize job (03:00 UTC slot).                                                                                     |
 | `APPLE_TEAM_ID`, `APPLE_SIGNIN_KEY_ID`, `APPLE_SIGNIN_PRIVATE_KEY`; optional `APPLE_SIGNIN_CLIENT_ID` (default `com.growthproject.app`, the iOS bundle id; never read from `APPLE_AUDIENCES`) | unset                        | Sign in with Apple token revocation. Missing → `not_configured`, deletion still completes.                                 |
 | `SUPABASE_VOICE_BUCKET`, `SUPABASE_MEDIA_BUCKET`, `SUPABASE_BLOODWORK_BUCKET`                                             | `voice-notes`, `coach-media`, `bloodwork` | Buckets purged at finalization. A bloodwork `supabase` ref must be `<bloodwork bucket>/<client id>/<file>` (validated at registration; anything else is skipped and counted at deletion). |
-| `POSTHOG_PERSONAL_API_KEY` (scope `person:write`), `POSTHOG_PROJECT_ID`; `CRISP_WEBSITE_ID`, `CRISP_API_TOKEN` (`<identifier>:<key>`) | unset | Vendor erasure at PostHog and Crisp. Missing → `not_configured`, deletion still completes. |
+| `POSTHOG_PERSONAL_API_KEY` (scope `person:write`), `POSTHOG_PROJECT_ID`; `CRISP_WEBSITE_ID`, `CRISP_API_TOKEN` (`<identifier>:<key>`) | unset | Vendor erasure at PostHog and Crisp. Missing while the vendor is in use, or on any retry of pending work → `not_configured`, deletion still completes and that vendor stays pending until the keys are set; first attempt with no setting outside production and staging → `not_applicable`. |
 | `STRIPE_SECRET_KEY`, Mux credentials                                                                                      | —                            | Needed only if the person has live subscriptions or Mux assets; without them finalization fails closed, logs, and retries. |
 
 ## Tests
@@ -259,7 +270,7 @@ and a bookmark therefore no longer opens anything.
 | `test/account-deletion/lifecycle-races.spec.ts`           | Request/cancel/finalize state machine on an in-memory DB with row locks and rollback; Sol's six probes inverted (scrub failure rollback, Supabase returned error, fan-out failure, cancel after snapshot, re-request after snapshot, concurrent requests), cancel vs finalize 409, two cron workers, cutoff boundaries, non-identifying audit, admin delete, legacy link. |
 | `test/account-deletion/erasure-manifest-coverage.spec.ts` | Schema coverage, entry validity, seeded execution (A erased, B byte-identical).                                                                                                                                                                                                                                                                                           |
 | `test/account-deletion/manifest-fk-order.spec.ts`         | Delete order vs. FK constraints parsed from the migrations (RESTRICT / NO ACTION children first), pre-step SQL order.                                                                                                                                                                                                                                                       |
-| `test/account-deletion/vendor-erasure.spec.ts`            | Each vendor asked once with the right id, `not_configured` without a key, failure narrowed for retry, repeat is `not_found`, own Stripe customers only. Orchestration (after commit, retry without re-running the deletion) is in `lifecycle-races.spec.ts`. |
+| `test/account-deletion/vendor-erasure.spec.ts`            | Each vendor asked once with the right id, held as `not_configured` (pending, retried once the key is set) for a vendor in use without its key, `not_applicable` only on a first attempt with no setting outside production and staging, retry work kept `not_configured` when every key is removed (LS-1182 B1), startup warning, failure narrowed for retry, repeat is `not_found`, own Stripe customers only. Orchestration (after commit, retry without re-running the deletion, a held vendor erased by the retry once configured, and a failed attempt held through a run with every key removed and erased once the keys are back) is in `lifecycle-races.spec.ts`. |
 | `test/account-deletion/storage-billing.spec.ts`           | Storage collection/purge and Stripe cancellation, fail-closed paths; own-prefix rule for bloodwork and voice keys.                                                                                                                                                                                                                                                                                                      |
 | `test/account-deletion/controller-roles.spec.ts`          | No role restriction on self endpoints (sub-coach), owner-only admin.                                                                                                                                                                                                                                                                                                      |
 | `test/account-deletion/drip-fence.spec.ts`                | Drip dispatcher never selects drops for deleted accounts.                                                                                                                                                                                                                                                                                                                 |

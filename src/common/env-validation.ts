@@ -306,28 +306,28 @@ export const ENV_RULES: EnvRule[] = [
   {
     name: 'POSTHOG_PERSONAL_API_KEY',
     tier: 'optional',
-    default: 'unset → account deletion records posthog not_configured and skips PostHog',
+    default: 'unset → account deletion holds posthog erasure pending (not_configured, retried nightly) while PostHog is in use, or records not_applicable when it is not',
     reason:
       'PostHog personal API key (phx_…, scope person:write; the project key POSTHOG_KEY cannot delete). Account deletion uses it with POSTHOG_PROJECT_ID to delete the person and their events (account-deletion.vendors.ts).',
   },
   {
     name: 'POSTHOG_PROJECT_ID',
     tier: 'optional',
-    default: 'unset → account deletion records posthog not_configured and skips PostHog',
+    default: 'unset → account deletion holds posthog erasure pending (not_configured, retried nightly) while PostHog is in use, or records not_applicable when it is not',
     reason:
       'Numeric id of the PostHog project the app and server send events to. Not secret. Used with POSTHOG_PERSONAL_API_KEY by account deletion.',
   },
   {
     name: 'CRISP_WEBSITE_ID',
     tier: 'optional',
-    default: 'unset → account deletion records crisp not_configured and skips Crisp',
+    default: 'unset → account deletion holds crisp erasure pending (not_configured, retried nightly) while Crisp is in use, or records not_applicable when it is not',
     reason:
       'Crisp website (workspace) id, the same value as the app\'s EXPO_PUBLIC_CRISP_WEBSITE_ID. Not secret. Used with CRISP_API_TOKEN by account deletion to remove the person\'s support conversations and profile.',
   },
   {
     name: 'CRISP_API_TOKEN',
     tier: 'optional',
-    default: 'unset → account deletion records crisp not_configured and skips Crisp',
+    default: 'unset → account deletion holds crisp erasure pending (not_configured, retried nightly) while Crisp is in use, or records not_applicable when it is not',
     reason:
       'Crisp website token as "<identifier>:<key>" (Crisp: Settings > Workspace Settings > Advanced configuration > API Token). Secret. Account deletion only.',
   },
