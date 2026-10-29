@@ -47,6 +47,7 @@ type RepoMock = {
   markHeard: jest.Mock;
   consentSeenAt: jest.Mock;
   markConsentSeen: jest.Mock;
+  isPublicRowOfMyClient: jest.Mock;
 };
 type UploadMock = {
   createSignedUpload: jest.Mock;
@@ -176,6 +177,8 @@ describe('CommunityVoiceService', () => {
       markHeard: jest.fn().mockResolvedValue(HEARD_AT),
       consentSeenAt: jest.fn().mockResolvedValue(null),
       markConsentSeen: jest.fn().mockResolvedValue(HEARD_AT),
+      // Default: the caller is not the author's own coach in a public space (rule D, FR-1173R2).
+      isPublicRowOfMyClient: jest.fn().mockResolvedValue(false),
     };
     upload = {
       createSignedUpload: jest.fn().mockResolvedValue({
@@ -401,6 +404,25 @@ describe('CommunityVoiceService', () => {
 
     it('404s a cohort note to a non-member (existence never leaks)', async () => {
       access.canAccessCohort.mockResolvedValue(false);
+      await expect(service.getOne(stranger, NOTE_A)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('rule D (FR-1173R2): a live public-space note reads and marks heard for the author\'s own coach, outside the space', async () => {
+      access.canAccessCohort.mockResolvedValue(false);
+      repo.isPublicRowOfMyClient.mockResolvedValue(true);
+      expect((await service.getOne(stranger, NOTE_A)).voice_note.id).toBe(NOTE_A);
+      expect(repo.isPublicRowOfMyClient).toHaveBeenCalledWith(COHORT_A, stranger.id, MEMBER_ID);
+      // A block between the coach and the client still closes it (the same gate as the space's readers).
+      // prettier-ignore
+      // @ts-expect-error mocks are partial implementations of the injected deps
+      const blocked = new CommunityVoiceService(access, repo, upload, realtime, analytics, safetyWithBlocks([[MEMBER_ID, STRANGER_ID]]));
+      await expect(blocked.getOne(stranger, NOTE_A)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.markHeard(stranger, NOTE_A)).resolves.toMatchObject({ voice_note_id: NOTE_A });
+      // Read only: not the author, so no delete (the 403 a reader who did not record it gets), nothing erased.
+      await expect(service.delete(stranger, NOTE_A)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(repo.softDeleteWithErasure).not.toHaveBeenCalled();
+      // A coach-removed note is not a live row: its placeholder stays the space's.
+      repo.findById.mockResolvedValue(note({ soft_deleted_at: new Date(), removed_by_user_id: COACH_A_ID }));
       await expect(service.getOne(stranger, NOTE_A)).rejects.toBeInstanceOf(NotFoundException);
     });
 

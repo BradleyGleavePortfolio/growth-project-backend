@@ -289,6 +289,9 @@ describe('community v2-2 ack non-leak + eligibility (HTTP, real service)', () =>
     findById: jest.fn(),
     findSenderRole: jest.fn(),
     stampAck: jest.fn(),
+    // FR-1173 (rule D): the poster's own coach and the space's team; neither unless a test says so.
+    isPublicRowOfMyClient: jest.fn(),
+    isSpaceTeam: jest.fn(),
   };
   // FR-1174: getOne's space rule (findCohort + canAccessCohort) runs on a space row.
   const access = { isWorkspaceCoach: jest.fn(), findCohort: jest.fn(), canAccessCohort: jest.fn() };
@@ -385,6 +388,8 @@ describe('community v2-2 ack non-leak + eligibility (HTTP, real service)', () =>
     access.findCohort.mockResolvedValue({ id: COHORT, workspace_id: WORKSPACE });
     access.canAccessCohort.mockResolvedValue(true);
     repo.findSenderRole.mockResolvedValue('student');
+    repo.isPublicRowOfMyClient.mockResolvedValue(false);
+    repo.isSpaceTeam.mockResolvedValue(false);
     safety.assertVisibleTo.mockReset();
     safety.assertVisibleTo.mockResolvedValue(undefined);
   });

@@ -2,7 +2,9 @@
 // moved client except their own money records". A client who moves to another coach leaves the former
 // coach's community: the former coach and the former coach's clients read nothing they wrote in its Hall or
 // in its spaces that are not public (posts, comments, chat, voice notes, wins); public spaces stay public;
-// the client keeps their own wins; the new coach's circle never sees the old circle's wins or posts.
+// the client keeps their own wins; the new coach's circle never sees the old circle's wins or posts. Owner rule D
+// (SPACE-OWNER-ALERTS): what the client writes in a public space reaches the space owner, and also the client's
+// current coach (the new coach's inbox gets M's public-space post; never N's, who has no coach).
 // Live, on the replayed migration chain: the real services with the real CommunitySafetyService; row reads
 // run as role authenticated. A, B coach; O and V are A's clients; M was A's client and is now B's (M keeps
 // an active row in A's cli and a row in A's public space); W is B's client; N has no coach and joined A's
@@ -146,7 +148,9 @@ const boardOf = (k: Key) => [...PEOPLE].filter((p) => COACH[k] !== null && COACH
     ...(['A', 'B'] as const).map((c): Read => [`the Hall of ${c}`,
       (k) => read(posts.list(user(k), ws[c], {}), (r) => r.posts.map((p) => p.id)),
       (k) => (OPENS[c === 'A' ? 'hallA' : 'hallB'].includes(k) ? keys(postsIn(c), ([a, p]) => sees(k, a, p)) : null)]),
-    ['a post by id', (k) => byId(Object.keys(POSTS), (r) => posts.getOne(user(k), id[r])), (k) => keys(POSTS, ([a, p]) => sees(k, a, p))],
+    // Rule D (FR-1173 B2): the poster's own coach also opens a current client's post in a public space they are not in.
+    ['a post by id', (k) => byId(Object.keys(POSTS), (r) => posts.getOne(user(k), id[r])),
+      (k) => keys(POSTS, ([a, p]) => sees(k, a, p) || (p in VISIBILITY && VISIBILITY[p as Space] === 'public' && COACH[a] === k))],
     ['the comments on sO', (k) => read(posts.listComments(user(k), id.sO), (r) => r.comments.map((c) => c.id)), (k) => inSpace(k, 'cli', COMMENTS)],
     ['the chat of cli', (k) => read(chat.list(user(k), space.cli, {}), (r) => r.messages.map((m) => m.id)), (k) => inSpace(k, 'cli', CHAT)],
     ['a chat message by id', (k) => byId(Object.keys(CHAT), (r) => chat.getOne(user(k), id[r])), (k) => inSpace(k, 'cli', CHAT) ?? []],
@@ -241,6 +245,12 @@ const boardOf = (k: Key) => [...PEOPLE].filter((p) => COACH[k] !== null && COACH
     const page = new CommunityCoachInboxRepository(db);
     const one = await page.unansweredMessages({ cohortIds: [space.cli], limit: 1, after: null });
     expect(one.map((m) => KEY[m.id])).toEqual(['mO']); // a page of 1 is O's, whichever row is older
+  });
+
+  // Rule D: the new coach's inbox holds M's post in A's public space (1); N's post there (no coach) is not B's (0).
+  it('the new coach\'s inbox gets the moved client\'s public-space post, and nobody else\'s from that space', async () => {
+    const inbox = new CommunityCoachInboxService(access, new CommunityCoachInboxRepository(db));
+    expect(await read(inbox.list(user('B'), {}), (r) => r.items.map((i) => i.id))).toEqual(['pM']);
   });
 
   it('the inbox reads under forced row security agree: the former coach reads 1 of O, then 0 of M', async () => {
@@ -344,7 +354,8 @@ const boardOf = (k: Key) => [...PEOPLE].filter((p) => COACH[k] !== null && COACH
       ['community_voice_notes', 'vO', 1], ['community_voice_notes', 'vM', 0], ['CommunityWin', 'wO', 1], ['CommunityWin', 'wM', 0],
       ['community_search_entries', 'fO', 1], ['community_search_entries', 'fM', 0], ['community_search_entries', 'fMc', 0],
       ['community_search_entries', 'fMp', 1]]]),
-    ['B', [['community_posts', 'hB', 1], ['community_posts', 'hA', 0], ['community_posts', 'hO', 0], ['community_posts', 'sO', 0],
+    ['B', [['community_posts', 'hB', 1], ['community_posts', 'pM', 1], ['community_posts', 'pN', 0], ['community_posts', 'hA', 0],
+      ['community_posts', 'hO', 0], ['community_posts', 'sO', 0],
       ['community_messages', 'mO', 0], ['community_voice_notes', 'vO', 0], ['community_search_entries', 'fMb', 1],
       ['community_search_entries', 'fO', 0]]],
     ['W', [['CommunityWin', 'wW', 1], ['CommunityWin', 'wM', 0], ['community_posts', 'hM', 0], ['community_posts', 'hO', 0],
@@ -353,6 +364,7 @@ const boardOf = (k: Key) => [...PEOPLE].filter((p) => COACH[k] !== null && COACH
   ];
 
   it('the row layer agrees: the former coach and circle read 0 of the moved client, the new coach 0 of the old community', async () => {
+    // Rule D: but for M's post in the public space (B's ROW_READS: pM 1, pN 0).
     for (const [k, rows] of ROW_READS) {
       expect(rows[0][2]).toBe(1);
       const seen: string[] = [];
