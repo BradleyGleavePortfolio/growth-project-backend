@@ -322,9 +322,12 @@ export class CommunityMessagesService {
    * author is blocked either way, or whose author left reads `gone` and nothing
    * else: no words, name or length.
    */
-  private async chatOf(user: User, cohort: CommunityCohort, rows: CommunityMessage[]): Promise<ChatOf> {
+  private async chatOf(user: User, cohort: CommunityCohort, rows: CommunityMessage[], outside = false): Promise<ChatOf> {
     const x = await this.repo.chatExtras(user.id, cohort.workspace_id, cohort.id, rows);
-    const live = x.parents.filter((p) => !p.deleted_at && p.plan_context_type === null);
+    // Rule D (FR-1173R2): a reader `outside` the space sees a quoted message only when it is also a row of theirs to
+    // read (its author their client too); anyone else's words and photo read as gone.
+    const mine = outside ? await this.repo.clientsAmong(user.id, x.parents.map((p) => p.sender_id)) : null;
+    const live = x.parents.filter((p) => !p.deleted_at && p.plan_context_type === null && (!mine || mine.has(p.sender_id)));
     const parents = new Map(
       (await this.safety.filterBlocked(user.id, live, (p) => p.sender_id, placeOf)).map((p) => [p.id, p]),
     );
@@ -632,14 +635,18 @@ export class CommunityMessagesService {
       throw new NotFoundException(NOT_FOUND);
     }
     const cohort = await this.access.findCohort(m.cohort_id);
-    if (!cohort || !(await this.access.canAccessCohort(cohort, user))) {
-      throw new NotFoundException(NOT_FOUND);
-    }
+    if (!cohort) throw new NotFoundException(NOT_FOUND);
+    // Rule D (FR-1173R2, LS-1173R2 B2): a public space's live row by the caller's own client opens to that coach
+    // too, `outside` the space: this row, read only (community-public-row.ts, the row layer's
+    // app.community_public_row_of_my_client). Anyone else outside the space gets the same 404.
+    const member = await this.access.canAccessCohort(cohort, user);
+    const outside = !member && !m.deleted_at && (await this.repo.isPublicRowOfMyClient(cohort.id, user.id, m.sender_id));
+    if (!member && !outside) throw new NotFoundException(NOT_FOUND);
     // Two-way block: a direct id read cannot go around the list filter.
     await this.safety.assertVisibleTo(user.id, m.sender_id, NOT_FOUND, placeOf(m));
     const [voice, chat, images] = await Promise.all([
       this.voiceOf(user, [m]),
-      this.chatOf(user, cohort, [m]),
+      this.chatOf(user, cohort, [m], outside),
       this.imagesOf([m]),
     ]);
     return MessageRowResponseSchema.parse({ message: this.view(m, voice, chat, images) });

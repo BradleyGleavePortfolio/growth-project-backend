@@ -689,7 +689,8 @@ export class CommunityVoiceService {
    * Resolve a voice note the caller may READ, or 404. Coach/owner reads any
    * non-deleted note in their workspace; a member reads a channel note in a
    * cohort/workspace they belong to, or a DM note they authored. Anything else
-   * is an identical 404 so existence never leaks. REMOVED-BY-BE: with
+   * is an identical 404 so existence never leaks. Rule D (FR-1173R2): a live
+   * note of a public space reads for its author's own coach too. REMOVED-BY-BE: with
    * `placeholder` (the single read only), a coach-removed note passes the
    * same rules so it reads as its placeholder; every other path (heard,
    * delete) still treats it as missing.
@@ -712,10 +713,14 @@ export class CommunityVoiceService {
     }
     if (row.cohort_id) {
       const cohort = await this.access.findCohort(row.cohort_id);
-      if (!cohort || !(await this.access.canAccessCohort(cohort, user))) {
-        throw new NotFoundException(NOT_FOUND);
+      if (!cohort) throw new NotFoundException(NOT_FOUND);
+      if (await this.access.canAccessCohort(cohort, user)) return row;
+      // Rule D (FR-1173R2, LS-1173R2 B2): a public space's live note by the caller's own client reads for that
+      // coach too, outside the space (community-public-row.ts; the row layer's community_voice_notes_public_own_coach).
+      if (row.soft_deleted_at === null && (await this.repo.isPublicRowOfMyClient(cohort.id, user.id, row.author_id))) {
+        return row;
       }
-      return row;
+      throw new NotFoundException(NOT_FOUND);
     }
     if (!(await this.access.canAccessWorkspace(row.workspace_id, user))) {
       throw new NotFoundException(NOT_FOUND);

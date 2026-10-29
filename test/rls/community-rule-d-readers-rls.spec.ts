@@ -159,6 +159,33 @@ const LISTED: Key[] = ['A', 'T', 'B']; // everyone the inbox lists W's public-sp
       await expect(open('B')).resolves.toBe(row[key]);
       expect(await refused(open('C'))).toBe(404);
     });
+
+    // FR-1173R2: that row only. A reply by W quoting N (not B's client) shows B no words of N's; quoting W's own
+    // row it shows them. The space's owner still sees both quotes.
+    it('the own coach sees a quoted message only when it is a row of theirs to read', async () => {
+      const reply = (parent: string) => prisma.communityMessage.create({ data: { workspace_id: ws.A, cohort_id: space.P,
+        scope: 'cohort', kind: 'text', sender_id: id.W, body: 'a reply', parent_message_id: parent } });
+      const made = [await reply(row.nTyped), await reply(row.wTyped)];
+      try {
+        const quote = async (k: Key, m: string) => (await chat.getOne(user(k), m)).message.parent;
+        expect(await quote('B', made[0].id)).toEqual(expect.objectContaining({ id: row.nTyped, gone: true, snippet: null }));
+        expect(await quote('B', made[1].id)).toEqual(expect.objectContaining({ id: row.wTyped, gone: false, snippet: 'typed one' }));
+        expect(await quote('A', made[0].id)).toEqual(expect.objectContaining({ id: row.nTyped, gone: false, snippet: 'typed by N' }));
+        expect(await refused(chat.getOne(user('C'), made[1].id))).toBe(404);
+      } finally {
+        await prisma.communityMessage.deleteMany({ where: { id: { in: made.map((m) => m.id) } } });
+      }
+    });
+
+    it('a removed row stays the space\'s: its placeholder does not open outside', async () => {
+      await prisma.communityMessage.updateMany({ where: { id: row.wTyped2 }, data: { deleted_at: new Date(), removed_by_user_id: id.A } });
+      try {
+        expect(await refused(chat.getOne(user('B'), row.wTyped2))).toBe(404);
+        expect((await chat.getOne(user('A'), row.wTyped2)).message.id).toBe(row.wTyped2);
+      } finally {
+        await prisma.communityMessage.updateMany({ where: { id: row.wTyped2 }, data: { deleted_at: null, removed_by_user_id: null } });
+      }
+    });
   });
 
   // B4 (LS-INBOX2): the own-coach arm asked whether the author was banned, never the reading coach, in the API

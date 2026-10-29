@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma.service';
 import type { PlanContextTag } from '../plan-context/plan-context.dto';
 import { bannedAmong } from '../community-ban';
 import { authorsWhoLeft, fullNamesFor, rowsWithSpaceAccess } from '../community-space-access';
+import { clientsAmong, isPublicRowOfMyClient } from '../community-public-row';
 import { bytesToPeaks } from '../voice/community-voice.dto';
 import { storeRemovalNotice } from '../safety/community-moderation-notices';
 import { imageErasureTargets, sentImageKey } from '../images/community-image-store';
@@ -65,6 +66,16 @@ export class CommunityMessagesRepository {
    * five reads: the reply parents it names (inside that space only), the coach,
    * each person's name and avatar, and the voice note full-name rule.
    */
+  /** Rule D (FR-1173R2): is the viewer the sender's own coach for this public space row (community-public-row.ts)? */
+  isPublicRowOfMyClient(cohortId: string, viewerId: string, senderId: string): Promise<boolean> {
+    return isPublicRowOfMyClient(this.prisma, cohortId, viewerId, senderId);
+  }
+
+  /** Rule D (FR-1173R2): the people among `ids` who are the viewer's current clients. */
+  clientsAmong(viewerId: string, ids: string[]): Promise<Set<string>> {
+    return clientsAmong(this.prisma, viewerId, ids);
+  }
+
   async chatExtras(viewerId: string, workspaceId: string, cohortId: string, rows: CommunityMessage[]) {
     const ids = [...new Set(rows.flatMap((m) => (m.parent_message_id ? [m.parent_message_id] : [])))];
     const parents = ids.length
