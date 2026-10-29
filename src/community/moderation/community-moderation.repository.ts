@@ -54,8 +54,10 @@ export class CommunityModerationRepository {
    * Rule D (owner, 10-26; decision #178-2; FR-1173 LS-INBOX2 B1): the reports someone who does not run the
    * community reads there, to read only: a report on a public space's message, post or voice note reaches the
    * space's team (an active coach or assistant membership) and the author's own coach (the author is their
-   * current client), never while they are banned from the community or in a block with the author. The same
-   * rule as community-public-row.ts and app.community_public_row_of_my_client. Each report once.
+   * current client), never while they are banned from the community or in a block with the author, and
+   * (FR-1173R2, LS-1173R2 B5) never while the author is banned there (app.community_author_unbanned, the same
+   * ban rule as the row read). The same rule as community-public-row.ts and app.community_public_row_of_my_client.
+   * Each report once.
    */
   async listForRuleDReader(params: {
     viewerId: string;
@@ -81,6 +83,7 @@ export class CommunityModerationRepository {
         ${params.status ? Prisma.sql`AND a."status" = ${params.status}::"CommunityModerationStatus"` : Prisma.empty}
         AND NOT EXISTS (SELECT 1 FROM "community_workspace_bans" b
           WHERE b."workspace_id" = a."workspace_id" AND b."user_id" = ${me} AND b."lifted_at" IS NULL)
+        AND app.community_author_unbanned(a."workspace_id", u."id")
         AND NOT EXISTS (SELECT 1 FROM "UserBlock" ub
           WHERE (ub."blocker_id" = ${me} AND ub."blocked_id" = u."id") OR (ub."blocker_id" = u."id" AND ub."blocked_id" = ${me}))
         AND ((u."coach_id" = ${me} AND u."role" = 'student')
