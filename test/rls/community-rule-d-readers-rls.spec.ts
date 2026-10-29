@@ -18,15 +18,18 @@ import { CommunityAccessService } from '../../src/community/community-access.ser
 import { CommunityCoachInboxRepository } from '../../src/community/inbox/community-coach-inbox.repository';
 import { CommunityCoachInboxService } from '../../src/community/inbox/community-coach-inbox.service';
 import { COMMENT_CONTEXT_TYPE, CommunityMessagesRepository } from '../../src/community/messages/community-messages.repository';
+import { CommunityMessagesService } from '../../src/community/messages/community-messages.service';
 import { CommunityModerationRepository } from '../../src/community/moderation/community-moderation.repository';
 import { CommunityModerationService } from '../../src/community/moderation/community-moderation.service';
 import type { CommunityNotificationsService } from '../../src/community/notifications/community-notifications.service';
+import type { PlanContextService } from '../../src/community/plan-context/plan-context.service';
 import { CommunityPostsRepository } from '../../src/community/posts/community-posts.repository';
 import { CommunityPostsService } from '../../src/community/posts/community-posts.service';
 import { CommunityReactionsRepository } from '../../src/community/reactions/community-reactions.repository';
 import type { CommunityRealtimeService } from '../../src/community/realtime/community-realtime.service';
 import { CommunitySafetyService } from '../../src/community/safety/community-safety.service';
 import { CommunityVoiceRepository } from '../../src/community/voice/community-voice.repository';
+import { CommunityVoiceService } from '../../src/community/voice/community-voice.service';
 import type { VoiceUploadProvider } from '../../src/community/voice/voice-upload.provider';
 import type { PrismaService } from '../../src/prisma.service';
 import { stub } from '../utils/trial-fakes';
@@ -59,6 +62,11 @@ const LISTED: Key[] = ['A', 'T', 'B']; // everyone the inbox lists W's public-sp
   const moderation = new CommunityModerationService(access, new CommunityModerationRepository(db), messages, postsRepo,
     stub<CommunityRealtimeService>({}), stub<CommunityNotificationsService>({}), db,
     stub<VoiceUploadProvider>({ createSignedDownload: async () => 'signed://voice' }));
+  const chat = new CommunityMessagesService(access, messages, stub<CommunityRealtimeService>({}),
+    stub<PlanContextService>({}), safety, stub<CommunityNotificationsService>({}));
+  const voice = new CommunityVoiceService(access, notes,
+    stub<VoiceUploadProvider>({ createSignedDownload: async () => 'https://voice.test/note' }),
+    stub<CommunityRealtimeService>({}), stub<AnalyticsService>({}), safety);
   const id = Object.fromEntries(PEOPLE.map((k) => [k, randomUUID()])) as Record<Key, string>;
   const sub = Object.fromEntries(PEOPLE.map((k) => [k, randomUUID()])) as Record<Key, string>;
   const ws = { A: randomUUID(), B: randomUUID(), C: randomUUID() };
@@ -137,6 +145,20 @@ const LISTED: Key[] = ['A', 'T', 'B']; // everyone the inbox lists W's public-sp
     const forced = await prisma.$queryRaw<{ t: string }[]>`SELECT c."relname" AS "t" FROM pg_class c JOIN pg_namespace n ON n."oid" = c."relnamespace"
       WHERE n."nspname" = 'public' AND c."relname" = ANY(${tables}) AND c."relrowsecurity" AND c."relforcerowsecurity"`;
     expect(forced.map((r) => r.t).sort()).toEqual([...tables].sort());
+  });
+
+  // LS-1173R2: the SQL grant is not enough. Exercise the service reached by
+  // the phone's detail/playback request, with the same real author relationship.
+  describe('B2 carried: the own coach opens each row their inbox lists', () => {
+    it.each(['wTyped', 'wPhoto', 'wVoice'])('%s opens for the own coach, not just the space owner', async (key) => {
+      expect(await rows('B')).toContain(key);
+      const open = async (k: Key) => key === 'wVoice'
+        ? (await voice.getOne(user(k), row[key])).voice_note.id
+        : (await chat.getOne(user(k), row[key])).message.id;
+      expect(await open('A')).toBe(row[key]); // the storage and row are usable
+      await expect(open('B')).resolves.toBe(row[key]);
+      expect(await refused(open('C'))).toBe(404);
+    });
   });
 
   // B4 (LS-INBOX2): the own-coach arm asked whether the author was banned, never the reading coach, in the API
