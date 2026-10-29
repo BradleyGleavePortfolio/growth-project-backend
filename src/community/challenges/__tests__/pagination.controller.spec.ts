@@ -78,11 +78,18 @@ describe('CommunityChallengesController pagination wiring (D-040)', () => {
   it('comments forwards limit + cursor to the service', async () => {
     const query = pagination({ limit: 50, cursor: CURSOR });
     await controller.listComments(reqFor(user), CH, query);
-    expect(service.listComments).toHaveBeenCalledWith(user, CH, query);
+    expect(service.listComments).toHaveBeenCalledWith(user, CH, query, false);
     expect(service.listComments.mock.calls[0][2]).toMatchObject({
       limit: 50,
       cursor: CURSOR,
     });
+  });
+
+  it('comments asks for removed-comment placeholders only when the phone sends X-Client-Removed-Rows: 1', async () => {
+    const query = pagination({});
+    await controller.listComments(reqFor(user), CH, query, '1');
+    await controller.listComments(reqFor(user), CH, query, 'true');
+    expect(service.listComments.mock.calls.map((c) => c[3])).toEqual([true, false]);
   });
 
   it('challenge list forwards inherited limit + cursor alongside cohort_id/status', async () => {

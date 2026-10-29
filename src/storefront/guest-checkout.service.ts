@@ -40,6 +40,8 @@ import { alertCoachOfFlaggedJoinTx } from '../onboarding/flagged-join-alert';
 import { type GuestCheckoutStatus } from './guest-checkout-status';
 import { EmailSenderConfigError, resolveEmailSender } from '../email/email-sender';
 import { SELLING_COACH } from '../packages/coach-selling';
+import { BuyerHasOtherCoachError, assertBuyerMayPay, buyerVerdict } from './buyer-check';
+import { payPageUrl } from './storefront-links';
 
 // S-FEE — guest storefront charges are separate charges and transfers, like
 // every other checkout path. The PaymentIntent / Subscription carries NO
@@ -379,6 +381,17 @@ export class GuestCheckoutService {
 
     const normalisedEmail = dto.guest_email.toLowerCase().trim();
     const normalisedName = dto.guest_name.trim();
+
+    // GUEST-ELIGIBILITY (audit LS-1140 item 2, owner #170-2) — before any
+    // row, idempotency replay or Stripe object: a new email passes; an
+    // existing TGP email needs a fresh code proof for this email + package,
+    // then must be a buyer this coach can take (#SWITCH-V1 otherwise).
+    await assertBuyerMayPay(this.prisma, this.config, {
+      shareToken: token,
+      sellingCoachId: pkg.coach.id,
+      email: normalisedEmail,
+      buyerToken: dto.buyer_token,
+    });
 
     // R47 / Audit #6 P0-5 — validate the optional landing_page_id query
     // param. We must defend against three classes of abuse:
@@ -1482,6 +1495,7 @@ export class GuestCheckoutService {
         checkout.guest_email,
         checkout.guest_name,
         checkout.id,
+        checkout.package.share_token,
       );
       supabaseUserId = result.supabaseUserId;
       inviteLink = result.inviteLink;
@@ -1590,6 +1604,12 @@ export class GuestCheckoutService {
           },
           update: {},
         });
+        // GUEST-ELIGIBILITY — settlement keeps the one-coach boundary: an
+        // account that gained another coach after the code check is held
+        // for refund (holdForRefund), never re-parented or retried.
+        if (buyerVerdict(dbUser, checkout.package.coach_id) === 'other_coach') {
+          throw new BuyerHasOtherCoachError();
+        }
         if (dbUser.coach_id == null && dbUser.role === 'student') {
           // User existed but had no coach (rare — orphaned account).
           // Attach them to the package's coach.  Done as a separate
@@ -1772,6 +1792,10 @@ export class GuestCheckoutService {
         }
       });
     } catch (err) {
+      if (err instanceof BuyerHasOtherCoachError) {
+        await this.holdForRefund(checkout);
+        return;
+      }
       // Audit #3 P1-6 — DB transaction failures (deadlocks, unique
       // races, connection drops) are transient. Flip to
       // conversion_failed_retryable; the reconciliation worker will
@@ -1861,6 +1885,7 @@ export class GuestCheckoutService {
     email: string,
     name: string,
     checkoutId: string,
+    shareToken: string | null = null,
   ): Promise<{ supabaseUserId: string; inviteLink: string | null }> {
     const client = this.supabase.getClient();
 
@@ -1897,7 +1922,7 @@ export class GuestCheckoutService {
     );
 
     if (data?.user?.id) {
-      const inviteLink = await this.generateInviteLink(email);
+      const inviteLink = await this.generateInviteLink(email, shareToken);
       return { supabaseUserId: data.user.id, inviteLink };
     }
 
@@ -1950,6 +1975,48 @@ export class GuestCheckoutService {
       }
     }
     throw new SupabaseExistingUserNotFoundError();
+  }
+
+  // GUEST-ELIGIBILITY (audit LS-1140 item 2) — the buyer paid, then the
+  // one-coach rule refused delivery (their account has another coach).
+  // Lasting, never retried: conversion_failed_terminal with last_error
+  // 'buyer_has_other_coach' and retry_count at the cap (the reconciler only
+  // takes paid / conversion_failed_retryable). Operator: the error log line
+  // below. Coach: an in-app alert. Refund path (existing): refund the
+  // PaymentIntent in Stripe; charge.refunded -> handleChargeRefunded moves
+  // the row to 'refunded', pauses any subscription and tells the coach.
+  private async holdForRefund(checkout: CheckoutWithRelations): Promise<void> {
+    const moved = await this.prisma.guestCheckout.updateMany({
+      where: { id: checkout.id, status: { in: ['paid', 'conversion_failed_retryable'] } },
+      data: {
+        status: 'conversion_failed_terminal',
+        retry_count: RECONCILIATION_MAX_ATTEMPTS,
+        last_error: 'buyer_has_other_coach',
+        last_retry_at: new Date(),
+      },
+    });
+    this.logger.error(
+      `GuestCheckout ${checkout.id} held for refund (last_error=buyer_has_other_coach): refund pi=${checkout.stripe_payment_intent_id} in Stripe; charge.refunded closes the row`,
+    );
+    if (moved.count === 0) return;
+    await this.notifications
+      .createNotification({
+        user_id: checkout.package.coach_id,
+        kind: NotificationKind.COACH_ALERT,
+        body: `A buyer paid for ${checkout.package.name}, but their account already has another coach, so nothing was delivered. The payment needs a refund.`,
+        payload: {
+          event: 'guest_purchase_held_for_refund',
+          reason: 'buyer_has_other_coach',
+          guest_checkout_id: checkout.id,
+          payment_intent_id: checkout.stripe_payment_intent_id,
+        },
+        channel: 'inapp',
+      })
+      .catch((err) => {
+        this.logger.warn(
+          `held-for-refund coach alert failed checkout=${checkout.id} (tag=${safeErrorTag(err)})`,
+        );
+      });
   }
 
   // Audit #3 P1-6 — flip a paid (or retryable) row to
@@ -2054,14 +2121,24 @@ export class GuestCheckoutService {
   // than leaving the user with no path into the app. Conversion is
   // already complete by this point (ClientPurchase exists), so the user
   // can recover via the standard password-reset / magic-link flow.
-  private async generateInviteLink(email: string): Promise<string | null> {
+  private async generateInviteLink(
+    email: string,
+    shareToken: string | null = null,
+  ): Promise<string | null> {
     try {
       const client = this.supabase.getClient();
+      // GUEST-ELIGIBILITY (owner #170-2) — with the pay page on, the
+      // confirm link lands on its confirm-and-download state
+      // (/p/<token>?confirmed=1). Supabase only honours redirectTo for URLs
+      // on the project's Redirect URLs list; otherwise it uses the Site URL.
+      const redirectTo =
+        shareToken && this.config.get<string>('GUEST_PAY_PAGE_ENABLED') === 'true'
+          ? payPageUrl(this.config.get<string>('STOREFRONT_BASE_URL'), shareToken, { confirmed: '1' })
+          : null;
       const { data, error } = await withTimeout(
-        client.auth.admin.generateLink({
-          type: 'invite',
-          email,
-        }),
+        client.auth.admin.generateLink(
+          redirectTo ? { type: 'invite', email, options: { redirectTo } } : { type: 'invite', email },
+        ),
         SUPABASE_ADMIN_TIMEOUT_MS,
         'supabase_generateLink',
       );
@@ -2128,11 +2205,13 @@ export class GuestCheckoutService {
       this.config.get<string>('PLAY_STORE_URL') ??
       'https://play.google.com/store/apps/details?id=com.growthproject.app';
 
+    // GUEST-ELIGIBILITY (owner #170-2, A6.0-170: approved) — a new buyer's
+    // post-checkout confirm email: confirming the email finishes the account.
     const credentials =
       inviteLink !== null
-        ? `<p>To access your account, set a password and verify your email:</p><p><a href="${escapeAttr(
+        ? `<p>Confirm this is your email, and we'll finish setting up your TGP Fitness account.</p><p><a href="${escapeAttr(
             inviteLink,
-          )}" style="background:#C9A84C;color:#1A1A1A;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">Activate your account</a></p><p style="color:#666;font-size:14px;">This link expires in 24 hours. If it does, you can use "Forgot password" on the sign-in screen with <strong>${escapeHtml(
+          )}" style="background:#2C4A36;color:#FBF7F0;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">Confirm my email</a></p><p style="color:#2C2C2C;font-size:14px;">The link works for 24 hours. If it runs out, open the TGP Fitness app, tap Forgot password? and enter <strong>${escapeHtml(
             checkout.guest_email,
           )}</strong>.</p>`
         : `<p>We've added <strong>${escapeHtml(
@@ -2154,7 +2233,10 @@ export class GuestCheckoutService {
     const body = {
       from: fromAddress,
       to: checkout.guest_email,
-      subject: `${coachName} is ready for you on Growth Project`,
+      subject:
+        inviteLink !== null
+          ? `Confirm your email to start with ${coachName} on TGP Fitness`
+          : `${coachName} is ready for you on Growth Project`,
       html: `<!doctype html><html><body style="font-family:Inter,Arial,sans-serif;background:#F5F0E8;margin:0;padding:24px;">
 <h1 style="font-family:Georgia,serif;color:#1A1A1A;">Welcome, ${escapeHtml(checkout.guest_name)}.</h1>
 <p>You're enrolled in <strong>${escapeHtml(packageName)}</strong> with ${escapeHtml(coachName)}.</p>

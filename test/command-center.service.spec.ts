@@ -40,6 +40,7 @@ function buildPrisma(initial: Partial<FakeRows> = {}): any {
   return {
     rows,
     userBlock: { findMany: jest.fn(async () => []) }, // #168-4: no blocks
+    communityCohort: { findMany: jest.fn(async () => []) }, // FR-1152R3 B1: leads no public space
     user: {
       findMany: jest.fn(async ({ where, select: _ }: any) => {
         return rows.users.filter((u) => {
@@ -488,7 +489,8 @@ describe('CommandCenterService.dismissAlert', () => {
     const svc = new CommandCenterService(prisma, buildAdminPtm(), alerts);
     const out = await svc.dismissAlert('a1', 'c1');
     expect(out).toEqual({ ok: true });
-    expect(alerts.acknowledgeForScope).toHaveBeenCalledWith('a1', 'c1', ['u1'], expect.anything());
+    // The 5th argument: the caller's public-space copies (FR-1152R3 B1); none here.
+    expect(alerts.acknowledgeForScope).toHaveBeenCalledWith('a1', 'c1', ['u1'], expect.anything(), []);
     const out2 = await svc.dismissAlert('a1', 'c1');
     expect(out2).toEqual({ ok: true });
   });
@@ -951,6 +953,7 @@ describe('CC+SC P1b: sub-coach can dismiss an assigned client\'s alert', () => {
       { in: ['head', 'sub'] },
       ['u2'],
       expect.anything(),
+      [], // FR-1152R3 B1: no public-space copies
     );
     expect(alerts.find((a) => a.id === 'a-u2')!.acknowledged_at).not.toBeNull();
 
@@ -976,6 +979,7 @@ describe('CC+SC P1b: sub-coach can dismiss an assigned client\'s alert', () => {
       'head',
       expect.arrayContaining(['u1', 'u2', 'u3']),
       expect.anything(),
+      [], // FR-1152R3 B1: no public-space copies
     );
   });
 });

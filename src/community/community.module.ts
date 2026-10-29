@@ -85,6 +85,8 @@ import { CommunitySearchModule } from './search/community-search.module';
 // v3-4 wearable-aware coaching prompts (coach-only): AI prompts sourced from
 // already-opted-in wearable insights. Self-contained module.
 import { CommunityWearablePromptsModule } from './wearable-prompts/wearable-prompts.module';
+// LEAVE-MUTE-BE (agent 176): leave a space, mute or leave a thread. Self-contained module.
+import { CommunityLeaveMuteModule } from './leave-mute/community-leave-mute.module';
 
 // PrismaService provided globally via PrismaModule.
 @Module({
@@ -99,6 +101,7 @@ import { CommunityWearablePromptsModule } from './wearable-prompts/wearable-prom
     CommunityVoiceModule,
     CommunitySearchModule,
     CommunityWearablePromptsModule,
+    CommunityLeaveMuteModule,
     NotificationsModule,
   ],
   controllers: [

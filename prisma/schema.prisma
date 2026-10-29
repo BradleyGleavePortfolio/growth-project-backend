@@ -538,6 +538,8 @@ model User {
   community_voice_note_listens       CommunityVoiceNoteListen[]
   community_voice_consent            CommunityVoiceConsent?
   community_space_reads              CommunitySpaceRead[]
+  community_thread_prefs             CommunityThreadPref[]
+  community_space_departures         CommunitySpaceDeparture[]
   community_workspace_bans           CommunityWorkspaceBan[]           @relation("CommunityWorkspaceBanUser")
   // A4 broadcasts, saved replies and client tags (additive back-relations;
   // migration 20270304000000_a4_broadcasts_cards_saved_replies).
@@ -7324,6 +7326,9 @@ model CommunityVoiceNote {
   waveform_peaks  Bytes?
   created_at      DateTime  @default(now()) @db.Timestamptz(6)
   soft_deleted_at DateTime? @db.Timestamptz(6)
+  // REMOVED-BY-BE: the coach who removed someone else's note (null on an
+  // author's own delete), so the space keeps a placeholder (#174-4).
+  removed_by_user_id String?
 
   workspace CommunityWorkspace @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
   cohort    CommunityCohort?   @relation(fields: [cohort_id], references: [id], onDelete: Cascade)
@@ -7472,6 +7477,8 @@ model CommunityCohort {
   voice_notes CommunityVoiceNote[]
   packages    CommunityCohortPackage[]
   reads       CommunitySpaceRead[]
+  thread_prefs CommunityThreadPref[]
+  departures   CommunitySpaceDeparture[]
 
   @@unique([workspace_id, name])
   // Cohort list ordered for a workspace (coach + client surfaces).
@@ -7549,6 +7556,9 @@ model CommunityMessage {
   visibility           String                @default("active") @db.VarChar(24)
   high_alert           Boolean               @default(false) // SC-BE2: a coach's high-alert message (#167-8)
   deleted_at           DateTime?             @db.Timestamptz(6)
+  // REMOVED-BY-BE: the coach who removed someone else's message (null on an
+  // author's own delete), so the space keeps a placeholder (#174-4).
+  removed_by_user_id   String?
   updated_at           DateTime              @updatedAt @db.Timestamptz(6)
 
   // RESTRICT on sender/recipient so a hard user delete cannot silently
@@ -7594,6 +7604,8 @@ model CommunityPost {
   created_at     DateTime           @default(now()) @db.Timestamptz(6)
   updated_at     DateTime           @updatedAt @db.Timestamptz(6)
   deleted_at     DateTime?          @db.Timestamptz(6)
+  // REMOVED-BY-BE (FR-1165R3): the coach who removed someone else's post.
+  removed_by_user_id String?
 
   workspace CommunityWorkspace @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
   cohort    CommunityCohort?   @relation(fields: [cohort_id], references: [id], onDelete: Cascade)
@@ -9214,6 +9226,7 @@ model CommunitySpaceRead {
   last_read_message_id String?   @db.Uuid
   notify_mode          String?
   silenced_until       DateTime? @db.Timestamptz(6)
+  left_at              DateTime? @db.Timestamptz(6) // LEAVE-MUTE-BE: when they left the space (null = in it)
   updated_at           DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
   user   User            @relation(fields: [user_id], references: [id], onDelete: Cascade)
@@ -9222,6 +9235,41 @@ model CommunitySpaceRead {
   @@id([user_id, cohort_id])
   @@index([cohort_id])
   @@map("community_space_reads")
+}
+
+// LEAVE-MUTE-BE (agent 176, owner D2b): a person's muted or left thread, by its first message (no foreign key:
+// community_messages is partitioned on (id, created_at)). state 'muted' | 'left' | 'followed' (CHECK in
+// 20270502009600; FR-1168: 'followed' = muted or left, then undone; replies up to `since` stay read).
+model CommunityThreadPref {
+  user_id           String
+  thread_message_id String   @db.Uuid
+  cohort_id         String   @db.Uuid
+  state             String
+  since             DateTime @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  user   User            @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  cohort CommunityCohort @relation(fields: [cohort_id], references: [id], onDelete: Cascade)
+
+  @@id([user_id, thread_message_id])
+  @@index([user_id, cohort_id])
+  @@map("community_thread_prefs")
+}
+
+// FR-1168 (LS-1168 B4, owner D2d): one row each time a person leaves a space, behind the "{name} left" line in
+// its chat; joining again keeps it. RLS forced (20270502009600): own rows only.
+model CommunitySpaceDeparture {
+  cohort_id String   @db.Uuid
+  user_id   String
+  left_at   DateTime @db.Timestamptz(6)
+
+  user   User            @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  cohort CommunityCohort @relation(fields: [cohort_id], references: [id], onDelete: Cascade)
+
+  @@id([cohort_id, user_id, left_at])
+  @@index([cohort_id, left_at])
+  @@index([user_id])
+  @@map("community_space_departures")
 }
 
 // SC-BE3 (agent 168): the photo behind a kind 'image' space chat message.

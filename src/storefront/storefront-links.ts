@@ -16,12 +16,23 @@ export function storefrontBaseUrl(configured: string | undefined): string {
 export function payPageUrl(
   configured: string | undefined,
   token: string,
-  query: { lp?: string; resume?: string } = {},
+  query: { lp?: string; resume?: string; confirmed?: string } = {},
 ): string {
   const qs = new URLSearchParams(
     Object.entries(query).filter((e): e is [string, string] => !!e[1]),
   ).toString();
   return `${storefrontBaseUrl(configured)}/p/${encodeURIComponent(token)}${qs ? `?${qs}` : ''}`;
+}
+
+/**
+ * GC-2 — the pay page's Stripe return_url (card and wallet alike):
+ * GET /p/:token/done. Stripe appends payment_intent,
+ * payment_intent_client_secret and redirect_status; the landing page id rides
+ * along so "Try again" keeps it.
+ */
+export function payDoneUrl(configured: string | undefined, token: string, lp: string | null = null): string {
+  const qs = lp ? `?${new URLSearchParams({ lp }).toString()}` : '';
+  return `${storefrontBaseUrl(configured)}/p/${encodeURIComponent(token)}/done${qs}`;
 }
 
 /** The recovery email link: GET /api/v1/packages/public/join/:token/checkout/resume/:jwt. */

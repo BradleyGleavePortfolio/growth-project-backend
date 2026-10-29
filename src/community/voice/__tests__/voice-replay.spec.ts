@@ -85,7 +85,7 @@ describe('VOICE-IDEM-BE: the same voice create sent again posts once', () => {
           id: randomUUID(), workspace_id: seed.workspaceId, cohort_id: seed.cohortId,
           conversation_id: seed.conversationId, author_id: seed.authorId, storage_key: seed.storageKey,
           duration_ms: seed.durationMs, bytes: BigInt(seed.bytes), mime_type: seed.mimeType, waveform_peaks: null,
-          created_at: AT, soft_deleted_at: null,
+          created_at: AT, soft_deleted_at: null, removed_by_user_id: null,
         };
         rows.push(row);
         if (row.cohort_id) {

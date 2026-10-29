@@ -1,7 +1,8 @@
 /**
  * Two-way blocking on every community read surface (operator ruling
- * 2026-10-01; owner-approved copy "If you block someone, they can no longer
- * see your posts or message you, and they are not told").
+ * 2026-10-01; owner-approved copy, 2026-10-23 10:57 PDT: "If you block
+ * someone, they can no longer see your posts or message you. In a direct
+ * message they see that you blocked them; nobody else is told").
  *
  * For each surface: the blocker does not see the blocked user's content, the
  * blocked user does not see the blocker's content, and unblocking restores
@@ -221,34 +222,46 @@ describe('two-way block: posts, comments, cohort messages and DMs (in-memory Pri
     await expect(messages.getOne(bob, aM.message.id)).resolves.toBeDefined();
   });
 
-  it('DMs: closed both ways and the thread disappears for both; unblock reopens', async () => {
+  it('DMs (#169-5 CLOSED-LINE): closed both ways, gone from both lists, each person told who closed it; unblock reopens', async () => {
     await dms.send(alice, wsId, bob.id, 'hello');
+    await dms.send(carol, wsId, bob.id, 'carol here');
     await safety.block(alice, bob.id);
 
+    // Owner 10-23 "Dissapear": the thread leaves both lists (no row, no name, no time).
+    const ids = (t: { threads: Array<{ other_user_id: string }> }) => t.threads.map((x) => x.other_user_id);
     expect((await dms.listThreads(alice, wsId, {})).threads).toHaveLength(0);
-    expect((await dms.listThreads(bob, wsId, {})).threads).toHaveLength(0);
-    // The blocked person (bob) sees the same 404 as a member who is not
-    // there, so the block is not disclosed; the blocker (alice) is told it is
-    // her block and how to undo it.
-    await expect(dms.send(bob, wsId, alice.id, 'again')).rejects.toMatchObject({
-      status: 404,
-      response: { code: 'community.dm.not_found' },
-    });
+    // Nobody else learns: bob's thread with carol stays, and carol's with bob.
+    expect(ids(await dms.listThreads(bob, wsId, {}))).toEqual([carol.id]);
+    expect(ids(await dms.listThreads(carol, wsId, {}))).toEqual([bob.id]);
+
+    // Reached another way (profile, old notification, link): the blocked person (bob) is told
+    // the other person blocked them; the blocker (alice) is told it is her block.
+    for (const call of [
+      () => dms.send(bob, wsId, alice.id, 'again'),
+      () => dms.listThread(bob, wsId, alice.id, {}),
+      () => dms.openThread(bob, wsId, alice.id),
+    ]) {
+      const err = (await call().catch((e: unknown) => e)) as { getStatus(): number; getResponse(): unknown };
+      expect(err.getStatus()).toBe(403);
+      expect(err.getResponse()).toEqual({ error: 'forbidden', code: 'community.dm.blocked_by_them' });
+    }
     await expect(dms.send(alice, wsId, bob.id, 'hi')).rejects.toMatchObject({
       status: 403,
       response: { code: 'community.dm.blocked_by_you' },
-    });
-    await expect(dms.listThread(bob, wsId, alice.id, {})).rejects.toMatchObject({
-      status: 404,
-      response: { code: 'community.dm.not_found' },
     });
     await expect(dms.openThread(alice, wsId, bob.id)).rejects.toMatchObject({
       status: 403,
       response: { code: 'community.dm.blocked_by_you' },
     });
+    // A member who is not there keeps the plain 404.
+    await expect(dms.send(bob, wsId, coach.id + '-gone', 'x')).rejects.toMatchObject({
+      status: 404,
+      response: { code: 'community.dm.not_found' },
+    });
 
     await safety.unblock(alice, bob.id);
-    expect((await dms.listThreads(bob, wsId, {})).threads).toHaveLength(1);
+    expect(ids(await dms.listThreads(alice, wsId, {}))).toEqual([bob.id]);
+    expect((await dms.listThreads(bob, wsId, {})).threads).toHaveLength(2);
     await expect(dms.send(bob, wsId, alice.id, 'back')).resolves.toBeDefined();
   });
 
@@ -699,6 +712,7 @@ describe('two-way block: member list, leaderboard, wins, Today, search and voice
         waveform_peaks: null,
         created_at: new Date('2026-09-30T00:00:00.000Z'),
         soft_deleted_at: null,
+        removed_by_user_id: null,
       };
     }
     // C6-WINS-MOVE: what app.community_author_stays reads. Alice, Bob and Carol are the coach's clients.
@@ -863,6 +877,8 @@ const FILTERED: Record<string, { file: string; method: string; entry?: string }>
     method: 'readableChallenge',
     entry: 'getOne',
   },
+  // LEAVE-MUTE-BE: who left a space (the "{name} left" chat line) hides blocked people both ways.
+  'CommunityLeaveMuteController.left': { file: 'leave-mute/community-leave-mute.service.ts', method: 'leftMembers' },
 };
 
 const COACH_ONLY =
@@ -878,6 +894,7 @@ const EXEMPT: Record<string, string> = {
   'CommunitySpaceReadsController.getRead': "the caller's own read line (ids and a time), no member content",
   'CommunitySpacePushController.preview': COACH_ONLY,
   'CommunitySpaceReadsController.getNotify': "the caller's own notification setting for the space, no member content",
+  'CommunityLeaveMuteController.threads': "the caller's own muted and left threads (ids and times), no member content",
   'AiTriageController.getTriage': COACH_ONLY,
   'PlanContextController.resolve': 'resolves a plan reference id, no member-authored content',
   'CommunitySafetyController.info': 'static safety copy',

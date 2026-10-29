@@ -492,6 +492,7 @@ function serviceWorld(prefs: Record<string, Record<string, unknown>> = {}) {
       })),
       findMany: jest.fn(async () => []), // a coach's sessions with someone not their client: none
     },
+    communityCohort: { findMany: jest.fn(async () => []) }, // FR-1152R3 B1: leads no public space
     user: {
       ...w.db.user,
       findUnique: jest.fn(async ({ where }: { where: { id: string } }) => ({
