@@ -70,7 +70,7 @@ function pushWorld() {
 }
 
 /** A preferences PATCH body as the route receives it (the field is new in STORE-B2). */
-const patch = (body: object) => body as unknown as UpdateNotificationPreferencesDto;
+const patch = (body: UpdateNotificationPreferencesDto): UpdateNotificationPreferencesDto => body;
 
 /** A plan renewal push; `null` context is the Day 0 notice. */
 const offerPush = (user: string, context: object | null = OFFER) => ({
@@ -230,8 +230,7 @@ describe('STORE-B2: the sweep marks Day 1 and Day 7 as offers, Day 0 as the noti
       pushed_step: pushedStep,
       ended_at: new Date(NY_AFTERNOON.getTime() - daysAgo * DAY - 2 * 60 * 60 * 1000), // 12:00 New York
     });
-    const advance = (service as unknown as { advance: (r: PlanRenewal, now: Date) => Promise<string> }).advance;
-    expect(await advance.call(service, row, NY_AFTERNOON)).toBe('pushed');
+    expect(await service['advance'](row, NY_AFTERNOON)).toBe('pushed');
     return sendPush.mock.calls.map((c) => (c as unknown[])[0] as Record<string, unknown>);
   }
 
