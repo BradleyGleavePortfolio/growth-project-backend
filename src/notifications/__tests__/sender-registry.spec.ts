@@ -28,7 +28,7 @@ import { randomUUID } from 'crypto';
 import * as path from 'path';
 import { Logger } from '@nestjs/common';
 import { Expo, type ExpoPushMessage, type ExpoPushTicket } from 'expo-server-sdk';
-import { BroadcastDispatcherService } from '../../broadcasts/broadcast-dispatcher.service';
+import { BroadcastDispatcherService, type BroadcastThreadMuteProbe } from '../../broadcasts/broadcast-dispatcher.service';
 import type { BroadcastScopeService } from '../../broadcasts/broadcast-scope.service';
 import type { SegmentResolverService } from '../../broadcasts/segment-resolver.service';
 import { DunningEscalationClassifier } from '../../checkout/dunning-v2/dunning-escalation.classifier';
@@ -131,7 +131,8 @@ const CLIENT = 'client-1';
 
 type Scenario = 'baseline' | 'muteAll' | 'quietHours' | 'blocked' | 'banned' | 'threadMuted' | 'spaceMuted';
 const nowOf = (s: Scenario): Date => (s === 'quietHours' ? NIGHT : DAY);
-const prefsOf = (s: Scenario): Record<string, unknown> => ({ muted: s === 'muteAll', timezone: ZONE });
+// timezone_updated_at: the zone is the person's own (recipient-timezone.ts trusts only a supplied zone).
+const prefsOf = (s: Scenario): Record<string, unknown> => ({ muted: s === 'muteAll', timezone: ZONE, timezone_updated_at: DAY });
 
 let expoSend: jest.SpyInstance<Promise<ExpoPushTicket[]>, [ExpoPushMessage[]]>;
 
@@ -164,18 +165,21 @@ function core(user: string, scenario: Scenario) {
   const delivery = new Clocked(stub<ConstructorParameters<typeof PushDeliveryService>[0]>(db), client);
   delivery.autoDrain = false;
   const svc = new NotificationsService(stub<ConstructorParameters<typeof NotificationsService>[0]>(db), undefined, undefined, delivery);
+  // Some senders fire pushToUser without awaiting it; the outcome waits for those calls to finish.
+  const direct = jest.spyOn(svc, 'pushToUser');
   return {
     w,
     svc,
     clock,
     rows: () => rows.filter((r) => r.user_id === user),
     /** What reached the person: a push sent now (Expo) or due now (the outbox), a push held to 08:00, or nothing. */
-    outcome: (): string => {
-      const direct = expoSend.mock.calls.flatMap(([chunk]) => chunk).filter((m) => m.to === TOKEN).length;
+    outcome: async (): Promise<string> => {
+      await Promise.allSettled(direct.mock.results.map((r) => r.value));
+      const sentNow = expoSend.mock.calls.flatMap(([chunk]) => chunk).filter((m) => m.to === TOKEN).length;
       const queued = w.rows.filter((r) => r.user_id === user);
       const due = queued.filter((r) => r.not_before.getTime() <= clock.at.getTime()).length;
       const held = queued.filter((r) => r.not_before.getTime() > clock.at.getTime());
-      if (direct + due > 0) return 'sent';
+      if (sentNow + due > 0) return 'sent';
       if (held.length === 0) return 'none';
       return held.every((r) => r.not_before.getTime() === MORNING.getTime()) ? 'held' : `held to ${held.map((r) => r.not_before.toISOString())}`;
     },
@@ -185,7 +189,7 @@ function core(user: string, scenario: Scenario) {
 /** A broadcast copy to CLIENT: the real deliverOne, the real MessageReceivedEmitter, the real core. */
 async function broadcast(s: Scenario): Promise<string> {
   const c = core(CLIENT, s);
-  const settle = jest.fn(async () => ({ count: 1 }));
+  const settle = jest.fn(async (_a: { data: { deliver_after?: Date } }) => ({ count: 1 }));
   const tx = {
     $queryRaw: jest.fn(async () => [{ status: 'sending' }]),
     coachMessage: { create: jest.fn(async () => ({ id: 'm1' })) },
@@ -217,9 +221,16 @@ async function broadcast(s: Scenario): Promise<string> {
     stub<SegmentResolverService>({}),
     stub<SupabaseService>({ pingChat: jest.fn(async () => undefined) }),
     new MessageReceivedEmitter(c.svc),
+    stub<BroadcastThreadMuteProbe>({ isThreadMuted: jest.fn(async () => s === 'threadMuted') }),
   );
   const status = await svc.deliverOne('d1', nowOf(s));
-  expect([s, status]).toEqual([s, s === 'blocked' ? 'skipped_blocked' : 'delivered']);
+  expect([s, status]).toEqual([s, s === 'blocked' ? 'skipped_blocked' : s === 'quietHours' ? 'deferred' : 'delivered']);
+  if (s === 'threadMuted') expect(c.rows()).toEqual([]); // a muted thread gets the message, no row and no push
+  if (status === 'deferred') {
+    // deliverOne holds the whole copy (message, row and push) to 08:00 in the client's zone.
+    const until = settle.mock.calls.map(([a]) => a.data.deliver_after).find((d): d is Date => d instanceof Date);
+    return until && until.getTime() === MORNING.getTime() ? 'held' : `held to ${String(until)}`;
+  }
   return c.outcome();
 }
 
@@ -265,10 +276,14 @@ async function scoutImport(s: Scenario): Promise<string> {
   return c.outcome();
 }
 
+let communityRuns = 0;
+
 /** A community DM push: the real sendCommunityPush, channelGate and pushToUser. */
 async function communityPush(s: Scenario): Promise<string> {
-  // One recipient per case: createNotification keeps a 60 s push-channel throttle in module state.
-  const member = `member-${s}`;
+  // One recipient per run: createNotification keeps a 60 s push-channel throttle in module state,
+  // and seven registry rows share this driver.
+  communityRuns += 1;
+  const member = `member-${communityRuns}-${s}`;
   const c = core(member, s);
   const prisma = {
     notification: { findFirst: jest.fn(async () => null) },
@@ -355,7 +370,7 @@ async function spacePush(s: Scenario): Promise<string> {
 }
 
 const DRIVERS: Record<DriverName, { run: (s: Scenario) => Promise<string>; scenarios: Scenario[] }> = {
-  broadcast: { run: broadcast, scenarios: ['baseline', 'muteAll', 'quietHours', 'blocked'] },
+  broadcast: { run: broadcast, scenarios: ['baseline', 'muteAll', 'quietHours', 'blocked', 'threadMuted'] },
   churnIntervention: { run: churnIntervention, scenarios: ['baseline', 'muteAll', 'quietHours', 'blocked'] },
   scoutImport: { run: scoutImport, scenarios: ['baseline', 'muteAll', 'quietHours'] },
   communityPush: { run: communityPush, scenarios: ['baseline', 'muteAll', 'quietHours'] },
@@ -449,7 +464,7 @@ describe('KT-4 sender registry: the funnel holds every registered push kind to i
         dedupe_key: `kt4:${randomUUID()}`,
       });
       const hint = `${row.file} ${row.fn}: ${p.kind} must ${s === 'muteAll' ? p.muteAll : p.quietHours} (${s}). ${KT4}`;
-      expect({ case: s, got: c.outcome(), hint }).toEqual({ case: s, got: outcome, hint });
+      expect({ case: s, got: await c.outcome(), hint }).toEqual({ case: s, got: outcome, hint });
     } finally {
       expoSend.mockRestore();
     }
