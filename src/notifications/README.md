@@ -68,9 +68,10 @@ and drives every safety key and every money sender with Mute all on.
   (`checkout/payout-notice.service.ts`) and the Day 7 payment alert (`checkout/dunning-v2/dunning-v2.dispatcher.ts`) carry
   `MUTE_ALL_PASS`, so their pushes pass too. Refund and dispute alerts are in-app rows only. Every other coach alert push is muted.
   The payout notice also sends its email through `EmailService` without reading `coach_alert_email`.
-- Note 2: these senders read the settings themselves, and since FR-1154 they always write the in-app row: `engagement/workout-reminder.service.ts`
+- Note 2: these senders read the settings themselves, and since FR-1154 Mute all never stops their in-app row: `engagement/workout-reminder.service.ts`
   (the push obeys Mute all), `notifications/nudges/nudge-engine.service.ts` (push and email obey Mute all; a muted user with no
-  in-app channel on is `suppressed_muted`) and `community/notifications/community-notifications.service.ts` (the push obeys Mute all).
+  in-app channel on is `suppressed_muted`) and `community/notifications/community-notifications.service.ts` (the push obeys Mute all; it writes its
+  inbox row only when it goes on to try the push, see the community section below).
   `packages/trials/trial-notice.service.ts` passes `MUTE_ALL_PASS` and `checkout/plan-renewal/switch-tell.ts` no longer reads `muted`.
 
 ### Community v1-4 push kinds
