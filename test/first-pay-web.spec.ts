@@ -9,6 +9,8 @@ import { CheckoutService } from '../src/checkout/checkout.service';
 import { FeePolicyService } from '../src/connect/fees/fee-policy.service';
 import { PurchaseFanoutService } from '../src/packages/purchase-fanout.service';
 import { CoachFirstPaymentService } from '../src/notifications/coach-first-payment.service';
+import { NotificationsModule } from '../src/notifications/notifications.module';
+import { StorefrontModule } from '../src/storefront/storefront.module';
 
 // FIRST-PAY-WEB (agent 182, b#1169 AUDIT 6486460217): a sale through the web
 // pay page (guest checkout) is the coach's first payment, under the same rule
@@ -193,6 +195,14 @@ describe('FIRST-PAY-WEB: a web pay page sale counts as the coach\'s first paymen
     await w.service.handlePaymentSucceeded('pi_1');
     expect(w.checkout.status).toBe('converted');
     expect(w.firstPayment.tryEmitFirstPayment).not.toHaveBeenCalled();
+  });
+
+  it('wiring: the app injects the first-payment service into the web sale path', () => {
+    // GuestCheckoutService is provided only by StorefrontModule, which imports
+    // NotificationsModule, which exports CoachFirstPaymentService.
+    expect(Reflect.getMetadata('providers', StorefrontModule)).toContain(GuestCheckoutService);
+    expect(Reflect.getMetadata('imports', StorefrontModule)).toContain(NotificationsModule);
+    expect(Reflect.getMetadata('exports', NotificationsModule)).toContain(CoachFirstPaymentService);
   });
 
   it('a conversion that lost the claim (already converted) claims nothing', async () => {

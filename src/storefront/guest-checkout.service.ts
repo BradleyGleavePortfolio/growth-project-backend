@@ -42,6 +42,7 @@ import { EmailSenderConfigError, resolveEmailSender } from '../email/email-sende
 import { SELLING_COACH } from '../packages/coach-selling';
 import { BuyerHasOtherCoachError, assertBuyerMayPay, buyerVerdict } from './buyer-check';
 import { payPageUrl } from './storefront-links';
+import { CoachFirstPaymentService } from '../notifications/coach-first-payment.service';
 
 // S-FEE — guest storefront charges are separate charges and transfers, like
 // every other checkout path. The PaymentIntent / Subscription carries NO
@@ -238,6 +239,11 @@ export class GuestCheckoutService {
     // @Optional() only for hand-built tests.
     @Optional()
     private readonly connect?: ConnectService,
+    // FIRST-PAY-WEB: the coach's once-ever first-payment notice, claimed in
+    // the conversion transaction (StorefrontModule imports
+    // NotificationsModule, which exports it); @Optional() for hand-built tests.
+    @Optional()
+    private readonly coachFirstPayment?: CoachFirstPaymentService,
   ) {}
 
   // POST /v1/packages/public/join/:token/checkout
@@ -1766,6 +1772,26 @@ export class GuestCheckoutService {
         if (won.count !== 1) {
           lostConversionClaim = true;
           return;
+        }
+
+        // FIRST-PAY-WEB: a web sale is the coach's first payment under the
+        // in-app rule (CheckoutWebhookHandlerService.maybeEmitFirstPayment):
+        // same flag, the row's amount and currency, the paying client. Only
+        // the copy that won the claim gets here, and the once-ever ledger row
+        // dedupes across paths. Behind b#1169's savepoint: a failed notice
+        // rolls back alone and never undoes this payment.
+        if (
+          process.env.FEATURE_ROMAN_FIRST_PAYMENT === 'true' &&
+          this.coachFirstPayment &&
+          purchaseRow
+        ) {
+          await this.coachFirstPayment.tryEmitFirstPayment(tx, {
+            coachId: purchaseRow.coach_user_id,
+            amount: purchaseRow.amount_cents,
+            currency: purchaseRow.currency,
+            clientId: purchaseRow.client_user_id,
+            correlationId: checkout.id,
+          });
         }
 
         // PR-9 — fan-out is now non-empty (drop seed + immediate-cadence
