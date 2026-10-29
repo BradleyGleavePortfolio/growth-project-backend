@@ -98,7 +98,7 @@ export interface KnownGap {
 }
 
 /** This PR; the AUDIT link for the gaps this registry found. */
-export const THIS_PR = 'TRAPTEST-NOTIFY-BE (BradleyGleavePortfolio/growth-project-backend, operator agent 184)';
+export const THIS_PR = 'https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/1186';
 const QH_DIRECT =
   'NotificationsService.pushToUser goes straight to Expo, not through the outbox, so quietHoursFor never runs; the funnel would hold this push to 08:00';
 
