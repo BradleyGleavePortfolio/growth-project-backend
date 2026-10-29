@@ -242,6 +242,7 @@ async function churnIntervention(s: Scenario): Promise<string> {
     $queryRaw: jest.fn(async () => [{ id: CLIENT, coach_id: COACH, role: 'student', deleted_at: null }]),
     churnIntervention: { updateMany: jest.fn(async () => ({ count: 1 })) },
     coachNudge: { create: jest.fn(async (a: { data: Record<string, unknown> }) => a.data) },
+    notification: { create: jest.fn(async (a: { data: Record<string, unknown> }) => a.data) },
   };
   const prisma = {
     churnIntervention: { findFirst: jest.fn(async (a: { where: { id?: string } }) => (a.where.id ? intervention : null)) },
@@ -259,6 +260,8 @@ async function churnIntervention(s: Scenario): Promise<string> {
   const sent = svc.sendIntervention(COACH, 'int-1', { message_text: 'Checking in this week', idempotency_key: randomUUID() });
   if (s === 'blocked') await expect(sent).rejects.toMatchObject({ status: 403 });
   else expect((await sent).ok).toBe(true);
+  // The inbox row is written in the send transaction; Mute all never stops it (owner #171-3).
+  expect([s, tx.notification.create.mock.calls.length]).toEqual([s, s === 'blocked' ? 0 : 1]);
   return c.outcome();
 }
 
