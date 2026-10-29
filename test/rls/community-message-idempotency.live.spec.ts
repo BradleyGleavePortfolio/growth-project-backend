@@ -3,6 +3,7 @@
 // authenticated. A coaches O and V (members of A's members-only space "mem") and N (A's client, not a member); X is
 // a client of coach B (another tenant) in B's space "bmem". Each "0" follows a control read of 1.
 //  - a resend with the same key returns the first message, also when the sends race, also for a reply;
+//  - FR-1144B: racing photo writes under one keyed id write one message and one photo;
 //  - a keyed message takes replies like any other;
 //  - the same key with other words is refused and writes nothing;
 //  - a key is one author's in one space: anyone else's send with it is their own message, and never reads back
@@ -33,7 +34,8 @@ const ROLE = (k: Key) => (k === 'A' || k === 'B' ? 'coach' : 'student');
 (DB_URL ? describe : describe.skip)('FX-IDEM: one message per Idempotency-Key, per author, per space', () => {
   const prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
   const db = stub<PrismaService>(prisma);
-  const chat = new CommunityMessagesService(new CommunityAccessService(db), new CommunityMessagesRepository(db),
+  const repo = new CommunityMessagesRepository(db);
+  const chat = new CommunityMessagesService(new CommunityAccessService(db), repo,
     stub<CommunityRealtimeService>({ broadcastCommunityEvent: async () => undefined }), stub<PlanContextService>({}),
     new CommunitySafetyService(db), stub<CommunityNotificationsService>({ pushEnabled: () => false }));
   const ids = <K extends string>(list: readonly K[]) => Object.fromEntries(list.map((k) => [k, randomUUID()])) as Record<K, string>;
@@ -102,6 +104,18 @@ const ROLE = (k: Key) => (k === 'A' || k === 'B' ? 'coach' : 'student');
     const sent = await Promise.all([1, 2, 3].map(() => send('V', 'mem', 'Hit a new best', key)));
     expect(new Set(sent.map((m) => m.id)).size).toBe(1);
     expect(await sentBy('V')).toBe(before + 1);
+  });
+
+  it('FR-1144B (Sol B1): three photo writes racing under one keyed id write one message and one photo, copy once', async () => {
+    const msg = randomUUID();
+    const publish = jest.fn(async () => undefined);
+    const params = { workspaceId: ws.A, cohortId: space.mem, senderId: id.O, body: 'New PR', publish,
+      image: { key: `${id.O}/idem-${randomUUID()}.jpg`, width: 10, height: 10, sizeBytes: 100 } };
+    const sent = await Promise.all([1, 2, 3].map(() => repo.createKeyedImageMessage(msg, params)));
+    expect(sent.map((r) => r.row.id)).toEqual([msg, msg, msg]);
+    expect(sent.filter((r) => !r.replayed)).toHaveLength(1);
+    expect(await prisma.communityMessageImage.count({ where: { message_id: msg } })).toBe(1);
+    expect(publish).toHaveBeenCalledTimes(1);
   });
 
   it('a reply resent with its key returns the same reply', async () => {
