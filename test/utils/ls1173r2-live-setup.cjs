@@ -15,8 +15,8 @@ module.exports = async function setup() {
     '-p', '127.0.0.1:55432:5432', 'postgres:15'], { stdio: 'inherit', timeout: 120000 });
   let ready = false;
   for (let n = 0; n < 60; n += 1) {
-    if (spawnSync('docker', ['exec', name, 'pg_isready', '-U', 'postgres'],
-      { stdio: 'ignore', timeout: 5000 }).status === 0) {
+    if (spawnSync('docker', ['exec', name, 'pg_isready', '-h', '127.0.0.1', '-U', 'postgres'],
+      { stdio: 'ignore', timeout: 5000 }).status === 0) { // over TCP: the init-time server listens on the socket only
       ready = true;
       break;
     }
