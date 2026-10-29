@@ -38,16 +38,17 @@ export type VendorWork = {
   stripe_customer_ids: string[];
 };
 
+export type KeyedVendor = 'posthog' | 'crisp';
+const KEYED_VENDORS: KeyedVendor[] = ['posthog', 'crisp'];
 /** Keys each vendor's erasure needs, and the settings that show it is in use. */
-const ERASURE_KEYS = {
+const ERASURE_KEYS: Record<KeyedVendor, readonly string[]> = {
   posthog: ['POSTHOG_PERSONAL_API_KEY', 'POSTHOG_PROJECT_ID'],
   crisp: ['CRISP_WEBSITE_ID', 'CRISP_API_TOKEN'],
-} as const;
-const IN_USE_KEYS = {
+};
+const IN_USE_KEYS: Record<KeyedVendor, readonly string[]> = {
   posthog: ['POSTHOG_KEY', ...ERASURE_KEYS.posthog],
   crisp: ERASURE_KEYS.crisp,
-} as const;
-type KeyedVendor = keyof typeof ERASURE_KEYS;
+};
 
 const isSet = (name: string) => !!process.env[name]?.trim();
 
@@ -58,7 +59,7 @@ const isSet = (name: string) => !!process.env[name]?.trim();
  * scripts/validate-app-config.js), so production counts both as in use.
  */
 export function heldVendors(): KeyedVendor[] {
-  return (['posthog', 'crisp'] as const).filter(
+  return KEYED_VENDORS.filter(
     (v) =>
       !ERASURE_KEYS[v].every(isSet) &&
       (process.env.NODE_ENV === 'production' || IN_USE_KEYS[v].some(isSet)),
