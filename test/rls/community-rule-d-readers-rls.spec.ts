@@ -138,6 +138,86 @@ const LISTED: Key[] = ['A', 'T', 'B']; // everyone the inbox lists W's public-sp
   });
   afterAll(() => prisma.$disconnect());
 
+  describe('LS-1173R3 independent current-reader audit', () => {
+    it('transfer revokes each outside API read and SQL word read, and grants the new coach without joining', async () => {
+      const readAll = async (k: Key) => [
+        await refused(chat.getOne(user(k), row.wPhoto)),
+        await refused(voice.getOne(user(k), row.wVoice)),
+        await refused(posts.getOne(user(k), row.wPost)),
+      ];
+      expect(await readAll('B')).toEqual(['ok', 'ok', 'ok']);
+      expect(await readAll('C')).toEqual([404, 404, 404]);
+      for (const [table, target] of [
+        ['community_messages', row.wPhoto],
+        ['community_voice_notes', row.wVoice],
+        ['community_posts', row.wPost],
+      ]) expect(await count('B', table, target)).toBe(1);
+      try {
+        await prisma.user.update({ where: { id: id.W }, data: { coach_id: id.C } });
+        expect(await readAll('B')).toEqual([404, 404, 404]);
+        expect(await readAll('C')).toEqual(['ok', 'ok', 'ok']);
+        for (const [table, target] of [
+          ['community_messages', row.wPhoto],
+          ['community_voice_notes', row.wVoice],
+          ['community_posts', row.wPost],
+        ]) {
+          expect(await count('C', table, target)).toBe(1);
+          expect(await count('B', table, target)).toBe(0);
+        }
+        expect(await refused(ack.applyTransition(user('B'), row.wPhoto, 'seen'))).toBe(404);
+        expect(await prisma.communityMembership.count({ where: { cohort_id: space.P, user_id: { in: [id.B, id.C] } } })).toBe(0);
+      } finally {
+        await prisma.user.update({ where: { id: id.W }, data: { coach_id: id.B } });
+      }
+    });
+
+    it('a same-client reply quote remains readable, but a block revokes row, quote and acknowledgement together', async () => {
+      const parentId = await say('W', 'audit parent');
+      const reply = await prisma.communityMessage.create({ data: {
+        workspace_id: ws.A, cohort_id: space.P, scope: 'cohort', sender_id: id.W,
+        body: 'audit reply', parent_message_id: parentId,
+        parent_message_at: (await prisma.communityMessage.findFirstOrThrow({ where: { id: parentId } })).created_at,
+      } });
+      expect((await chat.getOne(user('B'), reply.id)).message.parent).toMatchObject({ id: parentId, gone: false, snippet: 'audit parent' });
+      expect(await count('B', 'community_messages', reply.id)).toBe(1);
+      const blocked = await prisma.userBlock.create({ data: { blocker_id: id.W, blocked_id: id.B } });
+      try {
+        expect(await refused(chat.getOne(user('B'), reply.id))).toBe(404);
+        expect(await refused(ack.applyTransition(user('B'), reply.id, 'acked'))).toBe(404);
+        expect(await count('B', 'community_messages', reply.id)).toBe(0);
+      } finally {
+        await prisma.userBlock.delete({ where: { id: blocked.id } });
+        await prisma.communityMessage.deleteMany({ where: { id: { in: [parentId, reply.id] } } });
+      }
+    });
+
+    it('outside readers receive no unrelated photo quote or signed photo, while an ordinary member still does', async () => {
+      const parentId = await say('O', '', 'image');
+      await prisma.communityMessageImage.create({ data: { message_id: parentId, cohort_id: space.P, author_id: id.O,
+        storage_key: `${id.O}/${parentId}.jpg`, width: 4, height: 3, size_bytes: 100, mime: 'image/jpeg' } });
+      const parent = await prisma.communityMessage.findFirstOrThrow({ where: { id: parentId } });
+      const reply = await prisma.communityMessage.create({ data: {
+        workspace_id: ws.A, cohort_id: space.P, scope: 'cohort', sender_id: id.W,
+        body: 'audit own reply', parent_message_id: parentId, parent_message_at: parent.created_at,
+      } });
+      const sign = jest.fn(async () => 'https://image.test/audit');
+      const reader = new CommunityMessagesService(access, messages, stub<CommunityRealtimeService>({}),
+        stub<PlanContextService>({}), safety, stub<CommunityNotificationsService>({}), stub({ createSignedDownload: sign }));
+      try {
+        expect((await reader.getOne(user('T'), reply.id)).message.parent).toMatchObject({ id: parentId, gone: false, kind: 'image' });
+        expect(sign).toHaveBeenCalledTimes(1);
+        sign.mockClear();
+        expect((await reader.getOne(user('B'), reply.id)).message.parent).toEqual({
+          id: parentId, gone: true, kind: null, sender_name: null, snippet: null, voice_duration_ms: null,
+        });
+        expect(sign).not.toHaveBeenCalled();
+      } finally {
+        await prisma.communityMessageImage.deleteMany({ where: { message_id: parentId } });
+        await prisma.communityMessage.deleteMany({ where: { id: { in: [parentId, reply.id] } } });
+      }
+    });
+  });
+
   it('runs as a role that does not bypass row security, on tables that force it', async () => {
     expect(await as('W', (tx) => tx.$queryRaw<{ b: boolean }[]>`
       SELECT "rolbypassrls" AS "b" FROM pg_roles WHERE "rolname" = current_user`)).toEqual([{ b: false }]);
