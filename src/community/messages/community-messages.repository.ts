@@ -388,7 +388,7 @@ export class CommunityMessagesRepository {
   }
 
   private async imageRows(tx: Prisma.TransactionClient, params: NewImageMessage, id?: string): Promise<CommunityMessage> {
-    const m = await tx.communityMessage.create({ data: { ...cohortMessageData(params), kind: 'image', id } });
+    const m = await tx.communityMessage.create({ data: { ...cohortMessageData(params), kind: 'image', ...(id ? { id } : {}) } });
     await tx.communityMessageImage.create({
       data: {
         message_id: m.id,

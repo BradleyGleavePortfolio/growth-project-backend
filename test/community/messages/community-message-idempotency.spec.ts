@@ -167,13 +167,16 @@ describe('FR-1144B: one send-once rule for photos and for the third High alert',
     process.env = { ...env };
   });
   const coach = stub<User>({ id: '0a11ce00-0000-4000-8000-0000000000c0', role: 'coach' });
+  // A photo's read link is signed fresh on every answer, so its expiry is left out of the comparison.
+  type Sent = Awaited<ReturnType<ReturnType<typeof harness>['photo']>>;
+  const unsigned = (r: Sent) => ({ ...r, message: { ...r.message, image: r.message.image && { ...r.message.image, expires_at: '' } } });
 
   it('B1: a photo resent under its key after a lost reply returns the first message and uses the upload once', async () => {
     const h = harness();
     const upload = mintImageKey(olive.id, SPACE);
     const first = await h.photo(olive, 'New PR', KEY, upload);
     const again = await h.photo(olive, 'New PR', KEY, upload);
-    expect(again).toEqual(first);
+    expect(unsigned(again)).toEqual(unsigned(first));
     expect(first.message.image).toBeTruthy();
     expect(h.rows).toHaveLength(1);
     expect(h.photos).toHaveLength(1);
@@ -190,7 +193,7 @@ describe('FR-1144B: one send-once rule for photos and for the third High alert',
     const upload = mintImageKey(olive.id, SPACE);
     const first = await h.photo(olive, '', KEY, upload, root.id);
     const again = await h.photo(olive, '', KEY, upload, root.id);
-    expect(again).toEqual(first);
+    expect(unsigned(again)).toEqual(unsigned(first));
     expect(h.rows).toHaveLength(2);
     expect(h.images.publish).toHaveBeenCalledTimes(1);
   });
