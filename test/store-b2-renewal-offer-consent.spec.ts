@@ -165,7 +165,8 @@ describe('STORE-B2: enqueue (NotificationsService.sendPush)', () => {
     w.prefs.b = { muted: true };
     expect(await w.svc.sendPush(offerPush('a', null))).not.toBeNull();
     expect(await w.svc.sendPush(offerPush('b', null))).not.toBeNull();
-    expect(w.rows.map((r) => r.context)).toEqual([null, null]);
+    // No offer context on either row (the outbox fake stores an absent context as undefined).
+    expect(w.rows.map((r) => r.context ?? null)).toEqual([null, null]);
   });
 });
 
