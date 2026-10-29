@@ -32,6 +32,7 @@ interface FakeRows {
   alerts: any[];
   interventions: any[];
   nudges: any[];
+  inbox: any[];
   checkIns: any[];
 }
 
@@ -42,6 +43,7 @@ function buildPrisma(initial: Partial<FakeRows> = {}): any {
     alerts: initial.alerts ?? [],
     interventions: initial.interventions ?? [],
     nudges: initial.nudges ?? [],
+    inbox: initial.inbox ?? [],
     checkIns: initial.checkIns ?? [],
   };
 
@@ -65,6 +67,7 @@ function buildPrisma(initial: Partial<FakeRows> = {}): any {
       const snapshot = {
         interventions: rows.interventions.map((i) => ({ ...i })),
         nudges: rows.nudges.map((n) => ({ ...n })),
+        inbox: rows.inbox.map((n) => ({ ...n })),
       };
       try {
         if (typeof opsOrFn === 'function') {
@@ -79,6 +82,7 @@ function buildPrisma(initial: Partial<FakeRows> = {}): any {
       } catch (err) {
         rows.interventions = snapshot.interventions;
         rows.nudges = snapshot.nudges;
+        rows.inbox = snapshot.inbox;
         throw err;
       }
     }),
@@ -254,6 +258,14 @@ function buildPrisma(initial: Partial<FakeRows> = {}): any {
           read_at: null,
         };
         rows.nudges.push(row);
+        return row;
+      }),
+    },
+    // B-LSNOTIFY-2: the client's inbox row (Notification) written with the nudge.
+    notification: {
+      create: jest.fn(async ({ data }: any) => {
+        const row = { read_at: null, created_at: new Date(), inbox_hidden: false, ...data };
+        rows.inbox.push(row);
         return row;
       }),
     },
@@ -692,6 +704,115 @@ describe('ChurnInterventionService.sendIntervention', () => {
     expect(prisma.rows.interventions[0].status).toBe('sent');
     expect(prisma.rows.interventions[0].nudge_id).toBe(out.nudge_id);
     expect(notif.pushToUser).toHaveBeenCalled();
+  });
+
+  // CHURN-PUSH-COPY: anyone holding the phone can read the lock screen, so the
+  // push carries the copy table's line for coach_nudge, never the coach's text.
+  function sendWith(prisma: ReturnType<typeof buildSendTestPrisma>) {
+    const notif = buildNotifications();
+    const svc = new ChurnInterventionService(
+      prisma,
+      buildPtmService(),
+      buildConfig(),
+      grantAllEgress(),
+      notif,
+      handleOf(buildAnthropicClient()),
+    );
+    const text = 'Hi Alice, your weigh-in is up 3 kg. Call me tonight.';
+    const send = () =>
+      svc.sendIntervention('c1', 'int-1', { message_text: text, idempotency_key: VALID_UUID_2 });
+    return { notif, text, send };
+  }
+
+  it("(failed before) CPC-W2: the client's lock screen shows the approved new-message line, never the coach's text", async () => {
+    // Owner 10-27 15:58, DECISIONS #178-3 (wording approved): a nudge reads as
+    // a new message on the lock screen; push kind, Mute all rule and data stay coach_nudge.
+    const { notif, text, send } = sendWith(buildSendTestPrisma());
+    const out = await send();
+    const line = { title: 'New message', body: 'You have a new message. Open the app to read it.' };
+    expect(text).toMatch(/Alice/);
+    expect(notif.pushToUser).toHaveBeenCalledTimes(1);
+    expect(notif.pushToUser).toHaveBeenCalledWith('u1', line.title, line.body, {
+      type: 'coach_nudge',
+      kind: 'coach_nudge',
+      actionScreen: 'NotificationCenter',
+      nudge_id: out.nudge_id,
+      notification_id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+    });
+    expect(`${line.title} ${line.body}`).not.toMatch(/Alice|weigh-in|3 kg|Call me|Message from your coach/);
+  });
+
+  // B-LSNOTIFY-2: the Home bell opens NotificationCenter, which reads
+  // Notification rows (GET /notifications); the nudge's text lives there too.
+  it('B-LSNOTIFY-2: the full message lands in the client inbox the bell opens, and the push opens it', async () => {
+    const prisma = buildSendTestPrisma();
+    const long = `Hi Alice, ${'your weigh-in is up 3 kg, call me tonight. '.repeat(23)}`.slice(0, 1000).trim();
+    const notif = buildNotifications();
+    const svc = new ChurnInterventionService(
+      prisma, buildPtmService(), buildConfig(), grantAllEgress(), notif, handleOf(buildAnthropicClient()),
+    );
+    const out = await svc.sendIntervention('c1', 'int-1', { message_text: long, idempotency_key: VALID_UUID_2 });
+    expect(long.length).toBeGreaterThan(160);
+    expect(prisma.rows.inbox).toHaveLength(1);
+    const row = prisma.rows.inbox[0];
+    expect(row).toMatchObject({
+      user_id: 'u1',
+      kind: 'coach_nudge',
+      channel: 'inapp',
+      body: long, // the whole message, not cut to 160
+      deep_link: null,
+      // B-LONOTIFY3-1: the row names its coach, so a block can hide it.
+      payload: { title: 'Message from your coach', nudge_id: out.nudge_id, coach_id: 'c1' },
+    });
+    expect(prisma.rows.nudges[0].body).toBe(long);
+    expect(notif.pushToUser).toHaveBeenCalledTimes(1);
+    const data = notif.pushToUser.mock.calls[0][3];
+    expect(data.notification_id).toBe(row.id);
+    expect(data.actionScreen).toBe('NotificationCenter');
+  });
+
+  it('B-LSNOTIFY-2: an idempotent replay writes no second inbox row and no second push', async () => {
+    const prisma = buildSendTestPrisma();
+    const { notif, send } = sendWith(prisma);
+    const first = await send();
+    const second = await send();
+    expect(second.nudge_id).toBe(first.nudge_id);
+    expect(prisma.rows.inbox).toHaveLength(1);
+    expect(notif.pushToUser).toHaveBeenCalledTimes(1);
+  });
+
+  it('B-LSNOTIFY-2: a failed inbox write rolls the send back (no nudge, still draft, no push)', async () => {
+    const prisma = buildSendTestPrisma();
+    prisma.notification.create = jest.fn(async () => {
+      throw new Error('DB down');
+    });
+    const { notif, send } = sendWith(prisma);
+    await expect(send()).rejects.toThrow('DB down');
+    expect(prisma.rows.nudges).toEqual([]);
+    expect(prisma.rows.inbox).toEqual([]);
+    expect(prisma.rows.interventions[0].status).toBe('draft');
+    expect(notif.pushToUser).not.toHaveBeenCalled();
+  });
+
+  it('Mute all on: the nudge is sent, the push is not', async () => {
+    const prisma = buildSendTestPrisma();
+    prisma.notificationPreferences.findUnique.mockResolvedValue({ muted: true });
+    const { notif, send } = sendWith(prisma);
+    const out = await send();
+    expect(out.ok).toBe(true);
+    expect(prisma.rows.nudges).toHaveLength(1);
+    expect(prisma.rows.inbox).toHaveLength(1); // B-LSNOTIFY-2: the message stays in the inbox
+    expect(notif.pushToUser).not.toHaveBeenCalled();
+  });
+
+  it('an unreadable Mute all switch sends no push; the nudge is still sent', async () => {
+    const prisma = buildSendTestPrisma();
+    prisma.notificationPreferences.findUnique.mockRejectedValue(new Error('prefs down'));
+    const { notif, send } = sendWith(prisma);
+    const out = await send();
+    expect(out.ok).toBe(true);
+    expect(prisma.rows.nudges).toHaveLength(1);
+    expect(notif.pushToUser).not.toHaveBeenCalled();
   });
 
   it('idempotent: second send returns existing sent_at and nudge_id', async () => {
