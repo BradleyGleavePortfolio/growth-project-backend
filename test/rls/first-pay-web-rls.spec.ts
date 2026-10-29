@@ -202,7 +202,7 @@ const mail = (local: string) => `${local}\u0040example.com`;
     await prisma.$disconnect();
   });
 
-  it('W (failed before): web sale first, then an in-app sale: one notice, for the web sale', async () => {
+  it('W (failed before): web sale first, then an in-app sale: one notice, for the web sale; none for coach M or the buyer', async () => {
     const web = await webSale('K', 'w');
     let c = await counts('K');
     expect(c.sales).toBe(1);
@@ -211,6 +211,12 @@ const mail = (local: string) => `${local}\u0040example.com`;
     expect(c.inbox.map((n) => n.channel)).toEqual(['inapp', 'push']);
     expect(c.inbox.every((n) => n.deep_link === `tgp://coach/clients/${web.buyer}`)).toBe(true);
     expect(c.push).toHaveLength(1);
+    // C1 (LO-1181): K's web sale writes nothing for another coach or the buyer.
+    for (const other of [coachId('M'), web.buyer]) {
+      expect(await prisma.coachFirstPaymentNotification.count({ where: { coachId: other } })).toBe(0);
+      expect(await prisma.notification.count({ where: { user_id: other, kind: FIRST_PAYMENT } })).toBe(0);
+      expect(await prisma.pushOutbox.count({ where: { user_id: other, kind: FIRST_PAYMENT } })).toBe(0);
+    }
 
     const client = await inAppClient('K');
     await inAppSale('K', client, 12000);

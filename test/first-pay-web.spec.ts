@@ -183,7 +183,7 @@ describe('FIRST-PAY-WEB: a web pay page sale counts as the coach\'s first paymen
     expect(w.firstPayment.tryEmitFirstPayment).toHaveBeenCalledTimes(1);
   });
 
-  it('(failed before) a first web purchase of 0 follows the in-app rule: the row amount is passed, no amount check (owner call 1)', async () => {
+  it('(failed before) a first web purchase of 0 follows the in-app rule: 0 is passed, no amount check (owner call 1)', async () => {
     const w = await build('pending', 0);
     await w.service.handlePaymentSucceeded('pi_1');
     expect(w.firstPayment.tryEmitFirstPayment).toHaveBeenCalledWith(w.tx, expect.objectContaining({ amount: 0 }));
@@ -226,6 +226,45 @@ describe('FIRST-PAY-WEB: a web pay page sale counts as the coach\'s first paymen
     expect(w.firstPayment.tryEmitFirstPayment).toHaveBeenCalledWith(
       w.tx,
       expect.objectContaining({ amount: 39600, currency: 'usd' }),
+    );
+  });
+
+  it('B1 (FR-1181): if Stripe cannot be read, a combo still reports the checkout charge rule (one-time part + first period)', async () => {
+    const w = await build('pending');
+    Object.assign(w.checkout.package as Row, { recurring_amount_cents: 9900, recurring_interval: 'month' });
+    w.checkout.stripe_subscription_id = 'sub_1';
+    w.stripe.retrievePaymentIntent.mockRejectedValue(new Error('stripe down'));
+    w.stripe.retrieveSubscription.mockResolvedValue({ id: 'sub_1', status: 'active' });
+    await w.service.handlePaymentSucceeded('pi_1');
+    expect(w.checkout.status).toBe('converted');
+    expect(w.firstPayment.tryEmitFirstPayment).toHaveBeenCalledWith(
+      w.tx,
+      expect.objectContaining({ amount: 39600, currency: 'usd' }),
+    );
+  });
+
+  it('B1 (FR-1181): a pure subscription web sale reports its first period; a bad Stripe amount falls back to the charge rule', async () => {
+    const w = await build('pending', 4900);
+    Object.assign(w.checkout.package as Row, { billing_type: 'recurring', interval: 'month' });
+    w.checkout.stripe_subscription_id = 'sub_1';
+    w.stripe.retrievePaymentIntent.mockResolvedValue({ id: 'pi_1', status: 'succeeded', latest_charge: null, amount_received: '4900' });
+    w.stripe.retrieveSubscription.mockResolvedValue({ id: 'sub_1', status: 'active' });
+    await w.service.handlePaymentSucceeded('pi_1');
+    expect(w.firstPayment.tryEmitFirstPayment).toHaveBeenCalledTimes(1);
+    expect(w.firstPayment.tryEmitFirstPayment).toHaveBeenCalledWith(w.tx, expect.objectContaining({ amount: 4900 }));
+  });
+
+  it('B1 (FR-1181): a one-time web sale reports what Stripe collected, and a retried event reports it once', async () => {
+    const w = await build('pending');
+    w.stripe.retrievePaymentIntent.mockResolvedValue({ id: 'pi_1', status: 'succeeded', latest_charge: null, amount_received: 29700 });
+    await w.service.handlePaymentSucceeded('pi_1');
+    await w.service.handlePaymentSucceeded('pi_1'); // Stripe retries the same event
+    await w.service.reconcilePaidCheckout('gc-1');
+    expect(w.purchases).toHaveLength(1);
+    expect(w.firstPayment.tryEmitFirstPayment).toHaveBeenCalledTimes(1);
+    expect(w.firstPayment.tryEmitFirstPayment).toHaveBeenCalledWith(
+      w.tx,
+      expect.objectContaining({ amount: 29700, currency: 'usd', clientId: 'usr-1' }),
     );
   });
 
