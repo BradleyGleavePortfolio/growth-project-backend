@@ -220,10 +220,18 @@ class WebhookFakeDb {
           return { id: `tx_n_${bufNotifs.length}`, ...data };
         },
       },
+      // B-LSNOTIFY3-1: the step's SAVEPOINT / RELEASE / ROLLBACK TO.
+      $executeRaw: async () => 0,
       coachFirstPaymentNotification: {
-        create: async ({ data }: { data: { coachId: string } }) => {
-          bufCoachIds.add(data.coachId);
-          return { id: `tx_row_${data.coachId}`, ...data };
+        // B-LSNOTIFY-1: ON CONFLICT DO NOTHING (createMany + skipDuplicates).
+        createMany: async ({ data }: { data: Array<{ coachId: string }> }) => {
+          let count = 0;
+          for (const row of data) {
+            if (this.committedCoachIds.has(row.coachId) || bufCoachIds.has(row.coachId)) continue;
+            bufCoachIds.add(row.coachId);
+            count += 1;
+          }
+          return { count };
         },
       },
     };
