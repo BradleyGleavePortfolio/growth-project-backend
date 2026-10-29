@@ -114,10 +114,11 @@ const cases: ReadonlyArray<{
     expectedKeys: ['actionId', 'wsId', 'targetType', 'targetId', 'action'],
   },
   {
+    // FR-1168R2 B2: a member left a space or joined it again (cohortId: that space; null: the whole community).
     name: 'community.membership.changed',
     schema: MembershipChangedPayloadSchema,
-    payload: { wsId: 'ws_1', userId: 'usr_1', change: 'joined' },
-    expectedKeys: ['wsId', 'userId', 'change'],
+    payload: { wsId: 'ws_1', cohortId: 'coh_1', userId: 'usr_1', change: 'left' },
+    expectedKeys: ['wsId', 'cohortId', 'userId', 'change'],
   },
 ];
 

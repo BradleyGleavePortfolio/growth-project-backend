@@ -4,8 +4,10 @@ import { NotificationKind } from '../notification-kind';
 import { dunningErrorCode } from '../../checkout/dunning-v2/dunning-v2.safe-error';
 import {
   COACH_CLIENT_LINK,
+  COACH_SPACE_ALERT_LINK,
   SAFETY_ALERT_INBOX_BODY,
   SAFETY_ALERT_PUSH_BODY,
+  SPACE_SAFETY_ALERT_INBOX_BODY,
   safetyAlertTap,
 } from '../push/lock-screen-copy';
 import { MUTE_ALL_PASS } from '../push/push-preferences';
@@ -25,6 +27,8 @@ export interface CoachAlertNotificationPayload {
   clientUserId?: string;
   /** FR-1154 (owner #171-3): a money alert (the Day 7 payment alert); its push passes Mute all. */
   money?: true;
+  /** FR-1152R3 B1: a public space's copy of a photo safety alert, for this space. */
+  spaceId?: string;
 }
 
 export type CoachAlertTransport = 'sent' | 'skipped' | 'failed';
@@ -67,11 +71,17 @@ export class CoachAlertEmitter {
     _verifiedPush?: VerifiedCoachPush,
   ): Promise<CoachAlertDelivery> {
     const { coachId, alertId, alertType, message, severity, clientUserId } = payload;
-    const deepLink = clientUserId ? `${COACH_CLIENT_LINK}${clientUserId}` : 'tgp://coach/alerts';
     // A Roman safety alert (owner 22a, 57, 57d): the inbox row and the push
     // open that alert; each has its own fixed line. Neither carries a name or
-    // the client's message.
+    // the client's message. FR-1152R3 B1: a space copy links its space and
+    // has the space lines, as its reader may not coach the client.
     const safety = Object.prototype.hasOwnProperty.call(SAFETY_ALERT_PUSH_BODY, alertType);
+    const spaceId = safety ? payload.spaceId : undefined;
+    const deepLink = spaceId
+      ? `${COACH_SPACE_ALERT_LINK}${spaceId}`
+      : clientUserId
+        ? `${COACH_CLIENT_LINK}${clientUserId}`
+        : 'tgp://coach/alerts';
     // Owner 57q: the urgent and crisis alerts' pushes go out at once, even in
     // quiet hours; the eating-disorder one waits until 08:00. FR-1154: read
     // from the alert's severity ('critical'; eating-disorder is 'warning'), so
@@ -87,7 +97,7 @@ export class CoachAlertEmitter {
         const created = await this.notifications.createNotification({
           user_id: coachId,
           kind: NotificationKind.COACH_ALERT,
-          body: safety ? SAFETY_ALERT_INBOX_BODY[alertType] : message.slice(0, 160),
+          body: spaceId ? SPACE_SAFETY_ALERT_INBOX_BODY : safety ? SAFETY_ALERT_INBOX_BODY[alertType] : message.slice(0, 160),
           payload: {
             alertId,
             alertType,
@@ -118,7 +128,10 @@ export class CoachAlertEmitter {
           body: message.slice(0, 160),
           deep_link: deepLink,
           ...(safety
-            ? { context: { safetyAlert: alertType, alertId }, dedupe_key: `coach_alert:${alertId}` }
+            ? {
+                context: { safetyAlert: alertType, alertId, ...(spaceId ? { spaceAlert: true as const } : {}) },
+                dedupe_key: `coach_alert:${alertId}`,
+              }
             : payload.money
               ? { context: MUTE_ALL_PASS }
               : {}),

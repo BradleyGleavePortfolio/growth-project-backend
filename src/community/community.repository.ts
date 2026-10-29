@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import type { CommunityCohort } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
-import { authorsWhoLeft, canEnterSpace, readersNow, rowsWithSpaceAccess } from './community-space-access';
+import { authorsWhoLeft, canEnterSpace, rowsWithSpaceAccess } from './community-space-access';
 
 /** Name of a coach's auto-created community (B-E2E-1); the seed script reuses it. */
 export const DEFAULT_WORKSPACE_NAME = 'Community';
@@ -134,12 +133,6 @@ export class CommunityRepository {
       select: { id: true },
     });
     return def?.id === cohort.id;
-  }
-
-  /** C6-BVIS: everyone who can open the space now, the coach included; a client of a
-   * clients or package space counts with no row. The roster also lists a pending invitation. */
-  async cohortMemberCount(cohort: Pick<CommunityCohort, 'id' | 'workspace_id'>): Promise<number> {
-    return (await readersNow(this.prisma, cohort.workspace_id, cohort.id)).length;
   }
 
   async findWorkspaceById(workspaceId: string) {

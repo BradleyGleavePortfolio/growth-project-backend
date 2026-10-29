@@ -105,11 +105,14 @@ function world(reader: string, roster = 1) {
         sessions.map((s) => ({ ...s, client: people.find((u) => u.id === s.client_id) })).filter((s) => whereMatches(s, where)),
       ),
     },
+    // FR-1152R3 B1: the public spaces a coach leads (space alert links); none here.
+    communityCohort: { findMany: jest.fn(async () => []) },
   };
   const prisma = fakeOf<PrismaService>(Object.create(db));
-  // Every read of the tables that decide who still coaches whom.
+  // Every read of the tables that decide who still coaches whom (and, for a
+  // coach's inbox, which public spaces they lead).
   const reads = () =>
-    [db.user, db.teamSubCoachAssignment, db.subCoachAssignment, db.coachingSession]
+    [db.user, db.teamSubCoachAssignment, db.subCoachAssignment, db.coachingSession, db.communityCohort]
       .flatMap((t) => Object.values(t))
       .reduce((n, f) => n + (jest.isMockFunction(f) ? f.mock.calls.length : 0), 0);
   const send = jest.fn(async (m: ExpoPushMessage[]) => m.map((_, i) => ({ status: 'ok' as const, id: `t-${i}` })));
@@ -241,7 +244,8 @@ describe('NOTIFYMOVE: a client\'s notifications stay with every coach still auth
       return paid;
     };
     const one = await cost(1);
-    expect(one.slice(0, 4)).toEqual([9, 9, 1, 1]);
+    // A coach's inbox and badge: 9 coaching reads + 1 read of the spaces they lead.
+    expect(one.slice(0, 4)).toEqual([10, 10, 1, 1]);
     expect(await cost(12)).toEqual(one);
   });
 });

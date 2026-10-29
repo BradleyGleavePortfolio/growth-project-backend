@@ -8,7 +8,7 @@ import type {
 } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { liftWorkspaceBan } from '../community-ban';
-import { readersNow } from '../community-space-access';
+import { membersNow } from '../community-space-access';
 
 /**
  * Data access for cohort membership administration (list / assign / remove).
@@ -58,9 +58,10 @@ export class CommunityCohortMembersRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   /** C6-BVIS: everyone the rule lists in the space (a client of a clients or package space needs no
-   * row), each with their row here if any, by user id for a stable cursor. */
+   * row), each with their row here if any, by user id for a stable cursor. FR-1168R2 B1: the people of the
+   * space now (membersNow, the rule member_count uses), so a person who left is not listed until they join again. */
   async people(cohort: Pick<CommunityCohort, 'id' | 'workspace_id'>): Promise<SpacePerson[]> {
-    const ids = await readersNow(this.prisma, cohort.workspace_id, cohort.id, true);
+    const ids = await membersNow(this.prisma, cohort, true);
     const users = await this.prisma.user.findMany({
       where: { id: { in: ids } },
       select: {

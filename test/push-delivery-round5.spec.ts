@@ -69,6 +69,7 @@ function world(prefs: Record<string, unknown> = {}) {
       findUnique: jest.fn(async () => ({ client_id: 'u-1', coach_id: 'coach-1', status: 'scheduled' })),
       findMany: jest.fn(async () => []), // a coach's sessions with someone not their client: none
     },
+    communityCohort: { findMany: jest.fn(async () => []) }, // FR-1152R3 B1: leads no public space
     scheduledDrop: { updateMany: jest.fn(async () => ({ count: 1 })) },
   };
   const delivery = new Clocked(Object.create(db), client);
