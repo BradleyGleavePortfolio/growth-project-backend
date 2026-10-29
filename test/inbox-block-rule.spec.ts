@@ -53,7 +53,9 @@ describe('B-LONOTIFY3-1: the inbox block rule', () => {
       ]),
     };
     const notification = { findMany: jest.fn(async () => [{ id: 'n1' }, { id: 'n2' }]) };
-    const rule = new InboxBlockRule(stub<RuleDb>({ userBlock, notification }));
+    // The reader is a coach (no coach of their own).
+    const user = { findUnique: jest.fn(async () => ({ coach_id: null })) };
+    const rule = new InboxBlockRule(stub<RuleDb>({ userBlock, notification, user }));
     const where = await rule.where('u1');
     expect(notification.findMany).toHaveBeenCalledWith({
       where: {
@@ -82,5 +84,45 @@ describe('B-LONOTIFY3-1: the inbox block rule', () => {
       },
       { id: { notIn: ['n1', 'n2'] } },
     ]);
+  });
+
+  it('(failed before) a client in a block with their coach: the message notices for their own chat leave too', async () => {
+    // A client's message notices link their own chat (the chat id is the
+    // client: messaging.service.ts notifyNewMessage, broadcast-dispatcher
+    // threadId: client.id), so "New message from <coach>" names the coach.
+    const userBlock = { findMany: jest.fn(async () => [{ blocker_id: 'c1', blocked_id: 'k1' }]) };
+    const notification = { findMany: jest.fn(async () => []) };
+    const user = { findUnique: jest.fn(async () => ({ coach_id: 'k1' })) };
+    const rule = new InboxBlockRule(stub<RuleDb>({ userBlock, notification, user }));
+    const where = await rule.where('c1');
+    expect(user.findUnique).toHaveBeenCalledWith({ where: { id: 'c1' }, select: { coach_id: true } });
+    expect(where).toEqual([
+      {
+        OR: [
+          { deep_link: null },
+          {
+            deep_link: { notIn: ['tgp://messages/k1', 'tgp://messages/c1'] },
+            NOT: [
+              { deep_link: { startsWith: 'tgp://messages/k1/' } },
+              { deep_link: { startsWith: 'tgp://messages/c1/' } },
+            ],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it('a client in a block with someone else (not their coach): their own chat stays', async () => {
+    const userBlock = { findMany: jest.fn(async () => [{ blocker_id: 'x9', blocked_id: 'c1' }]) };
+    const notification = { findMany: jest.fn(async () => []) };
+    const user = { findUnique: jest.fn(async () => ({ coach_id: 'k1' })) };
+    const rule = new InboxBlockRule(stub<RuleDb>({ userBlock, notification, user }));
+    const [links] = await rule.where('c1');
+    expect(links).toEqual({
+      OR: [
+        { deep_link: null },
+        { deep_link: { notIn: ['tgp://messages/x9'] }, NOT: [{ deep_link: { startsWith: 'tgp://messages/x9/' } }] },
+      ],
+    });
   });
 });
