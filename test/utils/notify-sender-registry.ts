@@ -82,7 +82,8 @@ export type KnownGapId =
   | 'KG-QH-DUNNING-CLIENT'
   | 'KG-QH-PAYOUT'
   | 'KG-QH-TRIAL'
-  | 'KG-QH-WORKOUT-REMINDER';
+  | 'KG-QH-WORKOUT-REMINDER'
+  | 'KG-HELD-BLOCK-MESSAGE';
 
 /** An outcome the spec measures: a push sent now, a push held to 08:00 local, or nothing. */
 export type Outcome = 'sent' | 'held' | 'none';
@@ -153,6 +154,12 @@ export const KNOWN_GAPS: Record<KnownGapId, KnownGap> = {
     where: 'src/engagement/workout-reminder.service.ts:WorkoutReminderService.processClient',
     rule: 'quiet hours',
     why: `the "morning" slot opens at 07:00 local (REMINDER_SLOT_MINUTES), inside quiet hours; ${QH_DIRECT}`,
+    audit: THIS_PR,
+  },
+  'KG-HELD-BLOCK-MESSAGE': {
+    where: 'src/messaging/messaging.service.ts:MessagingService.notifyNewMessage',
+    rule: 'block and ban',
+    why: 'a coach and client message push held to 08:00 is sent even if one side blocked the other while it waited: at send time the push outbox (push-delivery.service.ts) plans again only space pushes (spacePushDropReason), so the block is never read (owner 10-22: a block hides all messaging)',
     audit: THIS_PR,
   },
 };
@@ -435,7 +442,11 @@ export const SENDERS: SenderRow[] = [
     muteAll: MUTE_CORE,
     quietHours: QH_CORE,
     mute: { does: 'stops', why: 'with messaging core v2 on, a recipient who muted the thread is told nothing (isThreadMutedFor)' },
-    blockBan: { does: 'stops', why: 'the send path refuses a blocked pair either way (isEitherSideBlocked) before the message and the notice' },
+    blockBan: {
+      does: 'stops',
+      why: 'the send path refuses a blocked pair either way (isEitherSideBlocked) before the message and the notice; a push held for quiet hours is not checked again',
+      gap: 'KG-HELD-BLOCK-MESSAGE',
+    },
     recipient: "the other side of the coach and client thread (a client's reply tells their assigned coach)",
     funnel: [{ kind: NotificationKind.MESSAGE_RECEIVED, muteAll: 'stops', quietHours: 'held', note: 'not urgent' }],
     covered: 'funnel table here; test/messaging/messaging-core-v2.spec.ts drives the thread mute',
