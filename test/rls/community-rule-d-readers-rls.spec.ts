@@ -17,6 +17,7 @@ import { AckService } from '../../src/community/ack/ack.service';
 import { CommunityAccessService } from '../../src/community/community-access.service';
 import { CommunityCoachInboxRepository } from '../../src/community/inbox/community-coach-inbox.repository';
 import { CommunityCoachInboxService } from '../../src/community/inbox/community-coach-inbox.service';
+import { CommunityLeaveMuteService } from '../../src/community/leave-mute/community-leave-mute.service';
 import { COMMENT_CONTEXT_TYPE, CommunityMessagesRepository } from '../../src/community/messages/community-messages.repository';
 import { CommunityMessagesService } from '../../src/community/messages/community-messages.service';
 import { CommunityModerationRepository } from '../../src/community/moderation/community-moderation.repository';
@@ -139,6 +140,21 @@ const LISTED: Key[] = ['A', 'T', 'B']; // everyone the inbox lists W's public-sp
   afterAll(() => prisma.$disconnect());
 
   describe('LS-1173R3 independent current-reader audit', () => {
+    it('leaving a public space keeps the current coach historical rows readable and in the open inbox', async () => {
+      const quiet = new CommunityLeaveMuteService(db, access, safety,
+        stub<CommunityRealtimeService>({ broadcastCommunityEvent: async () => undefined }));
+      expect((await inbox.rows(user('B'))).rows.map((r) => r.message_id)).toContain(row.wTyped);
+      expect(await count('B', 'community_messages', row.wTyped)).toBe(1);
+      try {
+        await quiet.leave(user('W'), space.P);
+        expect((await inbox.rows(user('B'))).rows.map((r) => r.message_id)).toContain(row.wTyped);
+        expect(await refused(chat.getOne(user('B'), row.wTyped))).toBe('ok');
+        expect(await count('B', 'community_messages', row.wTyped)).toBe(1);
+      } finally {
+        await quiet.join(user('W'), space.P);
+      }
+    });
+
     it('transfer revokes each outside API read and SQL word read, and grants the new coach without joining', async () => {
       const readAll = async (k: Key) => [
         await refused(chat.getOne(user(k), row.wPhoto)),
