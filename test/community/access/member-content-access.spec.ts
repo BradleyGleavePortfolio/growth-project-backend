@@ -17,8 +17,8 @@
  *   - a behavior row is red: apply the rule in the read, the same way the registered readers do;
  *   - the rule cannot be applied in your PR: ask the operator for a KNOWN GAP row ("GAP:" in the registry, with
  *     where it was found); never add one on your own;
- *   - "Failing test passed even though it was expected to fail": a KNOWN GAP is fixed; delete its "GAP:" text in the
- *     registry (say how the rule is applied now), and this check turns it into a normal row.
+ *   - "KNOWN GAP fixed": a gap row now hides the author; replace its "GAP:" text in the registry with how the rule
+ *     is applied now, and the row becomes a normal check that must stay green.
  * Test-only file: nothing here changes runtime code.
  */
 import 'reflect-metadata';
@@ -230,43 +230,59 @@ describe('KT-2 behavior: the registered readers that run in memory honor all fou
   });
 
   for (const b of BEHAVIOR_READS) {
-    const row = registry.get(readerKey(b.file, b.reader));
+    const key = readerKey(b.file, b.reader);
+    const row = registry.get(key);
     describe(b.name, () => {
       for (const rule of ACCESS_RULES) {
-        const column = RULE_COLUMN[rule];
-        const decided = row?.[column] ?? '';
+        const decided = row?.[RULE_COLUMN[rule]] ?? '';
         if (isNa(decided)) continue;
-        const check = isGap(decided) ? it.failing : it;
-        const title = isGap(decided)
-          ? `KNOWN GAP (KT-2): an author ${rule} still shows; when this passes, delete the GAP in the registry`
+        const gap = isGap(decided);
+        const title = gap
+          ? `KNOWN GAP (KT-2): an author ${rule} still shows (registry: ${decided})`
           : `an author ${rule}: no words, no row, no name, not counted; the control member still shows`;
-        check(title, async () => {
-          const w = await accessWorld();
-          const author = w.member('Hidden Author');
-          const hiddenWords = `hidden words ${b.name} ${rule}`;
-          const controlWords = `control words ${b.name}`;
-          const hiddenRow = await b.write(w, author, hiddenWords);
-          const controlRow = await b.write(w, w.control, controlWords);
-          await w.apply(rule, author, hiddenRow);
-
-          const shown = JSON.stringify(await settle(b.read(w, w.control, controlRow)));
-          const hidden = await settle(b.read(w, author, hiddenRow));
-          const hiddenText = JSON.stringify(hidden);
-          // The control proves the read works, so an absent author is not a vacuous pass.
-          if (b.shows === 'words') expect(shown).toContain(controlWords);
-          if (b.shows === 'people') expect(shown).toContain(w.control.id);
-          if (b.shows === 'count' && b.count) {
-            expect(b.count(await settle(b.read(w, w.control, controlRow)), w)).toBeGreaterThanOrEqual(1);
-            // Only the control member's reaction may count.
-            expect(b.count(hidden, w)).toBe(1);
-          }
-          expect(hiddenText).not.toContain(hiddenWords);
-          if (rule !== 'removed or deleted') {
-            expect(hiddenText).not.toContain(author.id);
-            expect(hiddenText).not.toContain('Hidden Author');
+        it(title, async () => {
+          const { controlShown, leaked } = await runCase(b, rule);
+          // The control proves the read works, so an absent author is never a vacuous pass.
+          expect(controlShown).toBe(true);
+          if (!gap) {
+            expect(leaked).toEqual([]);
+          } else if (leaked.length === 0) {
+            throw new Error(
+              `KNOWN GAP fixed: ${key} now hides an author ${rule}. Replace its "GAP:" text in ` +
+                'test/community/access/member-content-readers.ts with how the rule is applied now (KT-2).',
+            );
           }
         });
       }
     });
   }
 });
+
+/** One author under `rule`, one control member, read as the viewer: what of the author reached the viewer. */
+async function runCase(b: BehaviorRead, rule: AccessRule): Promise<{ controlShown: boolean; leaked: string[] }> {
+  const w = await accessWorld();
+  const author = w.member('Hidden Author');
+  const hiddenWords = `hidden words ${b.name} ${rule}`;
+  const controlWords = `control words ${b.name}`;
+  const hiddenRow = await b.write(w, author, hiddenWords);
+  const controlRow = await b.write(w, w.control, controlWords);
+  await w.apply(rule, author, hiddenRow);
+
+  const shownOut = await settle(b.read(w, w.control, controlRow));
+  const hiddenOut = await settle(b.read(w, author, hiddenRow));
+  const shown = JSON.stringify(shownOut);
+  const hidden = JSON.stringify(hiddenOut);
+  const leaked: string[] = [];
+  if (hidden.includes(hiddenWords)) leaked.push('words');
+  if (rule !== 'removed or deleted') {
+    if (hidden.includes(author.id)) leaked.push('row or id');
+    if (hidden.includes('Hidden Author')) leaked.push('name');
+  }
+  let controlShown = b.shows === 'words' ? shown.includes(controlWords) : shown.includes(w.control.id);
+  if (b.shows === 'count' && b.count) {
+    controlShown = b.count(shownOut, w) >= 1;
+    // Only the control member's item may count.
+    if (b.count(hiddenOut, w) !== 1) leaked.push(`count ${b.count(hiddenOut, w)} (only the control member's 1 may count)`);
+  }
+  return { controlShown, leaked };
+}
