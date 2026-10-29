@@ -341,6 +341,8 @@ describe('CommunityVoiceService', () => {
       expect((await service.getOne(stranger, NOTE_A)).voice_note.id).toBe(NOTE_A);
       expect(repo.isPublicRowOfMyClient).toHaveBeenCalledWith(COHORT_A, stranger.id, MEMBER_ID);
       // A block between the coach and the client still closes it (the same gate as the space's readers).
+      // prettier-ignore
+      // @ts-expect-error mocks are partial implementations of the injected deps
       const blocked = new CommunityVoiceService(access, repo, upload, realtime, analytics, safetyWithBlocks([[MEMBER_ID, STRANGER_ID]]));
       await expect(blocked.getOne(stranger, NOTE_A)).rejects.toBeInstanceOf(NotFoundException);
       await expect(service.markHeard(stranger, NOTE_A)).resolves.toMatchObject({ voice_note_id: NOTE_A });
