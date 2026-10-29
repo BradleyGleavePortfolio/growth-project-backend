@@ -115,7 +115,7 @@ async function build(initialStatus: string, amountCents = 29700) {
     }),
   };
   const stripe = {
-    retrievePaymentIntent: jest.fn(async () => ({ id: 'pi_1', status: 'succeeded', latest_charge: null })),
+    retrievePaymentIntent: jest.fn(async (): Promise<Row> => ({ id: 'pi_1', status: 'succeeded', latest_charge: null })),
     retrieveCharge: jest.fn(async () => ({ id: 'ch_1', receipt_url: null })),
     retrieveSubscription: jest.fn(),
   };
@@ -143,7 +143,7 @@ async function build(initialStatus: string, amountCents = 29700) {
       { provide: CoachFirstPaymentService, useValue: firstPayment },
     ],
   }).compile();
-  return { checkout, purchases, tx, order, firstPayment, service: moduleRef.get(GuestCheckoutService) };
+  return { checkout, purchases, tx, order, firstPayment, stripe, service: moduleRef.get(GuestCheckoutService) };
 }
 
 describe('FIRST-PAY-WEB: a web pay page sale counts as the coach\'s first payment', () => {
@@ -203,6 +203,30 @@ describe('FIRST-PAY-WEB: a web pay page sale counts as the coach\'s first paymen
     expect(Reflect.getMetadata('providers', StorefrontModule)).toContain(GuestCheckoutService);
     expect(Reflect.getMetadata('imports', StorefrontModule)).toContain(NotificationsModule);
     expect(Reflect.getMetadata('exports', NotificationsModule)).toContain(CoachFirstPaymentService);
+  });
+
+  it('B1 (LO-1181): a combo web sale reports what Stripe collected (one-time part + first period), not the one-time part', async () => {
+    // A web combo package: $297 one-time plus $99 a month. The web pay page
+    // mints a subscription whose first invoice adds the one-time price, so the
+    // buyer pays $396 today. The in-app combo path reports the paid invoice
+    // (C-680-9); the web path must report the same money.
+    const w = await build('pending');
+    Object.assign(w.checkout.package as Row, { recurring_amount_cents: 9900, recurring_interval: 'month' });
+    w.checkout.stripe_subscription_id = 'sub_1';
+    w.stripe.retrievePaymentIntent.mockResolvedValue({
+      id: 'pi_1',
+      status: 'succeeded',
+      latest_charge: null,
+      amount: 39600,
+      amount_received: 39600,
+    });
+    w.stripe.retrieveSubscription.mockResolvedValue({ id: 'sub_1', status: 'active' });
+    await w.service.handlePaymentSucceeded('pi_1');
+    expect(w.checkout.status).toBe('converted');
+    expect(w.firstPayment.tryEmitFirstPayment).toHaveBeenCalledWith(
+      w.tx,
+      expect.objectContaining({ amount: 39600, currency: 'usd' }),
+    );
   });
 
   it('a conversion that lost the claim (already converted) claims nothing', async () => {
