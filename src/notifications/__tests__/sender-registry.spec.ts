@@ -1,0 +1,484 @@
+/**
+ * KT-4 (KNOWN_TRAPS.md), TRAPTEST-NOTIFY-BE: every device push and every in-app notice goes through the one
+ * delivery funnel and honors Mute all, quiet hours (21:00 to 08:00 in the recipient's zone), thread and space
+ * mute, block and ban, and its recipient rule.
+ *
+ * This spec reads every runtime file in src/ (never tests), lists each place that sends a push or writes an
+ * in-app notice, and checks that list against the sender registry in test/utils/notify-sender-registry.ts. Then
+ * it runs the senders through the real NotificationsService and the real push outbox and checks each one does
+ * what its registry row says.
+ *
+ * WHEN THIS IS RED, read the failure: it names the file, the line and the function. Then do one of these:
+ *  1. "not in the sender registry": you added a new way to send (a function that calls sendPush,
+ *     createNotification, pushToUser, an emitter in src/notifications/emitters/, sendCommunityPush, or writes a
+ *     Notification row). Add a row for it to SENDERS in test/utils/notify-sender-registry.ts: its kinds and its
+ *     five rules (Mute all, quiet hours, thread and space mute, block and ban, recipient). A push it queues
+ *     through sendPush goes under `funnel`, so the table below sends it with Mute all on and in quiet hours.
+ *  2. "calls the push transport directly": do not. Send the push through NotificationsService.sendPush (it applies
+ *     Mute all, the push switch, quiet hours and the send-time re-check) and the inbox row through
+ *     NotificationsService.createNotification. Do not add your file to FUNNEL_SITES.
+ *  3. A behavior case is red: the sender does not do what its row says. Apply the rule in the sender. If your PR
+ *     cannot apply it, do not change the expectation: ask the operator for a KNOWN GAP row (KNOWN_GAPS in the
+ *     registry: file:function, the rule it misses, one line why, the AUDIT link) and name it on the rule.
+ *  4. A KNOWN GAP case is red because the gap is fixed: delete the gap from the rule and from KNOWN_GAPS.
+ *  5. "has no send site": the row's function moved or stopped sending. Move or delete the row.
+ * Never skip a case, loosen a check or add to FUNNEL_SITES to make this green; that is the trap KT-4 names.
+ */
+import { randomUUID } from 'crypto';
+import * as path from 'path';
+import { Logger } from '@nestjs/common';
+import { Expo, type ExpoPushMessage, type ExpoPushTicket } from 'expo-server-sdk';
+import { BroadcastDispatcherService } from '../../broadcasts/broadcast-dispatcher.service';
+import type { BroadcastScopeService } from '../../broadcasts/broadcast-scope.service';
+import type { SegmentResolverService } from '../../broadcasts/segment-resolver.service';
+import { DunningEscalationClassifier } from '../../checkout/dunning-v2/dunning-escalation.classifier';
+import { type DispatchContext, DunningV2Dispatcher } from '../../checkout/dunning-v2/dunning-v2.dispatcher';
+import { DunningV2Renderer } from '../../checkout/dunning-v2/dunning-v2.renderer';
+import { ChurnInterventionService } from '../../coach/command-center/churn-intervention.service';
+import { CommunityNotificationsService } from '../../community/notifications/community-notifications.service';
+import type { AnalyticsService } from '../../analytics/analytics.service';
+import type { PrismaService } from '../../prisma.service';
+import { ScoutService } from '../../scout/scout.service';
+import type { SupabaseService } from '../../supabase/supabase.service';
+import { CoachAlertEmitter } from '../emitters/coach-alert.emitter';
+import { MessageReceivedEmitter } from '../emitters/message-received.emitter';
+import { NotificationKind, type NotificationKindValue } from '../notification-kind';
+import { NotificationsService } from '../notifications.service';
+import { type ExpoPushClient, PushDeliveryService } from '../push/push-delivery.service';
+import { pushOutboxWorld } from '../../../test/utils/push-outbox-fake';
+import { spaceAtSendTime } from '../../../test/utils/space-push-send-time-fake';
+import {
+  type DriverName,
+  FUNNEL_SITES,
+  KNOWN_GAPS,
+  type KnownGapId,
+  type Outcome,
+  type Rule,
+  SENDERS,
+  type SenderRow,
+} from '../../../test/utils/notify-sender-registry';
+import { scanSenders, type SendHit } from '../../../test/utils/notify-sender-scan';
+
+const stub = <T>(v: unknown): T => v as T;
+const REPO = path.resolve(__dirname, '../../..');
+const KT4 = 'KT-4 (KNOWN_TRAPS.md; read the header of src/notifications/__tests__/sender-registry.spec.ts)';
+const keyOf = (file: string, fn: string): string => `${file}#${fn}`;
+const where = (h: SendHit): string => `${h.file}:${h.line} ${h.fn} [${h.via}] ${h.code}`;
+
+// ─── (b) Architecture: every send site in src/ is the funnel or a registered sender ─────────────────────────────
+
+describe('KT-4 sender registry: the send sites in src/', () => {
+  const hits = scanSenders(REPO);
+  const funnel = new Set(FUNNEL_SITES.map((s) => keyOf(s.file, s.fn)));
+  const rows = new Map(SENDERS.map((r) => [keyOf(r.file, r.fn), r]));
+
+  it('the scan still sees the funnel (a scan that finds nothing proves nothing)', () => {
+    const missing = FUNNEL_SITES.filter((s) => !hits.some((h) => h.file === s.file && h.fn === s.fn && h.via === s.via));
+    expect(missing.map((s) => `FUNNEL_SITES row has no send site: ${s.file} ${s.fn} [${s.via}]`)).toEqual([]);
+    expect(hits.length).toBeGreaterThan(80);
+  });
+
+  it('nothing outside the funnel calls the push transport directly', () => {
+    const direct = hits.filter((h) => h.via === 'transport' && !funnel.has(keyOf(h.file, h.fn)));
+    expect(direct.map((h) => `calls the push transport directly, outside the funnel. ${KT4}: ${where(h)}`)).toEqual([]);
+  });
+
+  it('every other send site is a registered sender', () => {
+    const unregistered = hits.filter((h) => {
+      if (h.via === 'transport') return false; // the test above
+      if (funnel.has(keyOf(h.file, h.fn))) return false;
+      const row = rows.get(keyOf(h.file, h.fn));
+      return !row || !row.via.includes(h.via);
+    });
+    expect(unregistered.map((h) => `not in the sender registry (test/utils/notify-sender-registry.ts). ${KT4}: ${where(h)}`)).toEqual([]);
+  });
+
+  it('every registry row still has its send sites', () => {
+    const stale = SENDERS.flatMap((r) =>
+      r.via
+        .filter((v) => !hits.some((h) => h.file === r.file && h.fn === r.fn && h.via === v))
+        .map((v) => `registry row has no send site [${v}] any more: ${r.file} ${r.fn}. Move or delete the row. ${KT4}`),
+    );
+    expect(stale).toEqual([]);
+  });
+
+  it('the registry is well formed: one row per function, every gap named and used, every driver real', () => {
+    const keys = SENDERS.map((r) => keyOf(r.file, r.fn));
+    expect(keys.filter((k, i) => keys.indexOf(k) !== i)).toEqual([]);
+    const rules = (r: SenderRow): Rule[] => [r.muteAll, r.quietHours, r.mute, r.blockBan];
+    const used = new Set(SENDERS.flatMap((r) => rules(r).map((x) => x.gap)).filter((g): g is KnownGapId => !!g));
+    expect(Object.keys(KNOWN_GAPS).filter((g) => !used.has(g as KnownGapId))).toEqual([]);
+    for (const r of SENDERS) {
+      expect([r.file, r.fn, r.recipient.length > 0, r.covered.length > 0, r.kinds.length > 0]).toEqual([r.file, r.fn, true, true, true]);
+      if (r.driver) expect([r.fn, r.driver in DRIVERS]).toEqual([r.fn, true]);
+      // A direct pushToUser sender has no funnel quiet hours: its row must say how it keeps them, or name the gap.
+      if (r.via.includes('pushToUser') && r.quietHours.does === 'held' && !r.quietHours.gap) {
+        expect([r.fn, r.quietHours.why]).toEqual([r.fn, expect.stringMatching(/QuietHoursPolicy/)]);
+      }
+    }
+  });
+});
+
+// ─── (c) Behavior: the senders through the real funnel ──────────────────────────────────────────────────────────
+
+const TOKEN = 'ExponentPushToken[kt4senderregistry00001]';
+const ZONE = 'America/New_York';
+const DAY = new Date('2026-06-02T18:00:00Z'); // 14:00 in New York
+const NIGHT = new Date('2026-06-03T03:30:00Z'); // 23:30 in New York: quiet hours
+const MORNING = new Date('2026-06-03T12:00:00Z'); // 08:00 the next morning in New York
+const COACH = 'coach-a';
+const CLIENT = 'client-1';
+
+type Scenario = 'baseline' | 'muteAll' | 'quietHours' | 'blocked' | 'banned' | 'threadMuted' | 'spaceMuted';
+const nowOf = (s: Scenario): Date => (s === 'quietHours' ? NIGHT : DAY);
+const prefsOf = (s: Scenario): Record<string, unknown> => ({ muted: s === 'muteAll', timezone: ZONE });
+
+let expoSend: jest.SpyInstance<Promise<ExpoPushTicket[]>, [ExpoPushMessage[]]>;
+
+/** The real core for one recipient: NotificationsService, the push outbox (PushDeliveryService) and Expo. */
+function core(user: string, scenario: Scenario) {
+  const clock = { at: nowOf(scenario) };
+  const w = pushOutboxWorld({ now: () => clock.at });
+  w.prefs[user] = prefsOf(scenario);
+  w.tokens[user] = TOKEN;
+  const rows: Array<Record<string, unknown>> = [];
+  const db = {
+    ...w.db,
+    notification: {
+      findFirst: jest.fn(async () => null),
+      create: jest.fn(async (a: { data: Record<string, unknown> }) => {
+        rows.push(a.data);
+        return { id: `n-${rows.length}`, ...a.data };
+      }),
+    },
+  };
+  class Clocked extends PushDeliveryService {
+    protected now(): Date {
+      return new Date(clock.at.getTime());
+    }
+  }
+  const client = stub<ExpoPushClient>({
+    send: jest.fn(async (m: unknown[]) => m.map((_x, i) => ({ status: 'ok', id: `ticket-${i}` }))),
+    getReceipts: jest.fn(async () => ({})),
+  });
+  const delivery = new Clocked(stub<ConstructorParameters<typeof PushDeliveryService>[0]>(db), client);
+  delivery.autoDrain = false;
+  const svc = new NotificationsService(stub<ConstructorParameters<typeof NotificationsService>[0]>(db), undefined, undefined, delivery);
+  return {
+    w,
+    svc,
+    clock,
+    rows: () => rows.filter((r) => r.user_id === user),
+    /** What reached the person: a push sent now (Expo) or due now (the outbox), a push held to 08:00, or nothing. */
+    outcome: (): string => {
+      const direct = expoSend.mock.calls.flatMap(([chunk]) => chunk).filter((m) => m.to === TOKEN).length;
+      const queued = w.rows.filter((r) => r.user_id === user);
+      const due = queued.filter((r) => r.not_before.getTime() <= clock.at.getTime()).length;
+      const held = queued.filter((r) => r.not_before.getTime() > clock.at.getTime());
+      if (direct + due > 0) return 'sent';
+      if (held.length === 0) return 'none';
+      return held.every((r) => r.not_before.getTime() === MORNING.getTime()) ? 'held' : `held to ${held.map((r) => r.not_before.toISOString())}`;
+    },
+  };
+}
+
+/** A broadcast copy to CLIENT: the real deliverOne, the real MessageReceivedEmitter, the real core. */
+async function broadcast(s: Scenario): Promise<string> {
+  const c = core(CLIENT, s);
+  const settle = jest.fn(async () => ({ count: 1 }));
+  const tx = {
+    $queryRaw: jest.fn(async () => [{ status: 'sending' }]),
+    coachMessage: { create: jest.fn(async () => ({ id: 'm1' })) },
+    coachMessageCard: { create: jest.fn(async () => ({})) },
+    coachBroadcastDelivery: { updateMany: settle },
+  };
+  const payload = { urgent: false, body: 'Morning {first_name}', card: null };
+  const prisma = {
+    coachBroadcastDelivery: {
+      updateMany: settle,
+      findUnique: jest.fn(async () => ({
+        id: 'd1',
+        attempts: 0,
+        recipient_id: CLIENT,
+        run: { ...payload, segment: {}, broadcast: { id: 'b1', coach_id: COACH, author_user_id: COACH, status: 'sending', ...payload } },
+      })),
+    },
+    user: {
+      findFirst: jest.fn(async () => ({ id: CLIENT, name: 'Sarah Lee' })),
+      findUnique: jest.fn(async () => ({ name: 'Coach Bradley' })),
+    },
+    userBlock: { findFirst: jest.fn(async () => (s === 'blocked' ? { blocker_id: CLIENT, blocked_id: COACH } : null)) },
+    notificationPreferences: { findUnique: jest.fn(async () => prefsOf(s)) },
+    $transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
+  };
+  const svc = new BroadcastDispatcherService(
+    stub<ConstructorParameters<typeof BroadcastDispatcherService>[0]>(prisma),
+    stub<BroadcastScopeService>({ lockSendAuthority: jest.fn(async () => null) }),
+    stub<SegmentResolverService>({}),
+    stub<SupabaseService>({ pingChat: jest.fn(async () => undefined) }),
+    new MessageReceivedEmitter(c.svc),
+  );
+  const status = await svc.deliverOne('d1', nowOf(s));
+  expect([s, status]).toEqual([s, s === 'blocked' ? 'skipped_blocked' : 'delivered']);
+  return c.outcome();
+}
+
+/** A churn intervention to CLIENT: the real sendIntervention and the real pushToUser. */
+async function churnIntervention(s: Scenario): Promise<string> {
+  const c = core(CLIENT, s);
+  const intervention = { id: 'int-1', coach_id: COACH, client_id: CLIENT, status: 'draft', draft_text: 'Hi' };
+  const tx = {
+    $queryRaw: jest.fn(async () => [{ id: CLIENT, coach_id: COACH, role: 'student', deleted_at: null }]),
+    churnIntervention: { updateMany: jest.fn(async () => ({ count: 1 })) },
+    coachNudge: { create: jest.fn(async (a: { data: Record<string, unknown> }) => a.data) },
+  };
+  const prisma = {
+    churnIntervention: { findFirst: jest.fn(async (a: { where: { id?: string } }) => (a.where.id ? intervention : null)) },
+    notificationPreferences: { findUnique: jest.fn(async () => prefsOf(s)) },
+    userBlock: { findMany: jest.fn(async () => (s === 'blocked' ? [{ blocker_id: CLIENT, blocked_id: COACH }] : [])) },
+    $transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
+  };
+  const svc = new ChurnInterventionService(
+    stub<ConstructorParameters<typeof ChurnInterventionService>[0]>(prisma),
+    stub<ConstructorParameters<typeof ChurnInterventionService>[1]>({}),
+    stub<ConstructorParameters<typeof ChurnInterventionService>[2]>({}),
+    stub<ConstructorParameters<typeof ChurnInterventionService>[3]>({}),
+    c.svc,
+  );
+  const sent = svc.sendIntervention(COACH, 'int-1', { message_text: 'Checking in this week', idempotency_key: randomUUID() });
+  if (s === 'blocked') await expect(sent).rejects.toMatchObject({ status: 403 });
+  else expect((await sent).ok).toBe(true);
+  return c.outcome();
+}
+
+/** An import settled for COACH: the real ScoutService.complete and the real pushToUser. */
+async function scoutImport(s: Scenario): Promise<string> {
+  const c = core(COACH, s);
+  const prisma = {
+    scoutImportCompletion: { create: jest.fn(async () => ({})) },
+    scoutImport: { upsert: jest.fn(async () => ({})) },
+    notificationPreferences: { findUnique: jest.fn(async () => prefsOf(s)) },
+    $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
+  };
+  const svc = new ScoutService(stub<ConstructorParameters<typeof ScoutService>[0]>(prisma), c.svc, stub<AnalyticsService>({ capture: jest.fn() }));
+  expect(await svc.complete(COACH, { intent_id: 'intent-1', terminal_status: 'success' })).toEqual({ acknowledged: true, intent_id: 'intent-1' });
+  return c.outcome();
+}
+
+/** A community DM push: the real sendCommunityPush, channelGate and pushToUser. */
+async function communityPush(s: Scenario): Promise<string> {
+  // One recipient per case: createNotification keeps a 60 s push-channel throttle in module state.
+  const member = `member-${s}`;
+  const c = core(member, s);
+  const prisma = {
+    notification: { findFirst: jest.fn(async () => null) },
+    user: { findUnique: jest.fn(async () => ({ expo_push_token: TOKEN })) },
+  };
+  const community = new CommunityNotificationsService(
+    c.svc,
+    stub<ConstructorParameters<typeof CommunityNotificationsService>[1]>(prisma),
+    stub<ConstructorParameters<typeof CommunityNotificationsService>[2]>({ capture: jest.fn() }),
+  );
+  await community.sendCommunityPush({ recipientId: member, kind: NotificationKind.COMMUNITY_DM_RECEIVED, targetType: 'dm', targetId: `dm-${s}` });
+  expect(c.rows().map((r) => r.kind)).toEqual([NotificationKind.COMMUNITY_DM_RECEIVED]); // the row stays
+  return c.outcome();
+}
+
+/** The client's failed-payment push: the real DunningV2Dispatcher.sendClientPush and the real pushToUser. */
+async function dunningClientPush(s: Scenario): Promise<string> {
+  const c = core(CLIENT, s);
+  const classifier = new DunningEscalationClassifier();
+  const step = [0, 1, 2, 3].find((i) => classifier.resolve({ stepIndex: i, isLateReversalCycle: false }).push);
+  expect(step).toBeDefined();
+  const dispatcher = new DunningV2Dispatcher(
+    classifier,
+    new DunningV2Renderer(),
+    stub<ConstructorParameters<typeof DunningV2Dispatcher>[2]>({ attemptFailed: jest.fn(), notifySent: jest.fn(), coachNotified: jest.fn() }),
+    c.svc,
+    undefined,
+    new CoachAlertEmitter(c.svc),
+  );
+  const ctx: DispatchContext = {
+    dunningStateId: 'ds-kt4',
+    cycleKey: '1',
+    stepIndex: step ?? -1,
+    isLateReversalCycle: false,
+    clientUserId: CLIENT,
+    coachUserId: COACH,
+    clientEmail: 'client@tgp.invalid',
+    coachEmail: 'coach@tgp.invalid',
+    tokens: { firstName: 'Avery', clientName: 'Avery Client', coachName: 'Morgan Coach', amount: '$150.00', lockoutDate: 'October 14' },
+    dunningDetailDeeplink: `tgp://coach/clients/${CLIENT}`,
+  };
+  const out = await dispatcher.dispatchStepDetailed(ctx, undefined, { channels: ['client_push'] });
+  expect(out.results.client_push).toEqual({ status: 'sent' });
+  return c.outcome();
+}
+
+/** A space chat push at send time: the real sendPush, the real outbox worker and its space re-plan. */
+async function spacePush(s: Scenario): Promise<string> {
+  const clock = { at: nowOf(s) };
+  const w = pushOutboxWorld({ now: () => clock.at, tokens: { ana: TOKEN, bo: TOKEN } });
+  w.prefs.ana = prefsOf(s);
+  w.prefs.bo = prefsOf(s);
+  const at = spaceAtSendTime(w.db);
+  const MSG = { id: 'm1', workspace_id: 'w', cohort_id: 'c1', sender_id: 'sam', parent_message_id: null as string | null, high_alert: false };
+  at.s.messages.push({ ...MSG }, { ...MSG, id: 'm2', parent_message_id: 'p1' }, { ...MSG, id: 'p1', sender_id: 'ana' });
+  if (s === 'blocked') at.s.blocks.push({ blocker_id: 'bo', blocked_id: 'sam' });
+  if (s === 'banned') at.s.bans.add('w:sam');
+  if (s === 'spaceMuted') at.s.reads.bo = { notify_mode: 'mute_all', silenced_until: null };
+  if (s === 'threadMuted') at.s.threads['ana:p1'] = 'muted';
+  const send = jest.fn(async (m: Array<{ to: unknown }>) => m.map(() => ({ status: 'ok' as const, id: 't' })));
+  class Clocked extends PushDeliveryService {
+    protected now(): Date {
+      return new Date(clock.at.getTime());
+    }
+  }
+  const delivery = new Clocked(stub<PrismaService>(at.db), { send, getReceipts: jest.fn(async () => ({})) });
+  delivery.autoDrain = false;
+  const notifications = new NotificationsService(Object.create(w.db), undefined, undefined, delivery);
+  // A reply in thread p1 goes to its author (ana); an ordinary message goes to the other reader (bo).
+  const [user, kind, messageId] = s === 'threadMuted' ? (['ana', 'reply', 'm2'] as const) : (['bo', 'unread', 'm1'] as const);
+  await notifications.sendPush({
+    user_id: user,
+    kind: NotificationKind.COMMUNITY_MESSAGE_RECEIVED,
+    body: '',
+    deep_link: 'tgp://community/cohorts/c1',
+    dedupe_key: `space-push:${messageId}:${user}`,
+    context: { timeZone: ZONE, spacePush: { kind, unread: 1, space: 'Team', cohortId: 'c1', messageId, senderId: 'sam' } },
+  });
+  await delivery.drain();
+  if (send.mock.calls.length > 0) return 'sent';
+  const held = w.rows.filter((r) => r.status === 'pending');
+  if (held.length === 0) return 'none';
+  return held.every((r) => r.not_before.getTime() === MORNING.getTime()) ? 'held' : `held to ${held.map((r) => r.not_before.toISOString())}`;
+}
+
+const DRIVERS: Record<DriverName, { run: (s: Scenario) => Promise<string>; scenarios: Scenario[] }> = {
+  broadcast: { run: broadcast, scenarios: ['baseline', 'muteAll', 'quietHours', 'blocked'] },
+  churnIntervention: { run: churnIntervention, scenarios: ['baseline', 'muteAll', 'quietHours', 'blocked'] },
+  scoutImport: { run: scoutImport, scenarios: ['baseline', 'muteAll', 'quietHours'] },
+  communityPush: { run: communityPush, scenarios: ['baseline', 'muteAll', 'quietHours'] },
+  dunningClientPush: { run: dunningClientPush, scenarios: ['baseline', 'muteAll', 'quietHours'] },
+  spacePush: { run: spacePush, scenarios: ['baseline', 'muteAll', 'quietHours', 'blocked', 'banned', 'spaceMuted', 'threadMuted'] },
+};
+
+/** What the registry row says must happen in this case; a KNOWN GAP case expects what the code does today. */
+function expected(row: SenderRow, s: Scenario): { outcome: Outcome; gap?: KnownGapId } {
+  const rule: Rule | undefined =
+    s === 'muteAll' ? row.muteAll : s === 'quietHours' ? row.quietHours : s === 'blocked' || s === 'banned' ? row.blockBan : s === 'baseline' ? undefined : row.mute;
+  if (!rule) return { outcome: 'sent' };
+  if (rule.gap) {
+    const today = KNOWN_GAPS[rule.gap].today;
+    if (!today) throw new Error(`${row.fn}: ${rule.gap} is driven here, so KNOWN_GAPS must say what the code does today`);
+    return { outcome: today, gap: rule.gap };
+  }
+  if (rule.does === 'stops') return { outcome: 'none' };
+  if (rule.does === 'held') return { outcome: 'held' };
+  if (rule.does === 'passes') return { outcome: 'sent' };
+  throw new Error(`${row.fn}: the ${s} case is driven but the rule is n/a; drop the case or state the rule`);
+}
+
+const quiet = (): void => {
+  jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+  jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+  jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+};
+const FLAGS = ['FEATURE_COACH_BROADCASTS', 'FEATURE_COMMUNITY_PUSH', 'FEATURE_COMMUNITY_SPACE_PUSH'] as const;
+const savedFlags = FLAGS.map((f) => [f, process.env[f]] as const);
+
+describe('KT-4 sender registry: each driven sender does what its row says', () => {
+  beforeAll(() => {
+    quiet();
+    for (const f of FLAGS) process.env[f] = 'true';
+  });
+  beforeEach(() => {
+    expoSend = jest
+      .spyOn(Expo.prototype, 'sendPushNotificationsAsync')
+      .mockImplementation(async (chunk) => chunk.map(() => ({ status: 'ok' as const, id: 'ticket' })));
+  });
+  afterEach(() => expoSend.mockRestore());
+  afterAll(() => {
+    for (const [f, v] of savedFlags) {
+      if (v === undefined) delete process.env[f];
+      else process.env[f] = v;
+    }
+    jest.restoreAllMocks();
+  });
+
+  const cases = SENDERS.filter((r): r is SenderRow & { driver: DriverName } => !!r.driver).flatMap((row) =>
+    DRIVERS[row.driver].scenarios.map((s) => {
+      const exp = expected(row, s);
+      const label = `${row.fn} [${row.driver}] ${s}: ${exp.outcome}${exp.gap ? ` (KNOWN GAP ${exp.gap})` : ''}`;
+      return [label, row, s, exp] as const;
+    }),
+  );
+
+  it.each(cases)('%s', async (_label, row, s, exp) => {
+    const got = await DRIVERS[row.driver].run(s);
+    const hint = exp.gap
+      ? `${exp.gap} looks fixed: delete it from the rule and from KNOWN_GAPS`
+      : `${row.file} ${row.fn} breaks its registry row (${s}). ${KT4}`;
+    expect({ case: s, got, hint }).toEqual({ case: s, got: exp.outcome, hint });
+  });
+});
+
+describe('KT-4 sender registry: the funnel holds every registered push kind to its rules', () => {
+  beforeAll(quiet);
+  afterAll(() => jest.restoreAllMocks());
+
+  const pushes = SENDERS.flatMap((r) => (r.funnel ?? []).map((p) => [r, p] as const));
+  const cases = pushes.flatMap(([row, p]) =>
+    (['baseline', 'muteAll', 'quietHours'] as const).map((s) => {
+      const outcome: Outcome = s === 'baseline' ? 'sent' : s === 'muteAll' ? (p.muteAll === 'stops' ? 'none' : 'sent') : p.quietHours === 'held' ? 'held' : 'sent';
+      return [`${row.fn}: ${p.kind} (${p.note}) ${s}: ${outcome}`, row, p, s, outcome] as const;
+    }),
+  );
+
+  it.each(cases)('%s', async (_label, row, p, s, outcome) => {
+    expoSend = jest.spyOn(Expo.prototype, 'sendPushNotificationsAsync').mockImplementation(async (chunk) => chunk.map(() => ({ status: 'ok' as const, id: 't' })));
+    try {
+      const c = core(CLIENT, s);
+      await c.svc.sendPush({
+        user_id: CLIENT,
+        kind: p.kind,
+        body: 'Body',
+        deep_link: 'tgp://notifications',
+        context: p.context ?? null,
+        urgent: p.urgent,
+        dedupe_key: `kt4:${randomUUID()}`,
+      });
+      const hint = `${row.file} ${row.fn}: ${p.kind} must ${s === 'muteAll' ? p.muteAll : p.quietHours} (${s}). ${KT4}`;
+      expect({ case: s, got: c.outcome(), hint }).toEqual({ case: s, got: outcome, hint });
+    } finally {
+      expoSend.mockRestore();
+    }
+  });
+});
+
+describe('KT-4 sender registry: Mute all never stops an in-app row (owner #171-3)', () => {
+  beforeAll(quiet);
+  afterAll(() => jest.restoreAllMocks());
+
+  const kinds = new Set<string>(Object.values(NotificationKind));
+  const inapp = [
+    ...new Set(
+      SENDERS.filter((r) => r.via.includes('createNotification') || r.via.includes('emitter') || r.via.includes('communityPush'))
+        .flatMap((r) => r.kinds)
+        .filter((k) => kinds.has(k)),
+    ),
+  ].sort();
+
+  it('the registry names in-app kinds', () => expect(inapp.length).toBeGreaterThan(10));
+
+  it.each(inapp)('%s: written for a recipient with Mute all on', async (kind) => {
+    expoSend = jest.spyOn(Expo.prototype, 'sendPushNotificationsAsync').mockImplementation(async (chunk) => chunk.map(() => ({ status: 'ok' as const, id: 't' })));
+    try {
+      const c = core(CLIENT, 'muteAll');
+      const row = await c.svc.createNotification({ user_id: CLIENT, kind: kind as NotificationKindValue, body: 'Body', channel: 'inapp' });
+      expect([kind, row === null ? 'stopped' : 'written']).toEqual([kind, 'written']);
+    } finally {
+      expoSend.mockRestore();
+    }
+  });
+});
