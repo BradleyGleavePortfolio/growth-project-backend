@@ -222,6 +222,53 @@ describe('AccountDeletionVendorsService.erase', () => {
     expect(left?.vendors).toEqual(['posthog', 'crisp']);
   });
 
+  it.each(['staging', 'production'])(
+    'LS-1182-B1: %s keeps known pending vendor work after all backend keys are removed',
+    async (environment) => {
+      process.env.NODE_ENV = environment;
+      const { service } = setup();
+      answer({
+        'POST /api/projects/42/persons/bulk_delete/': () => json(503, {}),
+        [`GET /v1/website/site-1/people/conversations/${encodeURIComponent(EMAIL)}/list/1`]:
+          () => json(503, {}),
+      });
+      const work: VendorWork = {
+        vendors: ['posthog', 'crisp'],
+        email: EMAIL,
+        stripe_customer_ids: [],
+      };
+
+      // This is existing retry work, not evidence that the vendors were unused.
+      const first = await service.erase(UID, work);
+      expect(first.outcomes).toEqual({ posthog: 'failed', crisp: 'failed' });
+      expect(first.left).toEqual(work);
+
+      // Revoked or unavailable backend keys do not remove either vendor's copy.
+      for (const name of VENDOR_ENV) delete process.env[name];
+      fetchMock.mockClear();
+      const retry = await service.erase(UID, first.left!);
+
+      expect(retry.outcomes).toEqual({
+        posthog: 'not_configured',
+        crisp: 'not_configured',
+      });
+      expect(retry.left).toEqual(work);
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      Object.assign(process.env, KEYS);
+      answer();
+      const restored = await service.erase(UID, retry.left!);
+      expect(restored).toEqual({
+        outcomes: { posthog: 'done', crisp: 'done' },
+        left: null,
+      });
+      expect(JSON.parse(String(calls()[0].init?.body)).distinct_ids).toEqual([UID]);
+      expect(calls().map((call) => call.key)).toContain(
+        `DELETE https://api.crisp.chat/v1/website/site-1/people/profile/${encodeURIComponent(EMAIL)}`,
+      );
+    },
+  );
+
   it('records a failure and leaves only that vendor, with only what it needs, to retry', async () => {
     const { service, stripe, logger } = setup();
     answer({ 'POST /api/projects/42/persons/bulk_delete/': () => json(503, {}) });
