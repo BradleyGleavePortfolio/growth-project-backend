@@ -148,7 +148,8 @@ export const NotificationKind = {
   TRIAL_ENDING: 'trial_ending',
   // RENEWAL-BE: the client's plan with their coach ended normally (Day 0, 1
   // and 7 of the renewal sequence). Push only, no inbox row; it opens Home.
-  // Prefs: plan_renewal_push (default on).
+  // Prefs: plan_renewal_push (default on) for Day 0; Day 1 and Day 7 are offers that
+  // need the person's yes (plan_renewal_offers_opt_in_at, STORE-B2) and obey Mute all.
   PLAN_RENEWAL: 'plan_renewal',
   // SWITCH-TELL-BE: to the coach a client left when the client moved to TGP's
   // house coach. In-app only (no push), no deep link; payload { client_id }.
