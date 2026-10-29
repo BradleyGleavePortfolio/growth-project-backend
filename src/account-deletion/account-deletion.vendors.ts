@@ -50,7 +50,17 @@ const IN_USE_KEYS: Record<KeyedVendor, readonly string[]> = {
   crisp: ERASURE_KEYS.crisp,
 };
 
-const isSet = (name: string) => !!process.env[name]?.trim();
+/** Read by literal name so env discovery sees every setting this file reads. */
+function vendorEnv(): Record<string, string | undefined> {
+  return {
+    POSTHOG_KEY: process.env.POSTHOG_KEY,
+    POSTHOG_PERSONAL_API_KEY: process.env.POSTHOG_PERSONAL_API_KEY,
+    POSTHOG_PROJECT_ID: process.env.POSTHOG_PROJECT_ID,
+    CRISP_WEBSITE_ID: process.env.CRISP_WEBSITE_ID,
+    CRISP_API_TOKEN: process.env.CRISP_API_TOKEN,
+  };
+}
+const isSet = (name: string) => !!vendorEnv()[name]?.trim();
 
 /**
  * Vendors that may hold people's data but cannot be asked to erase it now.
