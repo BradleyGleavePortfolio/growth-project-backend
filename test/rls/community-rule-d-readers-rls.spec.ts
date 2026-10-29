@@ -143,11 +143,11 @@ const LISTED: Key[] = ['A', 'T', 'B']; // everyone the inbox lists W's public-sp
     it('leaving a public space keeps the current coach historical rows readable and in the open inbox', async () => {
       const quiet = new CommunityLeaveMuteService(db, access, safety,
         stub<CommunityRealtimeService>({ broadcastCommunityEvent: async () => undefined }));
-      expect((await inbox.rows(user('B'))).rows.map((r) => r.message_id)).toContain(row.wTyped);
+      expect(await rows('B')).toContain('wTyped');
       expect(await count('B', 'community_messages', row.wTyped)).toBe(1);
       try {
         await quiet.leave(user('W'), space.P);
-        expect((await inbox.rows(user('B'))).rows.map((r) => r.message_id)).toContain(row.wTyped);
+        expect(await rows('B')).toContain('wTyped');
         expect(await refused(chat.getOne(user('B'), row.wTyped))).toBe('ok');
         expect(await count('B', 'community_messages', row.wTyped)).toBe(1);
       } finally {
