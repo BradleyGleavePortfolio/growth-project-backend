@@ -25,9 +25,10 @@ import type { AccountDeletionStorageService } from '../../src/account-deletion/a
 import type { AccountDeletionBillingService } from '../../src/account-deletion/account-deletion.billing';
 import {
   VENDORS,
-  type AccountDeletionVendorsService,
+  AccountDeletionVendorsService,
   type VendorWork,
 } from '../../src/account-deletion/account-deletion.vendors';
+import type { StripeConnectApiService } from '../../src/connect/stripe-connect-api.service';
 import { FakeDeletionDb } from './fake-deletion-db';
 import { JwtAuthGuard } from '../../src/auth/auth.guard';
 import type { JwksVerifierService } from '../../src/auth/jwks.service';
@@ -590,6 +591,64 @@ describe('vendor erasure', () => {
     expect(ctx.events().filter((e) => e === 'deletion_finalized')).toHaveLength(1);
     expect(pendingRow(ctx)).toBeUndefined();
     expect(JSON.stringify(ctx.db.audit)).not.toContain('private@example.com');
+  });
+
+  it('STORE-B3: PostHog in use without its erasure key: deletion finalizes, the work stays pending with only its retry references, and the nightly retry erases that same identity once the key is set', async () => {
+    const saved = { ...process.env };
+    try {
+      for (const k of ['POSTHOG_PERSONAL_API_KEY', 'POSTHOG_PROJECT_ID', 'POSTHOG_HOST', 'CRISP_WEBSITE_ID', 'CRISP_API_TOKEN']) {
+        delete process.env[k];
+      }
+      process.env.POSTHOG_KEY = 'phc_ingest'; // collection on, erasure key absent
+      const ctx = build({ confirmedDaysAgo: GRACE + 1 });
+      const stripe = { isConfigured: () => true, deleteCustomer: jest.fn(async (id: string) => ({ id })) };
+      const real = new AccountDeletionVendorsService(stub<StripeConnectApiService>(stripe));
+      Object.assign(real, { logger: ctx.logger });
+      ctx.vendors.erase.mockImplementation((id: string, work: VendorWork) => real.erase(id, work));
+      const fetchMock = jest
+        .spyOn(global, 'fetch')
+        .mockResolvedValue(new Response(JSON.stringify({ persons_found: 1, deletion_errors: [] }), { status: 202 }));
+      try {
+        expect(await ctx.service.runFinalizeCron()).toEqual({ finalized: 1, skipped: 0, errors: 0 });
+
+        expect(ctx.user().deleted_at).toBeInstanceOf(Date);
+        expect(ctx.db.audit.find((a) => a.event === 'vendor_erasure')?.metadata).toEqual({
+          posthog: 'not_configured',
+          crisp: 'not_applicable',
+          stripe: 'done',
+          resend: 'not_applicable',
+          sentry: 'not_applicable',
+        });
+        // Only PostHog stays, and it needs nothing but the (tombstoned) user id.
+        expect(pendingRow(ctx)).toMatchObject({
+          subjectId: UID,
+          metadata: { vendors: ['posthog'], email: null, stripe_customer_ids: [] },
+        });
+        expect(fetchMock).not.toHaveBeenCalled();
+        const summary = () => String(ctx.logger.log.mock.calls[ctx.logger.log.mock.calls.length - 1]?.[0]);
+        expect(summary()).toContain('vendor_pending=1');
+        expect(JSON.stringify(ctx.logger.warn.mock.calls)).toContain('vendor erasure held for posthog');
+
+        // The key is configured; the scheduled retry erases the same person.
+        process.env.POSTHOG_PERSONAL_API_KEY = 'phx_test';
+        process.env.POSTHOG_PROJECT_ID = '42';
+        await ctx.service.runFinalizeCron();
+
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+        expect(url).toBe('https://us.posthog.com/api/projects/42/persons/bulk_delete/');
+        expect(JSON.parse(String(init.body)).distinct_ids).toEqual([UID]);
+        expect(pendingRow(ctx)).toBeUndefined();
+        expect(summary()).toContain('vendor_pending=0');
+        expect(ctx.vendors.collect).toHaveBeenCalledTimes(1);
+        expect(ctx.events().filter((e) => e === 'deletion_finalized')).toHaveLength(1);
+        expect(JSON.stringify(ctx.db.audit)).not.toContain('private@example.com');
+      } finally {
+        fetchMock.mockRestore();
+      }
+    } finally {
+      process.env = saved;
+    }
   });
 
   it('a vendor step that throws never undoes the committed deletion', async () => {
