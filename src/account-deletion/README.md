@@ -180,10 +180,14 @@ Admin: any state ──POST /admin/users/:id/delete──► DELETED
    what they need; the next nightly run retries those without touching the
    database deletion. A vendor in use without its erasure keys (PostHog: any
    of `POSTHOG_KEY`, `POSTHOG_PROJECT_ID`, `POSTHOG_PERSONAL_API_KEY` set;
-   Crisp: either Crisp key set; both always in production, where the app
-   ships with them; Stripe: customers on file) records `not_configured`, is
-   held in the work row with a warning log and is erased by the retry once
-   the keys are set. A vendor never in use records `not_applicable`. Startup
+   Crisp: either Crisp key set; both always in production and staging, where
+   the app ships with them; Stripe: customers on file) records `not_configured`,
+   is held in the work row with a warning log and is erased by the retry once
+   the keys are set. Missing keys never release held work: a retry of pending
+   work stays `not_configured` until the vendor answers. Only the first attempt,
+   outside production and staging with none of the vendor's settings, records
+   `not_applicable`; that is a configuration check, not a record that the
+   vendor never had the person's data. Startup
    warns (never fails) for each vendor in use without its erasure keys, and
    the cron summary line carries `vendor_pending=<n>` (STORE-B3).
 
@@ -256,7 +260,7 @@ and a bookmark therefore no longer opens anything.
 | `DELETION_FINALIZE_CRON`                                                                                                  | `0 3 * * *`                  | Nightly finalize job (03:00 UTC slot).                                                                                     |
 | `APPLE_TEAM_ID`, `APPLE_SIGNIN_KEY_ID`, `APPLE_SIGNIN_PRIVATE_KEY`; optional `APPLE_SIGNIN_CLIENT_ID` (default `com.growthproject.app`, the iOS bundle id; never read from `APPLE_AUDIENCES`) | unset                        | Sign in with Apple token revocation. Missing → `not_configured`, deletion still completes.                                 |
 | `SUPABASE_VOICE_BUCKET`, `SUPABASE_MEDIA_BUCKET`, `SUPABASE_BLOODWORK_BUCKET`                                             | `voice-notes`, `coach-media`, `bloodwork` | Buckets purged at finalization. A bloodwork `supabase` ref must be `<bloodwork bucket>/<client id>/<file>` (validated at registration; anything else is skipped and counted at deletion). |
-| `POSTHOG_PERSONAL_API_KEY` (scope `person:write`), `POSTHOG_PROJECT_ID`; `CRISP_WEBSITE_ID`, `CRISP_API_TOKEN` (`<identifier>:<key>`) | unset | Vendor erasure at PostHog and Crisp. Missing while the vendor is in use → `not_configured`, deletion still completes and that vendor stays pending until the keys are set; never in use → `not_applicable`. |
+| `POSTHOG_PERSONAL_API_KEY` (scope `person:write`), `POSTHOG_PROJECT_ID`; `CRISP_WEBSITE_ID`, `CRISP_API_TOKEN` (`<identifier>:<key>`) | unset | Vendor erasure at PostHog and Crisp. Missing while the vendor is in use, or on any retry of pending work → `not_configured`, deletion still completes and that vendor stays pending until the keys are set; first attempt with no setting outside production and staging → `not_applicable`. |
 | `STRIPE_SECRET_KEY`, Mux credentials                                                                                      | —                            | Needed only if the person has live subscriptions or Mux assets; without them finalization fails closed, logs, and retries. |
 
 ## Tests

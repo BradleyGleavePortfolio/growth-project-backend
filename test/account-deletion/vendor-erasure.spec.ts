@@ -191,12 +191,16 @@ describe('AccountDeletionVendorsService.erase', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('STORE-B3: a vendor that never collected this account\'s data completes as not applicable', async () => {
-    // No PostHog or Crisp setting at all outside production, and no Stripe customer.
+  it('STORE-B3: on the first attempt a vendor with no setting at all completes as not applicable', async () => {
+    // No PostHog or Crisp setting at all outside production and staging, and no Stripe customer.
     for (const name of Object.keys(KEYS)) delete process.env[name];
     const { service, stripe, logger } = setup(false);
 
-    const { outcomes, left } = await service.erase(UID, { ...WORK, stripe_customer_ids: [] });
+    const { outcomes, left } = await service.erase(
+      UID,
+      { ...WORK, stripe_customer_ids: [] },
+      { firstAttempt: true },
+    );
 
     expect(outcomes).toEqual({
       posthog: 'not_applicable',
@@ -211,16 +215,37 @@ describe('AccountDeletionVendorsService.erase', () => {
     expect(logger.warn).not.toHaveBeenCalled();
   });
 
-  it('STORE-B3: in production PostHog and Crisp count as in use (the app ships with both), so missing keys hold them', async () => {
-    for (const name of Object.keys(KEYS)) delete process.env[name];
-    process.env.NODE_ENV = 'production';
-    const { service } = setup();
+  it('LS-1182-B1: missing keys on a retry of pending work never complete it, even with no setting at all', async () => {
+    for (const name of VENDOR_ENV) delete process.env[name];
+    const { service, logger } = setup();
+    const work: VendorWork = { vendors: ['posthog', 'crisp'], email: EMAIL, stripe_customer_ids: [] };
 
-    const { outcomes, left } = await service.erase(UID, { ...WORK, vendors: ['posthog', 'crisp'] });
+    const { outcomes, left } = await service.erase(UID, work);
 
     expect(outcomes).toEqual({ posthog: 'not_configured', crisp: 'not_configured' });
-    expect(left?.vendors).toEqual(['posthog', 'crisp']);
+    expect(left).toEqual(work);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(JSON.stringify(logger.warn.mock.calls)).toContain('vendor erasure held for posthog, crisp');
   });
+
+  it.each(['production', 'staging'])(
+    'STORE-B3: in %s PostHog and Crisp count as in use (the app ships with both), so missing keys hold them, even on the first attempt',
+    async (environment) => {
+      for (const name of VENDOR_ENV) delete process.env[name];
+      process.env.NODE_ENV = environment;
+      const { service } = setup();
+
+      expect(heldVendors()).toEqual(['posthog', 'crisp']);
+      const { outcomes, left } = await service.erase(
+        UID,
+        { ...WORK, vendors: ['posthog', 'crisp'] },
+        { firstAttempt: true },
+      );
+
+      expect(outcomes).toEqual({ posthog: 'not_configured', crisp: 'not_configured' });
+      expect(left).toEqual({ vendors: ['posthog', 'crisp'], email: EMAIL, stripe_customer_ids: [] });
+    },
+  );
 
   it.each(['staging', 'production'])(
     'LS-1182-B1: %s keeps known pending vendor work after all backend keys are removed',

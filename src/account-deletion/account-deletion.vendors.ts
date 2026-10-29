@@ -5,6 +5,7 @@ import {
   StripeConnectApiService,
 } from '../connect/stripe-connect-api.service';
 import { describeFailure } from '../observability/log-pii';
+import { isProdLike } from '../common/env-validation';
 
 /**
  * Account deletion at our vendors. The privacy policy promises that a deleted
@@ -15,8 +16,12 @@ import { describeFailure } from '../observability/log-pii';
  *
  * A vendor in use whose erasure keys are missing records `not_configured` and
  * stays in the pending work, like a failure, so the nightly retry erases the
- * person once the keys are set (STORE-B3). Only a vendor this deployment never
- * used (`not_applicable`) or a Stripe person with no customer completes.
+ * person once the keys are set (STORE-B3). Missing keys never prove the vendor
+ * was not used: work already pending stays pending, and production and
+ * staging always count both as in use. Only on the first attempt, in a
+ * deployment with none of the vendor's settings, does a keyless vendor count as
+ * never used (`not_applicable`, a configuration check, not a record of use);
+ * a Stripe person with no customer also completes.
  *
  *   posthog  persons/bulk_delete by distinct id (the user id), events too
  *   crisp    every conversation of the email, then the people profile
@@ -61,19 +66,17 @@ function vendorEnv(): Record<string, string | undefined> {
   };
 }
 const isSet = (name: string) => !!vendorEnv()[name]?.trim();
+const inUse = (v: KeyedVendor) => isProdLike(process.env.NODE_ENV) || IN_USE_KEYS[v].some(isSet);
 
 /**
  * Vendors that may hold people's data but cannot be asked to erase it now.
  * The app collects into PostHog and Crisp with its own keys, which the backend
  * cannot see; its release config requires both (mobile
- * scripts/validate-app-config.js), so production counts both as in use.
+ * scripts/validate-app-config.js), so production and staging count both as in
+ * use.
  */
 export function heldVendors(): KeyedVendor[] {
-  return KEYED_VENDORS.filter(
-    (v) =>
-      !ERASURE_KEYS[v].every(isSet) &&
-      (process.env.NODE_ENV === 'production' || IN_USE_KEYS[v].some(isSet)),
-  );
+  return KEYED_VENDORS.filter((v) => !ERASURE_KEYS[v].every(isSet) && inUse(v));
 }
 
 const TIMEOUT_MS = 10_000;
@@ -135,14 +138,20 @@ export class AccountDeletionVendorsService implements OnModuleInit {
     return { vendors: [...VENDORS], email, stripe_customer_ids: [...ids] };
   }
 
-  /** One attempt per listed vendor; never throws. `left` is the work still to retry (failed or held), or null. */
+  /**
+   * One attempt per listed vendor; never throws. `left` is the work still to
+   * retry (failed or held), or null. `firstAttempt` is set only for work just
+   * collected at finalization; a retry of pending work never sets it.
+   */
   async erase(
     userId: string,
     work: VendorWork,
+    opts: { firstAttempt?: boolean } = {},
   ): Promise<{ outcomes: VendorOutcomes; left: VendorWork | null }> {
+    const first = opts.firstAttempt === true;
     const steps: Record<Vendor, () => Promise<VendorOutcome>> = {
-      posthog: () => this.posthog(userId),
-      crisp: () => this.crisp(work.email),
+      posthog: () => this.posthog(userId, first),
+      crisp: () => this.crisp(work.email, first),
       stripe: () => this.stripeCustomers(work.stripe_customer_ids),
       // The backend only sends transactional mail (POST /emails); it never adds
       // contacts or audiences, and Resend drops its send logs after 30 days.
@@ -181,15 +190,20 @@ export class AccountDeletionVendorsService implements OnModuleInit {
     };
   }
 
-  /** Without its keys: held if the vendor is in use, otherwise it never had the data. */
-  private unready(vendor: KeyedVendor): VendorOutcome {
-    return heldVendors().includes(vendor) ? 'not_configured' : 'not_applicable';
+  /**
+   * Without its keys: held, unless this is the first attempt and the vendor
+   * has no setting at all outside production and staging. Pending work was
+   * held because the vendor may have the data; keys removed later do not
+   * change that (LS-1182 B1).
+   */
+  private unready(vendor: KeyedVendor, first: boolean): VendorOutcome {
+    return first && !inUse(vendor) ? 'not_applicable' : 'not_configured';
   }
 
-  private async posthog(userId: string): Promise<VendorOutcome> {
+  private async posthog(userId: string, first: boolean): Promise<VendorOutcome> {
     const key = process.env.POSTHOG_PERSONAL_API_KEY;
     const project = process.env.POSTHOG_PROJECT_ID;
-    if (!key || !project) return this.unready('posthog');
+    if (!key || !project) return this.unready('posthog', first);
     // Events are ingested at us.i.posthog.com; the private API is us.posthog.com.
     const host = (process.env.POSTHOG_HOST ?? 'https://us.i.posthog.com').replace(
       '.i.posthog.com',
@@ -210,10 +224,10 @@ export class AccountDeletionVendorsService implements OnModuleInit {
     return body.persons_found ? 'done' : 'not_found';
   }
 
-  private async crisp(email: string | null): Promise<VendorOutcome> {
+  private async crisp(email: string | null, first: boolean): Promise<VendorOutcome> {
     const site = process.env.CRISP_WEBSITE_ID;
     const token = process.env.CRISP_API_TOKEN;
-    if (!site || !token) return this.unready('crisp');
+    if (!site || !token) return this.unready('crisp', first);
     if (!email) return 'not_found';
     const base = `https://api.crisp.chat/v1/website/${encodeURIComponent(site)}`;
     const people = encodeURIComponent(email);

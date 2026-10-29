@@ -914,7 +914,7 @@ export class AccountDeletionService {
 
     if ('skipped' in committed) return { outcome: 'skipped', reason: committed.skipped };
     await this.verifyVoiceErasures(userId, committed.voiceWork);
-    await this.eraseAtVendors(userId, committed.vendorWork);
+    await this.eraseAtVendors(userId, committed.vendorWork, { firstAttempt: true });
     const authIdentity = await this.removeAuthIdentity(userId, committed.supabaseId);
     return { outcome: 'finalized', authIdentity };
   }
@@ -923,12 +923,18 @@ export class AccountDeletionService {
    * Ask each vendor still listed in the work row to erase the person, record
    * the outcomes under a random subject id, then drop the work row or narrow
    * it to the vendors that failed or are held for missing erasure keys (the
-   * nightly cron retries those). Never throws and never touches the committed
-   * deletion.
+   * nightly cron retries those). Only the call right after the commit is a
+   * first attempt; the nightly retry of pending work never is, so pending work
+   * is never dropped for missing keys. Never throws and never touches the
+   * committed deletion.
    */
-  private async eraseAtVendors(userId: string, work: VendorWork): Promise<void> {
+  private async eraseAtVendors(
+    userId: string,
+    work: VendorWork,
+    opts: { firstAttempt?: boolean } = {},
+  ): Promise<void> {
     try {
-      const { outcomes, left } = await this.vendors.erase(userId, work);
+      const { outcomes, left } = await this.vendors.erase(userId, work, opts);
       await this.insertDeletionAudit(this.prisma, {
         subjectId: crypto.randomUUID(),
         event: DeletionAuditEvent.VENDOR_ERASURE,
