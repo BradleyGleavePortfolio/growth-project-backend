@@ -180,7 +180,7 @@ export class SubscriptionCheckoutService {
       select: { id: true, email: true, name: true, coach_id: true },
     });
     if (!client) throw clientNotFound();
-    const pkg = await this.packages.getById(input.package_id);
+    const pkg = await this.packages.getById(input.package_id, clientUserId);
     // Same visibility rule as the one-time path: unpublished, archived,
     // inactive, or another coach's package is a non-leaking 404.
     if (!pkg || !pkg.is_active || pkg.archived_at || !pkg.published_at) {

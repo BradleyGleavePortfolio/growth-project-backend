@@ -336,7 +336,7 @@ describe('BILLQUOTE — client package reads carry the quote, own coach only', (
     const combo = pkgRow({ id: 'p-combo', ...COMBO });
     const { controller, packages } = build([monthly, trial, combo]);
     const res = await controller.list(req(COACH));
-    expect(packages.listPublicForCoach).toHaveBeenCalledWith(COACH);
+    expect(packages.listPublicForCoach).toHaveBeenCalledWith(COACH, CLIENT);
     const byId = new Map<string, ChargeQuote | null>();
     for (const p of res.packages) byId.set(p.id, p.quote);
     expect(byId.get('p-monthly')?.due_today_cents).toBe(4900);
