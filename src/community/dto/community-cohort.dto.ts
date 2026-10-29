@@ -19,9 +19,9 @@ export function spacePurpose(stored: string | null | undefined): string | null {
   return stored && stored.trim() !== '' ? stored : null;
 }
 
-// SC-PURPOSE-BE: string or null on both space reads; optional only until getCohorts and
-// getCohort fill it.
-const SpacePurposeSchema = z.string().nullable().optional();
+// SC-PURPOSE-BE: string or null, always present on both space reads (getCohorts and
+// getCohort fill it with spacePurpose).
+const SpacePurposeSchema = z.string().nullable();
 
 const CommunityCohortSummarySchema = z
   .object({

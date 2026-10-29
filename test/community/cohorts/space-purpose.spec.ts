@@ -81,8 +81,10 @@ describe('SC-PURPOSE-BE: the space reads carry description (string or null)', ()
     expect(detailOk({ description: { text: PURPOSE } })).toBe(false);
   });
 
-  it("control: a row without description still parses (today's service output)", () => {
-    expect(listOk({})).toBe(true);
-    expect(detailOk({})).toBe(true);
+  it('both reads refuse a space object without description (the field is required)', () => {
+    expect(listOk({ description: null })).toBe(true); // control: the same row with the field parses
+    expect(detailOk({ description: null })).toBe(true);
+    expect(listOk({})).toBe(false);
+    expect(detailOk({})).toBe(false);
   });
 });
