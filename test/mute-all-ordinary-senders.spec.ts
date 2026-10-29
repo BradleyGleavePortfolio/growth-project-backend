@@ -140,12 +140,17 @@ async function broadcast(prefs: Prefs) {
 async function churnIntervention(prefs: Prefs) {
   const c = core(CLIENT, prefs);
   const nudges: Array<Record<string, unknown>> = [];
+  const inbox: Array<Record<string, unknown>> = [];
   const intervention = { id: 'int-1', coach_id: COACH, client_id: CLIENT, status: 'draft', draft_text: 'Hi' };
   const tx = {
     $queryRaw: jest.fn(async () => [{ id: CLIENT, coach_id: COACH, role: 'student', deleted_at: null }]),
     churnIntervention: { updateMany: jest.fn(async () => ({ count: 1 })) },
     coachNudge: {
       create: jest.fn(async (a: { data: Record<string, unknown> }) => (nudges.push(a.data), a.data)),
+    },
+    // B-LSNOTIFY-2: the client's inbox row, written with the nudge.
+    notification: {
+      create: jest.fn(async (a: { data: Record<string, unknown> }) => (inbox.push(a.data), a.data)),
     },
   };
   const prisma = {
@@ -168,8 +173,8 @@ async function churnIntervention(prefs: Prefs) {
     idempotency_key: randomUUID(),
   });
   expect(res.ok).toBe(true);
-  // The nudge row is the message the client sees in the app.
-  return { kept: nudges.length, row: nudges.length, push: await c.pushes(), receipt: undefined };
+  // The message is kept (the nudge); the client reads it in the inbox row (B-LSNOTIFY-2).
+  return { kept: nudges.length, row: inbox.filter((r) => r.user_id === CLIENT).length, push: await c.pushes(), receipt: undefined };
 }
 
 /** An import settled for COACH (legacy run): the real complete(), the real pushToUser. */
