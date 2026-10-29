@@ -262,6 +262,27 @@ const LISTED: Key[] = ['A', 'T', 'B']; // everyone the inbox lists W's public-sp
       await ban('B', 'A', new Date());
       expect(await flagged('B')).toEqual(view(['w', 'v'], false));
     });
+
+    it('B5: banning the author also removes that author\'s reported words and playback from Rule D readers', async () => {
+      expect(await flagged('B')).toEqual(view(['w', 'v'], false));
+      expect(await queue('B')).toEqual(['v none', 'w none']);
+      try {
+        await ban('W', 'A', null);
+        // Controls: the same reader's SQL grant and ordinary inbox have lost
+        // this author's rows. The read-only report route must not restore them.
+        expect(await count('B', 'community_messages', row.wTyped2)).toBe(0);
+        expect(await count('B', 'community_voice_notes', row.wVoice)).toBe(0);
+        expect(await rows('B')).not.toContain('wTyped2');
+        const read = await flagged('B');
+        expect({
+          flagged: read.map((r) => ({ id: r.id, content: r.content, media: r.media })),
+          queue: await queue('B'),
+        }).toEqual({ flagged: [], queue: [] });
+      } finally {
+        await ban('W', 'A', new Date());
+      }
+      expect(await flagged('B')).toEqual(view(['w', 'v'], false));
+    });
   });
 
   // B2 (LS-INBOX2; LO-INBOX2 C1): the inbox lists a public-space row to the owner's team and the poster's own coach,
