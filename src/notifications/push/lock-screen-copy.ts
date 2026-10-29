@@ -125,6 +125,8 @@ export const SAFETY_ALERT_PUSH_BODY: Readonly<Record<string, string>> = {
   roman_urgent_reply: 'Urgent safety alert for one of your clients. Open TGP to see details.',
   roman_eating_disorder_reply: 'Safety alert for one of your clients. Open TGP to see details.',
   roman_crisis_reply: 'Urgent safety alert for one of your clients. Open TGP to see details.',
+  // FR-1152 (#172-5): the photo safety alert reuses the approved urgent line.
+  community_photo_safety: 'Urgent safety alert for one of your clients. Open TGP to see details.',
 };
 
 // Owner 57d: the coach's inbox row for the same alerts (no name, no message).
@@ -132,7 +134,14 @@ export const SAFETY_ALERT_INBOX_BODY: Readonly<Record<string, string>> = {
   roman_urgent_reply: 'Urgent safety alert for one of your clients. Tap to see details.',
   roman_eating_disorder_reply: 'Safety alert for one of your clients. Tap to see details.',
   roman_crisis_reply: 'Urgent safety alert for one of your clients. Tap to see details.',
+  community_photo_safety: 'Urgent safety alert for one of your clients. Tap to see details.',
 };
+
+// FR-1152R3 B1 (owner rule D): a public space's owner and team get their copy
+// of a photo safety alert under these lines, since the poster may be nobody's
+// client of theirs (wording rows SPACE-PUSH and SPACE-INBOX, owner rule 137-2).
+export const SPACE_SAFETY_ALERT_PUSH_BODY = 'Urgent safety alert in one of your spaces. Open TGP to see details.';
+export const SPACE_SAFETY_ALERT_INBOX_BODY = 'Urgent safety alert in one of your spaces. Tap to see details.';
 
 /** The mobile route a safety alert's push and inbox row open: that one alert. */
 export const COACH_SAFETY_ALERT_SCREEN = 'CoachSafetyAlert';
@@ -147,6 +156,9 @@ export function safetyAlertTap(alertId: string): {
 
 /** A coach alert's inbox row and push open its client: this link plus the client id. */
 export const COACH_CLIENT_LINK = 'tgp://coach/clients/';
+
+/** A space copy's inbox row and push link its space instead: this plus the space id (FR-1152R3 B1). */
+export const COACH_SPACE_ALERT_LINK = 'tgp://coach/space-alerts/';
 
 // B-653-4: a client's move request keeps the booking_rescheduled kind, but
 // nothing has moved until the coach approves.
@@ -180,6 +192,8 @@ export interface PushContext {
   safetyAlert?: string;
   /** ...and its CoachAlert id, which the tap opens (owner 57d). */
   alertId?: string;
+  /** FR-1152R3 B1: that alert is a public space's copy (the space line). */
+  spaceAlert?: true;
   /** SC-PUSH: a space chat push (fixed copy from a count and the space name; never a name or message text). */
   spacePush?: SpacePushContext;
 }
@@ -215,7 +229,8 @@ export function lockScreenCopy(
     typeof safety === 'string' &&
     Object.prototype.hasOwnProperty.call(SAFETY_ALERT_PUSH_BODY, safety)
   ) {
-    return { title: TEMPLATES[kind].title, body: SAFETY_ALERT_PUSH_BODY[safety] };
+    const body = context?.spaceAlert === true ? SPACE_SAFETY_ALERT_PUSH_BODY : SAFETY_ALERT_PUSH_BODY[safety];
+    return { title: TEMPLATES[kind].title, body };
   }
   const timed = contextTime(context);
   if (timed && kind === NotificationKind.BOOKING_REMINDER_24H) {
