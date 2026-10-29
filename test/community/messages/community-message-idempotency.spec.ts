@@ -38,8 +38,8 @@ function harness(alertsToday = 0) {
   const communityMessage = {
     create: jest.fn(async ({ data }: { data: Partial<CommunityMessage> }) => {
       const at = new Date();
-      const row = { id: randomUUID(), created_at: at, updated_at: at, deleted_at: null, plan_context_type: null, high_alert: false,
-        ...data } as CommunityMessage;
+      const row = { created_at: at, updated_at: at, deleted_at: null, plan_context_type: null, high_alert: false,
+        ...data, id: data.id ?? randomUUID() } as CommunityMessage;
       rows.push(row);
       return row;
     }),
@@ -55,7 +55,9 @@ function harness(alertsToday = 0) {
     findMany: jest.fn(async ({ where }: { where: { message_id: { in: string[] } } }) =>
       photos.filter((p) => where.message_id.in.includes(p.message_id))),
   };
-  const prisma: Record<string, unknown> = { communityMessage, communityMessageImage, $executeRaw: jest.fn(async () => 1) };
+  // FR-1174 (main): the coach-replied stamp first reads who left the space (none here).
+  const prisma: Record<string, unknown> = { communityMessage, communityMessageImage, $executeRaw: jest.fn(async () => 1),
+    $queryRaw: jest.fn(async () => []) };
   prisma.$transaction = jest.fn(async (fn: (tx: unknown) => unknown) => fn(prisma));
   const access = {
     findCohort: jest.fn(async (id: string) => ({ id, workspace_id: WORKSPACE, kind: 'cohort' })),
