@@ -16,7 +16,7 @@ function message(w: AccessWorld, deleted: boolean) {
 describe('LS-1185 B4: erased words do not imply erased counts', () => {
   it('CoachHomeService.countReview must declare a removal GAP while a deleted message still adds a conversation', async () => {
     const w = await accessWorld();
-    const service = Object.create(CoachHomeService.prototype) as any;
+    const service = Object.create(CoachHomeService.prototype);
     service.prisma = w.db;
     const read = () => service.countReview(w.coach.id, new Date(0), new Date('2100-01-01T00:00:00Z'));
     message(w, false);
@@ -33,7 +33,7 @@ describe('LS-1185 B4: erased words do not imply erased counts', () => {
 
   it('DigestService._buildCoachDigestData must declare a removal GAP while a deleted message still adds to unread count', async () => {
     const w = await accessWorld();
-    const service = Object.create(DigestService.prototype) as any;
+    const service = Object.create(DigestService.prototype);
     service.prisma = w.db;
     const read = () => service._buildCoachDigestData(w.coach.id, 'daily');
     message(w, false);
