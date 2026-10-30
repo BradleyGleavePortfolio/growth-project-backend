@@ -4,6 +4,14 @@ import { join } from 'path';
 import { scanMemberContentReads } from './member-content-scan';
 
 describe('LS-1185 B1: equivalent member-content reads must be discovered', () => {
+  it('discovers the existing generic exports in src/data-export/data-export.service.ts', () => {
+    const models = scanMemberContentReads()
+      .filter((hit) => hit.file === 'src/data-export/data-export.service.ts')
+      .map((hit) => hit.model);
+    expect(models).toEqual(expect.arrayContaining([
+      'CommunityWin', 'CommunityPost', 'CommunityMessage', 'CommunityResponse',
+    ]));
+  });
   const cases: Array<[string, string]> = [
     ['direct positive control', 'export const read = (prisma: any) => prisma.communityMessage.findMany({});'],
     ['delegate alias positive control', 'export const read = (prisma: any) => { const rows = prisma.communityMessage; return rows.findMany({}); };'],
