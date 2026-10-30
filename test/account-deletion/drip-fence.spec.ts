@@ -3,7 +3,7 @@
  * account, even if a drop escaped the cancellation at finalization.
  */
 import { DripDispatcherCron } from '../../src/packages/drip-dispatcher.cron';
-import { NOT_DUNNING_LOCKED } from '../../src/checkout/dunning-v2/dunning-grace';
+import { liveAccessWhere } from '../../src/checkout/dunning-v2/dunning-grace';
 import type { PrismaService } from '../../src/prisma.service';
 import type { AssignableAssetResolverRegistry } from '../../src/packages/asset-resolvers/assignable-asset-resolver.registry';
 
@@ -18,13 +18,14 @@ describe('DripDispatcherCron deleted-account fence', () => {
       stub<PrismaService>({ scheduledDrop: { findMany } }),
       stub<AssignableAssetResolverRegistry>({}),
     );
-    await cron.runOnce(new Date('2026-10-01T03:00:00Z'));
+    const now = new Date('2026-10-01T03:00:00Z');
+    await cron.runOnce(now);
     expect(findMany).toHaveBeenCalledTimes(1);
     expect(findMany.mock.calls[0][0].where.client_purchase).toEqual({
       client: { deleted_at: null },
-      // PF-2-BE (LS-PAYFAIL B3): a purchase under its Day-10 lock is no longer picked to deliver.
+      // PF-2-BE (LS-PAYFAIL B3, FR-1190 LS-1190 B5): only a live purchase is picked to deliver.
       OR: [
-        { entitlement_active: true, AND: [NOT_DUNNING_LOCKED] },
+        liveAccessWhere(now),
         { coach: { deleted_at: null }, status: { in: ['refunded', 'chargeback_lost'] } },
       ],
     });
