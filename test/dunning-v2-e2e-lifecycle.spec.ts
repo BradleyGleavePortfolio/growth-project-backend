@@ -16,6 +16,7 @@ import { ClientEntitlementGuard } from '../src/common/guards/client-entitlement.
 import { NotificationKind } from '../src/notifications/notification-kind';
 import { FakePrisma } from './support/dunning-v2-fake-prisma';
 import { CommunityCohortMembersRepository } from '../src/community/cohorts/community-cohort-members.repository';
+import { PurchaseFanoutService } from '../src/packages/purchase-fanout.service';
 
 /**
  * S-DUNNING — deterministic end-to-end lifecycle of Smart Dunning v2, driven
@@ -332,6 +333,56 @@ describe('Smart Dunning v2 end-to-end lifecycle (Stripe fixtures, fake clock)', 
     // Day 8 is still grace, even after access_expires_at was reached.
     expect(await checkout.hasActiveEntitlement('client-1', {})).toBe(true);
   });
+
+  it.each(['meal_plan', 'workout_plan', 'auto_message', 'pdf', 'video'])(
+    'LS-1190 B4: an unpaid F6 resync cannot inline-deliver held %s content',
+    async (assetType) => {
+      await failAttempt(w, 1);
+      jest.setSystemTime(at(10 * DAY + HOUR));
+      await w.v2.runSweep();
+      expect(purchaseRow(w)?.entitlement_active).toBe(false);
+      const held = {
+        id: 'held-drop', client_purchase_id: 'purchase-1', content_id: 'held-content',
+        asset_type: assetType, asset_id: 'coached-asset', asset_revision_id: null,
+        cadence_kind: 'relative_to_purchase', cadence_payload: { days: 10 },
+        display_title: null, display_caption: null, status: 'pending',
+        materialised_ref: null, fire_at: at(10 * DAY), attempt_count: 0,
+      };
+      const db = stub(Reflect.get(w.handler, 'prisma'));
+      // This content was seeded at the original paid checkout; the existing
+      // unique seed makes the later createMany a no-op, not a new purchase.
+      db.scheduledDrop = {
+        createMany: jest.fn(async () => ({ count: 0 })),
+        findMany: jest.fn(async () => [{ ...held }]),
+        update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+          Object.assign(held, data);
+          return held;
+        }),
+      };
+      db.coachPackageContent = { findMany: jest.fn(async () => [{
+        id: 'held-content', package_id: 'pkg-1', asset_type: assetType,
+        asset_id: 'coached-asset', cadence_kind: 'relative_to_purchase',
+        cadence_payload: { days: 10 }, removed_at: null,
+      }]) };
+      db.purchaseFanout = {
+        upsert: jest.fn(async () => ({ state: 'succeeded' })),
+        update: jest.fn(async () => ({ state: 'succeeded' })),
+      };
+      const materialise = jest.fn(async () => ({ materialisedRef: 'new-assignment-after-lock' }));
+      const fanout = new PurchaseFanoutService(stub({
+        materialise, shouldDeferInline: jest.fn(async () => false),
+      }));
+      const invoked = jest.spyOn(fanout, 'onPurchaseEntitled');
+      Reflect.set(w.handler, 'fanout', fanout);
+      await pastDueResync(w);
+      expect(purchaseRow(w)?.entitlement_active).toBe(true);
+      expect(await lockVerdict(w, '/api/v1/workouts')).toBe('LOCKED_DUNNING');
+      expect(invoked).toHaveBeenCalledTimes(1);
+      await expect(invoked.mock.results[0].value).resolves.toBeUndefined();
+      expect(materialise).not.toHaveBeenCalled();
+      expect(held.status).toBe('pending');
+    },
+  );
 
   it.each(['past_due', 'unpaid'])(
     'LS-1190 B3: another %s plan in live grace waives the older plan lock',
