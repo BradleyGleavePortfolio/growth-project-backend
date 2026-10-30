@@ -486,6 +486,42 @@ describe('the automatic photo check on a space chat photo send (PHOTO-CHECK-BE)'
     expect(w.checks).toEqual([]);
     expect(w.messages).toEqual([]);
   });
+  // LO-1187R4 (new, outside the fix): a FLIR ONE thermal camera on a phone writes its own GPS record (FFF record
+  // type 0x2B GPSInfo: latitude and longitude as little-endian doubles) inside "FLIR\0" APP1 chunks, beside a raw
+  // thermal frame that pushes the segments before SOS past 256 KB. Main's reader stopped at 256 KB and refused it;
+  // the whole-photo reader (FR-1187R2) reads every APP1 but finds no EXIF header or XMP name there, so the photo
+  // posts and the bucket stores and serves the FLIR record with the position in it.
+  // Layout from metadata-extractor-images jpg/FLIR iPhone device.jpg (FLIR ONE Pro gen 3); exiftool FLIR GPSLatitude.
+  it('LO-1187R4: a FLIR ONE photo with a GPS position in its FLIR record is refused before any SDK call, as on main', async () => {
+    const be32 = (n: number) => [n >>> 24 & 0xff, n >>> 16 & 0xff, n >>> 8 & 0xff, n & 0xff];
+    const be16 = (n: number) => [n >>> 8 & 0xff, n & 0xff];
+    const gps = Buffer.alloc(184);
+    gps.writeUInt32LE(1, 0); // GPSValid
+    gps.write('N', 8, 'latin1');
+    gps.write('W', 10, 'latin1');
+    gps.writeDoubleLE(34.07542615928911, 16); // latitude
+    gps.writeDoubleLE(118.25426816553305, 24); // longitude
+    const raw = Buffer.alloc(300 * 1024); // the raw thermal frame (record type 0x01), zeros here
+    const index = (type: number, offset: number, length: number) => [...be16(type), ...be16(1), ...be32(100), ...be32(1), ...be32(offset), ...be32(length), ...new Array(12).fill(0)];
+    const rawAt = 64 + 2 * 32;
+    const gpsAt = rawAt + raw.length;
+    const fff = Buffer.from([
+      ...Buffer.from('FFF\0', 'latin1'), ...new Array(16).fill(0), ...be32(100), ...be32(64), ...be32(2), ...new Array(32).fill(0),
+      ...index(0x01, rawAt, raw.length), ...index(0x2b, gpsAt, gps.length), ...raw, ...gps,
+    ]);
+    const chunk = 65524;
+    const count = Math.ceil(fff.length / chunk);
+    const chunks: number[] = [];
+    for (let k = 0; k < count; k += 1) {
+      const body = [...Buffer.from('FLIR\0', 'latin1'), 0x01, k, count - 1, ...fff.subarray(k * chunk, (k + 1) * chunk)];
+      chunks.push(0xff, 0xe1, ...be16(body.length + 2), ...body);
+    }
+    expect(chunks.length).toBeGreaterThan(256 * 1024);
+    const w = world({ photo: Buffer.from([...validPicture.subarray(0, 20), ...chunks, ...validPicture.subarray(20)]) });
+    expect(await codeOf(w.send(''))).toBe('422 community.image.has_location');
+    expect(w.checks).toEqual([]);
+    expect(w.messages).toEqual([]);
+  });
   it.each(independentBlocks)('LS-1187R2 matrix: %s before the frame is absent from the wire only', async (_label, block) => {
     const upload = Buffer.from([...validPicture.subarray(0, 20), ...block, ...validPicture.subarray(20)]);
     const w = world({ photo: upload });
