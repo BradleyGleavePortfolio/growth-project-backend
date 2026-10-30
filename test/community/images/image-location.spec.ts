@@ -333,4 +333,138 @@ describe('carriesLocation (PHOTO-GPS)', () => {
     const three = jpeg(JFIF, filler, filler, filler);
     expect(located([...three, ...new Array(256 * 1024).fill(0), ...exifApp1(tiff('II', 3))])).toBe(true);
   });
+
+  it('FLIR-GPS-BE: a GPS record with GPSValid 0 and the -1 sentinel carries none', () => {
+    // FR-1189 (LO-1189 C1): FLIR writes GPSValid 0 with latitude and longitude -1.0 when it has no fix (exiftool
+    // FLIR::GPSInfo, read little endian); both zero stays no position too. Anything else stored is a position.
+    const record = (valid: number, lat: number, lon: number, be = false): Buffer => {
+      const gps = Buffer.alloc(184);
+      if (be) {
+        gps.writeUInt32BE(valid, 0);
+        gps.writeDoubleBE(lat, 0x10);
+        gps.writeDoubleBE(lon, 0x18);
+      } else {
+        gps.writeUInt32LE(valid, 0);
+        gps.writeDoubleLE(lat, 0x10);
+        gps.writeDoubleLE(lon, 0x18);
+      }
+      return gps;
+    };
+    for (const le of [false, true]) {
+      expect(located(flir([RAW(4000), CAMERA, [0x2b, record(0, -1, -1)]], { le }))).toBe(false);
+      expect(located(flir([[0x2b, record(0, 0, 0)]], { le }))).toBe(false);
+      expect(located(flir([[0x2b, record(1, -1, -1)]], { le }))).toBe(true); // GPSValid 1: exiftool shows -1, -1
+      expect(located(flir([[0x2b, record(0, -1, 34.0754)]], { le }))).toBe(true); // only one sentinel
+      expect(located(flir([[0x2b, record(0, -1, 0)]], { le }))).toBe(true);
+      expect(located(flir([[0x2b, record(0, -1.5, -1.5)]], { le }))).toBe(true);
+    }
+    // The record in the FFF block's own order (big endian): the sentinel read that way is no position either.
+    expect(located(flir([[0x2b, record(0, -1, -1, true)]]))).toBe(false);
+    // Big endian bytes in a little-endian block read as no -1 at all: a stored value.
+    expect(located(flir([[0x2b, record(0, -1, -1, true)]], { le: true }))).toBe(true);
+  });
+
+  // FR-1189 (LO-1189 B2): each place 436cf4bc refused behind a header past 256 KB, as a writer lays it out, read as
+  // EXIF or matched as text; each one unpadded and behind four 64 KB segments (past 256 KB).
+  const filler = segment(0xe2, new Array(65533).fill(0));
+  const PAD = [filler, filler, filler, filler];
+  const be32 = (n: number): number[] => [(n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff];
+  const resource = (id: number, body: number[], name: number[] = [0, 0]): number[] =>
+    [...latin1('8BIM'), id >> 8, id & 0xff, ...name, ...be32(body.length), ...body, ...(body.length % 2 ? [0] : [])];
+  const app13 = (...blocks: number[][]): number[] => segment(0xed, [...latin1('Photoshop 3.0\0'), ...blocks.flat()]);
+  const goPro = (...klv: number[][]): number[] => segment(0xe6, [...latin1('GoPro\0'), ...klv.flat()]);
+  const gpmf = (key: string, size: number, values: number[]): number[] =>
+    [...latin1(key), 0x6c, size, 0, (values.length * 4) / size, ...values.flatMap(be32)];
+  const SCAL = gpmf('SCAL', 4, [10000000, 10000000, 1000, 1000, 100]);
+  const xmp16 = (description: string, be = false): number[] => {
+    const text = Buffer.from(xmpPacket(description), 'utf16le');
+    return segment(0xe1, [...latin1('http://ns.adobe.com/xap/1.0/\0'), ...(be ? text.swap16() : text)]);
+  };
+  /** A JUMBF box cut into APP11 segments at the given offsets of its content, each with the box header repeated. */
+  const jumbf = (content: number[], cuts: number[], o: { xl?: boolean; en?: number; order?: number[] } = {}): number[][] => {
+    const header = o.xl ? [...be32(1), ...latin1('jumb'), ...be32(0), ...be32(16 + content.length)] : [...be32(8 + content.length), ...latin1('jumb')];
+    const at = [0, ...cuts, content.length];
+    const parts = at.slice(1).map((end, k) => content.slice(at[k], end));
+    const segments = parts.map((part, k) => segment(0xeb, [...latin1('JP'), 0, o.en ?? 1, ...be32(k + 1), ...header, ...part]));
+    return (o.order ?? segments.map((_, k) => k)).map((k) => segments[k]);
+  };
+  const c2pa = (text: string): number[] => [...latin1('\0\0\0\x1djumdc2pa\0\x11\0\x10\x80\0\0\xaa\x008\x9bq\x03c2pa\0'), ...latin1(text)];
+  const GPS_JSON = c2pa('{"@context":{"exif":"http://ns.adobe.com/exif/1.0/"},"exif:GPSLatitude":"34,4.5N"}');
+  const nameCut = GPS_JSON.length - 20; // inside "GPSLatitude"
+  const EXIF_JUMBF = [...c2pa('thumbnail'), ...latin1('Exif\0\0'), ...tiff('II', 3)];
+  const exifCut = c2pa('thumbnail').length + 3; // inside "Exif\0\0"
+  const mp4 = (atoms: string): number[] => [...be32(24), ...latin1('ftypmp42'), ...new Array(12).fill(0), ...latin1(atoms)];
+  const XYZ = mp4(`\0\0\0\x1fudta\0\0\0\x17\xa9xyz\0\x12\x15\xc7+34.0522-118.2437/`);
+  type Form = (pad: number[][]) => number[];
+  const inSegments = (...segments: number[][]): Form => (pad) => jpeg(JFIF, ...pad, ...segments);
+  const afterEoi = (tail: number[]): Form => (pad) => [...jpeg(JFIF, ...pad), ...tail];
+  const LOCATED_FORMS: Record<string, Form> = {
+    'a Parrot APP1 TIFF with a GPS IFD (II)': inSegments(segment(0xe1, [...latin1('PARROT\0'), ...tiff('II', 3)])),
+    'a Parrot APP1 TIFF with a GPS IFD (MM)': inSegments(segment(0xe1, [...latin1('PARROT\0'), ...tiff('MM', 1)])),
+    'a Parrot APP1 with no TIFF header after it': inSegments(segment(0xe1, [...latin1('PARROT\0'), 1, 2, 3, 4])),
+    'Photoshop 1058 EXIF with a GPS IFD': inSegments(app13(resource(0x0422, tiff('MM', 1)))),
+    'Photoshop 1059 EXIF with a GPS IFD and a name': inSegments(app13(resource(0x0423, tiff('II', 1), [3, ...latin1('abc')]))),
+    'Photoshop 1058 after an IPTC block': inSegments(app13(resource(0x0404, [0x1c, 2, 0, 0, 2, 0, 4]), resource(0x0422, tiff('II', 2)))),
+    'Photoshop 1058 whose 8BIM header is cut over two APP13 segments': inSegments(
+      segment(0xed, [...latin1('Photoshop 3.0\0'), ...resource(0x0422, tiff('II', 1)).slice(0, 3)]),
+      segment(0xed, [...latin1('Photoshop 3.0\0'), ...resource(0x0422, tiff('II', 1)).slice(3)]),
+    ),
+    'Photoshop 1058 that runs past its segment': inSegments(app13(resource(0x0422, tiff('II')).slice(0, 20))),
+    'GoPro GPMF GPS5 with a fix': inSegments(goPro(SCAL, gpmf('GPS5', 20, [340754000, -1182543000, 100, 0, 0]))),
+    'GoPro GPMF GPS9 with a fix': inSegments(goPro(gpmf('GPS9', 36, [340754000, -1182543000, 100, 0, 0, 9000, 1000, 100, 3]))),
+    'GoPro GPMF GPS5 cut short': inSegments(goPro(SCAL, gpmf('GPS5', 20, [340754000, -1182543000, 100, 0, 0]).slice(0, 16))),
+    'UTF-16LE XMP with GPSLatitude': inSegments(xmp16('exif:GPSLatitude="34,4.5N"')),
+    'UTF-16BE XMP with GPSLongitude': inSegments(xmp16('exif:GPSLongitude="118,15.2W"', true)),
+    'UTF-16LE XMP with drone-dji GpsLongtitude': inSegments(xmp16('drone-dji:GpsLongtitude="-118.25"')),
+    'UTF-16LE XMP that says it has ExtendedXMP': inSegments(xmp16(`xmpNote:HasExtendedXMP="${EXTENDED_GUID}"`)),
+    'JUMBF in one APP11 segment': inSegments(...jumbf(GPS_JSON, [])),
+    'JUMBF with a GPS name cut over two APP11 segments': inSegments(...jumbf(GPS_JSON, [nameCut])),
+    'JUMBF (XLBox) with a GPS name cut over two APP11 segments': inSegments(...jumbf(GPS_JSON, [nameCut], { xl: true })),
+    'JUMBF segments out of sequence order, a name cut': inSegments(...jumbf(GPS_JSON, [40, nameCut], { order: [2, 0, 1] })),
+    'JUMBF with an EXIF header cut over two segments': inSegments(...jumbf(EXIF_JUMBF, [exifCut])),
+    'MP4 \\xA9xyz after EOI (a motion photo)': afterEoi(XYZ),
+    'MP4 Apple location.ISO6709 key after EOI': afterEoi(mp4('\0\0\0\x2dkeys\0\0\0\0mdtacom.apple.quicktime.location.ISO6709')),
+  };
+  const CLEAN_FORMS: Record<string, Form> = {
+    'a Parrot APP1 TIFF with no GPS': inSegments(segment(0xe1, [...latin1('PARROT\0'), ...tiff('II')])),
+    'Photoshop 1058 EXIF with no GPS': inSegments(app13(resource(0x0404, [0x1c, 2, 0, 0, 2, 0, 4]), resource(0x0422, tiff('MM')))),
+    'Photoshop 1059 EXIF with no GPS, two APP13 segments': inSegments(
+      segment(0xed, [...latin1('Photoshop 3.0\0'), ...resource(0x0423, tiff('II')).slice(0, 3)]),
+      segment(0xed, [...latin1('Photoshop 3.0\0'), ...resource(0x0423, tiff('II')).slice(3)]),
+    ),
+    'GoPro GPMF with no GPS stream': inSegments(goPro(SCAL)),
+    'GoPro GPMF GPS5 of zeros (no fix)': inSegments(goPro(SCAL, gpmf('GPS5', 20, [0, 0, 0, 0, 0]))),
+    'UTF-16LE XMP with no location': inSegments(xmp16('xmp:CreatorTool="TGP" exif:SubjectLocation="1 1"')),
+    'JUMBF with no location, cut over two segments': inSegments(...jumbf(c2pa('{"c2pa.actions":[{"action":"c2pa.created"}]}'), [44])),
+    'MP4 with no location box after EOI': afterEoi(mp4('\0\0\0\x10udta\0\0\0\x08free')),
+  };
+  it.each(Object.keys(LOCATED_FORMS))('FR-1189 (LO-1189 B2): %s is a location, unpadded and past 256 KB', (name) => {
+    const padded = LOCATED_FORMS[name](PAD);
+    expect(padded.length).toBeGreaterThan(256 * 1024);
+    expect([located(LOCATED_FORMS[name]([])), located(padded)]).toEqual([true, true]);
+  });
+  it.each(Object.keys(CLEAN_FORMS))('FR-1189 (LO-1189 B2): %s carries none, unpadded and past 256 KB', (name) => {
+    expect([located(CLEAN_FORMS[name]([])), located(CLEAN_FORMS[name](PAD))]).toEqual([false, false]);
+  });
+
+  it('FR-1189 (LO-1189 B1): one budget of IFD entries per check: a large honest IFD is read, many headers past it are located', () => {
+    const ifd = (entries: number): number[] => {
+      const body = Buffer.alloc(2 + entries * 12 + 4);
+      body.writeUInt16LE(entries, 0);
+      for (let e = 0; e < entries; e += 1) body.writeUInt16LE(0x0100, 2 + e * 12); // ImageWidth, not GPSInfo
+      return [...body];
+    };
+    const shared = (headers: number, entries: number): number[] => {
+      const head = Buffer.alloc(headers * 14);
+      for (let k = 0; k < headers; k += 1) {
+        head.write('Exif\0\0II*\0', k * 14, 'latin1');
+        head.writeUInt32LE(headers * 14 - (k * 14 + 6), k * 14 + 10);
+      }
+      return [...head, ...ifd(entries)];
+    };
+    expect(located(jpeg(JFIF, exifApp1([...latin1('II*\0'), 8, 0, 0, 0, ...ifd(5000)])))).toBe(false);
+    expect(located([...jpeg(JFIF), ...shared(40, 4000)])).toBe(false); // 160,040 entries: within the budget
+    expect(located([...jpeg(JFIF), ...shared(60, 4000)])).toBe(true); // 240,060: past it
+    expect(located(flir([[0x0e, Buffer.from(shared(60, 4000))]]))).toBe(true); // the same inside FLIR chunks
+  });
 });
