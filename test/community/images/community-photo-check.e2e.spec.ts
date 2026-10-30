@@ -372,6 +372,40 @@ describe('the automatic photo check on a space chat photo send (PHOTO-CHECK-BE)'
     const part = w.checks.find((c) => c.part === 'image')?.body.input[0] as { image_url: { url: string } };
     return Buffer.from(part.image_url.url.split(',')[1], 'base64');
   };
+  // LS-1187R2 B2: the health page promises no precise location collection.
+  // These are real GPS latitude/longitude RATIONAL values, not an author
+  // string or place name. The full JPEG remains a valid decoded picture.
+  const preciseGps = Buffer.from(
+    '/+EAiEV4aWYAAE1NACoAAAAIAAGIJQAEAAAAAQAAABoAAAAAAAQAAQACAAAAAk4AAAAAAgAFAAAAAwAAAFAAAwACAAAAAkUAAAAABAAFAAAAAwAAAGgAAAAAAAAAAQAAAAEAAAAOAAAAAQAAABUAAAAFAAAAAgAAAAEAAAAUAAAAAQAABFAAAAAZ',
+    'base64',
+  );
+  it.each(['between progressive scans', 'inside a JFXX JPEG thumbnail'])(
+    'LS-1187R2 B2: precise GPS %s is refused rather than retained and served to members',
+    async (placement) => {
+      const firstScan = progressivePicture.indexOf(Buffer.from([0xff, 0xda]));
+      const nextTable = progressivePicture.indexOf(Buffer.from([0xff, 0xc4]), firstScan + 2);
+      const nested = [...SOI, ...preciseGps, ...validPicture.subarray(20)];
+      const jfxx = segment(0xe0, [...Buffer.from('JFXX\0', 'latin1'), 0x10, ...nested]);
+      const upload = placement === 'between progressive scans'
+        ? Buffer.from([...progressivePicture.subarray(0, nextTable), ...preciseGps, ...progressivePicture.subarray(nextTable)])
+        : Buffer.from([...validPicture.subarray(0, 20), ...jfxx, ...validPicture.subarray(20)]);
+      const w = world({ photo: upload });
+      const code = await codeOf(w.send(''));
+      if (code === 'ok') {
+        expect(w.objects.get(sentImageKey(w.key))).toEqual(upload);
+        expect(w.objects.get(sentImageKey(w.key))?.includes(preciseGps)).toBe(true);
+      }
+      expect(code).toBe('422 community.image.has_location');
+      expect(w.checks).toEqual([]);
+      expect(w.messages).toEqual([]);
+    },
+  );
+  it('LS-1187R2 B2 control: the same precise GPS before the frame is refused', async () => {
+    const w = world({ photo: Buffer.from([...validPicture.subarray(0, 20), ...preciseGps, ...validPicture.subarray(20)]) });
+    expect(await codeOf(w.send(''))).toBe('422 community.image.has_location');
+    expect(w.checks).toEqual([]);
+    expect(w.messages).toEqual([]);
+  });
   it.each(independentBlocks)('LS-1187R2 matrix: %s before the frame is absent from the wire only', async (_label, block) => {
     const upload = Buffer.from([...validPicture.subarray(0, 20), ...block, ...validPicture.subarray(20)]);
     const w = world({ photo: upload });
