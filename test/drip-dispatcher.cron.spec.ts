@@ -1318,4 +1318,35 @@ describe('DripDispatcherCron', () => {
     expect((await cron.runOnce(NOW)).delivered).toBe(1);
     expect(state.drops[0].status).toBe('delivered');
   });
+
+  it.each(['past_due', 'unpaid'])(
+    'LS-PAYFAIL B3: a %s purchase locked at Day 10 receives no new paid drop',
+    async (status) => {
+      // tryLock deliberately keeps the subscription status for Stripe retries,
+      // and revokes entitlement_active. Neither person has left or been deleted.
+      const state: MockPrismaState = {
+        drops: [makeDrop({ display_title: 'New coached week after lockout' })],
+        purchases: [makePurchase({
+          status,
+          billing_type: 'recurring',
+          entitlement_active: false,
+          current_period_end: new Date(NOW.getTime() + 20 * 86_400_000),
+          access_expires_at: new Date(NOW.getTime() + 21 * 86_400_000),
+          client: { deleted_at: null },
+          coach: { deleted_at: null },
+        })],
+      };
+      const materialise = jest.fn().mockResolvedValue({ materialisedRef: 'new-coached-plan' });
+      const notifications = makeNotifications();
+      const cron = new DripDispatcherCron(asPrisma(makeMockPrisma(state)), makeRegistry(materialise), notifications);
+
+      await cron.runOnce(NOW);
+
+      // Retaining an already-delivered plan is not the same as creating a new
+      // assignment and notifying the client after coached access was revoked.
+      expect(materialise).not.toHaveBeenCalled();
+      expect(notifications.sendPush).not.toHaveBeenCalled();
+      expect(state.drops[0].status).not.toBe('delivered');
+    },
+  );
 });
