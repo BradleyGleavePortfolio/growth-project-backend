@@ -1,0 +1,3 @@
+test/(workout-|c1v2-c1-workout-day|exercise-catalog|aib3-workout-context)
+src/exercise-library/exercise-library.service.spec.ts
+src/exercise-catalog/exercise-video-provider.service.spec.ts
