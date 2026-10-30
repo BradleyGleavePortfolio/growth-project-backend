@@ -339,7 +339,7 @@ describe('Smart Dunning v2 end-to-end lifecycle (Stripe fixtures, fake clock)', 
       await failAttempt(w, 1);
       jest.setSystemTime(at(10 * DAY + HOUR));
       await w.v2.runSweep();
-      expect(await lockVerdict(w)).toBe('DUNNING_LOCKED');
+      expect(await lockVerdict(w, '/api/v1/workouts')).toBe('LOCKED_DUNNING');
       w.fake.seed('clientPurchase', {
         ...purchaseRow(w), id: 'second-plan', package_id: 'pkg-2',
         status, entitlement_active: true, access_expires_at: at(13 * DAY),
@@ -351,9 +351,8 @@ describe('Smart Dunning v2 end-to-end lifecycle (Stripe fixtures, fake clock)', 
       const db = w.fake.client();
       const checkout = new CheckoutService(db, stub({}), stub({}), stub({}), stub({}), stub({}));
       expect(await checkout.hasActiveEntitlement('client-1', { packageId: 'pkg-2' })).toBe(true);
-      const entitlementGuard = new ClientEntitlementGuard(stub(reflector()), db);
-      expect(await entitlementGuard.canActivate(context())).toBe(true);
-      expect(await lockVerdict(w)).toBe('allowed');
+      expect(await entitlementVerdict(w)).toBe('allowed');
+      expect(await lockVerdict(w, '/api/v1/workouts')).toBe('allowed');
     },
   );
 
