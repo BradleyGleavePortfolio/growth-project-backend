@@ -8,12 +8,15 @@
  *   2. the architecture check: it reads src/ (never a test) and finds every read of a member-content table
  *      (member-content-scan.ts); a read in a function the registry does not list fails, naming the file and line;
  *   3. the behavior check: for the readers the in-memory community double can run, one table of authors under each
- *      rule; their words, rows, names and counts must not reach the viewer, while a control member's do.
+ *      rule; their words, rows, names and counts must not reach the viewer, while a control member's do; and the
+ *      coaching-chat readers (member-content-coach-reads.ts), with the coach as the viewer. Every GAP row has a
+ *      case here, so a fixed gap turns its row red.
  *
  * WHEN THIS TEST IS RED, the builder must do one of these, and never loosen the test:
  *   - "unregistered read": register the new or moved read in member-content-readers.ts, with each of the four rules
  *     and how the code applies it (filterBlocked or assertVisibleTo WITH the space as place, rowsByAuthorsWhoStay,
- *     authorsWhoLeft, unbannedSpaces, inBlockWith, ...);
+ *     authorsWhoLeft, unbannedSpaces, inBlockWith, ...); a new caller of a repository reader whose rules live in
+ *     its caller: apply the rules, then add it to that row's callers;
  *   - a behavior row is red: apply the rule in the read, the same way the registered readers do;
  *   - the rule cannot be applied in your PR: ask the operator for a KNOWN GAP row ("GAP:" in the registry, with
  *     where it was found); never add one on your own;
@@ -22,13 +25,16 @@
  * Test-only file: nothing here changes runtime code.
  */
 import 'reflect-metadata';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync, mkdirSync, copyFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import type { User } from '@prisma/client';
-import { MEMBER_CONTENT_MODELS, scanMemberContentReads, type ReadSite } from './member-content-scan';
+import { ANY_MODEL, MEMBER_CONTENT_MODELS, REPO_ROOT, scanMemberContentReads, type ReadSite } from './member-content-scan';
 import { MEMBER_CONTENT_READERS, readerKey, type RegisteredReader } from './member-content-readers';
 import { ACCESS_RULES, RULE_COLUMN, accessWorld, type AccessRule, type AccessWorld } from './member-content-fixture';
+import { COACH_READS, applyCoachRule, seedCoachMessage, type CoachRead } from './member-content-coach-reads';
+import { CommunityReactionsService } from '../../../src/community/reactions/community-reactions.service';
+import { CommunityReactionsRepository } from '../../../src/community/reactions/community-reactions.repository';
 
 const RULES = ['block', 'ban', 'removed', 'departed'] as const;
 const isGap = (rule: string) => rule.startsWith('GAP:');
@@ -36,6 +42,8 @@ const isNa = (rule: string) => rule.startsWith('n/a:');
 
 const registry = new Map<string, RegisteredReader>();
 for (const row of MEMBER_CONTENT_READERS) registry.set(readerKey(row.file, row.reader), row);
+/** The registry row of a repository reader, by `Class.method` (the callee of a `caller` site). */
+const callerRow = (callee: string | undefined) => MEMBER_CONTENT_READERS.find((row) => row.reader === callee);
 
 describe('KT-2 member-content registry', () => {
   it('lists each reader once, with known models and all four rules decided', () => {
@@ -45,10 +53,24 @@ describe('KT-2 member-content registry', () => {
       const key = readerKey(row.file, row.reader);
       if (seen.has(key)) problems.push(`${key}: listed twice`);
       seen.add(key);
-      for (const m of row.models) if (!(m in MEMBER_CONTENT_MODELS)) problems.push(`${key}: ${m} is not a member-content model`);
+      for (const m of row.models) {
+        if (!(m in MEMBER_CONTENT_MODELS) && m !== ANY_MODEL) problems.push(`${key}: ${m} is not a member-content model`);
+      }
       for (const rule of RULES) if (!row[rule]?.trim()) problems.push(`${key}: the ${rule} rule is not decided`);
-      if (RULES.some((rule) => isGap(row[rule])) && !row.found) problems.push(`${key}: a KNOWN GAP must say where it was found`);
-      if (row.kind === 'check' && RULES.some((rule) => isGap(row[rule]))) problems.push(`${key}: a lookup cannot hold a GAP`);
+      const gaps = RULES.filter((rule) => isGap(row[rule]));
+      if (gaps.length && !row.found) problems.push(`${key}: a KNOWN GAP must say where it was found`);
+      if (row.kind === 'check' && gaps.length) problems.push(`${key}: a lookup cannot hold a GAP`);
+      // LO-1185 C1, LS-1185 B2: a GAP is executable, so fixing the runtime turns it red ("KNOWN GAP fixed").
+      if (gaps.length && !row.behavior) problems.push(`${key}: a KNOWN GAP needs a behavior case that runs the reader`);
+      const coach = COACH_READS.find((c) => readerKey(c.file, c.reader) === key);
+      for (const rule of gaps) {
+        if (coach && !coach.runs.some((r) => RULE_COLUMN[r] === rule)) problems.push(`${key}: its ${rule} GAP is not run by '${coach.name}'`);
+      }
+      // LO-1185 C3: a `covered:` pointer names files that exist.
+      for (const path of row.covered?.match(/(?:test|src)\/[\w./-]+\.ts/g) ?? []) {
+        if (!existsSync(join(REPO_ROOT, path))) problems.push(`${key}: covered names ${path}, which does not exist`);
+      }
+      if (row.callers && !/Repository\./.test(row.reader)) problems.push(`${key}: callers belong on a repository reader`);
     }
     expect(problems).toEqual([]);
   });
@@ -63,21 +85,81 @@ describe('KT-2 architecture: every read of a member-content table under src/ is 
   it('finds no unregistered read', () => {
     const missing = sites
       .filter((s) => !registry.get(readerKey(s.file, s.reader))?.models.includes(s.model))
-      .map(
-        (s) =>
-          `${s.file}:${s.line} ${s.reader} reads ${s.model} (${s.via}) and is not registered. KT-2 (KNOWN_TRAPS.md): ` +
-          'add it to test/community/access/member-content-readers.ts with how it applies block (both ways), ban, ' +
-          'removal and departure, or ask the operator for a KNOWN GAP row.',
+      .filter((s) => !(s.via === 'caller' && callerRow(s.callee)?.callers?.includes(s.reader)))
+      .map((s) =>
+        s.via === 'caller'
+          ? `${s.file}:${s.line} ${s.reader} calls ${s.callee}, which reads ${s.model} and leaves the rules to its ` +
+            'caller, and is not registered. KT-2 (KNOWN_TRAPS.md): apply block (both ways), ban, removal and departure ' +
+            `in ${s.reader}, then add it to the callers of ${s.callee} in test/community/access/member-content-readers.ts.`
+          : `${s.file}:${s.line} ${s.reader} reads ${s.model} (${s.via}) and is not registered. KT-2 (KNOWN_TRAPS.md): ` +
+            'add it to test/community/access/member-content-readers.ts with how it applies block (both ways), ban, ' +
+            'removal and departure, or ask the operator for a KNOWN GAP row.',
       );
-    if (missing.length > 0) throw new Error(`Unregistered member-content reads:\n${missing.join('\n')}`);
+    if (missing.length > 0) throw new Error(`Unregistered member-content reads:\n${[...new Set(missing)].join('\n')}`);
   });
 
-  it('has no stale row (every registered reader still reads each model it lists)', () => {
+  it('has no stale row (every registered reader still reads each model it lists, every listed caller still calls)', () => {
     const read = new Set(sites.map((s) => `${readerKey(s.file, s.reader)} ${s.model}`));
-    const stale = MEMBER_CONTENT_READERS.flatMap((row) =>
-      row.models.filter((m) => !read.has(`${readerKey(row.file, row.reader)} ${m}`)).map((m) => `${readerKey(row.file, row.reader)} no longer reads ${m}: update or remove the row`),
-    );
+    const calls = new Set(sites.filter((s) => s.via === 'caller').map((s) => `${s.callee} <- ${s.reader}`));
+    const stale = MEMBER_CONTENT_READERS.flatMap((row) => [
+      ...row.models.filter((m) => !read.has(`${readerKey(row.file, row.reader)} ${m}`)).map((m) => `${readerKey(row.file, row.reader)} no longer reads ${m}: update or remove the row`),
+      ...(row.callers ?? []).filter((c) => !calls.has(`${row.reader} <- ${c}`)).map((c) => `${row.reader}: ${c} no longer calls it; remove it from callers`),
+    ]);
     expect(stale).toEqual([]);
+  });
+
+  // LO-1185 B1 and LS-1185 B1: every way a read can be written is a read site (class-first: one row per form).
+  const FORMS: Array<[string, string, string]> = [
+    ['element access with a string key', "export class P { constructor(private prisma: any) {} f() { return this.prisma['communityMessage'].findMany({}); } }", 'CommunityMessage'],
+    ['element access with a string constant', "const model = 'communityMessage'; export const f = (prisma: any) => prisma[model].findMany({});", 'CommunityMessage'],
+    ['a destructured delegate', 'export class P { constructor(private prisma: any) {} f() { const { communityPost } = this.prisma; return communityPost.findMany({}); } }', 'CommunityPost'],
+    ['a renamed destructured delegate', 'export const f = (prisma: any) => { const { communityMessage: rows } = prisma; return rows.findMany({}); };', 'CommunityMessage'],
+    ['an alias from a receiver not named like a client', 'export class P { constructor(private deps: any) {} f() { const d = this.deps.communityWin; return d.findMany({}); } }', 'CommunityWin'],
+    ['a bound read method', 'export const f = (prisma: any) => prisma.communityMessage.findMany.bind(prisma.communityMessage)({});', 'CommunityMessage'],
+    ['a delegate named in a string for a generic reader', "export class P { a() { return this.all('communityResponse'); } all(m: string) { return m; } }", 'CommunityResponse'],
+    ['an include held in a constant', 'const INC = { community_messages_sent: true } as const;\nexport const f = (prisma: any) => prisma.user.findMany({ include: INC });', 'CommunityMessage'],
+    ['an include with a computed constant key', "const field = 'community_messages_sent'; export const f = (prisma: any) => prisma.user.findMany({ include: { [field]: true } });", 'CommunityMessage'],
+    ['a fluent relation read', 'export const f = (prisma: any, id: string) => prisma.user.findUnique({ where: { id } }).community_messages_sent();', 'CommunityMessage'],
+    ['raw SQL on a schema-qualified table', 'export const f = (prisma: any) => prisma.$queryRaw`SELECT m.body FROM "public"."community_messages" m`;', 'CommunityMessage'],
+    ['raw SQL with the table in a FROM list', 'export const f = (prisma: any) => prisma.$queryRaw`SELECT m.body FROM users u, community_messages m WHERE m.sender_id = u.id`;', 'CommunityMessage'],
+    ['a dynamic delegate key (fails closed)', 'export const f = (prisma: any, model: string) => prisma[model].findMany({});', ANY_MODEL],
+    ['a dynamic delegate on db (fails closed)', 'export const f = (db: any, model: string) => db[model];', ANY_MODEL],
+    ['a Prisma.raw table name (fails closed)', "import { Prisma } from '@prisma/client'; export const f = (prisma: any, t: string) => prisma.$queryRaw`SELECT * FROM ${Prisma.raw(t)}`;", ANY_MODEL],
+    ['concatenated SQL for $queryRawUnsafe (fails closed)', "export const f = (prisma: any, t: string) => prisma.$queryRawUnsafe('SELECT * FROM ' + t);", ANY_MODEL],
+  ];
+  it.each(FORMS)('the scan reports %s', (_form, source, model) => {
+    const root = mkdtempSync(join(tmpdir(), 'kt2-form-'));
+    try {
+      writeFileSync(join(root, 'probe.ts'), source);
+      expect(scanMemberContentReads(root).map((s) => s.model)).toContain(model);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('the scan reports a new caller of a repository reader as a read of that reader (LO-1185 B3)', () => {
+    const root = mkdtempSync(join(tmpdir(), 'kt2-caller-'));
+    try {
+      mkdirSync(join(root, 'community', 'messages'), { recursive: true });
+      copyFileSync(
+        join(REPO_ROOT, 'src/community/messages/community-messages.repository.ts'),
+        join(root, 'community/messages/community-messages.repository.ts'),
+      );
+      writeFileSync(
+        join(root, 'community/messages/space-digest.service.ts'),
+        [
+          "import { CommunityMessagesRepository } from './community-messages.repository';",
+          'export class SpaceDigestService {',
+          '  constructor(private readonly repo: CommunityMessagesRepository) {}',
+          '  latest(cohortId: string) { return this.repo.listCohortMessages({ cohortId, before: null, limit: 20 }); }',
+          '}',
+        ].join('\n'),
+      );
+      const found = scanMemberContentReads(root).filter((s) => s.via === 'caller').map((s) => `${s.reader} ${s.model} ${s.callee}`);
+      expect(found).toEqual(['SpaceDigestService.latest CommunityMessage CommunityMessagesRepository.listCohortMessages']);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('the scan sees Prisma reads, raw SQL, relation includes and aliased models, and ignores writes', () => {
@@ -117,8 +199,8 @@ describe('KT-2 architecture: every read of a member-content table under src/ is 
 
   it('the scan of src/ is not blind (each read form is present in the real code)', () => {
     const vias = new Set(sites.map((s) => s.via));
-    expect(vias.has('prisma') && vias.has('sql') && vias.has('relation')).toBe(true);
-    expect(new Set(sites.map((s) => s.model)).size).toBe(Object.keys(MEMBER_CONTENT_MODELS).length);
+    expect([...vias].sort()).toEqual(['aliased', 'caller', 'dynamic', 'prisma', 'relation', 'sql']);
+    expect(new Set(sites.map((s) => s.model).filter((m) => m !== ANY_MODEL)).size).toBe(Object.keys(MEMBER_CONTENT_MODELS).length);
   });
 });
 
@@ -213,13 +295,41 @@ const BEHAVIOR_READS: BehaviorRead[] = [
       return (posts.find((p) => p.id === w.postId)?.reactions ?? []).reduce((n, r) => n + r.count, 0);
     },
   },
+  {
+    // LS-1185 B2: the single-target reaction summary (CommunityReactionsService.visibleReactions, private).
+    name: 'one item reaction summary',
+    file: 'src/community/reactions/community-reactions.repository.ts',
+    reader: 'CommunityReactionsRepository.listForTarget',
+    write: async (w, a) => {
+      const row = w.db.seed('communityResponse', {
+        workspace_id: w.wsId,
+        target_type: 'post',
+        target_id: w.postId,
+        user_id: a.id,
+        response_kind: '\u{1F44D}',
+      });
+      return { id: row.id as string, table: 'communityResponse' };
+    },
+    read: (w) => {
+      const repo = new CommunityReactionsRepository(stub<ConstructorParameters<typeof CommunityReactionsRepository>[0]>(w.db));
+      const service = Object.assign(Object.create(CommunityReactionsService.prototype), { reactions: repo, safety: w.safety });
+      return service.visibleReactions(w.viewer, { workspaceId: w.wsId, targetType: 'post', targetId: w.postId });
+    },
+    shows: 'count',
+    count: (out) => (Array.isArray(out) ? out.length : 0),
+  },
 ];
+
+function stub<T>(v: unknown): T {
+  return v as T;
+}
 
 describe('KT-2 behavior: the registered readers that run in memory honor all four rules', () => {
   it('every behavior row matches its registry row, both ways', () => {
-    const named = new Set(BEHAVIOR_READS.map((b) => readerKey(b.file, b.reader)));
+    const cases: Array<{ name: string; file: string; reader: string }> = [...BEHAVIOR_READS, ...COACH_READS];
+    const named = new Set(cases.map((b) => readerKey(b.file, b.reader)));
     const problems = [
-      ...BEHAVIOR_READS.filter((b) => registry.get(readerKey(b.file, b.reader))?.behavior !== b.name).map(
+      ...cases.filter((b) => registry.get(readerKey(b.file, b.reader))?.behavior !== b.name).map(
         (b) => `${b.name}: the registry row ${readerKey(b.file, b.reader)} must say behavior: '${b.name}'`,
       ),
       ...MEMBER_CONTENT_READERS.filter((r) => r.behavior && !named.has(readerKey(r.file, r.reader))).map(
@@ -237,9 +347,10 @@ describe('KT-2 behavior: the registered readers that run in memory honor all fou
         const decided = row?.[RULE_COLUMN[rule]] ?? '';
         if (isNa(decided)) continue;
         const gap = isGap(decided);
+        // LS-1185 C1: the title names the registry row it checks.
         const title = gap
-          ? `KNOWN GAP (KT-2): an author ${rule} still shows (registry: ${decided})`
-          : `an author ${rule}: no words, no row, no name, not counted; the control member still shows`;
+          ? `${key}: KNOWN GAP (KT-2): an author ${rule} still shows (registry: ${decided})`
+          : `${key}: an author ${rule}: no words, no row, no name, not counted; the control member still shows`;
         it(title, async () => {
           const { controlShown, leaked } = await runCase(b, rule);
           // The control proves the read works, so an absent author is never a vacuous pass.
@@ -257,6 +368,50 @@ describe('KT-2 behavior: the registered readers that run in memory honor all fou
     });
   }
 });
+
+describe('KT-2 behavior: the coaching-chat readers, with the coach as the viewer', () => {
+  for (const c of COACH_READS) {
+    const key = readerKey(c.file, c.reader);
+    const row = registry.get(key);
+    describe(c.name, () => {
+      for (const rule of c.runs) {
+        const decided = row?.[RULE_COLUMN[rule]] ?? '';
+        const gap = isGap(decided);
+        const title = gap
+          ? `${key}: KNOWN GAP (KT-2): a client ${rule} still counts (registry: ${decided})`
+          : `${key}: a client ${rule} is not counted; the control client still is`;
+        it(title, async () => {
+          const { before, after } = await runCoachCase(c, rule);
+          // Both clients count before the rule, so a reader that sees nothing is never a vacuous pass.
+          expect(before).toBe(2);
+          if (!gap) {
+            expect(after).toBe(1);
+          } else if (after === 1) {
+            throw new Error(
+              `KNOWN GAP fixed: ${key} now leaves out a client ${rule}. Replace its "GAP:" text in ` +
+                'test/community/access/member-content-readers.ts with how the rule is applied now (KT-2).',
+            );
+          } else {
+            expect(after).toBe(2);
+          }
+        });
+      }
+      it(`${key}: the rules not run here say why (${c.notRun})`, () => {
+        expect(c.notRun.trim()).not.toBe('');
+      });
+    });
+  }
+});
+
+async function runCoachCase(c: CoachRead, rule: AccessRule): Promise<{ before: number; after: number }> {
+  const w = await accessWorld();
+  const author = w.member('Hidden Client');
+  const messageId = seedCoachMessage(w, author, c.voice === true);
+  seedCoachMessage(w, w.control, c.voice === true);
+  const before = await c.count(w, author);
+  await applyCoachRule(w, rule, author, messageId);
+  return { before, after: await c.count(w, author) };
+}
 
 /** One author under `rule`, one control member, read as the viewer: what of the author reached the viewer. */
 async function runCase(b: BehaviorRead, rule: AccessRule): Promise<{ controlShown: boolean; leaked: string[] }> {
