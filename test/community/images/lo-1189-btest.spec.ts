@@ -51,4 +51,33 @@ describe('LO-1189 B-TESTs', () => {
     expect(timed(Buffer.concat([jpeg(), tail]))).toBeLessThan(1000);
     expect(timed(jpeg(...flirChunks(tail)))).toBeLessThan(1000);
   });
+
+  // OWN-PR B2 (b#1187 regression class): refused at 436cf4bc (a header past 256 KB), posted at main and at b#1189.
+  it('LO-1189 B2: a position 436cf4bc refused behind a header past 256 KB is still a location', () => {
+    const pad = Array.from({ length: 5 }, () => seg(0xe2, Buffer.concat([Buffer.from('ICC_PROFILE\0\x01\x05', 'latin1'), Buffer.alloc(65000)])));
+    const tiffGps = Buffer.alloc(40);
+    tiffGps.write('II*\0', 0, 'latin1');
+    tiffGps.writeUInt32LE(8, 4);
+    tiffGps.writeUInt16LE(1, 8); // IFD0: one entry, GPSInfo -> GPS IFD at 26
+    tiffGps.writeUInt16LE(0x8825, 10);
+    tiffGps.writeUInt16LE(4, 12);
+    tiffGps.writeUInt32LE(1, 14);
+    tiffGps.writeUInt32LE(26, 18);
+    tiffGps.writeUInt16LE(1, 26); // GPS IFD: one entry, GPSLatitudeRef "N"
+    tiffGps.writeUInt16LE(1, 28);
+    tiffGps.writeUInt16LE(2, 30);
+    tiffGps.writeUInt32LE(2, 32);
+    tiffGps.write('N', 36, 'latin1');
+    const irb1058 = Buffer.concat([Buffer.from('8BIM\x04\x22\0\0', 'latin1'), Buffer.alloc(4), tiffGps]);
+    irb1058.writeUInt32BE(tiffGps.length, 8);
+    const items: Record<string, Buffer> = {
+      'Parrot APP1 TIFF with a GPS IFD': seg(0xe1, Buffer.concat([Buffer.from('PARROT\0', 'latin1'), tiffGps])),
+      'Photoshop 1058 EXIF with a GPS IFD': seg(0xed, Buffer.concat([Buffer.from('Photoshop 3.0\0', 'latin1'), irb1058])),
+      'UTF-16 XMP with GPSLatitude': seg(0xe1, Buffer.concat([Buffer.from('http://ns.adobe.com/xap/1.0/\0', 'latin1'),
+        Buffer.from('<rdf:Description exif:GPSLatitude="34,4.5N"/>', 'utf16le')])),
+    };
+    for (const [name, item] of Object.entries(items)) {
+      expect([name, carriesLocation(jpeg(...pad, item))]).toEqual([name, true]);
+    }
+  });
 });
