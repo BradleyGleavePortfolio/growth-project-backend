@@ -406,7 +406,7 @@ describe('PackagePushService', () => {
       await svc.pushContentToExistingBuyers('coach-1', 'pkg-1', 'content-1', {
         audience, cohortPurchaseIds: ['locked-plan', 'live-plan'],
         fireAt: now, mode: 'push_existing', notify: true,
-      }, undefined, now);
+      });
 
       expect(resolvers.materialise.mock.calls.map((call) => call[1].clientId))
         .toEqual(['client-live-plan']);
