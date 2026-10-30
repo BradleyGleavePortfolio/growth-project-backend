@@ -203,6 +203,123 @@ describe('carriesLocation (PHOTO-GPS)', () => {
     expect(located([...SOI, ...JFIF, ...FIRST_SCAN, ...exifApp1(tiff('II', 3)), ...FIRST_SCAN, ...broken, ...SCAN])).toBe(true);
   });
 
+  // FLIR-GPS-BE (LO-1187R4): a FLIR thermal camera writes an FFF block (a 64-byte header, a record directory of 32-byte
+  // entries, then the records) across "FLIR\0" APP1 chunks, in order. Its GPS record (type 0x2B) holds latitude and
+  // longitude as doubles at 0x10 and 0x18 (exiftool FLIR::GPSInfo; layout as in metadata-extractor-images jpg/FLIR
+  // iPhone device.jpg). A stored position is a location; a GPS record of zeros, or no GPS record, is not.
+  type FlirOpts = { le?: boolean; chunk?: number; magic?: string; version?: number; dirAt?: number; count?: number };
+  const flirGps = (lat: number, lon: number, length = 184): Buffer => {
+    const gps = Buffer.alloc(Math.max(length, 0x20));
+    if (lat !== 0 || lon !== 0) gps.writeUInt32LE(1, 0); // GPSValid
+    gps.write('NW', 8, 'latin1');
+    gps.writeDoubleLE(lat, 0x10);
+    gps.writeDoubleLE(lon, 0x18);
+    return gps.subarray(0, length);
+  };
+  const fffBlock = (records: Array<[number, Buffer]>, o: FlirOpts = {}): Buffer => {
+    const u32 = (n: number) => {
+      const b = Buffer.alloc(4);
+      if (o.le) b.writeUInt32LE(n);
+      else b.writeUInt32BE(n);
+      return b;
+    };
+    const u16 = (n: number) => {
+      const b = Buffer.alloc(2);
+      if (o.le) b.writeUInt16LE(n);
+      else b.writeUInt16BE(n);
+      return b;
+    };
+    const header = Buffer.concat([Buffer.from(o.magic ?? 'FFF\0', 'latin1'), Buffer.alloc(16), u32(o.version ?? 100),
+      u32(o.dirAt ?? 0x40), u32(o.count ?? records.length), Buffer.alloc(32)]);
+    let at = 0x40 + records.length * 0x20;
+    const dir = records.map(([type, body]) => {
+      const entry = Buffer.concat([u16(type), u16(1), u32(100), u32(1), u32(at), u32(body.length), Buffer.alloc(12)]);
+      at += body.length;
+      return entry;
+    });
+    return Buffer.concat([header, ...dir, ...records.map(([, body]) => body)]);
+  };
+  const flirChunks = (fff: Buffer, chunk = 65000): number[][] => {
+    const count = Math.ceil(fff.length / chunk);
+    return Array.from({ length: count }, (_, k) => segment(0xe1, [...latin1('FLIR\0'), 1, k, count - 1, ...fff.subarray(k * chunk, (k + 1) * chunk)]));
+  };
+  const flir = (records: Array<[number, Buffer]>, o: FlirOpts = {}): number[] => jpeg(JFIF, ...flirChunks(fffBlock(records, o), o.chunk));
+  const RAW = (n: number): [number, Buffer] => [0x01, Buffer.alloc(n, 0x5a)]; // the raw thermal frame
+  const CAMERA: [number, Buffer] = [0x20, Buffer.alloc(2476, 0x11)]; // CameraInfo
+
+  it('FLIR-GPS-BE: a FLIR GPS record with a stored position is a location, in either FFF byte order and either hemisphere', () => {
+    for (const le of [false, true]) {
+      expect(located(flir([RAW(4000), CAMERA, [0x2b, flirGps(34.0754, 118.2543)]], { le }))).toBe(true);
+      expect(located(flir([[0x2b, flirGps(-33.86, 151.21)]], { le }))).toBe(true);
+      expect(located(flir([[0x2b, flirGps(0, -0.5)]], { le }))).toBe(true); // a longitude alone
+      expect(located(flir([[0x2b, flirGps(51.5, 0)]], { le }))).toBe(true); // a latitude alone
+    }
+    expect(located(flir([[0x2b, flirGps(34.0754, 118.2543)]], { magic: 'AFF\0' }))).toBe(true);
+    // Beside a clean EXIF, after an empty directory entry, and between two scans.
+    const empty: [number, Buffer] = [0x00, Buffer.alloc(0)];
+    expect(located(jpeg(JFIF, exifApp1(tiff('II')), ...flirChunks(fffBlock([empty, [0x2b, flirGps(1, 2)]]))))).toBe(true);
+    const fff = fffBlock([[0x2b, flirGps(1, 2)]]);
+    expect(located([...SOI, ...JFIF, ...FIRST_SCAN, ...flirChunks(fff).flat(), ...SCAN])).toBe(true);
+  });
+
+  it('FLIR-GPS-BE: a FLIR block with no position carries none: a GPS record of zeros, no GPS record, other records only', () => {
+    for (const le of [false, true]) {
+      expect(located(flir([RAW(4000), CAMERA, [0x2b, flirGps(0, 0)]], { le }))).toBe(false);
+      expect(located(flir([RAW(4000), CAMERA], { le }))).toBe(false);
+      expect(located(flir([], { le }))).toBe(false);
+    }
+    // A GPS record whose refs and version are set but whose position is zero (as FLIR Vue Pro 640 writes it).
+    const refsOnly = flirGps(0, 0);
+    refsOnly.writeUInt32BE(1, 0);
+    refsOnly.write('2200SE', 4, 'latin1');
+    expect(located(flir([[0x2b, refsOnly]]))).toBe(false);
+    // Bytes after the position (altitude and the rest) are not a position.
+    const altitude = flirGps(0, 0);
+    altitude.writeFloatLE(120.5, 0x20);
+    expect(located(flir([[0x2b, altitude]]))).toBe(false);
+  });
+
+  it('FLIR-GPS-BE: FFF data split across several APP1 chunks is joined in order, even when the GPS record straddles two chunks', () => {
+    const fff = fffBlock([RAW(300 * 1024), CAMERA, [0x2b, flirGps(34.0754, 118.2543)]]);
+    const gpsAt = fff.length - 184 + 0x10;
+    for (const chunk of [65524, 4099, 1000]) {
+      const chunks = flirChunks(fff, chunk);
+      expect(chunks.length).toBeGreaterThan(1);
+      expect(located(jpeg(JFIF, ...chunks))).toBe(true);
+    }
+    // The latitude's 8 bytes cut over a chunk boundary: no chunk alone holds the record.
+    const cut = flirChunks(fff, gpsAt + 4);
+    expect(cut.length).toBe(2);
+    expect(located(jpeg(JFIF, ...cut))).toBe(true);
+    expect(located(jpeg(JFIF, ...flirChunks(fffBlock([RAW(300 * 1024), CAMERA, [0x2b, flirGps(0, 0)]]), 65524)))).toBe(false);
+    // An EXIF header or an XMP name split over two chunks (an embedded image's own metadata) is found in the joined bytes.
+    const embedded = Buffer.from([...exifApp1(tiff('II', 3)).slice(4)]);
+    const exifAt = 0x40 + 0x20;
+    expect(located(jpeg(JFIF, ...flirChunks(fffBlock([[0x0e, embedded]]), exifAt + 3)))).toBe(true);
+    const xmp = Buffer.from(xmpPacket('exif:GPSLatitude="1,0.0N"'), 'latin1');
+    const nameAt = exifAt + xmp.indexOf('GPSLati') + 3;
+    expect(located(jpeg(JFIF, ...flirChunks(fffBlock([[0x0e, xmp]]), nameAt)))).toBe(true);
+  });
+
+  it('FLIR-GPS-BE: a short or broken FLIR block counts as a location (fail closed)', () => {
+    const gps: [number, Buffer] = [0x2b, flirGps(0, 0)];
+    const fff = fffBlock([CAMERA, gps]);
+    const chunks = flirChunks(fff, 1000);
+    expect(located(jpeg(JFIF, ...chunks))).toBe(false); // the control: whole, in order, no position
+    expect(located(jpeg(JFIF, ...chunks.slice(0, -1)))).toBe(true); // a chunk missing
+    expect(located(jpeg(JFIF, chunks[1], chunks[0], ...chunks.slice(2)))).toBe(true); // chunks out of order
+    expect(located(jpeg(JFIF, chunks[0], chunks[0], ...chunks.slice(2)))).toBe(true); // a chunk twice
+    expect(located(jpeg(JFIF, segment(0xe1, [...latin1('FLIR\0'), 1])))).toBe(true); // a chunk shorter than its header
+    expect(located(flir([[0x2b, flirGps(0, 0, 0x1f)]]))).toBe(true); // a GPS record too short to hold a position
+    expect(located(flir([[0x2b, flirGps(0, 0, 0)]]))).toBe(true); // an empty GPS record
+    expect(located(flir([CAMERA, gps], { magic: 'XYZ\0' }))).toBe(true); // not FFF or AFF
+    expect(located(flir([CAMERA, gps], { version: 300 }))).toBe(true); // a version it does not know, in both orders
+    expect(located(flir([CAMERA, gps], { dirAt: 0x10000 }))).toBe(true); // the directory past the end
+    expect(located(flir([CAMERA, gps], { count: 50 }))).toBe(true); // more entries than fit
+    expect(located(jpeg(JFIF, ...flirChunks(fff.subarray(0, fff.length - 10))))).toBe(true); // the last record cut short
+    expect(located(jpeg(JFIF, ...flirChunks(fff.subarray(0, 0x30))))).toBe(true); // the header cut short
+  });
+
   it.each(REAL_PHOTOS)('FR-1187R2: a real %s photo with no location carries none', (_label, { photo }) => {
     expect(carriesLocation(Buffer.from(photo, 'base64'))).toBe(false);
   });

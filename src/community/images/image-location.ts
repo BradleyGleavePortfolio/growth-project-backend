@@ -21,6 +21,13 @@
  *     signature, or XMP that says it has some (xmpNote:HasExtendedXMP). Its
  *     chunks may split any name ("GPSLati" | "tude"; Adobe XMP Part 3,
  *     1.1.3.1), so it is never read and always refused.
+ *   - FLIR (FLIR-GPS-BE, LO-1187R4): the "FLIR\0" APP1 chunks, joined in
+ *     order into one FFF block, hold a GPS record (type 0x2B) whose latitude
+ *     (0x10) or longitude (0x18) is stored (not zero), or EXIF or XMP names
+ *     in the joined bytes (an embedded image's, a name split over two
+ *     chunks). Chunks out of order or missing, an FFF header, directory or
+ *     record that does not fit, or a GPS record too short for a position
+ *     answer true. A GPS record of zeros, or none, is no location.
  *
  * Where it looks (FR-1187R2, LS-1187R2 B2: the bucket keeps every byte and
  * serves them to members, so every place a JPEG can hold a location is read):
@@ -39,6 +46,8 @@
  *     bytes (FR-1187R3, LO-1187R3 N2);
  *   - everything after the first EOI (MPF's extra images, a motion photo's
  *     appended data, any trailing data), read as bytes.
+ *   - the FLIR APP1 chunks up to the first EOI, also joined and walked as an
+ *     FFF block (FLIR-GPS-BE).
  * Read as bytes (bytesLocated, the one reader for all three): any EXIF header
  * ("Exif\0\0" then a TIFF header) is read as EXIF above (unreadable =
  * located), and the text is matched for the XMP and ExtendedXMP names above,
@@ -66,7 +75,10 @@
  *     video's own location box, MP4 "\xA9xyz"), IPTC's own binary fields
  *     in APP13 (place names only, above), EXIF in Photoshop's resource 1058
  *     (no "Exif\0\0" header to find), comments, UTF-16 XMP, and bytes
- *     inside a scan's picture data.
+ *     inside a scan's picture data;
+ *   - binary maker records other than FLIR's (FLIR-GPS-BE "Found, not
+ *     fixed"): a Parrot thermal TIFF in APP1 ("PARROT\0", no EXIF header to
+ *     find), GoPro's GPMF in APP6, and an APP10 UTF-16 comment.
  */
 import { walkJpeg } from './image-metadata';
 
@@ -84,6 +96,8 @@ const XMP_LOCATION_NAME = /latitude|longt?itude|lrftargetl(?:at|on)/i;
 /** XMP that says part of it sits in ExtendedXMP (not read, so refused); unchanged since FR-1164R. */
 const HAS_EXTENDED_XMP = /HasExtendedXMP/;
 const EXTENDED_XMP = 'http://ns.adobe.com/xmp/extension/\0'; // an ExtendedXMP chunk's signature
+const FLIR_HEADER = [0x46, 0x4c, 0x49, 0x52, 0x00]; // "FLIR\0" (then a version byte, the chunk number, the last chunk number)
+const FLIR_GPS_RECORD = 0x2b; // FFF record type GPSInfo
 
 /** True when the JPEG carries a location anywhere it is read (see the header), or cannot be read to its first SOS. */
 export function carriesLocation(jpeg: Uint8Array): boolean {
@@ -114,13 +128,46 @@ function headerLocated(b: Uint8Array): boolean {
 /** FR-1187R2 (LS-1187R2 B2), FR-1187R3 (LO-1187R3 N2): every APPn to the first EOI, then every byte after it. */
 function laterLocated(jpeg: Uint8Array): boolean {
   let located = false;
+  const flir: Uint8Array[] = [];
   const after = walkJpeg(jpeg, (part) => {
     if (located || part.kind !== 'segment' || part.marker < APP0 || part.marker > APP15) return;
     const payload = jpeg.subarray(part.start + 4, part.end);
+    if (part.marker === APP1 && FLIR_HEADER.every((c, k) => payload[k] === c)) flir.push(payload);
     located = part.marker === APP1 ? app1Located(payload) : bytesLocated(payload);
   });
   // A walk that stops is refused by the photo check (the same walk; see the header).
-  return located || (after !== null && bytesLocated(jpeg.subarray(after)));
+  return located || (flir.length > 0 && flirLocated(flir)) || (after !== null && bytesLocated(jpeg.subarray(after)));
+}
+
+/**
+ * FLIR-GPS-BE (LO-1187R4): the FLIR APP1 chunks, joined in order into one FFF block (header, record directory, records),
+ * located when a GPS record (type 0x2B) stores a latitude or longitude, or when the joined bytes hold EXIF or XMP names
+ * (bytesLocated: an embedded image's EXIF, a name split over two chunks). Chunks out of order or missing, an FFF header,
+ * directory or record that does not fit, or a GPS record too short to hold a position answer true (fail closed).
+ */
+function flirLocated(chunks: Uint8Array[]): boolean {
+  if (chunks.some((c, k) => c.length < 8 || c[6] !== k || c[7] !== chunks.length - 1)) return true;
+  const fff = Buffer.concat(chunks.map((c) => c.subarray(8)));
+  const magic = fff.toString('latin1', 0, 4);
+  if (fff.length < 0x40 || (magic !== 'FFF\0' && magic !== 'AFF\0')) return true;
+  // The byte order is the one in which the FFF version reads 100 to 199, as exiftool decides it.
+  const be = fff.readUInt32BE(0x14) >= 100 && fff.readUInt32BE(0x14) < 200;
+  if (!be && (fff.readUInt32LE(0x14) < 100 || fff.readUInt32LE(0x14) >= 200)) return true;
+  const u32 = (at: number) => (be ? fff.readUInt32BE(at) : fff.readUInt32LE(at));
+  const dir = u32(0x18);
+  const count = u32(0x1c);
+  if (dir + count * 0x20 > fff.length) return true;
+  for (let n = 0; n < count; n += 1) {
+    const entry = dir + n * 0x20;
+    const type = be ? fff.readUInt16BE(entry) : fff.readUInt16LE(entry);
+    if (type === 0) continue;
+    const at = u32(entry + 0x0c);
+    const length = u32(entry + 0x10);
+    if (at + length > fff.length) return true;
+    // GPSInfo: latitude at 0x10, longitude at 0x18 (doubles); a stored value in either is a position.
+    if (type === FLIR_GPS_RECORD && (length < 0x20 || fff.subarray(at + 0x10, at + 0x20).some((x) => x !== 0))) return true;
+  }
+  return bytesLocated(fff);
 }
 
 /** Bytes whose structure is not walked (a thumbnail, what follows EOI): any EXIF in them, or XMP's location names. */
