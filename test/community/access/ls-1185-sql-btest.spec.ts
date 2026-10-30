@@ -2,11 +2,12 @@ import { spawnSync } from 'child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { REPO_ROOT } from './member-content-scan';
+import { createProbeCopy } from './ls-1185-probe-copy';
 
 describe('LS-1185 B3: actual SQL access predicates must drive the behavior result', () => {
   it('removing the community-wide ban predicate from the registered read makes the contract red', () => {
-    const runtime = join(REPO_ROOT, 'src/community/community-space-access.ts');
+    const root = createProbeCopy();
+    const runtime = join(root, 'src/community/community-space-access.ts');
     const scratch = mkdtempSync(join(tmpdir(), 'ls1185-sql-'));
     const report = join(scratch, 'result.json');
     const original = readFileSync(runtime, 'utf8');
@@ -19,7 +20,7 @@ describe('LS-1185 B3: actual SQL access predicates must drive the behavior resul
       const run = spawnSync(process.execPath, [
         require.resolve('jest/bin/jest'), '--runInBand', '--no-cache', '--json', `--outputFile=${report}`,
         'test/community/access/member-content-access.spec.ts',
-      ], { cwd: REPO_ROOT, encoding: 'utf8', timeout: 110000, maxBuffer: 1024 * 1024 });
+      ], { cwd: root, encoding: 'utf8', timeout: 110000, maxBuffer: 1024 * 1024 });
       if (run.error) throw run.error;
       const result = JSON.parse(readFileSync(report, 'utf8')) as {
         numFailedTests: number;
@@ -30,6 +31,7 @@ describe('LS-1185 B3: actual SQL access predicates must drive the behavior resul
     } finally {
       writeFileSync(runtime, original);
       rmSync(scratch, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   }, 120000);
 });
