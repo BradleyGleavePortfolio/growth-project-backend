@@ -390,7 +390,7 @@ describe('carriesLocation (PHOTO-GPS)', () => {
   };
   const c2pa = (text: string): number[] => [...latin1('\0\0\0\x1djumdc2pa\0\x11\0\x10\x80\0\0\xaa\x008\x9bq\x03c2pa\0'), ...latin1(text)];
   const GPS_JSON = c2pa('{"@context":{"exif":"http://ns.adobe.com/exif/1.0/"},"exif:GPSLatitude":"34,4.5N"}');
-  const nameCut = GPS_JSON.length - 20; // inside "GPSLatitude"
+  const nameCut = GPS_JSON.length - 16; // "...GPSLati" then "tude..."
   const EXIF_JUMBF = [...c2pa('thumbnail'), ...latin1('Exif\0\0'), ...tiff('II', 3)];
   const exifCut = c2pa('thumbnail').length + 3; // inside "Exif\0\0"
   const mp4 = (atoms: string): number[] => [...be32(24), ...latin1('ftypmp42'), ...new Array(12).fill(0), ...latin1(atoms)];
