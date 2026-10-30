@@ -44,7 +44,10 @@ export function joinCoachFor(
   coachId: string,
   buyerId: string,
 ): Promise<{ name: string } | null> {
-  return db.user.findUnique({ where: { id: coachId, AND: [coachingCoachFor(buyerId)] }, select: { name: true } });
+  return db.user.findUnique({
+    where: { id: coachId, AND: [coachingCoachFor(buyerId)] },
+    select: { name: true },
+  });
 }
 
 /** Package create, publish and reactivate: refused for a coach who cannot coach one to one. */
