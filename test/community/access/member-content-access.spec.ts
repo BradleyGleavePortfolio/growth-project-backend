@@ -244,7 +244,7 @@ describe('KT-2 architecture: every read of a member-content table under src/ is 
     expect(callerSites({ 'caller.ts': source }, options)).toEqual([...expected].sort());
   });
 
-  // The scan limits (member-content-scan.ts header, L1 to L5): each test shows what the scan still cannot see, so
+  // The scan limits (member-content-scan.ts header, L1 to L7): each test shows what the scan still cannot see, so
   // closing a limit turns its test red and the header must change with it.
   it('limit L1: a reader called on a value typed by a package (unresolved, not any) is not seen', () => {
     const source = `${IMPORT}\nimport { ModuleRef } from '@nestjs/core';\nexport class S {\n  constructor(private readonly refs: ModuleRef) {}\n` +
@@ -261,6 +261,32 @@ describe('KT-2 architecture: every read of a member-content table under src/ is 
   it('limit L4: rows kept in a field and read by another method are not traced', () => {
     const source = held(`private cached: unknown;\n  async load(c: string) { this.cached = await this.repo.listCohortMessages(${ARGS}); }\n  show() { return this.cached; }`);
     expect(callerSites({ 'caller.ts': source })).toEqual([`S.load CommunityMessage ${LC}`]);
+  });
+  it('limit L6: a second read of a model in one function is a second site under the same registry key', () => {
+    const root = mkdtempSync(join(tmpdir(), 'kt2-limit-'));
+    try {
+      writeFileSync(join(root, 'probe.ts'), [
+        'export async function twice(prisma: any) {',
+        '  const a = await prisma.communityMessage.findMany({ where: { deleted_at: null } });',
+        '  const b = await prisma.communityMessage.findMany({});',
+        '  return [a, b];',
+        '}',
+      ].join('\n'));
+      const sites = scanMemberContentReads(root);
+      expect(sites.map((s) => s.line)).toEqual([2, 3]);
+      expect(new Set(sites.map((s) => `${readerKey(s.file, s.reader)} ${s.model}`)).size).toBe(1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+  it('limit L7: a write that returns rows is not a read site', () => {
+    const root = mkdtempSync(join(tmpdir(), 'kt2-limit-'));
+    try {
+      writeFileSync(join(root, 'probe.ts'), 'export const w = (prisma: any) => prisma.communityMessage.update({ where: { id: 1 }, data: {}, include: { sender: true } });\n');
+      expect(scanMemberContentReads(root).filter((s) => s.model === 'CommunityMessage')).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
   it('limit L5: SQL split across a string concatenation outside an Unsafe call is matched piece by piece', () => {
     const root = mkdtempSync(join(tmpdir(), 'kt2-limit-'));

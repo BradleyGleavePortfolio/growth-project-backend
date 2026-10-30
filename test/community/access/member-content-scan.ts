@@ -33,7 +33,7 @@
  * Writes (create, update, upsert, delete) are not reads and are not listed. A write that returns rows is a
  * write here; the registry still lists the function when it also reads.
  *
- * Limits (each shown by a test in member-content-access.spec.ts, 'the scan limits'):
+ * Limits (each shown by a test in member-content-access.spec.ts, 'limit L1' to 'limit L7'):
  *   L1 the program loads no lib and no node_modules (speed: one program over src/ in about 10 s), so a value whose
  *      type comes from a package or a built-in (`moduleRef.get(Repo)`, a string method's result) is unresolved,
  *      not `any`; a reader's name called on it is not seen (failing closed there flags Supabase storage `list`
@@ -45,7 +45,10 @@
  *      applied the rules from one that did not);
  *   L4 a reader's rows kept in a field or a closure and read by another method are not traced (only the reference
  *      to the reader is a site);
- *   L5 SQL assembled from string concatenation outside an Unsafe call is matched piece by piece.
+ *   L5 SQL assembled from string concatenation outside an Unsafe call is matched piece by piece;
+ *   L6 the registry has one row per function and model, so a second read of a model inside a function already
+ *      registered for it is covered by that row (LO-1185 N4);
+ *   L7 a write that returns rows (create, update, upsert, delete) is a write, not a read (LO-1185 N3).
  *
  * Nothing here changes runtime code or the schema; both are only read.
  */
