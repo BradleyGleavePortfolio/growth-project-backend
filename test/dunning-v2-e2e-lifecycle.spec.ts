@@ -1,4 +1,4 @@
-import { readFileSync } from 'fs';
+import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { ForbiddenException, HttpException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
@@ -452,6 +452,61 @@ describe('Smart Dunning v2 end-to-end lifecycle (Stripe fixtures, fake clock)', 
       expect(await access()).toBe('pkg-1');
     },
   );
+  // LO-1190 B1: a package community space follows the same live-grace rule. A weekly plan's
+  // access_expires_at is Day 8 while the grace runs to the Day-10 lock, so on Day 8 the client
+  // keeps the app (guard, shared read) and must keep the paid space too: the SQL rule
+  // app.community_can_access (latest definition) and its TS mirror packageAccess.
+  it('LO-1190 B1: a weekly-plan client keeps the paid community space on Day 8 of the grace', async () => {
+    await w.fake.client().coachPackage.update({ where: { id: 'pkg-1' }, data: { interval: 'week' } });
+    const weekly = fixture('customer.subscription.updated.past_due', {
+      current_period_start: sec(at(0)),
+      current_period_end: sec(at(7 * DAY)),
+    });
+    w.stripe.retrieveSubscription.mockResolvedValue(weekly.data.object);
+    await w.handler.handle(weekly);
+    await failAttempt(w, 1);
+    expect(purchaseRow(w)?.access_expires_at).toEqual(at(8 * DAY));
+    jest.setSystemTime(at(8 * DAY + HOUR));
+    await w.v2.runSweep();
+    expect(stateRow(w)?.locked_out_at).toBeNull();
+    expect(await entitlementVerdict(w)).toBe('allowed');
+
+    // packageAccess: the package link filter is left to the database (the fake has no `some`);
+    // the purchase rule is what is checked here.
+    const db = w.fake.client();
+    const prisma = {
+      clientPurchase: {
+        findMany: (args: { where: Record<string, unknown>; select: unknown }) => {
+          const { package: _link, ...where } = args.where;
+          return db.clientPurchase.findMany(stub({ ...args, where }));
+        },
+      },
+    };
+    const repo = new CommunityCohortMembersRepository(stub(prisma));
+    const access = await repo.packageAccess('space-1', 'coach-1', ['client-1']);
+
+    // app.community_can_access: the latest migration that defines it must count a failed
+    // renewal in its live grace (past_due / unpaid with an active, unlocked dunning cycle).
+    const dir = join(__dirname, '..', 'prisma', 'migrations');
+    const latest = readdirSync(dir)
+      .filter((m) => {
+        try {
+          return /FUNCTION app\.community_can_access/.test(readFileSync(join(dir, m, 'migration.sql'), 'utf8'));
+        } catch {
+          return false;
+        }
+      })
+      .sort()
+      .pop()!;
+    const sql = readFileSync(join(dir, latest, 'migration.sql'), 'utf8');
+    const fn = sql.slice(sql.lastIndexOf('FUNCTION app.community_can_access'));
+    const body = fn.slice(0, fn.indexOf('$fn$;'));
+
+    expect({
+      packageAccess: access.has('client-1'),
+      sqlGrace: /past_due/.test(body) && /"DunningState"/.test(body) && /locked_out_at/.test(body),
+    }).toEqual({ packageAccess: true, sqlGrace: true });
+  });
 
   // PF-2-BE: the shared read (GET /v1/checkout/entitlement) and the route guards agree on the one
   // live-grace rule: weekly and monthly, past_due and unpaid, Day 8 grace, the Day 10 lock (also
