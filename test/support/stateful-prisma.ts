@@ -61,19 +61,39 @@ function matchValue(actual: any, cond: any): boolean {
   return actual === cond;
 }
 
-export function matchWhere(row: Row, where: Row | undefined): boolean {
+// FR-1TO1: a to-one relation filter registered in db.relations (e.g. CoachPackage.where.coach)
+// is matched against the related row. A list filter inside it ({ none | some | every }, e.g. the
+// block-pair rule) reads db.listRelations[key](related); an unmodelled list is empty.
+function matchRelation(related: Row | null, cond: Row, db: StatefulPrisma): boolean {
+  if (!related) return false;
+  for (const [k, c] of Object.entries(cond)) {
+    const list = c && typeof c === 'object' && !Array.isArray(c) && ['none', 'some', 'every'].find((op) => op in c);
+    if (list) {
+      const rows = db.listRelations[k]?.(related) ?? [];
+      const hit = (r: Row) => matchWhere(r, c[list], db);
+      if (list === 'none' ? rows.some(hit) : list === 'some' ? !rows.some(hit) : !rows.every(hit)) return false;
+    } else if (!matchWhere(related, { [k]: c }, db)) return false;
+  }
+  return true;
+}
+
+export function matchWhere(row: Row, where: Row | undefined, db?: StatefulPrisma): boolean {
   if (!where) return true;
   for (const [k, cond] of Object.entries(where)) {
     if (k === 'OR') {
-      if (!(cond as Row[]).some((w) => matchWhere(row, w))) return false;
+      if (!(cond as Row[]).some((w) => matchWhere(row, w, db))) return false;
       continue;
     }
     if (k === 'AND') {
-      if (!(cond as Row[]).every((w) => matchWhere(row, w))) return false;
+      if (!(cond as Row[]).every((w) => matchWhere(row, w, db))) return false;
       continue;
     }
     if (k === 'NOT') {
-      if (matchWhere(row, cond)) return false;
+      if (matchWhere(row, cond, db)) return false;
+      continue;
+    }
+    if (db?.relations[k] && cond && typeof cond === 'object' && !(cond instanceof Date) && !Array.isArray(cond)) {
+      if (!matchRelation(db.relations[k](row), cond, db)) return false;
       continue;
     }
     if (
@@ -162,7 +182,7 @@ export class Model {
   }
   findUnique = async ({ where, select, include }: any) => {
     this.db.hit(this.name, 'findUnique', where);
-    return pick(this.rows.find((r) => matchWhere(r, where)) ?? null, select, include, this.db);
+    return pick(this.rows.find((r) => matchWhere(r, where, this.db)) ?? null, select, include, this.db);
   };
   findUniqueOrThrow = async (args: any) => {
     const row = await this.findUnique(args);
@@ -174,7 +194,7 @@ export class Model {
     return row;
   };
   findFirst = async ({ where, select, include, orderBy }: any = {}) => {
-    let rows = this.rows.filter((r) => matchWhere(r, where));
+    let rows = this.rows.filter((r) => matchWhere(r, where, this.db));
     if (orderBy) {
       const [[k, dir]] = Object.entries(orderBy as Row);
       rows = [...rows].sort(
@@ -188,7 +208,7 @@ export class Model {
   // production Prisma runs it (B-641-8: a fixture that ignored take/orderBy
   // hid a starved retry batch).
   findMany = async ({ where, select, orderBy, take, skip, cursor }: any = {}) => {
-    let rows = this.rows.filter((r) => matchWhere(r, where));
+    let rows = this.rows.filter((r) => matchWhere(r, where, this.db));
     if (orderBy) {
       // { field: 'asc' | 'desc' } or { field: { sort, nulls } }; without
       // `nulls`, Postgres puts nulls last ascending and first descending.
@@ -223,7 +243,7 @@ export class Model {
     if (typeof take === 'number') rows = rows.slice(0, take);
     return rows.map((r) => pick(r, select) as Row);
   };
-  count = async ({ where }: any = {}) => this.rows.filter((r) => matchWhere(r, where)).length;
+  count = async ({ where }: any = {}) => this.rows.filter((r) => matchWhere(r, where, this.db)).length;
   create = async ({ data, select }: any) => {
     const row = {
       id: randomUUID(),
@@ -277,6 +297,7 @@ export class Model {
 export class StatefulPrisma {
   state: Record<string, Row[]> = {};
   relations: Record<string, (row: Row) => Row | null> = {};
+  listRelations: Record<string, (row: Row) => Row[]> = {};
   calls: Array<{ model: string; op: string; where: any }> = [];
   transactions = 0;
   rollbacks = 0;
