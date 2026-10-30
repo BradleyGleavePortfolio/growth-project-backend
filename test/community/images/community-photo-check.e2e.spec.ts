@@ -380,6 +380,85 @@ describe('the automatic photo check on a space chat photo send (PHOTO-CHECK-BE)'
     '/+EAiEV4aWYAAE1NACoAAAAIAAGIJQAEAAAAAQAAABoAAAAAAAQAAQACAAAAAk4AAAAAAgAFAAAAAwAAAFAAAwACAAAAAkUAAAAABAAFAAAAAwAAAGgAAAAAAAAAAQAAAAEAAAAOAAAAAQAAABUAAAAFAAAAAgAAAAEAAAAUAAAAAQAABFAAAAAZ',
     'base64',
   );
+  // LS-1187R3 B1: the same location families are retained in an EXIF JPEG
+  // thumbnail, not only a JFXX thumbnail. IFD1's JPEGInterchangeFormat and
+  // JPEGInterchangeFormatLength index the complete thumbnail at offset 156.
+  // The surrounding TIFF has no GPSInfo, and the thumbnail carries XMP only.
+  const thumbnailPacket = (attrs: string) =>
+    '<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>' +
+    '<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">' +
+    '<rdf:Description rdf:about="" xmlns:exif="http://ns.adobe.com/exif/1.0/" ' +
+    `xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmlns:xmpNote="http://ns.adobe.com/xmp/note/" ${attrs}/>` +
+    '</rdf:RDF></x:xmpmeta><?xpacket end="w"?>';
+  const thumbnailGpsXml = thumbnailPacket('exif:GPSLatitude="1,14.07036N" exif:GPSLongitude="2,20.74068E"');
+  const extendedCut = thumbnailGpsXml.indexOf('GPSLatitude') + 'GPSLati'.length;
+  const thumbnailLocations: Array<[string, number[]]> = [
+    ['StandardXMP precise GPS', xmpApp1(thumbnailGpsXml)],
+    ['HasExtendedXMP', xmpApp1(thumbnailPacket(`xmpNote:HasExtendedXMP="${EXTENDED_GUID}"`))],
+    ['split ExtendedXMP precise GPS', [
+      ...extendedXmpApp1(EXTENDED_GUID, thumbnailGpsXml.length, 0, thumbnailGpsXml.slice(0, extendedCut)),
+      ...extendedXmpApp1(EXTENDED_GUID, thumbnailGpsXml.length, extendedCut, thumbnailGpsXml.slice(extendedCut)),
+    ]],
+  ];
+  const exifWithJpegThumbnail = (blocks: number[]) => {
+    const thumb = [...SOI, ...blocks, ...validPicture.subarray(20)];
+    const long = (tag: number, value: number) => [...u16le(tag), ...u16le(4), ...u32le(1), ...u32le(value)];
+    const short = (tag: number, value: number) => [...u16le(tag), ...u16le(3), ...u32le(1), ...u16le(value), 0, 0];
+    const rational = (tag: number, offset: number) => [...u16le(tag), ...u16le(5), ...u32le(1), ...u32le(offset)];
+    return exifApp1([
+      0x49, 0x49, ...u16le(42), ...u32le(8),
+      ...u16le(4),
+      ...rational(0x011a, 140), ...rational(0x011b, 148),
+      ...short(0x0128, 2), ...short(0x0213, 1),
+      ...u32le(62),
+      ...u16le(6),
+      ...short(0x0103, 6),
+      ...rational(0x011a, 140), ...rational(0x011b, 148), ...short(0x0128, 2),
+      ...long(0x0201, 156), ...long(0x0202, thumb.length),
+      ...u32le(0), ...u32le(72), ...u32le(1), ...u32le(72), ...u32le(1), ...thumb,
+    ]);
+  };
+  it.each(thumbnailLocations.flatMap(([kind, block]) =>
+    ['before the frame', 'between progressive scans'].map((place): [string, string, number[]] => [kind, place, block]),
+  ))('LS-1187R3 B1: %s in an EXIF JPEG thumbnail %s must not be retained and served', async (_kind, place, block) => {
+    const nested = exifWithJpegThumbnail(block);
+    const firstScan = progressivePicture.indexOf(Buffer.from([0xff, 0xda]));
+    const nextTable = progressivePicture.indexOf(Buffer.from([0xff, 0xc4]), firstScan + 2);
+    const upload = place === 'before the frame'
+      ? Buffer.from([...validPicture.subarray(0, 20), ...nested, ...validPicture.subarray(20)])
+      : Buffer.from([...progressivePicture.subarray(0, nextTable), ...nested, ...progressivePicture.subarray(nextTable)]);
+    const w = world({ photo: upload });
+    let publishedUrl: string | null | undefined;
+    const outcome = await codeOf(w.send('').then((sent) => {
+      publishedUrl = sent.message.image?.url;
+      return sent;
+    }));
+    if (outcome === 'ok') {
+      // Establish the user-visible consequence before asserting refusal.
+      expect(w.messages).toHaveLength(1);
+      expect(w.rows).toEqual([expect.objectContaining({ storage_key: sentImageKey(w.key) })]);
+      expect(w.objects.get(sentImageKey(w.key))).toEqual(upload);
+      expect(w.objects.get(sentImageKey(w.key))?.includes(Buffer.from(block))).toBe(true);
+      expect(publishedUrl).toContain(sentImageKey(w.key));
+      expect(wirePhoto(w)).toEqual(place === 'before the frame' ? validPicture : progressivePicture);
+    }
+    expect(outcome).toBe('422 community.image.has_location');
+    expect(w.checks).toEqual([]);
+    expect(w.messages).toEqual([]);
+  });
+  it.each(thumbnailLocations)('LS-1187R3 B1 control: the same %s at the top level is refused', async (_kind, block) => {
+    const w = world({ photo: Buffer.from([...validPicture.subarray(0, 20), ...block, ...validPicture.subarray(20)]) });
+    expect(await codeOf(w.send(''))).toBe('422 community.image.has_location');
+    expect(w.checks).toEqual([]);
+  });
+  it('LS-1187R3 B1 control: a properly indexed EXIF thumbnail with non-location XMP still posts', async () => {
+    const block = exifWithJpegThumbnail(xmpApp1(thumbnailPacket('xmp:CreatorTool="TGP"')));
+    const upload = Buffer.from([...validPicture.subarray(0, 20), ...block, ...validPicture.subarray(20)]);
+    const w = world({ photo: upload });
+    expect(await codeOf(w.send(''))).toBe('ok');
+    expect(wirePhoto(w)).toEqual(validPicture);
+    expect(w.objects.get(sentImageKey(w.key))).toEqual(upload);
+  });
   it.each(['between progressive scans', 'inside a JFXX JPEG thumbnail'])(
     'LS-1187R2 B2: precise GPS %s is refused rather than retained and served to members',
     async (placement) => {
