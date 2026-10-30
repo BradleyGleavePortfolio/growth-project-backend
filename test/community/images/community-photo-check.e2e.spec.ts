@@ -271,6 +271,30 @@ describe('the automatic photo check on a space chat photo send (PHOTO-CHECK-BE)'
     expect(wireBytes.toString('latin1')).not.toContain(creator);
   });
 
+  // LS-1187R2 B1: APP0 is not necessarily just a fixed JFIF header. A JFXX
+  // extension can hold a complete JPEG thumbnail, including its own writer
+  // details. Only the primary picture belongs in the moderation copy.
+  // JFIF 1.02 extension 0x10: https://www.w3.org/Graphics/JPEG/jfif3.pdf
+  it.each<[string, number[]]>([
+    ['EXIF Artist', artist],
+    ['EXIF OwnerName', ownerName],
+    ['XMP creator', xmpCreator],
+    ['COM author', segment(0xfe, [...Buffer.from(creator, 'latin1')])],
+  ])('LS-1187R2 B1: a JFXX JPEG thumbnail with %s does not send its creator to OpenAI', async (_label, writer) => {
+    // The thumbnail has no JFIF/JFXX segment of its own. It is a JPEG stream
+    // bounded by SOI/EOI inside the enclosing APP0's declared length.
+    const thumb = [...SOI, ...writer, ...SCAN];
+    const jfxx = segment(0xe0, [...Buffer.from('JFXX\0', 'latin1'), 0x10, ...thumb]);
+    const upload = Buffer.from(jpeg(JFIF, jfxx));
+    const w = world({ photo: upload });
+    expect(await codeOf(w.send(''))).toBe('ok');
+    expect(w.objects.get(sentImageKey(w.key))).toEqual(upload);
+    const photoInput = w.checks.find((c) => c.part === 'image')?.body.input[0] as { image_url: { url: string } };
+    const wire = Buffer.from(photoInput.image_url.url.split(',')[1], 'base64');
+    expect(wire.toString('latin1')).not.toContain(creator);
+    expect(wire).toEqual(PHOTO);
+  });
+
   // FR-1187 (operator ruling on LS-1187 B1): what reaches OpenAI is the photo with no metadata, for every
   // kind of block a JPEG can carry; the stored and sent copies are the upload, unchanged.
   const ADOBE = segment(0xee, [...Buffer.from('Adobe', 'latin1'), 0, 100, 0, 0, 0, 0, 1]);
