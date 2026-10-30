@@ -59,8 +59,11 @@ describe('LO-1191 B1 an unpaid plan is a failed payment, not an ended plan', () 
     const { plans } = await build([unpaidPlan()]).list(coachA, CLIENT);
     expect(plans).toHaveLength(1);
     expect(plans[0].status).toBe('unpaid');
-    expect(plans[0].billing).not.toBe('ended');
-    expect(plans[0].billing).toBe('running');
-    expect(plans[0].actions.cancel).toBe(true);
+    // FR-1191: same three checks through toMatchObject, because a plan view is a
+    // union (a one-time view has no billing or cancel) and tsc refused the
+    // direct property reads.
+    expect(plans[0]).not.toMatchObject({ billing: 'ended' });
+    expect(plans[0]).toMatchObject({ billing: 'running' });
+    expect(plans[0]).toMatchObject({ actions: { cancel: true } });
   });
 });
