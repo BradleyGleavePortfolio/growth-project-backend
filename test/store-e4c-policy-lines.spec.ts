@@ -7,6 +7,10 @@
 // FR-E4B (fix round 1): RENEW-1, the uses line naming the plan renewal offers the
 // box turns on (LO-E4 N3). POL-7 and POL-8 (Roman's memory and notes, LS-E4 R1_B1)
 // are pinned in test/trust-pages.spec.ts.
+// FR-E4B (agent 186): the approved phrase B (185-W4, 10-30) "when you first open
+// Roman"; POL-7 and POL-8 also pinned here, and the whole class (every sentence
+// on every policy page that places the Roman permission in the consultation must
+// also name the first Roman open) is checked by one table-driven test below.
 import { renderTrustPage, type TrustPage } from '../src/public-pages/trust-pages.html';
 
 function visibleText(html: string): string {
@@ -55,6 +59,16 @@ const LINES: { id: string; page: TrustPage; text: string }[] = [
     text: 'Before your consultation you are asked to accept the personal-training waiver, which you need to do to continue. Letting Roman and your coach’s AI drafts use your information, processed by Anthropic, is a separate, optional choice.',
   },
   {
+    id: 'POL-7',
+    page: 'privacy',
+    text: 'Roman’s memory is part of the Roman permission the app asks for when you first open Roman or, in some versions of the app, in a second box at the start of the consultation, and it is on unless you turn it off.',
+  },
+  {
+    id: 'POL-8',
+    page: 'consumer-health',
+    text: 'as part of the Roman permission the app asks for when you first open Roman or, in some versions of the app, in a second box at the start of the consultation. Used to personalise Roman’s replies.',
+  },
+  {
     id: 'RENEW-1',
     page: 'privacy',
     text: 'To send the messages you expect: account emails, reminders and push notifications. TGP Fitness may send you plan renewal offers, which you can turn off in Settings.',
@@ -68,6 +82,11 @@ const RETIRED = [
   /optional AI box/i,
   /separate, optional box/i,
   /If you leave it unticked/i,
+  // Phrase A (replaced by the approved phrase B, 185-W4) and the consultation-only
+  // location of the Roman permission (LS-E4 R1_B1).
+  /asks it the first time you open Roman/i,
+  /asks for the first time you open Roman/i,
+  /Roman permission you give in the consultation/i,
 ];
 
 describe('STORE-E4C policy lines (one box at "Before we start"; Roman asked when first opened)', () => {
@@ -88,5 +107,31 @@ describe('STORE-E4C policy lines (one box at "Before we start"; Roman asked when
       'You can allow or withdraw the optional AI agreement at any time in Settings > Privacy > Roman and AI; when you withdraw it, Roman and AI drafts about you stop until you agree again.',
     );
     expect(health).toContain('You can withdraw the optional AI agreement at any time in Settings > Privacy; Roman and AI drafts about you then stop.');
+  });
+});
+
+// The class (LS-E4 R1_B1): a sentence that speaks of the Roman permission (or
+// the AI agreement or choice) and places it in the consultation must also name
+// the first Roman open, because a one-box client is never asked in the
+// consultation. Each page lists how many such sentences it has today, so a new
+// one cannot slip in untested and the check is never vacuous.
+const GRANT = /Roman permission|AI agreement|Letting Roman|allow(?:ed)? Roman|optional AI|optional choice/i;
+const IN_CONSULTATION = /\b(?:in|at the start of|during|before) (?:the |your )?consultation\b/i;
+const FIRST_OPEN = 'when you first open Roman';
+
+const CLASS: { page: TrustPage; placed: number; firstOpen: number }[] = [
+  { page: 'privacy', placed: 1, firstOpen: 2 }, // POL-7; POL-1 + POL-7
+  { page: 'consumer-health', placed: 1, firstOpen: 2 }, // POL-8; POL-5 + POL-8
+  { page: 'terms', placed: 0, firstOpen: 0 }, // POL-6 names no place
+];
+
+describe('FR-E4B: no policy sentence places the Roman permission only in the consultation', () => {
+  it.each(CLASS)('$page: every such sentence also names the first Roman open', ({ page, placed, firstOpen }) => {
+    const text = visibleText(renderTrustPage(page));
+    const sentences = text.split(/(?<=[.!?])\s+/);
+    const inConsultation = sentences.filter((s) => GRANT.test(s) && IN_CONSULTATION.test(s));
+    expect(inConsultation).toHaveLength(placed);
+    for (const s of inConsultation) expect(s).toContain(FIRST_OPEN);
+    expect(text.split(FIRST_OPEN).length - 1).toBe(firstOpen);
   });
 });
