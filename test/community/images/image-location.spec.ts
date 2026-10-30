@@ -162,6 +162,11 @@ describe('carriesLocation (PHOTO-GPS)', () => {
     expect(located(jpeg(JFIF, exifApp1([...tiff('II'), ...jpeg(exifApp1(tiff('MM', 3)))])))).toBe(true);
     expect(located(jpeg(JFIF, exifApp1([...tiff('II'), ...jpeg(exifApp1(tiff('MM')))])))).toBe(false);
   });
+  it('an EXIF APP1 cut inside its header, at the very end of the bytes, counts as a location (no throw)', () => {
+    const cut = [...SOI, ...segment(0xe1, [...Buffer.from('Exif\0', 'latin1')])];
+    expect(located(cut)).toBe(true);
+    expect(located([...SOI, ...JFIF, ...FIRST_SCAN, ...segment(0xe1, [...Buffer.from('Exif\0', 'latin1')])])).toBe(true);
+  });
   it('after EOI, an EXIF header with no readable EXIF behind it counts as a location (unreadable = located)', () => {
     expect(located([...jpeg(JFIF), ...latin1('Exif\0\0II*\0'), 0xff, 0xff])).toBe(true);
     expect(located([...jpeg(JFIF), ...Array<number>(1000).fill(0)])).toBe(false); // zeros after EOI carry nothing

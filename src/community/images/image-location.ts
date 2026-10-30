@@ -139,7 +139,7 @@ function exifInBytesLocated(b: Buffer): boolean {
 function app1Located(payload: Uint8Array): boolean {
   if (EXIF_HEADER.every((c, k) => payload[k] === c)) {
     // FR-1187R2: an EXIF thumbnail is a JPEG with segments of its own; any EXIF inside it is read too.
-    const tiff = Buffer.from(payload.buffer, payload.byteOffset + 6, Math.max(0, payload.byteLength - 6));
+    const tiff = Buffer.from(payload.buffer, payload.byteOffset, payload.byteLength).subarray(6);
     return exifLocated(tiff) || exifInBytesLocated(tiff.subarray(8));
   }
   const text = Buffer.from(payload.buffer, payload.byteOffset, payload.byteLength).toString('latin1');
