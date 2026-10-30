@@ -77,6 +77,28 @@ P0 (P0 accepts only `agreed`, `copy_version`/`version`, `agreed_at`,
 intake, and never required by any endpoint in this module. This module has no
 dependency on #601 or R2a.
 
+**One box (STORE-E4, owner #184-E5 / #184-E6 op 1).** `consult-consent-v19`
+(coached) and `consult-consent-v18-coach-free` are the one-box screen:
+paragraphs 1-3 of `v11` / `v12-coach-free`, then one required box (the owner's
+PERM-W1 words; with no coach, the same words without " and my coach") and the
+PERM-W2 footer. There is no paragraph 4 and no box 2: Roman's AI is asked the
+first time the client opens Roman (the "Before Roman answers" sheet, recorded by
+the AI consent ledger as before). Screen text = title, paragraphs 1-3, box label
+and footer joined with `"\n\n"`; pinned sha256 `0959f38d...75ccea` (v19) and
+`9350dfbe...149e99` (v18-coach-free), equal to the mobile pins
+(`test/onboarding-consent-one-box.spec.ts`). The box includes "TGP Fitness may
+send me plan renewal offers", so the save that first stamps one of these two
+versions also sets `NotificationPreferences.plan_renewal_offers_opt_in_at` to
+the same time, in the same transaction, creating the preferences row if there
+is none (`CONSULT_CONSENT_PLAN_OFFER_VERSIONS`). A resume of the same proven
+agreement keeps its stamp and writes nothing, so a later "off" in Settings stays
+off. Older versions stay accepted and never write it; people who already agreed
+are not asked again and their offers stay off. Deploy note: the backend ships
+before a phone build that sends v19 / v18-coach-free; if production ever sets
+`CONSULT_CONSENT_COPY_VERSIONS`, both names must be added to it first (it is not
+in `.github/fly-env-desired-state.json`, i.e. unset, which accepts every known
+version).
+
 `answers` is a patch keyed by screen id. The mobile app sends the full answer
 set at every chapter end; `null` clears a key. Answers that no longer apply
 are dropped server-side (`T3_areas`/`T3_note` when `T3` is not yes, `S3b`

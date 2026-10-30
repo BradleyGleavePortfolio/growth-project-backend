@@ -277,10 +277,10 @@ describe('Consumer Health Data Privacy Policy (/consumer-health-privacy)', () =>
     );
   });
 
-  it('states the owner-approved D2 Consent section byte for byte (approved 2026-10-01 09:07 PDT)', () => {
+  it('states the D2 Consent section byte for byte (approved 2026-10-01 09:07 PDT; first paragraph = STORE-E4C POL-5, needs owner)', () => {
     const text = visibleText(renderTrustPage('consumer-health'));
     const approved = [
-      "Before we collect your consultation answers, the app shows two separate boxes on one screen. The first, which you need to tick to continue, covers the personal-training waiver and lets TGP and your coach collect and use your information to coach you. The second is optional: it lets Roman and your coach's AI drafts use your information, names Anthropic as the AI provider and lists the data it receives. If you leave it unticked, nothing about you is sent to Anthropic. Connecting Apple Health or Health Connect asks for separate permission on your phone. We will not collect new categories of health data, or use or share it for new purposes, without telling you first and asking for your agreement.",
+      "Before we collect your consultation answers, the app asks you to tick a box, which you need to do to continue: it covers the personal-training waiver and lets TGP and your coach collect and use your information to coach you. Letting Roman and your coach's AI drafts use your information is a separate, optional choice that names Anthropic as the AI provider and lists the data it receives: the app asks for it when you first open Roman or, in some versions of the app, in a second box on the same screen. If you do not allow it, nothing about you is sent to Anthropic. Connecting Apple Health or Health Connect asks for separate permission on your phone. We will not collect new categories of health data, or use or share it for new purposes, without telling you first and asking for your agreement.",
       'You can withdraw the optional AI agreement at any time in Settings > Privacy; Roman and AI drafts about you then stop. To stop all collection, delete your account in Settings > Account. You can also disconnect Apple Health or Health Connect, and delete your data, as described below.',
     ];
     for (const paragraph of approved) expect(text).toContain(paragraph);
@@ -346,7 +346,7 @@ describe('Privacy Policy accuracy (/privacy)', () => {
     expect(text).toMatch(/Roman conversations — kept until you delete them or your account/);
     expect(text).toMatch(/delete a conversation at any time/);
     expect(text).toMatch(/only for support, safety and debugging/);
-    expect(text).toMatch(/two separate boxes on one screen/);
+    expect(text).not.toMatch(/two separate boxes on one screen/);
   });
 
   // R11-L1 (owner A6.4: notes survive chat deletion and the policy says so;
@@ -363,7 +363,7 @@ describe('Privacy Policy accuracy (/privacy)', () => {
       'With Roman’s memory off, only your own data is used — never another client’s, and never your coach’s private notes about you.',
     );
     expect(text).toContain(
-      'Roman’s memory is part of the Roman permission you give in the consultation, and it is on unless you turn it off. Roman keeps notes and summaries about your training, preferences and circumstances, from your Roman chats and from everything you log or connect in the app, to personalise his replies. Roman may also learn your coach’s methods, including from your coach’s private session notes, and information about your training may help with that without identifying you. Roman never quotes those notes or shows you another client’s information. Your coach never sees your conversations with Roman or his notes about you. One exception: if Roman sends you an urgent medical safety reply or an eating-disorder safety reply, your coach sees the message that prompted it, so they can check in with you. You can turn Roman’s memory off at any time in Settings > Privacy > Roman and AI; Roman then stops using his notes until you turn it back on. Turning memory off, withdrawing the AI agreement or deleting a chat does not delete the notes: they are kept with your account and deleted when you delete your account.',
+      'Roman’s memory is part of the Roman permission the app asks for when you first open Roman or, in some versions of the app, in a second box at the start of the consultation, and it is on unless you turn it off. Roman keeps notes and summaries about your training, preferences and circumstances, from your Roman chats and from everything you log or connect in the app, to personalise his replies. Roman may also learn your coach’s methods, including from your coach’s private session notes, and information about your training may help with that without identifying you. Roman never quotes those notes or shows you another client’s information. Your coach never sees your conversations with Roman or his notes about you. One exception: if Roman sends you an urgent medical safety reply or an eating-disorder safety reply, your coach sees the message that prompted it, so they can check in with you. You can turn Roman’s memory off at any time in Settings > Privacy > Roman and AI; Roman then stops using his notes until you turn it back on. Turning memory off, withdrawing the AI agreement or deleting a chat does not delete the notes: they are kept with your account and deleted when you delete your account.',
     );
     expect(text).toContain('food, water and habit logs, workouts and workout history, check-ins, bookings,');
     expect(text).toContain(
@@ -402,7 +402,7 @@ describe('Privacy Policy accuracy (/privacy)', () => {
     );
     const health = visibleText(renderTrustPage('consumer-health'));
     expect(health).toContain(
-      'After you tick the optional AI box, Roman may read, and send to Anthropic, your fasting logs, your earlier Roman conversations that you have not deleted, the community posts you wrote and ' +
+      'After you allow Roman and AI to use your information, Roman may read, and send to Anthropic, your fasting logs, your earlier Roman conversations that you have not deleted, the community posts you wrote and ' +
         device +
         ' ' +
         never,
@@ -415,7 +415,7 @@ describe('Privacy Policy accuracy (/privacy)', () => {
       'Derived information — calorie and macro targets, the plan assigned to you, trends in your readings, Roman’s replies, and Roman’s notes and summaries.',
     );
     expect(health).toContain(
-      'Roman’s notes and summaries — short notes Roman keeps about your training, preferences and circumstances, from your Roman chats and from everything you log or connect, as part of the Roman permission you give in the consultation. Used to personalise Roman’s replies. Roman’s memory is on unless you turn it off in Settings > Privacy > Roman and AI; while it is off, Roman does not use the notes. Turning memory off or deleting a chat does not remove them; they are kept with your account and deleted when you delete your account.',
+      'Roman’s notes and summaries — short notes Roman keeps about your training, preferences and circumstances, from your Roman chats and from everything you log or connect, as part of the Roman permission the app asks for when you first open Roman or, in some versions of the app, in a second box at the start of the consultation. Used to personalise Roman’s replies. Roman’s memory is on unless you turn it off in Settings > Privacy > Roman and AI; while it is off, Roman does not use the notes. Turning memory off or deleting a chat does not remove them; they are kept with your account and deleted when you delete your account.',
     );
   });
 
@@ -579,7 +579,7 @@ describe('policy copy hygiene', () => {
   // ("AiTriageService — R2b box-2 consent"). #611 must not ship the triage
   // flag on before #626: FEATURE_COMMUNITY_AI_TRIAGE stays off until then.
   // Never "moderation" or "review"; never "does not depend on the AI box".
-  it('describes community AI as coach inbox sorting, only for members who ticked box 2', () => {
+  it('describes community AI as coach inbox sorting, only for members who allowed Roman and AI', () => {
     const privacy = visibleText(renderTrustPage('privacy'));
     const health = visibleText(renderTrustPage('consumer-health'));
     for (const text of [privacy, health]) {
@@ -591,14 +591,14 @@ describe('policy copy hygiene', () => {
     }
     // The owner-approved box-2 sentence is back, byte for byte, in both places.
     expect(privacy).toContain(
-      'If you leave it unticked, nothing about you is sent to Anthropic, and your plan, your coach, the community and Roman’s guided tour work as usual.',
+      'If you do not allow it, nothing about you is sent to Anthropic, and your plan, your coach, the community and Roman’s guided tour work as usual.',
     );
-    expect(health).toContain('If you leave it unticked, nothing about you is sent to Anthropic.');
+    expect(health).toContain('If you do not allow it, nothing about you is sent to Anthropic.');
     expect(privacy).toContain(
       'Anthropic sorts the community posts and messages a coach has not yet answered into five groups (urgent, a win to celebrate, a form check, general, no action needed)',
     );
     expect(privacy).toContain(
-      'Sorting only includes posts and messages from members who ticked the optional AI box; everything else stays in the coach’s regular inbox, unsorted.',
+      'Sorting only includes posts and messages from members who allowed Roman and AI to use their information; everything else stays in the coach’s regular inbox, unsorted.',
     );
     expect(privacy).toContain(
       'it receives up to 240 characters of the text, the name of the member who wrote it, the cohort name and how many hours ago it was posted.',
@@ -610,7 +610,7 @@ describe('policy copy hygiene', () => {
       'Anthropic — Roman and coach AI drafts, after you agree; sorting and summarising a coach’s unanswered community posts and messages for that coach, if turned on, only for members who agreed; learning a coach’s methods from that coach’s content, if turned on (see “Roman and AI”).',
     );
     expect(health).toContain(
-      'up to 240 characters of each community post or message your coach has not yet answered, with your name, the cohort name and its age, so it can sort and summarise them for your coach (only if you ticked the optional AI box)',
+      'up to 240 characters of each community post or message your coach has not yet answered, with your name, the cohort name and its age, so it can sort and summarise them for your coach (only if you allowed Roman and AI to use your information)',
     );
   });
 
@@ -680,10 +680,10 @@ describe('policy copy hygiene', () => {
     expect(visibleText(renderTrustPage('consumer-health'))).not.toMatch(/Perplexity/);
   });
 
-  it('describes box 2 as optional AI processing by Anthropic, withdrawn in Settings > Privacy > Roman and AI', () => {
+  it('describes the Roman and AI choice as optional AI processing by Anthropic, withdrawn in Settings > Privacy > Roman and AI', () => {
     const privacy = visibleText(renderTrustPage('privacy'));
     expect(privacy).toContain(
-      'The second is optional and starts unticked: it lets Roman and your coach’s AI drafts use your information, names Anthropic as the AI provider and lists the data it receives.',
+      'Letting Roman and your coach’s AI drafts use your information is a separate, optional choice that names Anthropic as the AI provider and lists the data it receives: the app asks for it when you first open Roman or, in some versions of the app, in a second box on the same screen.',
     );
     expect(privacy).toContain(
       'You can allow or withdraw the optional AI agreement at any time in Settings > Privacy > Roman and AI',
@@ -691,7 +691,7 @@ describe('policy copy hygiene', () => {
     expect(privacy).toContain('Settings, then Delete account');
     const terms = visibleText(renderTrustPage('terms'));
     expect(terms).toContain(
-      'A separate, optional box lets Roman and your coach’s AI drafts use your information, processed by Anthropic.',
+      'Letting Roman and your coach’s AI drafts use your information, processed by Anthropic, is a separate, optional choice.',
     );
   });
 });

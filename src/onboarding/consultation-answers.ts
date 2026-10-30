@@ -42,6 +42,8 @@ import {
   CONSULT_CONSENT_V17_COACH_FREE,
   CONSULT_CONSENT_V17,
   CONSULT_CONSENT_V18,
+  CONSULT_CONSENT_V19,
+  CONSULT_CONSENT_V18_COACH_FREE,
   consultConsentTextSha256,
   unknownConsultConsentVersions,
 } from './consult-consent-copy';
@@ -77,6 +79,8 @@ export const CONSULTATION_VERSION = 'consult-v1';
  * keep their version).
  * And the Health-notes screens (owner #162-6): v15 / v16 and v16- / v17-coach-free
  * (memory on), v17 / v18 (memory off, coached only).
+ * And the one-box screens (STORE-E4, owner #184-E5 / #184-E6 op 1): v19 and v18-coach-free, with
+ * no box 2; accepting one also records the plan renewal offers yes (onboarding.service).
  *
  * Box 2 (optional AI processing by Anthropic) is NOT part of P0: it is
  * recorded by the AI consent ledger (`POST /me/ai-consent/roman`), is never
@@ -114,6 +118,8 @@ export const DEFAULT_CONSULT_CONSENT_COPY_VERSIONS: readonly string[] = Object.f
   CONSULT_CONSENT_V17_COACH_FREE,
   CONSULT_CONSENT_V17,
   CONSULT_CONSENT_V18,
+  CONSULT_CONSENT_V19,
+  CONSULT_CONSENT_V18_COACH_FREE,
 ]);
 
 const warnedConsentVersionLists = new Set<string>();
