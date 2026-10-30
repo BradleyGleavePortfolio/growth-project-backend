@@ -5,9 +5,10 @@
  * Runs after the upload checks (JPEG, size, key signature, key age) and before
  * the message, its photo row or the sent copy is written; and (FR-1152, Sol B1)
  * before every caption edit on a photo message. Through the AI egress
- * (AiEgressService.openAiModerationCreate), the checked upload's bytes go to
- * OpenAI's moderation endpoint in one request, and the caption, when there is
- * one, in another, at the same time. Each part is judged by PHOTO_CHECK_RULES
+ * (AiEgressService.openAiModerationCreate), the checked upload's bytes, with
+ * every metadata segment removed (FR-1187, image-metadata.ts), go to OpenAI's
+ * moderation endpoint in one request, and the caption, when there is one, in
+ * another, at the same time. Each part is judged by PHOTO_CHECK_RULES
  * (#172-3 op 2, "with a moderate tolerance"):
  *   clean            the send or edit goes on, unchanged.
  *   photo refused    422 PHOTO_NOT_ALLOWED. Nothing is written or published,
@@ -20,8 +21,9 @@
  *                    edit the message keeps its old caption.
  *   otherwise        503 PHOTO_CHECK_UNAVAILABLE, fail closed: no key or the
  *                    ghost value (photoCheckKey), a timeout, a 429 or 5xx, a
- *                    network error, an answer we cannot read, or a download
- *                    that is not the whole checked upload. The upload is kept,
+ *                    network error, an answer we cannot read, a download
+ *                    that is not the whole checked upload, or a JPEG whose
+ *                    segments cannot be walked to strip its metadata. The upload is kept,
  *                    so the member can send it again while the key is good.
  * A refusal for self-harm intent or instructions, in the photo or the caption,
  * also calls `onSelfHarm` once (#172-5 op 2: the coach alert), before it throws.
@@ -34,6 +36,7 @@ import type { AiEgressService } from '../../ai-egress/ai-egress.service';
 import { createOpenAiModerationClient } from '../../ai-egress/provider-clients';
 import { photoCheckKey } from '../../common/env-validation';
 import type { CommunityImageStore } from './community-image-store';
+import { stripJpegMetadata } from './image-metadata';
 
 export const PHOTO_CHECK_MODEL = 'omni-moderation-latest';
 /** Per step (download, then the check), each start to finish: a member is waiting. */
@@ -172,9 +175,12 @@ async function judgePhoto(
   if (jpeg.length !== size || jpeg[0] !== 0xff || jpeg[1] !== 0xd8 || jpeg[2] !== 0xff) {
     return { unavailable: 'download_failed' };
   }
+  // FR-1187 (LS-1187 B1): OpenAI gets a copy with no metadata (image-metadata.ts); the stored photo is unchanged.
+  const bare = stripJpegMetadata(jpeg);
+  if (!bare) return { unavailable: 'unreadable' };
   return judge(egress, apiKey, 'photo', {
     type: 'image_url',
-    image_url: { url: `data:image/jpeg;base64,${jpeg.toString('base64')}` },
+    image_url: { url: `data:image/jpeg;base64,${bare.toString('base64')}` },
   });
 }
 

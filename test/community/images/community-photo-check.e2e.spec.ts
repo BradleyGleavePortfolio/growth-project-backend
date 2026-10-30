@@ -29,7 +29,7 @@ import type { SupabaseService } from '../../../src/supabase/supabase.service';
 import { assertEnv, PHOTO_CHECK_KEY_GHOST } from '../../../src/common/env-validation';
 import { safetyWithBlocks } from '../safety/safety-test-helpers';
 import { egressWithGrants } from '../../ai-egress/ai-egress.fakes';
-import { JFIF, jpeg, exifApp1, xmpApp1 } from './jpeg-fixtures';
+import { JFIF, SCAN, SOI, jpeg, exifApp1, xmpApp1, segment } from './jpeg-fixtures';
 
 function stub<T>(v: unknown): T {
   return v as T;
@@ -269,6 +269,56 @@ describe('the automatic photo check on a space chat photo send (PHOTO-CHECK-BE)'
       { image_url: { url: string } };
     const wireBytes = Buffer.from(photoInput.image_url.url.split(',')[1], 'base64');
     expect(wireBytes.toString('latin1')).not.toContain(creator);
+  });
+
+  // FR-1187 (operator ruling on LS-1187 B1): what reaches OpenAI is the photo with no metadata, for every
+  // kind of block a JPEG can carry; the stored and sent copies are the upload, unchanged.
+  const ADOBE = segment(0xee, [...Buffer.from('Adobe', 'latin1'), 0, 100, 0, 0, 0, 0, 1]);
+  const nameIn = (marker: number, prefix: string) => segment(marker, [...Buffer.from(`${prefix}${creator}\0`, 'latin1')]);
+  it.each<[string, number[]]>([
+    ['EXIF Artist (APP1)', artist],
+    ['XMP creator (APP1)', xmpCreator],
+    ['an ICC profile (APP2)', nameIn(0xe2, 'ICC_PROFILE\0\x01\x01desc')],
+    ['IPTC By-line (APP13)', nameIn(0xed, 'Photoshop 3.0\x008BIM\x04\x04')],
+    ['APP15', nameIn(0xef, '')],
+    ['a comment (COM)', nameIn(0xfe, '')],
+  ])('FR-1187: a photo with %s reaches OpenAI as the bare JPEG; the stored copy is the upload', async (_label, meta) => {
+    const upload = Buffer.from(jpeg(JFIF, ADOBE, meta));
+    const w = world({ photo: upload });
+    expect(await codeOf(w.send())).toBe('ok');
+    const photoInput = w.checks.find((c) => c.part === 'image')?.body.input[0] as { image_url: { url: string } };
+    expect(photoInput.image_url.url).toBe(`data:image/jpeg;base64,${Buffer.from(jpeg(JFIF, ADOBE)).toString('base64')}`);
+    expect(w.objects.get(sentImageKey(w.key))).toEqual(upload);
+  });
+
+  it('FR-1187: an extra image after EOI (MPF) with its own EXIF never reaches OpenAI', async () => {
+    const w = world({ photo: Buffer.from([...jpeg(JFIF), ...SOI, ...artist, ...SCAN]) });
+    expect(await codeOf(w.send())).toBe('ok');
+    const photoInput = w.checks.find((c) => c.part === 'image')?.body.input[0] as { image_url: { url: string } };
+    expect(photoInput.image_url.url).toBe(`data:image/jpeg;base64,${PHOTO.toString('base64')}`);
+  });
+
+  it('FR-1187: a JPEG whose segments cannot be walked after the scan is 503, with no photo sent to OpenAI', async () => {
+    const w = world({ photo: Buffer.from([...SOI, ...JFIF, ...segment(0xda, [1, 1, 0, 0, 0x3f, 0]), 0x12, 0xff, 0xd8, 0x34, 0xff, 0xd9]) });
+    expect(await codeOf(w.send())).toBe('503 PHOTO_CHECK_UNAVAILABLE');
+    expect(w.checks.filter((c) => c.part === 'image')).toEqual([]);
+    expect(w.rows).toEqual([]);
+  });
+
+  // The check accepts JPEG only: every other photo format is refused by the upload check, before any call to OpenAI,
+  // even when the stored content type says image/jpeg (the fake store always does).
+  it.each<[string, number[]]>([
+    ['PNG', [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, ...Buffer.from('IHDR', 'latin1')]],
+    ['HEIC', [0, 0, 0, 0x18, ...Buffer.from('ftypheic', 'latin1'), 0, 0, 0, 0]],
+    ['WebP', [...Buffer.from('RIFF', 'latin1'), 0x24, 0, 0, 0, ...Buffer.from('WEBPVP8 ', 'latin1')]],
+    ['GIF', [...Buffer.from('GIF89a', 'latin1'), 1, 0, 1, 0, 0, 0, 0]],
+    ['TIFF', [0x49, 0x49, 0x2a, 0, 8, 0, 0, 0]],
+    ['AVIF', [0, 0, 0, 0x1c, ...Buffer.from('ftypavif', 'latin1'), 0, 0, 0, 0]],
+  ])('FR-1187: a %s file is refused before any call to OpenAI', async (_label, bytes) => {
+    const w = world({ photo: Buffer.from([...bytes, ...Buffer.from(creator, 'latin1')]) });
+    expect(await codeOf(w.send())).toBe('422 community.image.not_jpeg');
+    expect(w.checks).toEqual([]);
+    expect(w.rows).toEqual([]);
   });
 
   it('a clean photo posts: the whole checked upload and its caption are each checked once, apart, then written', async () => {
