@@ -1443,7 +1443,8 @@ export class CoachBriefService {
     // (personallyManagedClients ∪ delegatedClientIds, built below).
     // Payment aggregates filter by client_user_id IN that set so we
     // only count purchases against clients H actually owns the
-    // billing relationship for.
+    // billing relationship for. FR-1191 adds the team-seller check on
+    // top of that client scope, never instead of it.
 
     // Open client-level delegations under this head coach. Used for the
     // P1-4 attribution and to know which clients the head coach holds
@@ -1556,7 +1557,7 @@ export class CoachBriefService {
     // (those not delegated to them by the head) do not contribute to
     // the head coach's revenue, MRR, or dunning figures. The dunning
     // SQL is updated symmetrically to filter ClientPurchase by
-    // client_user_id.
+    // client_user_id. FR-1191: and by the team's own sellers too (below).
     //
     // Empty tenant short-circuit: if the head coach has no clients
     // (no own clients AND no delegations) we MUST NOT issue a query
@@ -1580,6 +1581,17 @@ export class CoachBriefService {
     let mrrProjectedCents = 0;
     let dunningStateRaw: DunningBriefRow[] = [];
 
+    // FR-1191 (LS-1191 B4): a sale is the team's only when the team sold it
+    // (the head coach or a seated sub-coach). A client who moved onto the
+    // team brings no money from their former coach: that coach keeps their
+    // own records (CONTRACT-1, moved-client-money.ts). Same rule as the solo
+    // brief's coach_user_id scope; the client scope above still leaves out a
+    // sub-coach's own clients.
+    const teamSellerIds = [coachId, ...subCoaches.map((sc) => sc.sub_coach_id)];
+    const teamSale = { client_user_id: { in: tenantClientIds }, coach_user_id: { in: teamSellerIds } };
+    const teamSaleSql = Prisma.sql`cp."client_user_id" = ANY(${tenantClientIds}::text[])
+                AND cp."coach_user_id" = ANY(${teamSellerIds}::text[])`;
+
     if (tenantClientIds.length > 0) {
       const [revenueTodayAgg, revenue30dAgg, mrrAgg, dunningRows] =
         await Promise.all([
@@ -1589,14 +1601,14 @@ export class CoachBriefService {
             _sum: { gross_cents: true },
             _count: { _all: true },
             where: {
-              purchase: { client_user_id: { in: tenantClientIds } },
+              purchase: teamSale,
               created_at: { gte: briefDateStart, lte: briefDateEnd },
             },
           }),
           this.prisma.chargeSettlement.aggregate({
             _sum: { gross_cents: true },
             where: {
-              purchase: { client_user_id: { in: tenantClientIds } },
+              purchase: teamSale,
               created_at: { gte: thirtyDaysAgo },
             },
           }),
@@ -1618,7 +1630,7 @@ export class CoachBriefService {
               ), 0)::bigint AS mrr_cents
               FROM "ClientPurchase" cp
               LEFT JOIN "CoachPackage" p ON p."id" = cp."package_id"
-              WHERE cp."client_user_id" = ANY(${tenantClientIds}::text[])
+              WHERE ${teamSaleSql}
                 AND cp."status" = 'active'
                 AND cp."billing_type" = 'recurring'
                 AND cp."entitlement_active" = true
@@ -1626,7 +1638,7 @@ export class CoachBriefService {
           ),
           // PF-5-BE: the three dunning states counted apart (see dunningBriefSql).
           this.prisma.$queryRaw<DunningBriefRow[]>(
-            dunningBriefSql(Prisma.sql`cp."client_user_id" = ANY(${tenantClientIds}::text[])`),
+            dunningBriefSql(teamSaleSql),
           ),
         ]);
       revenueTodayCents = revenueTodayAgg._sum.gross_cents ?? 0;
