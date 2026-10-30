@@ -15,7 +15,7 @@ import { EmailService } from '../email/email.service';
 import { EmailTemplateKey } from '../email/email.types';
 import { describeFailure } from '../observability/log-pii';
 import { resumeUrl } from './storefront-links';
-import { SELLING_COACH } from '../packages/coach-selling';
+import { COACHING_COACH } from '../packages/coach-selling';
 import {
   CODE_INVALID_MESSAGE,
   CODE_MAX_WRONG,
@@ -629,7 +629,7 @@ export class CheckoutRecoveryService implements OnModuleInit, OnModuleDestroy {
 
   private async sellingPackage(shareToken: string): Promise<{ coach_id: string }> {
     const pkg = await this.prisma.coachPackage.findUnique({
-      where: { share_token: shareToken, coach: SELLING_COACH },
+      where: { share_token: shareToken, coach: COACHING_COACH },
       select: { coach_id: true },
     });
     if (!pkg) {

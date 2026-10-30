@@ -273,7 +273,7 @@ export class ClientPackagesController {
       // a list and renders "no offers yet" when empty.
       return { packages: [] };
     }
-    const listed = await this.packages.listPublicForCoach(coachId);
+    const listed = await this.packages.listPublicForCoach(coachId, req.user.id);
     const rows = houseCoachId
       ? listed.filter((row) => !isFreePackage(row) && !freeTrialPackage(row))
       : listed;
@@ -307,7 +307,7 @@ export class ClientPackagesController {
   @SkipClientEntitlement()
   async detail(@Request() req: AuthedRequest, @Param('id') id: string) {
     const coachId = req.user.coach_id;
-    const row = await this.packages.getById(id);
+    const row = await this.packages.getById(id, req.user.id);
     if (
       !row ||
       !row.is_active ||

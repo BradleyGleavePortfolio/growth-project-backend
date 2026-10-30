@@ -12,6 +12,8 @@ export const PAY_PAGE_COPY = {
   kicker: (coach: string) => `${coach} on The Growth Project`,
   from: (coach: string) => `From ${coach}`,
   included: "What's included",
+  // STORE-1TO1 W2 (owner 184-W6 op 1): first under "What's included" on every package.
+  oneToOne: (coach: string) => `1:1 coaching with ${coach}`,
   billing: 'Billing',
   nextCharge: 'Next charge',
   dueToday: 'Due today',
@@ -117,8 +119,11 @@ export function payPageTerms(p: PublicPackageData) {
 export function renderPayPage(p: PublicPackageData, ctx: PayPageContext): string {
   const t = payPageTerms(p);
   const coach = p.coach.display_name;
-  // The coach's description, one bullet per line (the board's list).
-  const included = (p.description ?? '').split('\n').map((l) => l.trim()).filter(Boolean);
+  // W2 first, then the coach's description, one bullet per line (the board's list).
+  const included = [
+    PAY_PAGE_COPY.oneToOne(coach),
+    ...(p.description ?? '').split('\n').map((l) => l.trim()).filter(Boolean),
+  ];
   const avatar =
     p.coach.avatar_url && /^https:\/\//i.test(p.coach.avatar_url)
       ? `<img class="av" src="${esc(p.coach.avatar_url)}" alt="" width="48" height="48">`
@@ -156,7 +161,7 @@ export function renderPayPage(p: PublicPackageData, ctx: PayPageContext): string
 <p class="kicker">${esc(PAY_PAGE_COPY.kicker(coach))}</p><h1>${esc(p.package_name)}</h1><p class="price">${t.price}</p></div></div></header>
 <main class="wrap sheet">
 ${p.coach.bio?.trim() ? `<figure class="quote"><blockquote>${esc(p.coach.bio.trim())}</blockquote><figcaption>${esc(PAY_PAGE_COPY.from(coach))}</figcaption></figure>` : ''}
-${included.length ? `<section id="inc0">${incList}</section>` : ''}
+<section id="inc0">${incList}</section>
 ${billing}
 <p class="due"><span>${PAY_PAGE_COPY.dueToday}</span><strong>${usd(p.due_today_cents)}</strong></p>
 <form id="f1" class="card">
@@ -170,7 +175,7 @@ ${billing}
 <p class="links"><button id="rs" type="button" class="link">${PAY_PAGE_COPY.resend}</button><button id="ch" type="button" class="link">${PAY_PAGE_COPY.otherEmail}</button></p>
 </form>
 <section id="s3" class="back" hidden aria-live="polite"><p id="hey" class="hey" tabindex="-1"></p>
-<div id="sum" class="sum" tabindex="-1" hidden>${included.length ? incList : ''}
+<div id="sum" class="sum" tabindex="-1" hidden>${incList}
 <div data-k="no_coach"><h2>${PAY_PAGE_COPY.appChangeH}</h2><p>${PAY_PAGE_COPY.appChange(c)}</p></div>
 <div data-k="same_coach"><h2>${PAY_PAGE_COPY.oneCoachH}</h2><p>${PAY_PAGE_COPY.oneCoach(c)}</p><h2>${PAY_PAGE_COPY.nextH}</h2><p>${PAY_PAGE_COPY.nextSteps}</p></div>
 </div></section>

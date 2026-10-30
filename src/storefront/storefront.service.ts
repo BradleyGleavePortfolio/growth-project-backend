@@ -11,6 +11,7 @@ import { PrismaService } from '../prisma.service';
 import { ConnectService } from '../connect/connect.service';
 import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
 import { SHARE_TOKEN_REGEX } from '../share-link/share-link.service';
+import { COACHING_COACH } from '../packages/coach-selling';
 import { chargeQuote, isRecurringPackage } from '../checkout/checkout.service';
 import { planPriceFor } from '../checkout/subscription-plan';
 import type {
@@ -107,8 +108,10 @@ export class StorefrontService {
       });
     }
 
+    // STORE-1TO1: the web shows a package only while its coach can coach one to one (the same
+    // seller rule as the app, coach-selling.ts).
     const pkg = await this.prisma.coachPackage.findUnique({
-      where: { share_token: token },
+      where: { share_token: token, coach: COACHING_COACH },
       include: {
         coach: {
           include: {
