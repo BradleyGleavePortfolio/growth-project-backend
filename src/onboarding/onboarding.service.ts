@@ -16,6 +16,7 @@ import { programDaysWhere } from '../workout-builder/program-guards';
 import { writeProfileWithTargets, type ClearableProfileField } from '../profile/profile.service';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { buildConsultationView, type ConsultationView } from './consultation-view';
+import { CONSULT_CONSENT_PLAN_OFFER_VERSIONS } from './consult-consent-copy';
 import {
   CONSULTATION_VERSION,
   consentCopyVersion,
@@ -595,6 +596,22 @@ export class OnboardingService {
           ...snapshot,
         },
       });
+      // STORE-E4 (owner #184-E5 / #184-E6 op 1): the one-box P0 (v19 / v18-coach-free) includes
+      // "TGP Fitness may send me plan renewal offers"; the save that stamps it records that yes
+      // (b#1184 column), creating the preferences row if there is none. A resume of the same proven
+      // consent keeps its stamp, so a later "off" in Settings is never turned back on here, and an
+      // older version never writes it.
+      if (
+        p0Version !== null &&
+        CONSULT_CONSENT_PLAN_OFFER_VERSIONS.has(p0Version) &&
+        disclaimer_accepted_at === now
+      ) {
+        await tx.notificationPreferences.upsert({
+          where: { user_id: clientId },
+          create: { user_id: clientId, plan_renewal_offers_opt_in_at: now },
+          update: { plan_renewal_offers_opt_in_at: now },
+        });
+      }
       // Profile sync is bound to the committed revision: it runs in the same
       // transaction as the CAS, so an older save can never overwrite fields
       // derived from a newer one.

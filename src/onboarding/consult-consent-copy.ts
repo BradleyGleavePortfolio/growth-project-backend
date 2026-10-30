@@ -326,6 +326,44 @@ export const CONSULT_CONSENT_V17_TEXT_SHA256 =
 export const CONSULT_CONSENT_V18_TEXT_SHA256 =
   '9ce19233f793ba3d4f82a5240481b4810da0a2f5dadf5b9c7a98936a14794e72';
 
+/**
+ * STORE-E4 (owner #184-E5 / #184-E6 op 1, PERM-W1 / PERM-W2): one box. Paragraphs 1-3 of v11 /
+ * v12-coach-free, then the PERM-W1 box (coach-free: PERM-W1 with " and my coach" removed) and the
+ * PERM-W2 footer. No paragraph 4, no box 2, no "Before you join a coach": Roman's AI is asked the
+ * first time the client opens Roman. Mobile pins the same text and sha256.
+ */
+export const CONSULT_CONSENT_V19 = 'consult-consent-v19';
+export const CONSULT_CONSENT_V18_COACH_FREE = 'consult-consent-v18-coach-free';
+const ONE_BOX_FOOTER =
+  "Nothing is sent until you continue. Roman's AI is a separate choice the first time you open Roman.";
+export const CONSULT_CONSENT_COPY_V19: ConsultConsentCopy = {
+  title: CONSULT_CONSENT_COPY_V11.title,
+  paragraphs: CONSULT_CONSENT_COPY_V11.paragraphs,
+  box1Label:
+    'I agree to the Terms of Service, Privacy Policy, Consumer Health Data Privacy Policy, community guidelines and training waiver. TGP Fitness and my coach may collect and use what I share, including health data I connect, to coach me. Photos I post in Community are checked for safety by OpenAI. TGP Fitness may send me plan renewal offers, which I can turn off in Settings.',
+  footer: ONE_BOX_FOOTER,
+};
+export const CONSULT_CONSENT_COPY_V18_COACH_FREE: ConsultConsentCopy = {
+  title: CONSULT_CONSENT_COPY_V12_COACH_FREE.title,
+  paragraphs: CONSULT_CONSENT_COPY_V12_COACH_FREE.paragraphs,
+  box1Label:
+    'I agree to the Terms of Service, Privacy Policy, Consumer Health Data Privacy Policy, community guidelines and training waiver. TGP Fitness may collect and use what I share, including health data I connect, to coach me. Photos I post in Community are checked for safety by OpenAI. TGP Fitness may send me plan renewal offers, which I can turn off in Settings.',
+  footer: ONE_BOX_FOOTER,
+};
+export const CONSULT_CONSENT_V19_TEXT_SHA256 =
+  '0959f38db47448d99d943c995b0a857454d181f3ec803e96967882b3d575ccea';
+export const CONSULT_CONSENT_V18_COACH_FREE_TEXT_SHA256 =
+  '9350dfbed5f332e0e99ea4e554731d0e8876ea5581873d6c984be3d23a149e99';
+/**
+ * The versions whose box includes "TGP Fitness may send me plan renewal offers": accepting one
+ * records the yes (NotificationPreferences.plan_renewal_offers_opt_in_at, b#1184). Older versions
+ * never do.
+ */
+export const CONSULT_CONSENT_PLAN_OFFER_VERSIONS: ReadonlySet<string> = new Set([
+  CONSULT_CONSENT_V19,
+  CONSULT_CONSENT_V18_COACH_FREE,
+]);
+
 /** Separator between displayed parts in every digest input. */
 export const CONSULT_CONSENT_SEPARATOR = '\n\n';
 
@@ -515,6 +553,11 @@ export const CONSULT_CONSENT_COPIES: Readonly<
   },
   [CONSULT_CONSENT_V17]: { copy: CONSULT_CONSENT_COPY_V17, text_sha256: CONSULT_CONSENT_V17_TEXT_SHA256 },
   [CONSULT_CONSENT_V18]: { copy: CONSULT_CONSENT_COPY_V18, text_sha256: CONSULT_CONSENT_V18_TEXT_SHA256 },
+  [CONSULT_CONSENT_V19]: { copy: CONSULT_CONSENT_COPY_V19, text_sha256: CONSULT_CONSENT_V19_TEXT_SHA256 },
+  [CONSULT_CONSENT_V18_COACH_FREE]: {
+    copy: CONSULT_CONSENT_COPY_V18_COACH_FREE,
+    text_sha256: CONSULT_CONSENT_V18_COACH_FREE_TEXT_SHA256,
+  },
 });
 
 /** The pinned full-text sha256 of a known version, or null. */
