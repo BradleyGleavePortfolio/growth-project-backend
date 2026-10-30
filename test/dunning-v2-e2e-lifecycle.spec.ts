@@ -332,6 +332,66 @@ describe('Smart Dunning v2 end-to-end lifecycle (Stripe fixtures, fake clock)', 
     expect(await checkout.hasActiveEntitlement('client-1', {})).toBe(true);
   });
 
+  // PF-2-BE: the shared read (GET /v1/checkout/entitlement) and the route guards agree on the one
+  // live-grace rule: weekly and monthly, past_due and unpaid, Day 8 grace, the Day 10 lock (also
+  // after a Stripe resync re-sets entitlement_active), a paused or ended plan, another live plan.
+  it.each([
+    ['week', 7, 'past_due'],
+    ['week', 7, 'unpaid'],
+    ['month', 30, 'past_due'],
+    ['month', 30, 'unpaid'],
+  ])('PF-2-BE: a %s plan, %s-day period, %s: Day 8 entitled, Day 10 locked, everywhere', async (interval, days, status) => {
+    const db = w.fake.client();
+    const checkout = new CheckoutService(db, stub({}), stub({}), stub({}), stub({}), stub({}));
+    const shared = () => checkout.hasActiveEntitlement('client-1', {});
+    await db.coachPackage.update({ where: { id: 'pkg-1' }, data: { interval } });
+    const sub = fixture('customer.subscription.updated.past_due', {
+      current_period_start: sec(at(0)),
+      current_period_end: sec(at(Number(days) * DAY)),
+    });
+    w.stripe.retrieveSubscription.mockResolvedValue(sub.data.object);
+    await w.handler.handle(sub);
+    await failAttempt(w, 1);
+    await db.clientPurchase.update({ where: { id: 'purchase-1' }, data: { status } });
+
+    jest.setSystemTime(at(8 * DAY + HOUR));
+    await w.v2.runSweep();
+    expect([await shared(), await entitlementVerdict(w), await lockVerdict(w, '/api/v1/workouts')])
+      .toEqual([true, 'allowed', 'allowed']);
+
+    jest.setSystemTime(at(10 * DAY + HOUR));
+    await w.v2.runSweep();
+    expect(stateRow(w)?.locked_out_at).toBeInstanceOf(Date);
+    expect([await shared(), await entitlementVerdict(w), await lockVerdict(w, '/api/v1/workouts')])
+      .toEqual([false, 402, 'LOCKED_DUNNING']);
+    // F6: a Stripe resync re-sets entitlement_active on the locked plan; the lock still holds.
+    await db.clientPurchase.update({ where: { id: 'purchase-1' }, data: { entitlement_active: true } });
+    expect([await shared(), await entitlementVerdict(w)]).toEqual([false, 402]);
+
+    // Another live plan keeps the app, as built (B-628-7).
+    w.fake.seed('clientPurchase', {
+      id: 'purchase-live-2', client_user_id: 'client-1', coach_user_id: 'coach-1', package_id: 'pkg-1',
+      status: 'paid', entitlement_active: true, billing_type: 'one_time', amount_cents: 0, currency: 'usd',
+      stripe_subscription_id: null, access_expires_at: null,
+    });
+    expect([await shared(), await entitlementVerdict(w), await lockVerdict(w, '/api/v1/workouts')])
+      .toEqual([true, 'allowed', 'allowed']);
+  });
+
+  it.each([
+    ['paused (dispute or refund pause)', { entitlement_active: false }, { status: 'active', locked_out_at: at(8 * DAY) }],
+    ['ended (subscription deleted)', { status: 'canceled', entitlement_active: false }, { status: 'canceled' }],
+  ])('PF-2-BE: a %s plan is not entitled on Day 8, in the shared read or the guard', async (_case, purchase, cycle) => {
+    const db = w.fake.client();
+    const checkout = new CheckoutService(db, stub({}), stub({}), stub({}), stub({}), stub({}));
+    await pastDueResync(w);
+    await failAttempt(w, 1);
+    jest.setSystemTime(at(8 * DAY + HOUR));
+    await db.clientPurchase.update({ where: { id: 'purchase-1' }, data: purchase });
+    await db.dunningState.update({ where: { purchase_id: 'purchase-1' }, data: cycle });
+    expect([await checkout.hasActiveEntitlement('client-1', {}), await entitlementVerdict(w)]).toEqual([false, 402]);
+  });
+
   it('A. fail Day 0 -> Stripe retry Day 1 fails -> pays on the Day 3 retry -> recovered, never locked', async () => {
     // Day 0 — Stripe moves the subscription to past_due and the charge fails.
     await pastDueResync(w);

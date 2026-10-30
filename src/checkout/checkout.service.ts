@@ -41,7 +41,7 @@ import {
   resumeWindowStart,
 } from './subscription-plan';
 import { parseCheckoutTerms, termsStillOffered } from './subscription-terms';
-import { dunningGraceWhere } from './dunning-v2/dunning-grace';
+import { dunningGraceWhere, NOT_DUNNING_LOCKED } from './dunning-v2/dunning-grace';
 
 // CheckoutService — Stripe Checkout session minting + ClientPurchase row
 // lifecycle. This is the entry point clients hit to actually buy a package.
@@ -1268,7 +1268,8 @@ export class CheckoutService {
 
   // Entitlement check: does this client currently have an active purchase
   // for this package (or any package from this coach)? PF-2-BE (LS-PAYFAIL
-  // B2): a failed renewal still in its live grace counts, as in the guard.
+  // B2): a failed renewal still in its live grace counts, as in the guard;
+  // a plan under its own Day-10 lock never does.
   async hasActiveEntitlement(
     clientUserId: string,
     opts: { packageId?: string; coachUserId?: string },
@@ -1282,6 +1283,7 @@ export class CheckoutService {
         entitlement_active: true,
         ...(opts.packageId ? { package_id: opts.packageId } : {}),
         ...(opts.coachUserId ? { coach_user_id: opts.coachUserId } : {}),
+        AND: [NOT_DUNNING_LOCKED],
         OR: grace ? [...unexpired, grace] : unexpired,
       },
       select: { id: true },

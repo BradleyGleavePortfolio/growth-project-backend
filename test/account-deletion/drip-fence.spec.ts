@@ -3,6 +3,7 @@
  * account, even if a drop escaped the cancellation at finalization.
  */
 import { DripDispatcherCron } from '../../src/packages/drip-dispatcher.cron';
+import { NOT_DUNNING_LOCKED } from '../../src/checkout/dunning-v2/dunning-grace';
 import type { PrismaService } from '../../src/prisma.service';
 import type { AssignableAssetResolverRegistry } from '../../src/packages/asset-resolvers/assignable-asset-resolver.registry';
 
@@ -21,9 +22,9 @@ describe('DripDispatcherCron deleted-account fence', () => {
     expect(findMany).toHaveBeenCalledTimes(1);
     expect(findMany.mock.calls[0][0].where.client_purchase).toEqual({
       client: { deleted_at: null },
-      // PF-2-BE (LS-PAYFAIL B3): a Day-10 lock (entitlement_active false) is no longer picked.
+      // PF-2-BE (LS-PAYFAIL B3): a purchase under its Day-10 lock is no longer picked to deliver.
       OR: [
-        { entitlement_active: true },
+        { entitlement_active: true, AND: [NOT_DUNNING_LOCKED] },
         { coach: { deleted_at: null }, status: { in: ['refunded', 'chargeback_lost'] } },
       ],
     });

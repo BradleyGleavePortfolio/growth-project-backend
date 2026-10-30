@@ -1351,17 +1351,34 @@ describe('DripDispatcherCron', () => {
     },
   );
 
-  it('PF-2-BE: a held drop keeps its attempts and delivers once the client pays; grace days deliver', async () => {
-    const purchase = makePurchase({ status: 'past_due', billing_type: 'recurring', entitlement_active: false });
+  const LOCKED = { status: 'active', locked_out_at: NOW };
+  it.each([
+    ['the lock revoked entitlement', { entitlement_active: false, dunning: LOCKED }],
+    ['a Stripe resync re-set entitlement under the lock (F6)', { entitlement_active: true, dunning: LOCKED }],
+  ])('PF-2-BE: %s: the drop is held with its attempts, then delivers once the client pays', async (_case, held) => {
+    const purchase = makePurchase({ status: 'past_due', billing_type: 'recurring', ...held });
     const state: MockPrismaState = { drops: [makeDrop()], purchases: [purchase] };
     const materialise = jest.fn().mockResolvedValue({ materialisedRef: 'week-3' });
-    const cron = new DripDispatcherCron(asPrisma(makeMockPrisma(state)), makeRegistry(materialise), makeNotifications());
+    const notifications = makeNotifications();
+    const cron = new DripDispatcherCron(asPrisma(makeMockPrisma(state)), makeRegistry(materialise), notifications);
 
-    await cron.runOnce(NOW); // Day 10 lock: handed back untouched
+    await cron.runOnce(NOW);
+    expect(materialise).not.toHaveBeenCalled();
+    expect(notifications.sendPush).not.toHaveBeenCalled();
     expect(state.drops[0]).toMatchObject({ status: 'pending', locked_at: null, attempt_count: 0 });
-    purchase.entitlement_active = true; // paid: unlocked (also every grace day before the lock)
+    // invoice.paid: the cycle resolves (locked_out_at cleared) and the plan is active again.
+    Object.assign(purchase, { status: 'active', entitlement_active: true, dunning: { status: 'resolved', locked_out_at: null } });
     expect((await cron.runOnce(NOW)).delivered).toBe(1);
-    expect(materialise).toHaveBeenCalledTimes(1);
     expect(state.drops[0].status).toBe('delivered');
+  });
+
+  it('PF-2-BE: grace days (an active, unlocked cycle on a past_due plan) still deliver', async () => {
+    const state: MockPrismaState = {
+      drops: [makeDrop()],
+      purchases: [makePurchase({ status: 'past_due', dunning: { status: 'active', locked_out_at: null } })],
+    };
+    const materialise = jest.fn().mockResolvedValue({ materialisedRef: 'week-2' });
+    const cron = new DripDispatcherCron(asPrisma(makeMockPrisma(state)), makeRegistry(materialise), makeNotifications());
+    expect((await cron.runOnce(NOW)).delivered).toBe(1);
   });
 });
