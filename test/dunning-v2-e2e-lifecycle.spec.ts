@@ -15,6 +15,7 @@ import { LOCKED_DUNNING_CODE } from '../src/checkout/dunning-v2/dunning-v2.caden
 import { ClientEntitlementGuard } from '../src/common/guards/client-entitlement.guard';
 import { NotificationKind } from '../src/notifications/notification-kind';
 import { FakePrisma } from './support/dunning-v2-fake-prisma';
+import { CommunityCohortMembersRepository } from '../src/community/cohorts/community-cohort-members.repository';
 
 /**
  * S-DUNNING — deterministic end-to-end lifecycle of Smart Dunning v2, driven
@@ -331,6 +332,47 @@ describe('Smart Dunning v2 end-to-end lifecycle (Stripe fixtures, fake clock)', 
     // Day 8 is still grace, even after access_expires_at was reached.
     expect(await checkout.hasActiveEntitlement('client-1', {})).toBe(true);
   });
+
+  it.each(['past_due', 'unpaid'])(
+    'LS-1190 B1: weekly %s grace keeps linked package community access',
+    async (status) => {
+      const db = w.fake.client();
+      await db.coachPackage.update({ where: { id: 'pkg-1' }, data: { interval: 'week' } });
+      const weekly = fixture('customer.subscription.updated.past_due', {
+        current_period_start: sec(at(0)),
+        current_period_end: sec(at(7 * DAY)),
+      });
+      w.stripe.retrieveSubscription.mockResolvedValue(weekly.data.object);
+      await w.handler.handle(weekly);
+      await failAttempt(w, 1);
+      await db.clientPurchase.update({ where: { id: 'purchase-1' }, data: { status } });
+
+      // The existing store models purchase/dunning relations, not package/space
+      // joins. Pin this fixture's linked-package join, then delegate all
+      // entitlement, tenant and dunning predicates to the normal evaluator.
+      const findMany = db.clientPurchase.findMany;
+      db.clientPurchase.findMany = jest.fn(async (args: { where: Record<string, unknown>; select?: unknown }) => {
+        const { package: linkedPackage, ...where } = args.where;
+        expect(linkedPackage).toEqual({
+          community_spaces: { some: { cohort_id: 'space-paid' } },
+        });
+        return findMany({ ...args, where });
+      });
+      const repo = new CommunityCohortMembersRepository(db);
+      const access = async () => (await repo.packageAccess(
+        db, 'space-paid', ['client-1', 'client-2'],
+      )).get('client-1');
+      const checkout = new CheckoutService(db, stub({}), stub({}), stub({}), stub({}), stub({}));
+
+      jest.setSystemTime(at(7 * DAY));
+      expect(await access()).toBe('paid_package');
+      jest.setSystemTime(at(8 * DAY + HOUR));
+      await w.v2.runSweep();
+      expect(stateRow(w)?.locked_out_at).toBeNull();
+      expect(await checkout.hasActiveEntitlement('client-1', {})).toBe(true);
+      expect(await access()).toBe('paid_package');
+    },
+  );
 
   // PF-2-BE: the shared read (GET /v1/checkout/entitlement) and the route guards agree on the one
   // live-grace rule: weekly and monthly, past_due and unpaid, Day 8 grace, the Day 10 lock (also
