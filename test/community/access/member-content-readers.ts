@@ -17,7 +17,10 @@
  * function that reads several models lists them all. A write that returns rows (create, update or upsert with a
  * select) is a write, not a read; the function is listed only when it also reads. A row whose models hold '*'
  * (ANY_MODEL) is a read the scan cannot tie to one table (a runtime key or table name); its content says which.
- * `callers` (LO-1185 B3): a repository reader whose rules live in its caller lists every function that calls it;
+ * `callers` (LO-1185 B3, LS-1185R2 B1, LO-1185R2 B2 and C1): a reader whose rules live in its callers lists every
+ * function that calls it: every repository reader (member-content-scan.ts passesRowsOn), a repository method that
+ * wraps one (createKeyedCohortMessage, createVoiceNote, ...), and any other reader that hands its rows on
+ * (MessagingService.listThread). A row with callers makes the scan treat its reader so (ScanOptions.passThrough);
  * a new caller is an unregistered read until it is checked and listed here.
  * Test-only file: nothing here changes runtime code.
  */
@@ -49,7 +52,7 @@ export interface RegisteredReader {
   behavior?: string;
   /** Where else the rules of this reader are exercised today. */
   covered?: string;
-  /** For a repository reader: every function that calls it (Class.method), each checked to apply the rules. */
+  /** For a reader whose rules live in its callers: every function that calls it (Class.method), each checked. */
   callers?: string[];
 }
 
@@ -118,7 +121,7 @@ const ROWS: RegisteredReader[] = [
   r('v1/v1-coach.service.ts', 'V1CoachService.listThreads', ['CoachMessage'], 'shown', 'v1 coach chat list: rows, previews, unread', { block: `${BLOCK_1TO1}: no row`, ban: NA_1TO1_BAN, removed: 'deleted_at null', departed: CURRENT_COACH }),
   r('v1/v1-coach.service.ts', 'V1CoachService.getThread', ['CoachMessage'], 'shown', 'v1 coach thread page and draft', { block: `${BLOCK_1TO1}: opens empty, no draft`, ban: NA_1TO1_BAN, removed: WORDS_CLEARED, departed: CURRENT_COACH }),
   r('coach/command-center/command-center.service.ts', 'CommandCenterService.getInbox', ['CoachMessage'], 'shown', 'Command Center inbox rows and previews', { block: `${BLOCK_1TO1}: the roster drops the client`, ban: NA_1TO1_BAN, removed: `${DELETED_COUNTS} counts in unread_count and total_unread, and a deleted latest message still makes a thread row`, departed: 'the coach roster' }, { covered: 'test/command-center.service.spec.ts', found: LS_B4, behavior: 'Command Center inbox unread' }),
-  r('coach/command-center/command-center.service.ts', 'CommandCenterService.getOverview', ['CoachMessage'], 'shown', 'Command Center unread tile and alerts', { block: `${BLOCK_1TO1}: counts 0`, ban: NA_1TO1_BAN, removed: `${DELETED_COUNTS} counts in the unread tile`, departed: 'the coach roster' }, { found: LS_B4, behavior: 'Command Center unread tile' }),
+  r('coach/command-center/command-center.service.ts', 'CommandCenterService.getOverview', ['CoachMessage'], 'shown', 'Command Center unread tile and alerts', { block: `${BLOCK_1TO1}: counts 0`, ban: NA_1TO1_BAN, removed: `${DELETED_COUNTS} counts in the unread tile`, departed: 'the coach roster' }, { found: LS_B4, behavior: 'Command Center unread tile', covered: 'the same response carries home.replies.received from contactRings (src/coach/command-center/coach-home-day.ts), whose own row holds the block GAP (LO-1185R2 N2)' }),
   r('coach/command-center/coach-home-day.ts', 'contactRings', ['CoachMessage'], 'shown', 'Home Replies ring: messages received today', { block: 'GAP: received counts today\u2019s messages from a client in a block either way (only needsYou is filtered)', ban: NA_1TO1_BAN, removed: 'deleted_at null', departed: 'the coach roster' }, { found: 'https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/1141#issuecomment-6357443870 (C3)', behavior: 'Home Replies ring' }),
   r('coach/home/coach-home.service.ts', 'CoachHomeService.countReview', ['CoachMessage'], 'shown', 'Home conversations to review today (a count)', { block: 'GAP: a client in a block either way still counts as a conversation to review', ban: NA_1TO1_BAN, removed: `${DELETED_COUNTS} adds a conversation to review`, departed: 'client.coach_id = this coach' }, { found: `https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/1141#issuecomment-6372223746 (counts, carried C3); ${LS_B4}`, behavior: 'Home conversations to review' }),
   r('notifications/digest.service.ts', 'DigestService._buildCoachDigestData', ['CoachMessage'], 'push', 'coach digest email: unread messages count', { block: 'GAP: the unread count includes a chat in a block either way', ban: NA_1TO1_BAN, removed: `${DELETED_COUNTS} counts in the digest unread number`, departed: 'client.coach_id = this coach' }, { found: `this spec (static read of the query); ${LS_B4}`, behavior: 'coach digest unread' }),
@@ -145,7 +148,10 @@ const ROWS: RegisteredReader[] = [
   r('community/messages/community-messages.repository.ts', 'CommunityMessagesRepository.voiceNotesFor', ['CommunityVoiceNote', 'CommunityVoiceNoteListen'], 'shown', 'voice rows and own listens of messages on the page', { block: 'only for rows the list already filtered', ban: 'same', removed: 'soft_deleted_at null', departed: 'same' }),
   r('community/messages/community-messages.repository.ts', 'CommunityMessagesRepository.keyed', ['CommunityMessage'], 'check', 'send replay by idempotency key (own row)', allNa(NA_CHECK)),
   r('community/messages/community-messages.repository.ts', 'CommunityMessagesRepository.removeByCoach', ['CommunityMessage'], 'check', 'coach removal write', allNa(NA_CHECK)),
-  r('community/messages/community-messages.repository.ts', 'CommunityMessagesRepository.softDeleteImage', ['CommunityMessageImage'], 'check', 'photo removal write', allNa(NA_CHECK)),
+  r('community/messages/community-messages.repository.ts', 'CommunityMessagesRepository.softDeleteImage', ['CommunityMessageImage', 'CommunityMessage'], 'check', 'photo removal write (the message through removeByCoach)', allNa(NA_CHECK)),
+  // LO-1185R2 B2: repository methods that wrap a repository reader pass its rows on, so they list their callers too.
+  r('community/messages/community-messages.repository.ts', 'CommunityMessagesRepository.createKeyedCohortMessage', ['CommunityMessage'], 'check', 'send under an Idempotency-Key: a replay returns the sender\u2019s own row (keyed)', allNa(NA_CHECK)),
+  r('community/messages/community-messages.repository.ts', 'CommunityMessagesRepository.createKeyedImageMessage', ['CommunityMessage'], 'check', 'photo send under an Idempotency-Key: a replay returns the sender\u2019s own row (keyed)', allNa(NA_CHECK)),
   r('community/community.repository.ts', 'CommunityRepository.countUnreadCohortMessages', ['CommunityMessage'], 'shown', 'community unread badge (getMe)', { block: LEFT, ban: LEFT, removed: 'deleted_at null', departed: LEFT }),
   r('community/community.repository.ts', 'CommunityRepository.findTodayContent', ['CommunityPost'], 'shown', 'Today: the pinned post card', { block: 'CommunityService.getToday: hiddenFromViewer', ban: 'n/a: no runtime path pins a post (nothing in src sets pinned_at to a date), so the card is empty', removed: 'deleted_at null, visibility active', departed: 'n/a: no runtime path pins a post (nothing in src sets pinned_at to a date), so the card is empty' }),
   r('community/space-reads/community-space-reads.service.ts', 'spaceRows', ['CommunityMessage'], 'shown', 'per-space unread counts and last activity', { block: 'SQL: NOT EXISTS UserBlock either way', ban: 'SQL: app.community_author_unbanned', removed: 'SQL: deleted_at IS NULL', departed: 'SQL: app.community_author_stays' }, { covered: 'test/rls/community-space-reads-rls.spec.ts (SQL needs Postgres)' }),
@@ -177,6 +183,7 @@ const ROWS: RegisteredReader[] = [
   r('community/voice/community-voice.repository.ts', 'CommunityVoiceRepository.viewExtras', ['CommunityVoiceNoteListen', 'CommunityMessage'], 'shown', "the viewer's own listens and parent ids of notes on the page", allNa('n/a: only for notes the list already filtered; the listens are the viewer\u2019s own')),
   r('community/voice/community-voice.repository.ts', 'CommunityVoiceRepository.findAllByAuthor', ['CommunityVoiceNote'], 'own', "the author's own notes, for erasure", allNa(NA_OWN)),
   r('community/voice/community-voice.repository.ts', 'CommunityVoiceRepository.findByStorageKey', ['CommunityVoiceNote'], 'check', 'storage callback lookup', allNa(NA_CHECK)),
+  r('community/voice/community-voice.repository.ts', 'CommunityVoiceRepository.createVoiceNote', ['CommunityVoiceNote'], 'check', 'voice note create: a racing create\u2019s row (findByStorageKey) comes back as a replay of the author\u2019s own note', allNa(NA_CHECK)),
   r('community/voice/community-voice.repository.ts', 'CommunityVoiceRepository.findChatMessage', ['CommunityMessage'], 'check', 'the chat row of a voice note', allNa(NA_CHECK)),
 
   // ── Community challenges ─────────────────────────────────────────────────────────────────────────
@@ -185,6 +192,7 @@ const ROWS: RegisteredReader[] = [
   r('community/challenges/community-challenges.repository.ts', 'CommunityChallengesRepository.findCommentById', ['CommunityMessage'], 'check', 'report a challenge comment', allNa(NA_CHECK)),
   r('community/challenges/community-challenges.repository.ts', 'CommunityChallengesRepository.findParticipation', ['CommunityChallengeParticipation'], 'own', "the caller's own participation", allNa(NA_OWN)),
   r('community/challenges/community-challenges.repository.ts', 'CommunityChallengesRepository.findOptIn', ['CommunityMessage'], 'check', 'challenge opt-in row', allNa(NA_CHECK)),
+  r('community/challenges/community-challenges.repository.ts', 'CommunityChallengesRepository.setOptIn', ['CommunityMessage'], 'check', 'challenge opt-in write: skips when the member\u2019s own opt-in row exists (findOptIn)', allNa(NA_CHECK)),
   r('community/challenges/community-challenges.repository.ts', 'CommunityChallengesRepository.clearOptIn', ['CommunityMessage'], 'check', 'challenge opt-in write', allNa(NA_CHECK)),
 
   // ── Community search ─────────────────────────────────────────────────────────────────────────────
@@ -230,11 +238,14 @@ const CALLERS: Record<string, string[]> = {
   'CommunityChallengesRepository.findParticipation': ['CommunityChallengesService.getOne', 'CommunityChallengesService.join', 'CommunityChallengesService.setLeaderboardOptIn', 'CommunityChallengesService.updateProgress'],
   'CommunityChallengesRepository.listComments': ['CommunityChallengesService.listComments'],
   'CommunityChallengesRepository.listParticipationsByProgress': ['CommunityChallengesService.getLeaderboard'],
+  'CommunityChallengesRepository.setOptIn': ['CommunityChallengesService.setLeaderboardOptIn'],
   'CommunityCoachInboxRepository.unansweredMessages': ['AiTriageService.fetchCandidates', 'CommunityCoachInboxService.list'],
   'CommunityCoachInboxRepository.unansweredPosts': ['AiTriageService.fetchCandidates', 'CommunityCoachInboxService.list'],
   'CommunityDmsRepository.listThread': ['CommunityDmsService.listThread'],
   'CommunityDmsRepository.listThreadsForUser': ['CommunityDmsService.listThreads'],
   'CommunityMessagesRepository.chatExtras': ['CommunityMessagesService.chatOf'],
+  'CommunityMessagesRepository.createKeyedCohortMessage': ['CommunityMessagesService.send'],
+  'CommunityMessagesRepository.createKeyedImageMessage': ['CommunityMessagesService.createImage'],
   'CommunityMessagesRepository.findById': ['CommunityMessagesService.edit', 'CommunityMessagesService.getOne', 'CommunityMessagesService.liveParent', 'CommunityMessagesService.remove', 'CommunityMessagesService.send', 'CommunityModerationService.contentOwnerId', 'CommunityModerationService.hideTarget', 'CommunityModerationService.resolveReportTarget', 'CommunityReactionsService.resolveTarget'],
   'CommunityMessagesRepository.imagesFor': ['CommunityMessagesService.imagesOf', 'CommunityMessagesService.replay'],
   'CommunityMessagesRepository.listCohortMessages': ['CommunityMessagesService.list'],
@@ -256,9 +267,12 @@ const CALLERS: Record<string, string[]> = {
   'CommunitySearchRepository.upsertEntry': ['SearchIndexerService.index'],
   'CommunityVoiceRepository.findById': ['CommunityVoiceService.delete', 'CommunityVoiceService.readableNote'],
   'CommunityVoiceRepository.findByStorageKey': ['CommunityVoiceService.create'],
+  'CommunityVoiceRepository.createVoiceNote': ['CommunityVoiceService.create'],
   'CommunityVoiceRepository.findChatMessage': ['CommunityVoiceService.liveParent', 'CommunityVoiceService.replay'],
   'CommunityVoiceRepository.list': ['CommunityVoiceService.list'],
   'CommunityVoiceRepository.viewExtras': ['CommunityVoiceService.noteViews'],
+  // LO-1185R2 C1: private; its rules live in the two methods that return its rows.
+  'MessagingService.listThread': ['MessagingService.listThreadForClient', 'MessagingService.listThreadForCoach'],
 };
 
 for (const reader of Object.keys(CALLERS)) {

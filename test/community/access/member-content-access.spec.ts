@@ -15,8 +15,10 @@
  * WHEN THIS TEST IS RED, the builder must do one of these, and never loosen the test:
  *   - "unregistered read": register the new or moved read in member-content-readers.ts, with each of the four rules
  *     and how the code applies it (filterBlocked or assertVisibleTo WITH the space as place, rowsByAuthorsWhoStay,
- *     authorsWhoLeft, unbannedSpaces, inBlockWith, ...); a new caller of a repository reader whose rules live in
- *     its caller: apply the rules, then add it to that row's callers;
+ *     authorsWhoLeft, unbannedSpaces, inBlockWith, ...); a new caller of a reader whose rules live in its caller
+ *     (a repository reader, a repository wrapper, a row with `callers`): apply the rules, then add it to that row's
+ *     callers; a caller that fails closed (`?.name`: an `any` receiver or a computed key) names the reader so the
+ *     scan can resolve it;
  *   - a behavior row is red: apply the rule in the read, the same way the registered readers do;
  *   - the rule cannot be applied in your PR: ask the operator for a KNOWN GAP row ("GAP:" in the registry, with
  *     where it was found); never add one on your own;
@@ -29,7 +31,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync, mkdirSync, copyFileSync
 import { tmpdir } from 'os';
 import { join } from 'path';
 import type { User } from '@prisma/client';
-import { ANY_MODEL, MEMBER_CONTENT_MODELS, REPO_ROOT, scanMemberContentReads, type ReadSite } from './member-content-scan';
+import { ANY_MODEL, MEMBER_CONTENT_MODELS, REPO_ROOT, scanMemberContentReads, type ReadSite, type ScanOptions } from './member-content-scan';
 import { MEMBER_CONTENT_READERS, readerKey, type RegisteredReader } from './member-content-readers';
 import { ACCESS_RULES, RULE_COLUMN, accessWorld, type AccessRule, type AccessWorld } from './member-content-fixture';
 import { COACH_READS, applyCoachRule, seedCoachMessage, type CoachRead } from './member-content-coach-reads';
@@ -42,8 +44,9 @@ const isNa = (rule: string) => rule.startsWith('n/a:');
 
 const registry = new Map<string, RegisteredReader>();
 for (const row of MEMBER_CONTENT_READERS) registry.set(readerKey(row.file, row.reader), row);
-/** The registry row of a repository reader, by `Class.method` (the callee of a `caller` site). */
+/** The registry row of a reader that leaves the rules to its callers, by `Class.method` (the callee of a `caller` site). */
 const callerRow = (callee: string | undefined) => MEMBER_CONTENT_READERS.find((row) => row.reader === callee);
+const PASS_THROUGH = MEMBER_CONTENT_READERS.filter((row) => row.callers).map((row) => row.reader);
 
 describe('KT-2 member-content registry', () => {
   it('lists each reader once, with known models and all four rules decided', () => {
@@ -70,7 +73,7 @@ describe('KT-2 member-content registry', () => {
       for (const path of row.covered?.match(/(?:test|src)\/[\w./-]+\.ts/g) ?? []) {
         if (!existsSync(join(REPO_ROOT, path))) problems.push(`${key}: covered names ${path}, which does not exist`);
       }
-      if (row.callers && !/Repository\./.test(row.reader)) problems.push(`${key}: callers belong on a repository reader`);
+      if (row.callers && row.callers.length === 0) problems.push(`${key}: callers lists no caller; remove it`);
     }
     expect(problems).toEqual([]);
   });
@@ -79,7 +82,8 @@ describe('KT-2 member-content registry', () => {
 describe('KT-2 architecture: every read of a member-content table under src/ is registered', () => {
   let sites: ReadSite[] = [];
   beforeAll(() => {
-    sites = scanMemberContentReads();
+    // Rows that list callers are readers whose rules live in their callers (LO-1185R2 C1: MessagingService.listThread).
+    sites = scanMemberContentReads(undefined, { passThrough: PASS_THROUGH });
   });
 
   it('finds no unregistered read', () => {
@@ -87,7 +91,11 @@ describe('KT-2 architecture: every read of a member-content table under src/ is 
       .filter((s) => !registry.get(readerKey(s.file, s.reader))?.models.includes(s.model))
       .filter((s) => !(s.via === 'caller' && callerRow(s.callee)?.callers?.includes(s.reader)))
       .map((s) =>
-        s.via === 'caller'
+        s.via === 'caller' && s.callee?.startsWith('?.')
+          ? `${s.file}:${s.line} ${s.reader} references ${s.callee} on a value the scan cannot type (any) or by a key it ` +
+            'cannot name, where a reader that leaves the rules to its caller fits (FAIL CLOSED). KT-2 (KNOWN_TRAPS.md): ' +
+            'type the receiver or name the method, so the scan can tell which reader it calls.'
+          : s.via === 'caller'
           ? `${s.file}:${s.line} ${s.reader} calls ${s.callee}, which reads ${s.model} and leaves the rules to its ` +
             'caller, and is not registered. KT-2 (KNOWN_TRAPS.md): apply block (both ways), ban, removal and departure ' +
             `in ${s.reader}, then add it to the callers of ${s.callee} in test/community/access/member-content-readers.ts.`
@@ -126,6 +134,19 @@ describe('KT-2 architecture: every read of a member-content table under src/ is 
     ['a dynamic delegate on db (fails closed)', 'export const f = (db: any, model: string) => db[model];', ANY_MODEL],
     ['a Prisma.raw table name (fails closed)', "import { Prisma } from '@prisma/client'; export const f = (prisma: any, t: string) => prisma.$queryRaw`SELECT * FROM ${Prisma.raw(t)}`;", ANY_MODEL],
     ['concatenated SQL for $queryRawUnsafe (fails closed)', "export const f = (prisma: any, t: string) => prisma.$queryRawUnsafe('SELECT * FROM ' + t);", ANY_MODEL],
+    // FR-1185R2 class 2 (LS-1185R2 B2): a read whose model or table cannot be named yields '*'.
+    ['a dynamic table after an unquoted schema (fails closed)', "import { Prisma } from '@prisma/client'; export const f = (prisma: any, t: string) => prisma.$queryRaw`SELECT * FROM public.${Prisma.raw(t)}`;", ANY_MODEL],
+    ['a dynamic table after a quoted schema (fails closed)', "import { Prisma } from '@prisma/client'; export const f = (prisma: any, t: string) => prisma.$queryRaw`SELECT * FROM \"public\".${Prisma.raw(t)} m`;", ANY_MODEL],
+    ['a quoted dynamic table after a schema in a JOIN (fails closed)', "import { Prisma } from '@prisma/client'; export const f = (prisma: any, t: string) => prisma.$queryRaw`SELECT 1 FROM users u JOIN \"public\".\"${Prisma.raw(t)}\" m ON TRUE`;", ANY_MODEL],
+    ['a dynamic table in a FROM list (fails closed)', "import { Prisma } from '@prisma/client'; export const f = (prisma: any, t: string) => prisma.$queryRaw`SELECT 1 FROM users u, ${Prisma.raw(t)} m`;", ANY_MODEL],
+    ['an include constant with a runtime computed key (fails closed)', 'export const f = (prisma: any, relation: string) => { const include = { [relation]: true }; return prisma.user.findMany({ include }); };', ANY_MODEL],
+    ['a select constant with a runtime computed key (fails closed)', 'export const f = (prisma: any, relation: string) => { const select = { id: true, [relation]: true }; return prisma.user.findMany({ select }); };', ANY_MODEL],
+    ['an include from a parameter (fails closed)', 'export const f = (prisma: any, include: object) => prisma.user.findMany({ include });', ANY_MODEL],
+    ['an include constant changed later (fails closed)', "export const f = (prisma: any, k: string) => { const include: Record<string, boolean> = {}; include[k] = true; return prisma.user.findMany({ include }); };", ANY_MODEL],
+    ['an include spread from a constant', 'const BASE = { community_messages_sent: true }; export const f = (prisma: any) => prisma.user.findMany({ include: { ...BASE } });', 'CommunityMessage'],
+    ['an include chosen by ?:', 'const WITH = { community_messages_sent: true }; export const f = (prisma: any, x: boolean) => prisma.user.findMany({ include: x ? WITH : {} });', 'CommunityMessage'],
+    ['an include built by a function', 'const inc = () => ({ community_messages_sent: true }); export const f = (prisma: any) => prisma.user.findMany({ include: inc() });', 'CommunityMessage'],
+    ['a select held in a constant', 'const SELECT = { id: true, community_posts_authored: { select: { body: true } } }; export const f = (prisma: any) => prisma.user.findMany({ select: SELECT });', 'CommunityPost'],
   ];
   it.each(FORMS)('the scan reports %s', (_form, source, model) => {
     const root = mkdtempSync(join(tmpdir(), 'kt2-form-'));
@@ -155,8 +176,97 @@ describe('KT-2 architecture: every read of a member-content table under src/ is 
           '}',
         ].join('\n'),
       );
-      const found = scanMemberContentReads(root).filter((s) => s.via === 'caller').map((s) => `${s.reader} ${s.model} ${s.callee}`);
+      const found = scanMemberContentReads(root)
+        .filter((s) => s.via === 'caller' && s.file.endsWith('space-digest.service.ts'))
+        .map((s) => `${s.reader} ${s.model} ${s.callee}`);
       expect(found).toEqual(['SpaceDigestService.latest CommunityMessage CommunityMessagesRepository.listCohortMessages']);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // FR-1185R2 class 1 (LS-1185R2 B1, LO-1185R2 B2, C1, C2): a caller of a reader that leaves the rules to its caller
+  // is a read site, in any form. Each row adds one caller file next to a copy of the real messages repository; the
+  // caller sites outside the repository must be exactly these (callee `?.name` with '*': fails closed).
+  const LC = 'CommunityMessagesRepository.listCohortMessages';
+  const IMPORT = "import { CommunityMessagesRepository } from './community-messages.repository';";
+  const ARGS = '{ cohortId: c, before: null, limit: 20 }';
+  const held = (body: string, type = 'CommunityMessagesRepository') =>
+    `${IMPORT}\nexport class S {\n  constructor(private readonly repo: ${type}) {}\n  ${body}\n}\n`;
+  const CALLER_FORMS: Array<[string, string, string[], ScanOptions?]> = [
+    ['a property typed by the repository', held(`m(c: string) { return this.repo.listCohortMessages(${ARGS}); }`), [`S.m CommunityMessage ${LC}`]],
+    ['an import alias', held(`m(c: string) { return this.repo.listCohortMessages(${ARGS}); }`, 'MessagesRepo').replace(IMPORT, "import { CommunityMessagesRepository as MessagesRepo } from './community-messages.repository';"), [`S.m CommunityMessage ${LC}`]],
+    ['a statically named element call', held(`m(c: string) { return this.repo['listCohortMessages'](${ARGS}); }`), [`S.m CommunityMessage ${LC}`]],
+    ['an element call with a string constant', `const NAME = 'listCohortMessages';\n${held(`m(c: string) { return this.repo[NAME](${ARGS}); }`)}`, [`S.m CommunityMessage ${LC}`]],
+    ['a getter that returns the repository', held(`get r() { return this.repo; }\n  m(c: string) { return this.r.listCohortMessages(${ARGS}); }`), [`S.m CommunityMessage ${LC}`]],
+    ['an untyped local alias', held(`m(c: string) { const r = this.repo; return r.listCohortMessages(${ARGS}); }`), [`S.m CommunityMessage ${LC}`]],
+    ['a destructure of this', held(`m(c: string) { const { repo } = this; return repo.listCohortMessages(${ARGS}); }`), [`S.m CommunityMessage ${LC}`]],
+    ['a destructured method', held(`m(c: string) { const { listCohortMessages } = this.repo; return listCohortMessages.call(this.repo, ${ARGS}); }`), [`S.m CommunityMessage ${LC}`]],
+    ['a .call', held(`m(c: string) { return this.repo.listCohortMessages.call(this.repo, ${ARGS}); }`), [`S.m CommunityMessage ${LC}`]],
+    ['a .bind', held(`m(c: string) { const f = this.repo.listCohortMessages.bind(this.repo); return f(${ARGS}); }`), [`S.m CommunityMessage ${LC}`]],
+    ['a typed parameter of a function', `${IMPORT}\nexport function latest(repo: CommunityMessagesRepository, c: string) { return repo.listCohortMessages(${ARGS}); }\n`, [`latest CommunityMessage ${LC}`]],
+    ['an interface the repository fits', `interface Lister { listCohortMessages(...args: never[]): unknown }\n${held(`m(c: string) { return this.repo.listCohortMessages(${ARGS}); }`, 'Lister')}`, [`S.m CommunityMessage ${LC}`]],
+    ['an abstract member the repository fits', `export abstract class Lister { abstract listCohortMessages(...args: never[]): unknown; }\n${held(`m(c: string) { return this.repo.listCohortMessages(${ARGS}); }`, 'Lister')}`, [`S.m CommunityMessage ${LC}`]],
+    ['a subclass', `${IMPORT}\nexport class Mine extends CommunityMessagesRepository {\n  m(c: string) { return this.listCohortMessages(${ARGS}); }\n}\n`, [`Mine.m CommunityMessage ${LC}`]],
+    ['a repository wrapper in another repository, then its caller (fixed point)',
+      `${IMPORT}\nexport class DigestRepository {\n  constructor(private readonly messages: CommunityMessagesRepository) {}\n  page(c: string) { return this.messages.listCohortMessages(${ARGS}); }\n}\n` +
+      'export class DigestService {\n  constructor(private readonly digest: DigestRepository) {}\n  m() { return this.digest.page(\'c\'); }\n}\n',
+      [`DigestRepository.page CommunityMessage ${LC}`, 'DigestService.m CommunityMessage DigestRepository.page']],
+    ['a same-class repository wrapper, then its caller (LO-1185R2 B2)',
+      `${IMPORT}\nexport class DigestRepository extends CommunityMessagesRepository {\n  page(c: string) { return this.listCohortMessages(${ARGS}); }\n}\n` +
+      'export class DigestService {\n  constructor(private readonly digest: DigestRepository) {}\n  m() { return this.digest.page(\'c\'); }\n}\n',
+      [`DigestRepository.page CommunityMessage ${LC}`, 'DigestService.m CommunityMessage DigestRepository.page']],
+    ['a declared pass-through outside a repository, then its callers (LO-1185R2 C1)',
+      held(`private rows(c: string) { return this.repo.listCohortMessages(${ARGS}); }\n  forCoach(c: string) { return this.rows(c); }\n  forClient(c: string) { return this.rows(c); }`),
+      [`S.rows CommunityMessage ${LC}`, 'S.forCoach CommunityMessage S.rows', 'S.forClient CommunityMessage S.rows'], { passThrough: ['S.rows'] }],
+    ['a value typed any, called by a reader\'s name (fails closed)', `export function latest(repo: any, c: string) { return repo.listCohortMessages(${ARGS}); }\n`, ['latest * ?.listCohortMessages']],
+    ['a computed key on the repository (fails closed)', held('m(k: keyof CommunityMessagesRepository) { return this.repo[k]; }'), ['S.m * ?.[key]']],
+  ];
+  /** Caller sites outside the copied repository, for these caller files. */
+  const callerSites = (files: Record<string, string>, options?: ScanOptions): string[] => {
+    const root = mkdtempSync(join(tmpdir(), 'kt2-callers-'));
+    try {
+      mkdirSync(join(root, 'community', 'messages'), { recursive: true });
+      copyFileSync(
+        join(REPO_ROOT, 'src/community/messages/community-messages.repository.ts'),
+        join(root, 'community/messages/community-messages.repository.ts'),
+      );
+      for (const [name, text] of Object.entries(files)) writeFileSync(join(root, 'community/messages', name), text);
+      const found = scanMemberContentReads(root, options)
+        .filter((s) => s.via === 'caller' && !s.file.endsWith('community-messages.repository.ts'))
+        .map((s) => `${s.reader} ${s.model} ${s.callee}`);
+      return [...new Set(found)].sort();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  };
+  it.each(CALLER_FORMS)('the scan reports a caller through %s', (_form, source, expected, options) => {
+    expect(callerSites({ 'caller.ts': source }, options)).toEqual([...expected].sort());
+  });
+
+  // The scan limits (member-content-scan.ts header, L1 to L5): each test shows what the scan still cannot see, so
+  // closing a limit turns its test red and the header must change with it.
+  it('limit L1: a reader called on a value typed by a package (unresolved, not any) is not seen', () => {
+    const source = `${IMPORT}\nimport { ModuleRef } from '@nestjs/core';\nexport class S {\n  constructor(private readonly refs: ModuleRef) {}\n` +
+      `  m(c: string) { return this.refs.get(CommunityMessagesRepository).listCohortMessages(${ARGS}); }\n}\n`;
+    expect(callerSites({ 'caller.ts': source })).toEqual([]);
+  });
+  it('limit L2: a reader named only at runtime (Reflect.get with its name) is not seen', () => {
+    expect(callerSites({ 'caller.ts': held(`m(c: string) { return Reflect.get(this.repo, 'listCohortMessages').call(this.repo, ${ARGS}); }`) })).toEqual([]);
+  });
+  it('limit L3: a pass-through outside a repository is followed only when its row declares callers', () => {
+    const source = held(`private rows(c: string) { return this.repo.listCohortMessages(${ARGS}); }\n  forCoach(c: string) { return this.rows(c); }`);
+    expect(callerSites({ 'caller.ts': source })).toEqual([`S.rows CommunityMessage ${LC}`]);
+  });
+  it('limit L4: rows kept in a field and read by another method are not traced', () => {
+    const source = held(`private cached: unknown;\n  async load(c: string) { this.cached = await this.repo.listCohortMessages(${ARGS}); }\n  show() { return this.cached; }`);
+    expect(callerSites({ 'caller.ts': source })).toEqual([`S.load CommunityMessage ${LC}`]);
+  });
+  it('limit L5: SQL split across a string concatenation outside an Unsafe call is matched piece by piece', () => {
+    const root = mkdtempSync(join(tmpdir(), 'kt2-limit-'));
+    try {
+      writeFileSync(join(root, 'probe.ts'), "export const SQL = 'SELECT m.body FROM community_' + 'messages m';\n");
+      expect(scanMemberContentReads(root)).toEqual([]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
