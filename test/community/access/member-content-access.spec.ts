@@ -147,12 +147,54 @@ describe('KT-2 architecture: every read of a member-content table under src/ is 
     ['an include chosen by ?:', 'const WITH = { community_messages_sent: true }; export const f = (prisma: any, x: boolean) => prisma.user.findMany({ include: x ? WITH : {} });', 'CommunityMessage'],
     ['an include built by a function', 'const inc = () => ({ community_messages_sent: true }); export const f = (prisma: any) => prisma.user.findMany({ include: inc() });', 'CommunityMessage'],
     ['a select held in a constant', 'const SELECT = { id: true, community_posts_authored: { select: { body: true } } }; export const f = (prisma: any) => prisma.user.findMany({ select: SELECT });', 'CommunityPost'],
+    // FR-1185R3 class 2 (LS-1185R3 B1, LO-1185R3 B1 and C2): a key is named by the checker in its own scope, never by
+    // its spelling; every form that reads a member-content table is a site, and one whose model cannot be named is '*'.
+    ['a delegate key shadowed by a parameter (fails closed)', "const model = 'user'; export function f(prisma: any, model: string) { return prisma[model].findMany({}); }", ANY_MODEL],
+    ['an include key shadowed by a parameter (fails closed)', "const relation = 'id'; export function f(prisma: any, relation: string) { return prisma.user.findMany({ include: { [relation]: true } }); }", ANY_MODEL],
+    ['a delegate constant of its own function, beside another of that name', "export function f(prisma: any) { const model = 'communityMessage'; return prisma[model].findMany({}); }\nfunction g() { const model = 'user'; return model; }", 'CommunityMessage'],
+    ['a computed destructure of a delegate from a client (fails closed)', 'export const f = (prisma: any, model: string) => { const { [model]: d } = prisma; return d; };', ANY_MODEL],
+    ['a computed destructure read later (fails closed)', 'export const f = (deps: any, model: string) => { const { [model]: d } = deps; return d.findMany({}); };', ANY_MODEL],
+    ['a runtime-key delegate held in a local and read later (fails closed)', 'export const f = (deps: any, model: string) => { const d = deps[model]; return d.count({}); };', ANY_MODEL],
+    ['a computed destructure with a constant key', "const KEY = 'communityWin'; export const f = (deps: any) => { const { [KEY]: d } = deps; return d.findMany({}); };", 'CommunityWin'],
+    ['a some filter on a relation', 'export const f = (prisma: any) => prisma.user.findMany({ where: { community_messages_sent: { some: {} } } });', 'CommunityMessage'],
+    ['a none filter on a relation', 'export const f = (prisma: any) => prisma.user.count({ where: { community_posts_authored: { none: {} } } });', 'CommunityPost'],
+    ['an every filter on a relation', 'export const f = (prisma: any) => prisma.user.count({ where: { community_posts_authored: { every: { deleted_at: null } } } });', 'CommunityPost'],
+    ['an is filter on a to-one relation', 'export const f = (prisma: any) => prisma.coachBroadcastDelivery.count({ where: { message: { is: { read_at: null } } } });', 'CoachMessage'],
+    ['an isNot filter on a to-one relation', 'export const f = (prisma: any) => prisma.coachBroadcastDelivery.count({ where: { message: { isNot: { read_at: null } } } });', 'CoachMessage'],
+    ['a to-one relation filter in a where', 'export const f = (prisma: any) => prisma.coachBroadcastDelivery.count({ where: { message: { read_at: { not: null } } } });', 'CoachMessage'],
+    ['a to-one relation filter under AND in a where', "export const f = (prisma: any) => prisma.coachBroadcastDelivery.count({ where: { AND: [{ status: 'delivered' }, { message: { read_at: null } }] } });", 'CoachMessage'],
+    ['a relation filter held in a constant', 'const consent = { user: { community_messages_sent: { some: { deleted_at: null } } } }; export const f = (prisma: any) => prisma.communityChallengeParticipation.findMany({ where: consent });', 'CommunityMessage'],
+    ['an order by a relation count', "export const f = (prisma: any) => prisma.user.findMany({ orderBy: { community_posts_authored: { _count: 'desc' } } });", 'CommunityPost'],
+    ['an order list by a relation count', "export const f = (prisma: any) => prisma.user.findMany({ orderBy: [{ community_posts_authored: { _count: 'desc' } }, { id: 'asc' }] });", 'CommunityPost'],
+    ['_count: true in a select, every relation counted (fails closed)', 'export const f = (prisma: any) => prisma.communityCohort.findMany({ select: { id: true, _count: true } });', ANY_MODEL],
+    ['SQL concatenated for Prisma.raw (fails closed)', "import { Prisma } from '@prisma/client'; export const f = (prisma: any, t: string) => prisma.$queryRaw(Prisma.raw('SELECT body FROM ' + t));", ANY_MODEL],
+    ['SQL in a variable handed to Prisma.raw (fails closed)', "import { Prisma } from '@prisma/client'; export const f = (prisma: any, sql: string) => prisma.$queryRaw(Prisma.raw(sql));", ANY_MODEL],
   ];
   it.each(FORMS)('the scan reports %s', (_form, source, model) => {
     const root = mkdtempSync(join(tmpdir(), 'kt2-form-'));
     try {
       writeFileSync(join(root, 'probe.ts'), source);
       expect(scanMemberContentReads(root).map((s) => s.model)).toContain(model);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // The controls of class 2: forms that read no member-content table stay quiet (a scan that flags everything fails).
+  const NOT_READS: Array<[string, string]> = [
+    ['a filter on a plain column', 'export const f = (prisma: any, q: string) => prisma.user.findMany({ where: { full_name: { contains: q } } });'],
+    ["a string value on a field of a relation's name", "export const f = (prisma: any) => prisma.notice.findMany({ where: { message: 'hello' } });"],
+    ["a scalar filter on a field of a relation's name", "export const f = (prisma: any, q: string) => prisma.notice.findMany({ where: { message: { contains: q, mode: 'insensitive' } } });"],
+    ['a relation connect in a write', 'export const f = (prisma: any, id: string) => prisma.coachBroadcastDelivery.update({ where: { id }, data: { message: { connect: { id } } } });'],
+    ['_count of a named relation that holds no member content', 'export const f = (prisma: any) => prisma.user.findMany({ select: { _count: { select: { sessions: true } } } });'],
+    ['a quoted identifier through Prisma.raw', "import { Prisma } from '@prisma/client'; export const f = (prisma: any, col: string) => prisma.$executeRaw`UPDATE \"User\" SET ${Prisma.raw(`\"${col}\"`)} = NULL`;"],
+    ['a delegate key that names another model', "export const f = (prisma: any) => { const model = 'user'; return prisma[model].findMany({}); };"],
+  ];
+  it.each(NOT_READS)('the scan reports no read for %s', (_form, source) => {
+    const root = mkdtempSync(join(tmpdir(), 'kt2-form-'));
+    try {
+      writeFileSync(join(root, 'probe.ts'), source);
+      expect(scanMemberContentReads(root)).toEqual([]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -191,6 +233,8 @@ describe('KT-2 architecture: every read of a member-content table under src/ is 
   const LC = 'CommunityMessagesRepository.listCohortMessages';
   const IMPORT = "import { CommunityMessagesRepository } from './community-messages.repository';";
   const ARGS = '{ cohortId: c, before: null, limit: 20 }';
+  /** A port the repository fits, with two of its readers (keyof Port is not one name). */
+  const PORT = 'interface Port { listCohortMessages(...args: never[]): unknown; listComments(...args: never[]): unknown; }';
   const held = (body: string, type = 'CommunityMessagesRepository') =>
     `${IMPORT}\nexport class S {\n  constructor(private readonly repo: ${type}) {}\n  ${body}\n}\n`;
   const CALLER_FORMS: Array<[string, string, string[], ScanOptions?]> = [
@@ -221,6 +265,15 @@ describe('KT-2 architecture: every read of a member-content table under src/ is 
       [`S.rows CommunityMessage ${LC}`, 'S.forCoach CommunityMessage S.rows', 'S.forClient CommunityMessage S.rows'], { passThrough: ['S.rows'] }],
     ['a value typed any, called by a reader\'s name (fails closed)', `export function latest(repo: any, c: string) { return repo.listCohortMessages(${ARGS}); }\n`, ['latest * ?.listCohortMessages']],
     ['a computed key on the repository (fails closed)', held('m(k: keyof CommunityMessagesRepository) { return this.repo[k]; }'), ['S.m * ?.[key]']],
+    // FR-1185R3 class 1 (LS-1185R3 B2): a key the checker cannot name, on a value whose type can hold a passing reader.
+    ['a computed key on an interface the repository fits (fails closed)', `${PORT}\n${held('m(k: keyof Port) { return this.repo[k]; }', 'Port')}`, ['S.m * ?.[key]']],
+    ['a computed key on a type literal the repository fits (fails closed)', `${PORT.replace('interface Port', 'type Port =')}\n${held('m(k: keyof Port) { return this.repo[k]; }', 'Port')}`, ['S.m * ?.[key]']],
+    ['a computed key on an abstract class the repository fits (fails closed)', `${PORT.replace('interface Port', 'export abstract class Port').replace(/ (list\w+)\(/g, ' abstract $1(')}\n${held('m(k: keyof Port) { return this.repo[k]; }', 'Port')}`, ['S.m * ?.[key]']],
+    ['a computed destructure of the repository (fails closed)', held('m(k: keyof CommunityMessagesRepository) { const { [k]: f } = this.repo; return f; }'), ['S.m * ?.[key]']],
+    ['a computed destructure of an interface the repository fits (fails closed)', `${PORT}\n${held('m(k: keyof Port) { const { [k]: f } = this.repo; return f; }', 'Port')}`, ['S.m * ?.[key]']],
+    // LO-1185R3 C1: the program loads the ES2021 lib, so a reader behind a built-in type resolves.
+    ['a repository held in a Map', `${IMPORT}\nexport class S {\n  constructor(private readonly repos: Map<string, CommunityMessagesRepository>) {}\n  m(c: string) { return this.repos.get('x')?.listCohortMessages(${ARGS}); }\n}\n`, [`S.m CommunityMessage ${LC}`]],
+    ['a repository behind a Promise', `${IMPORT}\nexport class S {\n  constructor(private readonly later: Promise<CommunityMessagesRepository>) {}\n  async m(c: string) { return (await this.later).listCohortMessages(${ARGS}); }\n}\n`, [`S.m CommunityMessage ${LC}`]],
   ];
   /** Caller sites outside the copied repository, for these caller files. */
   const callerSites = (files: Record<string, string>, options?: ScanOptions): string[] => {
@@ -246,7 +299,7 @@ describe('KT-2 architecture: every read of a member-content table under src/ is 
     expect(callerSites({ 'caller.ts': source }, options)).toEqual([...expected].sort());
   });
 
-  // The scan limits (member-content-scan.ts header, L1 to L7): each test shows what the scan still cannot see, so
+  // The scan limits (member-content-scan.ts header, L1 to L10): each test shows what the scan still cannot see, so
   // closing a limit turns its test red and the header must change with it.
   it('limit L1: a reader called on a value typed by a package (unresolved, not any) is not seen', () => {
     const source = `${IMPORT}\nimport { ModuleRef } from '@nestjs/core';\nexport class S {\n  constructor(private readonly refs: ModuleRef) {}\n` +
@@ -286,6 +339,33 @@ describe('KT-2 architecture: every read of a member-content table under src/ is 
     try {
       writeFileSync(join(root, 'probe.ts'), 'export const w = (prisma: any) => prisma.communityMessage.update({ where: { id: 1 }, data: {}, include: { sender: true } });\n');
       expect(scanMemberContentReads(root).filter((s) => s.model === 'CommunityMessage')).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+  it('limit L8: the legacy message delegate kept in a local from a receiver not named like a client is not seen', () => {
+    const root = mkdtempSync(join(tmpdir(), 'kt2-limit-'));
+    try {
+      writeFileSync(join(root, 'held.ts'), 'export const f = (deps: any) => { const m = deps.message; return m.findMany({}); };\n');
+      writeFileSync(join(root, 'called.ts'), 'export const g = (deps: any) => deps.message.findMany({});\n');
+      expect(scanMemberContentReads(root).filter((s) => s.model === 'Message').map((s) => s.file.split('/').pop())).toEqual(['called.ts']);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+  it('limit L9: a key the checker cannot name on a value typed any is not a caller site', () => {
+    expect(callerSites({ 'caller.ts': `export function latest(repo: any, k: string, c: string) { return repo[k](${ARGS}); }\n` })).toEqual([]);
+  });
+  it('limit L10: a to-one relation filter without is, held outside a where, is not seen', () => {
+    const root = mkdtempSync(join(tmpdir(), 'kt2-limit-'));
+    try {
+      writeFileSync(join(root, 'probe.ts'), [
+        'const unread = { message: { read_at: null } };',
+        'export const f = (prisma: any) => prisma.coachBroadcastDelivery.count({ where: unread });',
+        "const unreadIs = { message: { is: { read_at: null } } };",
+        'export const g = (prisma: any) => prisma.coachBroadcastDelivery.count({ where: unreadIs });',
+      ].join('\n'));
+      expect(scanMemberContentReads(root).filter((s) => s.model === 'CoachMessage').map((s) => s.line)).toEqual([3]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
