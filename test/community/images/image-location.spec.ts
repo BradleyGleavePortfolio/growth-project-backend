@@ -422,6 +422,8 @@ describe('carriesLocation (PHOTO-GPS)', () => {
     'JUMBF (XLBox) with a GPS name cut over two APP11 segments': inSegments(...jumbf(GPS_JSON, [nameCut], { xl: true })),
     'JUMBF segments out of sequence order, a name cut': inSegments(...jumbf(GPS_JSON, [40, nameCut], { order: [2, 0, 1] })),
     'JUMBF with an EXIF header cut over two segments': inSegments(...jumbf(EXIF_JUMBF, [exifCut])),
+    // FR-1189R2 (LS-1189R2 B1 class): JUMBF is judged only joined, so a segment in no join (a repeated sequence) is read alone.
+    'JUMBF segment that repeats a sequence number, with a GPS name': inSegments(...jumbf(c2pa('{}'), []), ...jumbf(GPS_JSON, [])),
     'MP4 \\xA9xyz after EOI (a motion photo)': afterEoi(XYZ),
     'MP4 Apple location.ISO6709 key after EOI': afterEoi(mp4('\0\0\0\x2dkeys\0\0\0\0mdtacom.apple.quicktime.location.ISO6709')),
   };
@@ -436,6 +438,10 @@ describe('carriesLocation (PHOTO-GPS)', () => {
     'GoPro GPMF GPS5 of zeros (no fix)': inSegments(goPro(SCAL, gpmf('GPS5', 20, [0, 0, 0, 0, 0]))),
     'UTF-16LE XMP with no location': inSegments(xmp16('xmp:CreatorTool="TGP" exif:SubjectLocation="1 1"')),
     'JUMBF with no location, cut over two segments': inSegments(...jumbf(c2pa('{"c2pa.actions":[{"action":"c2pa.created"}]}'), [44])),
+    // FR-1189R2 (LS-1189R2 B1 class): read alone, the first segment holds an EXIF cut short; joined, it is whole.
+    'JUMBF EXIF with no GPS, cut inside its TIFF over two segments': inSegments(
+      ...jumbf([...c2pa('thumbnail'), ...latin1('Exif\0\0'), ...tiff('II')], [c2pa('thumbnail').length + 18]),
+    ),
     'MP4 with no location box after EOI': afterEoi(mp4('\0\0\0\x10udta\0\0\0\x08free')),
   };
   it.each(Object.keys(LOCATED_FORMS))('FR-1189 (LO-1189 B2): %s is a location, unpadded and past 256 KB', (name) => {

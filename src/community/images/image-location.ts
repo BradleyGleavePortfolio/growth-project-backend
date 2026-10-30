@@ -79,10 +79,11 @@
  *     read as bytes: the Photoshop APP13 segments in order, and the APP11
  *     JUMBF (C2PA) segments in sequence order per box (a name or header cut
  *     over two segments is found). FR-1189R2 (LS-1189R2 B1): the Photoshop
- *     segments are read only once joined (one segment is its own join), so a
- *     resource a writer continues in the next APP13 is judged whole, and one
- *     that is still cut short once joined answers true; a JUMBF box is read
- *     once per segment and once joined only when it has two parts or more.
+ *     segments and the JUMBF boxes are read only once joined (one segment is
+ *     its own join), so a resource or an EXIF a writer continues in the next
+ *     segment is judged whole, and one that is still cut short once joined
+ *     answers true; a JUMBF segment in no join (a repeated sequence number)
+ *     is read alone.
  * Read as bytes (bytesLocated, the one reader for all of these): any EXIF
  * header ("Exif\0\0" then a TIFF header) and any Photoshop 1058 or 1059
  * resource is read as EXIF above (unreadable = located), and the text is
@@ -214,9 +215,12 @@ function laterLocated(jpeg: Uint8Array, sos: number, budget: Budget): boolean {
     }
     const payload = asBuffer(jpeg.subarray(part.start + 4, part.end));
     if (part.marker === APP1 && startsWith(payload, FLIR_HEADER)) flir.push(payload);
-    if (part.marker === APP11 && payload.length >= 16 && payload[0] === 0x4a && payload[1] === 0x50) jumbf.push(payload); // "JP"
-    // FR-1189R2 (LS-1189R2 B1): Photoshop's resources are read once joined, below, so one continued in the next APP13 is whole.
+    const isJumbf = part.marker === APP11 && payload.length >= 16 && payload[0] === 0x4a && payload[1] === 0x50; // "JP"
+    if (isJumbf) jumbf.push(payload);
+    // FR-1189R2 (LS-1189R2 B1): Photoshop's resources and JUMBF boxes are read once joined, below, so one continued in the
+    // next segment is whole (read alone, its first part is an EXIF or resource cut short, which is located).
     if (part.marker === APP13 && startsWith(payload, PHOTOSHOP_HEADER)) photoshop.push(payload.subarray(PHOTOSHOP_HEADER.length));
+    else if (isJumbf) return;
     else if (part.marker === APP1) located = !before && app1Located(payload, budget);
     else located = (part.marker === APP6 && startsWith(payload, GOPRO_HEADER) && goProLocated(payload)) || bytesLocated(payload, budget);
   });
@@ -297,24 +301,36 @@ function goProLocated(b: Buffer): boolean {
  * FR-1189 (LO-1189 B2): APP11 JUMBF (C2PA). Each segment is "JP", the box instance En (2 bytes), a u32 sequence Z, then
  * the box header (LBox, TBox, and XLBox when LBox is 1) repeated, then the box's next bytes. They are joined in Z order
  * per box type (as exiftool joins them) and per En and type, the first segment of each Z kept, then read as bytes, so a
- * name or an EXIF header split over two segments is found. FR-1189R2 (LS-1189R2 B2): at most SEGMENT_BUDGET segments
- * reach here, and a box of one part is not read again (the walk read its whole segment).
+ * name or an EXIF header split over two segments is found. FR-1189R2 (LS-1189R2 B1): the boxes are judged only joined
+ * (the walk does not read a JUMBF segment alone), so a location-free EXIF cut over two segments is whole; a segment
+ * that repeats a sequence number already kept is read alone. FR-1189R2 (LS-1189R2 B2): at most SEGMENT_BUDGET segments
+ * reach here, and a box of one part is read once.
  */
 function jumbfLocated(segments: Buffer[], budget: Budget): boolean {
   const boxes = new Map<string, Map<number, Buffer>>();
+  const kept = new Set<Buffer>();
   for (const s of segments) {
     const header = s.readUInt32BE(8) === 1 && s.length >= 24 ? 16 : 8;
     const type = s.toString('latin1', 12, 16);
+    const body = s.subarray(8 + header);
     for (const key of [type, s.toString('latin1', 2, 4) + type]) {
       const parts = boxes.get(key) ?? new Map<number, Buffer>();
-      if (!parts.has(s.readUInt32BE(4))) parts.set(s.readUInt32BE(4), s.subarray(8 + header));
+      if (!parts.has(s.readUInt32BE(4))) {
+        parts.set(s.readUInt32BE(4), body);
+        kept.add(s);
+      }
       boxes.set(key, parts);
     }
   }
+  // A segment that repeats a box's sequence number is in no join: it is read alone.
+  for (const s of segments) if (!kept.has(s) && bytesLocated(s, budget)) return true;
+  const once = new Set<Buffer>();
   for (const parts of boxes.values()) {
-    if (parts.size < 2) continue;
     const ordered = [...parts.entries()].sort(([x], [y]) => x - y).map(([, part]) => part);
-    if (bytesLocated(Buffer.concat(ordered), budget)) return true;
+    // A box of one part sits under both keys; it is read once.
+    if (ordered.length === 1 && once.has(ordered[0])) continue;
+    once.add(ordered[0]);
+    if (bytesLocated(ordered.length === 1 ? ordered[0] : Buffer.concat(ordered), budget)) return true;
   }
   return false;
 }
