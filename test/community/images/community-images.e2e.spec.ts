@@ -480,15 +480,16 @@ describe('POST messages kind image (SC-BE3)', () => {
       const w = world();
       expect(await code(sendPhoto(w, await uploaded(w)))).toBe('ok');
       expect(w.reads).toEqual([`bytes=0-${MB - 1}`]);
-      const later = world();
-      const late = [...JPEG, ...new Array<number>(300 * 1024).fill(0), ...LOCATED['GPS in EXIF, little endian']];
-      expect(await code(sendPhoto(later, await uploaded(later, { head: late })))).toBe('community.image.has_location');
       const short = await uploaded(w, { served: 1000 });
       const e = await sendPhoto(w, short).catch((x: unknown) => x);
       expect(e).toBeInstanceOf(ServiceUnavailableException);
       expect((e as ServiceUnavailableException).getResponse()).toMatchObject({ code: 'community.image.storage_unavailable' });
       expect(w.objects.has(short)).toBe(true);
       expect(w.removed).toEqual([]);
+      // A world of its own (it replaces the fake storage w reads from).
+      const later = world();
+      const late = [...JPEG, ...new Array<number>(300 * 1024).fill(0), ...LOCATED['GPS in EXIF, little endian']];
+      expect(await code(sendPhoto(later, await uploaded(later, { head: late })))).toBe('community.image.has_location');
     });
 
     it('if the erase fails it still refuses, logs erase=deferred_to_link_expiry (no key), and the erasure row erases it at link death', async () => {
