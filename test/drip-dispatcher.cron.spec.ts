@@ -1284,6 +1284,43 @@ describe('DripDispatcherCron', () => {
 
   // MEDIA-ARCHIVE-DRIP (#162-2 op 1): a refunded purchase keeps what it got; nothing more ships.
   const asPrisma = (mock: unknown) => mock as ConstructorParameters<typeof DripDispatcherCron>[0];
+  it.each(['pending', 'dispatching'])(
+    'LS-1190 B5: an ended one-time purchase cannot dispatch a %s paid drop',
+    async (status) => {
+      // Finite one-time plans normally retain paid + entitlement_active;
+      // expiry ends their coached access (see endedPlanWhere), not a webhook.
+      for (const expired of [false, true]) {
+        const state: MockPrismaState = {
+          drops: [makeDrop({
+            status,
+            locked_at: status === 'dispatching'
+              ? new Date(NOW.getTime() - __dripDispatcherConsts.STALE_CLAIM_MS - 60_000)
+              : null,
+          })],
+          purchases: [makePurchase({
+            status: 'paid', billing_type: 'one_time', entitlement_active: true,
+            access_expires_at: new Date(NOW.getTime() + (expired ? -1 : 1) * 86_400_000),
+            dunning: null,
+            client: { deleted_at: null }, coach: { deleted_at: null },
+          })],
+        };
+        const materialise = jest.fn().mockResolvedValue({ materialisedRef: 'new-paid-assignment' });
+        const notifications = makeNotifications();
+        const cron = new DripDispatcherCron(
+          asPrisma(makeMockPrisma(state)), makeRegistry(materialise), notifications,
+        );
+        await cron.runOnce(NOW);
+        if (!expired) {
+          expect(materialise).toHaveBeenCalledTimes(1);
+          continue;
+        }
+        expect(materialise).not.toHaveBeenCalled();
+        expect(notifications.sendPush).not.toHaveBeenCalled();
+        expect(state.drops[0].status).not.toBe('delivered');
+      }
+    },
+  );
+
   it.each([
     ['refunded', 'canceled:refund'],
     ['chargeback_lost', 'canceled:dispute'],
