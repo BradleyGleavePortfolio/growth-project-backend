@@ -601,7 +601,8 @@ describe('CoachMoneyService.getAttention', () => {
     expect(failed.failed_payment).toMatchObject({
       attempt: 2,
       max_attempts: 4,
-      next_retry_at: '2026-10-03T00:00:00.000Z',
+      // PF-5-BE (B8): next_attempt_at is the next reminder email, not a card try.
+      next_retry_at: null,
       card_update_link_sent_at: '2026-10-01T01:00:00.000Z',
     });
     const dispute = out.items.find((i) => i.kind === 'dispute')!;
@@ -663,6 +664,73 @@ const ev = (kind: 'refund' | 'chargeback', at: string, amount: number, charge = 
   at: new Date(at),
   amount_cents: amount,
   stripe_charge_id: charge,
+});
+
+describe('PF-5-BE: Money tells card tries apart from reminders, and unpaid stays failed', () => {
+  function failedRow(dunning: Record<string, unknown> | null) {
+    return {
+      id: 'p-pf5',
+      amount_cents: 4900,
+      currency: 'usd',
+      updated_at: new Date('2026-10-30T09:00:00Z'),
+      last_error: 'Your card was declined.',
+      client: { id: 'c-pf5', name: 'Test client' },
+      package: { name: 'Monthly coaching' },
+      dunning,
+    };
+  }
+  const dunning = (over: Record<string, unknown> = {}) => ({
+    status: 'active',
+    failure_count: 1,
+    last_attempt_number: null,
+    step_index: 3,
+    next_attempt_at: new Date('2026-11-02T09:00:00Z'),
+    locked_out_at: null,
+    last_failed_amount_cents: 4900,
+    last_failure_at: new Date('2026-10-30T09:00:00Z'),
+    last_failure_reason: 'card_declined',
+    attempts: [],
+    ...over,
+  });
+
+  it.each([
+    ['one bank try, reminder step 3 (step is not a try)', dunning(), 1, 4],
+    ["Stripe's invoice attempt count wins over the failures seen", dunning({ last_attempt_number: 3 }), 3, 4],
+    ['no bank try known (a refund or dispute hold)', dunning({ failure_count: 0, last_failure_reason: 'charge_refunded' }), 0, 0],
+    ['no dunning row', null, 0, 0],
+  ])('%s', async (_label, d, attempt, max) => {
+    const p = buildPrisma();
+    p.clientPurchase.findMany.mockResolvedValue([failedRow(d)]);
+    const out = await svc(p).getAttention(COACH);
+    const fp = out.items.find((i) => i.kind === 'failed_payment')?.failed_payment;
+    expect(fp).toMatchObject({ attempt, max_attempts: max, next_retry_at: null });
+  });
+
+  it('the attention query reads bank tries, not the reminder deadline', async () => {
+    const p = buildPrisma();
+    await svc(p).getAttention(COACH);
+    const sel = (
+      p.clientPurchase.findMany.mock.calls[0][0] as {
+        select: Record<string, { select?: Record<string, unknown> }>;
+      }
+    ).select;
+    expect(sel.dunning.select).toMatchObject({ failure_count: true, last_attempt_number: true });
+    expect(sel.dunning.select).not.toHaveProperty('next_attempt_at');
+    expect(sel.dunning.select).not.toHaveProperty('step_index');
+  });
+
+  it.each([
+    ['unpaid with an earlier paid slice', { status: 'unpaid' }, 'failed'],
+    ['past_due with an earlier paid slice', { status: 'past_due' }, 'failed'],
+    ['unpaid, fully refunded', { status: 'unpaid', refunds: [{ amount_cents: 4900, status: 'succeeded' }] }, 'refunded'],
+    ['unpaid, open dispute', { status: 'unpaid', disputes: [{ status: 'needs_response', amount_cents: 4900 }] }, 'disputed'],
+    ['canceled with no paid slice', { status: 'canceled', splits: [] }, 'canceled'],
+  ])('charge state: %s', async (_label, over, state) => {
+    const p = buildPrisma();
+    p.clientPurchase.findFirst.mockResolvedValue(chargeRow(over));
+    const out = await svc(p).getChargeBreakdown(COACH, 'p1');
+    expect(out.charge.state).toBe(state);
+  });
 });
 
 describe('C-641-1 — reversals land in the window they happened in', () => {
