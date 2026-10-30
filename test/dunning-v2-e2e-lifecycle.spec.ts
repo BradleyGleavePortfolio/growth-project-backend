@@ -337,6 +337,7 @@ describe('Smart Dunning v2 end-to-end lifecycle (Stripe fixtures, fake clock)', 
   it.each(['meal_plan', 'workout_plan', 'auto_message', 'pdf', 'video'])(
     'LS-1190 B4: an unpaid F6 resync cannot inline-deliver held %s content',
     async (assetType) => {
+      Object.assign(w.fake.find('user', { id: 'client-1' })!, { coach_id: 'coach-1' });
       await failAttempt(w, 1);
       jest.setSystemTime(at(10 * DAY + HOUR));
       await w.v2.runSweep();
@@ -344,7 +345,7 @@ describe('Smart Dunning v2 end-to-end lifecycle (Stripe fixtures, fake clock)', 
       const held = {
         id: 'held-drop', client_purchase_id: 'purchase-1', content_id: 'held-content',
         asset_type: assetType, asset_id: 'coached-asset', asset_revision_id: null,
-        cadence_kind: 'relative_to_purchase', cadence_payload: { days: 10 },
+        cadence_kind: 'relative_to_purchase', cadence_payload: { offset_days: 10 },
         display_title: null, display_caption: null, status: 'pending',
         materialised_ref: null, fire_at: at(10 * DAY), attempt_count: 0,
       };
@@ -362,7 +363,7 @@ describe('Smart Dunning v2 end-to-end lifecycle (Stripe fixtures, fake clock)', 
       db.coachPackageContent = { findMany: jest.fn(async () => [{
         id: 'held-content', package_id: 'pkg-1', asset_type: assetType,
         asset_id: 'coached-asset', cadence_kind: 'relative_to_purchase',
-        cadence_payload: { days: 10 }, removed_at: null,
+        cadence_payload: { offset_days: 10 }, removed_at: null,
       }]) };
       db.purchaseFanout = {
         upsert: jest.fn(async () => ({ state: 'succeeded' })),
@@ -374,9 +375,11 @@ describe('Smart Dunning v2 end-to-end lifecycle (Stripe fixtures, fake clock)', 
       }));
       const invoked = jest.spyOn(fanout, 'onPurchaseEntitled');
       Reflect.set(w.handler, 'fanout', fanout);
-      await pastDueResync(w);
+      await w.handler.handle(fixture('customer.subscription.updated.past_due', {
+        current_period_start: sec(at(0)), current_period_end: sec(at(30 * DAY)),
+      }), db);
       expect(purchaseRow(w)?.entitlement_active).toBe(true);
-      expect(await lockVerdict(w, '/api/v1/workouts')).toBe('LOCKED_DUNNING');
+      expect(await lockVerdict(w, '/api/v1/scheduling/my-coaches')).toBe('LOCKED_DUNNING');
       expect(invoked).toHaveBeenCalledTimes(1);
       await expect(invoked.mock.results[0].value).resolves.toBeUndefined();
       expect(materialise).not.toHaveBeenCalled();
@@ -390,9 +393,11 @@ describe('Smart Dunning v2 end-to-end lifecycle (Stripe fixtures, fake clock)', 
       await failAttempt(w, 1);
       jest.setSystemTime(at(10 * DAY + HOUR));
       await w.v2.runSweep();
-      expect(await lockVerdict(w, '/api/v1/workouts')).toBe('LOCKED_DUNNING');
+      expect(await lockVerdict(w, '/api/v1/scheduling/my-coaches')).toBe('LOCKED_DUNNING');
+      w.fake.seed('coachPackage', { id: 'pkg-2', coach_user_id: 'coach-1', billing_type: 'recurring', interval: 'week' });
       w.fake.seed('clientPurchase', {
-        ...purchaseRow(w), id: 'second-plan', package_id: 'pkg-2',
+        id: 'second-plan', package_id: 'pkg-2', client_user_id: 'client-1',
+        coach_user_id: 'coach-1', billing_type: 'recurring', amount_cents: 15000, currency: 'usd',
         status, entitlement_active: true, access_expires_at: at(13 * DAY),
       });
       w.fake.seed('dunningState', {
@@ -403,7 +408,7 @@ describe('Smart Dunning v2 end-to-end lifecycle (Stripe fixtures, fake clock)', 
       const checkout = new CheckoutService(db, stub({}), stub({}), stub({}), stub({}), stub({}));
       expect(await checkout.hasActiveEntitlement('client-1', { packageId: 'pkg-2' })).toBe(true);
       expect(await entitlementVerdict(w)).toBe('allowed');
-      expect(await lockVerdict(w, '/api/v1/workouts')).toBe('allowed');
+      expect(await lockVerdict(w, '/api/v1/scheduling/my-coaches')).toBe('allowed');
     },
   );
 
