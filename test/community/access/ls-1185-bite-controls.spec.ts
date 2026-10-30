@@ -2,16 +2,16 @@ import { spawnSync } from 'child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { REPO_ROOT } from './member-content-scan';
+import { createProbeCopy } from './ls-1185-probe-copy';
 
-function runContract() {
+function runContract(root: string) {
   const scratch = mkdtempSync(join(tmpdir(), 'ls1185-control-'));
   const report = join(scratch, 'result.json');
   try {
     const run = spawnSync(process.execPath, [
       require.resolve('jest/bin/jest'), '--runInBand', '--no-cache', '--json', `--outputFile=${report}`,
       'test/community/access/member-content-access.spec.ts',
-    ], { cwd: REPO_ROOT, encoding: 'utf8', timeout: 110000, maxBuffer: 1024 * 1024 });
+    ], { cwd: root, encoding: 'utf8', timeout: 110000, maxBuffer: 1024 * 1024 });
     if (run.error) throw run.error;
     const result = JSON.parse(readFileSync(report, 'utf8')) as { numFailedTests: number; numPassedTests: number };
     return { ...result, diagnostic: `${run.stdout}\n${run.stderr}` };
@@ -30,18 +30,20 @@ describe('LS-1185 independent bite positive controls', () => {
     ['re-exported helper', 'export const read = (prisma: any) => prisma.communityMessage.findMany({});'],
   ];
   it.each(sourceForms)('new unregistered %s read turns red and names the file', (name, source) => {
-    const file = join(REPO_ROOT, 'src/ls-1185-probe-reader.ts');
-    const barrel = join(REPO_ROOT, 'src/ls-1185-probe-barrel.ts');
+    const root = createProbeCopy();
+    const file = join(root, 'src/ls-1185-probe-reader.ts');
+    const barrel = join(root, 'src/ls-1185-probe-barrel.ts');
     try {
       writeFileSync(file, source);
       if (name === 're-exported helper') writeFileSync(barrel, 'export { read } from "./ls-1185-probe-reader";');
-      const result = runContract();
+      const result = runContract(root);
       expect(result.numFailedTests).toBeGreaterThan(0);
       expect(result.diagnostic).toContain('src/ls-1185-probe-reader.ts');
       console.log(`LS-1185 bite ${name}: ${result.numFailedTests} red tests, reader filename present`);
     } finally {
       rmSync(file, { force: true });
       rmSync(barrel, { force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   }, 120000);
 
@@ -78,7 +80,8 @@ describe('LS-1185 independent bite positive controls', () => {
     ],
   ];
   it.each(mutations)('%s turns the contract red', (name, file, before, after) => {
-    const runtime = join(REPO_ROOT, file);
+    const root = createProbeCopy();
+    const runtime = join(root, file);
     const original = readFileSync(runtime, 'utf8');
     expect(original.includes(before)).toBe(true);
     try {
@@ -87,12 +90,13 @@ describe('LS-1185 independent bite positive controls', () => {
         mutated = mutated.replace('body: m.deleted_at ? null : m.body,', 'body: m.body,');
       }
       writeFileSync(runtime, mutated);
-      const result = runContract();
+      const result = runContract(root);
       expect(result.numFailedTests).toBeGreaterThan(0);
       if (name === 'covered reaction gap genuinely fixed') expect(result.diagnostic).toContain('KNOWN GAP fixed:');
       console.log(`LS-1185 bite ${name}: ${result.numFailedTests} red tests; reader filename present=${result.diagnostic.includes(file)}`);
     } finally {
       writeFileSync(runtime, original);
+      rmSync(root, { recursive: true, force: true });
     }
   }, 120000);
 });

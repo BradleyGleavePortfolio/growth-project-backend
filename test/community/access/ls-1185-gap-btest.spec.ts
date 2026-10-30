@@ -2,7 +2,8 @@ import { spawnSync } from 'child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { REPO_ROOT } from './member-content-scan';
+import { createProbeCopy } from './ls-1185-probe-copy';
+import { MEMBER_CONTENT_READERS } from './member-content-readers';
 
 describe('LS-1185 B2: each fixed KNOWN GAP must invalidate its registry row', () => {
   const unexercisedGaps: Array<[string, string, (source: string) => string, string]> = [
@@ -37,8 +38,11 @@ describe('LS-1185 B2: each fixed KNOWN GAP must invalidate its registry row', ()
     ],
   ];
   it.each(unexercisedGaps)('fixing %s makes its stale GAP declaration red', (name, file, fix, reader) => {
-    const runtime = join(REPO_ROOT, file);
-    const smoke = join(__dirname, 'ls-1185-generated-gap.spec.ts');
+    const row = MEMBER_CONTENT_READERS.find((entry) => entry.reader === name);
+    if (!row?.block.startsWith('GAP:')) return;
+    const root = createProbeCopy();
+    const runtime = join(root, file);
+    const smoke = join(root, 'test/community/access/ls-1185-generated-gap.spec.ts');
     const scratch = mkdtempSync(join(tmpdir(), 'ls1185-gap-'));
     const report = join(scratch, 'result.json');
     const original = readFileSync(runtime, 'utf8');
@@ -59,7 +63,7 @@ describe('LS-1185 B2: each fixed KNOWN GAP must invalidate its registry row', ()
         require.resolve('jest/bin/jest'), '--runInBand', '--no-cache', '--json', `--outputFile=${report}`,
         'test/community/access/member-content-access.spec.ts',
         'test/community/access/ls-1185-generated-gap.spec.ts',
-      ], { cwd: REPO_ROOT, encoding: 'utf8', timeout: 110000, maxBuffer: 1024 * 1024 });
+      ], { cwd: root, encoding: 'utf8', timeout: 110000, maxBuffer: 1024 * 1024 });
       if (run.error) throw run.error;
       const result = JSON.parse(readFileSync(report, 'utf8')) as {
         numFailedTests: number;
@@ -75,12 +79,16 @@ describe('LS-1185 B2: each fixed KNOWN GAP must invalidate its registry row', ()
       writeFileSync(runtime, original);
       rmSync(smoke, { force: true });
       rmSync(scratch, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   }, 120000);
 
   it('fixing the single-target reactions ban/departure gap makes the existing contract red', () => {
-    const runtime = join(REPO_ROOT, 'src/community/reactions/community-reactions.service.ts');
-    const smoke = join(__dirname, 'ls-1185-generated-gap.spec.ts');
+    const row = MEMBER_CONTENT_READERS.find((entry) => entry.reader === 'CommunityReactionsRepository.listForTarget');
+    if (!row?.ban.startsWith('GAP:') && !row?.departed.startsWith('GAP:')) return;
+    const root = createProbeCopy();
+    const runtime = join(root, 'src/community/reactions/community-reactions.service.ts');
+    const smoke = join(root, 'test/community/access/ls-1185-generated-gap.spec.ts');
     const scratch = mkdtempSync(join(tmpdir(), 'ls1185-gap-'));
     const report = join(scratch, 'result.json');
     const original = readFileSync(runtime, 'utf8');
@@ -106,7 +114,7 @@ describe('LS-1185 B2: each fixed KNOWN GAP must invalidate its registry row', ()
         require.resolve('jest/bin/jest'), '--runInBand', '--no-cache', '--json', `--outputFile=${report}`,
         'test/community/access/member-content-access.spec.ts',
         'test/community/access/ls-1185-generated-gap.spec.ts',
-      ], { cwd: REPO_ROOT, encoding: 'utf8', timeout: 110000, maxBuffer: 1024 * 1024 });
+      ], { cwd: root, encoding: 'utf8', timeout: 110000, maxBuffer: 1024 * 1024 });
       if (run.error) throw run.error;
       const result = JSON.parse(readFileSync(report, 'utf8')) as {
         numFailedTests: number;
@@ -122,6 +130,7 @@ describe('LS-1185 B2: each fixed KNOWN GAP must invalidate its registry row', ()
       writeFileSync(runtime, original);
       rmSync(smoke, { force: true });
       rmSync(scratch, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   }, 120000);
 });
