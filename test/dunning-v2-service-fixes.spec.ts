@@ -357,7 +357,12 @@ describe('dunning v2 service fix round (B-D12-116)', () => {
     });
     it('Sol B-688-7: a lock behind ten unlocked cycles is reported (DESC = nulls first)', async () => {
       const fake = new FakePrisma();
-      for (let i = 0; i < 10; i++) seed(fake, `p${i}`);
+      for (let i = 0; i < 10; i++) {
+        seed(fake, `p${i}`);
+        // FR-1190 (LS-1190 B3): a plan in its own live grace now waives the lock
+        // (B-628-7), so the ten unlocked cycles sit on plans that are not live.
+        row(fake, 'clientPurchase', `p${i}`).entitlement_active = false;
+      }
       seed(fake, 'pL', 3, { locked_out_at: at(10) });
       row(fake, 'clientPurchase', 'pL').entitlement_active = false;
       const status = await service(fake).getClientStatus('client-a');

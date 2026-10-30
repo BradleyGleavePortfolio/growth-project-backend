@@ -9,6 +9,7 @@ import type {
 import { PrismaService } from '../../prisma.service';
 import { liftWorkspaceBan } from '../community-ban';
 import { membersNow } from '../community-space-access';
+import { liveAccessWhere } from '../../checkout/dunning-v2/dunning-grace';
 
 /**
  * Data access for cohort membership administration (list / assign / remove).
@@ -90,8 +91,8 @@ export class CommunityCohortMembersRepository {
       where: {
         client_user_id: { in: ids },
         coach_user_id: coachId,
-        entitlement_active: true,
-        OR: [{ access_expires_at: null }, { access_expires_at: { gt: new Date() } }],
+        // FR-1190 (LS-1190 B1): the live rule, as app.community_can_access (20270502010000) counts it.
+        ...liveAccessWhere(),
         package: { community_spaces: { some: { cohort_id: cohortId } } },
       },
       select: { client_user_id: true, package_id: true, access_expires_at: true },
