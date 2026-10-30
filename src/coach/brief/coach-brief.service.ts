@@ -307,7 +307,7 @@ Rules (all mandatory):
 - Then the highlights, most important first: money that came in, messages waiting for a reply, check-ins, workouts completed, anything flagged. Use the exact numbers and dollar amounts given. Leave out anything that is zero, unless nothing happened at all.
 - If PAYMENT LINES are given, copy each one word for word, in the order given. Say nothing else about failed payments: never say a payment is being retried or that nothing is needed from the coach.
 - If there are action items, end with one short sentence that points to them below, matching the count given.
-- 2 to 4 short sentences, under ${BRIEF_TARGET_NARRATIVE_CHARS} characters in total.
+- 2 to 4 short sentences, under ${BRIEF_TARGET_NARRATIVE_CHARS} characters in total, not counting the PAYMENT LINES; with them the whole brief stays under ${BRIEF_MAX_NARRATIVE_CHARS} characters.
 - Plain prose only: no lists, no markdown, no headings, no emojis, no exclamation marks.
 - No first person: never use "I", "we", "us" or "our". State the facts directly, for example "$98 came in from 2 payments since midnight."
 - Never invent names, numbers or events that are not in the data. Do not sign the brief.
@@ -325,7 +325,7 @@ Rules (all mandatory):
 - If PAYMENT LINES are given, copy each one word for word, in the order given. Say nothing else about failed payments: never say a payment is being retried or that nothing is needed from the coach.
 - Never mention individual clients.
 - If there are action items, end with one short sentence that points to them below.
-- 2 to 4 short sentences, under ${BRIEF_TARGET_NARRATIVE_CHARS} characters in total.
+- 2 to 4 short sentences, under ${BRIEF_TARGET_NARRATIVE_CHARS} characters in total, not counting the PAYMENT LINES; with them the whole brief stays under ${BRIEF_MAX_NARRATIVE_CHARS} characters.
 - Plain prose only: no lists, no markdown, no headings, no emojis, no exclamation marks.
 - No first person: never use "I", "we", "us" or "our". State the facts directly.
 - Never invent names, numbers or events that are not in the data. Do not sign the brief.
@@ -658,7 +658,7 @@ function buildHeadCoachFallbackSentences(ctx: BriefContextHeadCoach): string[] {
 // fitNarrativeToLimit. Every rule here must accept an ordinary good reply
 // from the pinned model; anything stricter only pushes coaches into the
 // fallback. Contract:
-//   - 2 ≤ sentences ≤ 5
+//   - 2 ≤ sentences ≤ 5 (the approved payment lines not counted toward the 5)
 //   - Coach first name appears in sentence 1 or 2 (case-insensitive)
 //   - No markdown bullet/heading/code-fence characters left after normalize
 //   - No meta prefix ("Here is", "Sure,", "Of course")
@@ -694,7 +694,13 @@ export function validateClaudeNarrative(
   // because they are not followed by whitespace.
   const sentences = splitSentences(narrative);
   if (sentences.length < 2) return `too_few_sentences:${sentences.length}`;
-  if (sentences.length > 5) return `too_many_sentences:${sentences.length}`;
+  // FR-1191 (LS-1191 C1, LO-1191 N3): the approved payment lines (two
+  // sentences each, up to three lines) are copied word for word and do not
+  // use up the brief's own sentence budget.
+  const own = splitSentences(
+    paymentLines.reduce((t, line) => t.replace(line, ' '), narrative.replace(/\s+/g, ' ')),
+  );
+  if (own.length > 5) return `too_many_sentences:${own.length}`;
 
   // Coach first name must appear in sentence 1 or 2.
   const namePattern = new RegExp(
