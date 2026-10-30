@@ -179,6 +179,44 @@ describe('PR-14 — Guest storefront recurring + landing_page_id propagation', (
   });
 
   describe('createIntent — recurring + combo', () => {
+    it('LS-PAYFAIL B6: a new web buyer of a seven-day trial does not start an immediate-charge subscription', async () => {
+      prisma.coachPackage.findUnique.mockResolvedValueOnce(
+        makePkg({
+          billing_type: 'recurring',
+          amount_cents: 4900,
+          interval: 'month',
+          interval_count: 1,
+          trial_days: 7,
+        }),
+      );
+      prisma.guestCheckout.findUnique.mockResolvedValueOnce(null);
+      prisma.guestCheckout.create.mockResolvedValueOnce({
+        id: 'synthetic-trial-checkout',
+        idempotency_key: IDEMP_KEY,
+      });
+      stripe.createCustomer.mockResolvedValueOnce({ id: 'synthetic-customer' });
+      stripe.createSubscription.mockResolvedValueOnce({
+        id: 'synthetic-subscription',
+        status: 'incomplete',
+        latest_invoice: {
+          id: 'synthetic-invoice',
+          payment_intent: {
+            id: 'synthetic-current-payment',
+            client_secret: 'synthetic-client-secret',
+            status: 'requires_payment_method',
+          },
+        },
+      });
+      prisma.guestCheckout.update.mockResolvedValueOnce({});
+
+      await service.createIntent('tok123', baseDto);
+
+      expect(stripe.createSubscription).toHaveBeenCalledTimes(1);
+      expect(stripe.createSubscription).toHaveBeenCalledWith(
+        expect.objectContaining({ trialPeriodDays: 7 }),
+      );
+    });
+
     it('pure recurring: creates Customer + Subscription + returns the latest_invoice PI client_secret', async () => {
       prisma.coachPackage.findUnique.mockResolvedValueOnce(
         makePkg({
