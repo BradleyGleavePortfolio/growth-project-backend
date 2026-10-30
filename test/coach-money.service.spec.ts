@@ -218,6 +218,33 @@ function chargeRow(over: Record<string, unknown> = {}) {
   };
 }
 
+describe('LS-PAYFAIL unpaid collection surfaces', () => {
+  it.each(['attention', 'failed charges', 'charge state'])(
+    'LS-PAYFAIL B9: %s recognizes an unpaid recurring purchase as failed collection',
+    async (surface) => {
+      const p = buildPrisma();
+      if (surface === 'charge state') {
+        // A previously paid recurring purchase still has its earlier ledger
+        // slice when a later invoice fails and Stripe marks it unpaid.
+        p.clientPurchase.findFirst.mockResolvedValue(chargeRow({ status: 'unpaid' }));
+        const out = await svc(p).getChargeBreakdown(COACH, 'synthetic-unpaid-purchase');
+        expect(out.charge.state).toBe('failed');
+        return;
+      }
+
+      if (surface === 'attention') {
+        await svc(p).getAttention(COACH);
+      } else {
+        await svc(p).listCharges(COACH, { status: 'failed' });
+      }
+      const query = p.clientPurchase.findMany.mock.calls[0][0] as {
+        where: { status: { in: readonly string[] } };
+      };
+      expect(query.where.status.in).toContain('unpaid');
+    },
+  );
+});
+
 function pkgCadence(over: Record<string, unknown> = {}) {
   return {
     interval: 'month',
