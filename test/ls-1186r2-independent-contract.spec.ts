@@ -15,6 +15,7 @@ import { KNOWN_GAPS, SENDERS } from './utils/notify-sender-registry';
 import { LO_1186_B2_FILE, LO_1186_B2_TEXT, LS_1186_FIXTURE, LS_1186_FIXTURE_REL } from './utils/notify-sender-forms';
 import { scanSenders, scanText } from './utils/notify-sender-scan';
 import { pushOutboxWorld } from './utils/push-outbox-fake';
+import { stub } from './utils/trial-fakes';
 
 const REPO = path.resolve(__dirname, '..');
 const FILE = 'src/workout-builder/workout-builder.service.ts';
@@ -148,11 +149,11 @@ describe('LS-1186R2 B1: static literal kinds must remain bound to real sender va
       },
     };
     class Clocked extends PushDeliveryService { protected now(): Date { return at; } }
-    const delivery = new Clocked(db as ConstructorParameters<typeof PushDeliveryService>[0], {
+    const delivery = new Clocked(stub<ConstructorParameters<typeof PushDeliveryService>[0]>(db), {
       send: jest.fn(async () => []), getReceipts: jest.fn(async () => ({})),
     });
     delivery.autoDrain = false;
-    const notices = new NotificationsService(db as ConstructorParameters<typeof NotificationsService>[0], undefined, undefined, delivery);
+    const notices = new NotificationsService(stub<ConstructorParameters<typeof NotificationsService>[0]>(db), undefined, undefined, delivery);
     const sf = ts.createSourceFile(FILE, changed, ts.ScriptTarget.Latest, true);
     const cls = sf.statements.find((s): s is ts.ClassDeclaration => ts.isClassDeclaration(s) && s.name?.text === 'WorkoutBuilderService');
     const method = cls?.members.find((m): m is ts.MethodDeclaration => ts.isMethodDeclaration(m) && m.name.getText(sf) === 'emitAssignmentPush');
