@@ -240,7 +240,9 @@ describe('KT-2 architecture: every read of a member-content table under src/ is 
       rmSync(root, { recursive: true, force: true });
     }
   };
-  it.each(CALLER_FORMS)('the scan reports a caller through %s', (_form, source, expected, options) => {
+  // Two values per row and two parameters: a row shorter than the callback's parameter list makes Jest wait for `done`.
+  it.each(CALLER_FORMS.map((row) => [row[0], row] as const))('the scan reports a caller through %s', (_form, row) => {
+    const [, source, expected, options] = row;
     expect(callerSites({ 'caller.ts': source }, options)).toEqual([...expected].sort());
   });
 
