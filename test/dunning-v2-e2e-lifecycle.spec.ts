@@ -491,7 +491,7 @@ describe('Smart Dunning v2 end-to-end lifecycle (Stripe fixtures, fake clock)', 
     const latest = readdirSync(dir)
       .filter((m) => {
         try {
-          return /FUNCTION app\.community_can_access/.test(readFileSync(join(dir, m, 'migration.sql'), 'utf8'));
+          return /CREATE (OR REPLACE )?FUNCTION app\.community_can_access/.test(readFileSync(join(dir, m, 'migration.sql'), 'utf8'));
         } catch {
           return false;
         }
@@ -499,8 +499,10 @@ describe('Smart Dunning v2 end-to-end lifecycle (Stripe fixtures, fake clock)', 
       .sort()
       .pop()!;
     const sql = readFileSync(join(dir, latest, 'migration.sql'), 'utf8');
-    const fn = sql.slice(sql.lastIndexOf('FUNCTION app.community_can_access'));
-    const body = fn.slice(0, fn.indexOf('$fn$;'));
+    const fn = sql.slice(sql.search(/CREATE (OR REPLACE )?FUNCTION app\.community_can_access/));
+    const end = fn.search(/\$[A-Za-z_]*\$;/);
+    expect(end).toBeGreaterThan(0);
+    const body = fn.slice(0, end);
 
     expect({
       packageAccess: access.has('client-1'),
