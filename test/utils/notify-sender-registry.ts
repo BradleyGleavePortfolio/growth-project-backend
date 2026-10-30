@@ -95,6 +95,12 @@ export interface KnownGap {
   audit: string;
   /** What today's code does in the spec's case for that rule (a driven gap); undefined when not driven. */
   today?: Outcome;
+  /**
+   * FR-1186 (LS-1186 C1): for a gap no driver runs, the code that causes it. The spec goes red when that code
+   * is gone (the gap may be fixed: check it, then delete the gap). `has` / `lacks`: send sites the scan must or
+   * must not find in file:fn. `textLacks`: the file must not say this.
+   */
+  tripwire?: { file: string; fn?: string; has?: SendVia; lacks?: SendVia; textLacks?: RegExp };
 }
 
 /** This PR; the AUDIT link for the gaps this registry found. */
@@ -109,6 +115,7 @@ export const KNOWN_GAPS: Record<KnownGapId, KnownGap> = {
     why: 'an approved AI draft send_notification on the push channel writes the Notification row with Prisma and never calls sendPush (LO-1180R4B C)',
     audit:
       'failing test on btest/LO-1180R4B-ai-send-notification-push @ 3cd02633, run https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/40929701633',
+    tripwire: { file: 'src/ai/gateway/materialisers/send-notification.materialiser.ts', fn: 'SendNotificationMaterializer.materialize', has: 'notificationRow', lacks: 'sendPush' },
   },
   'KG-QH-CHURN': {
     where: 'src/coach/command-center/churn-intervention.service.ts:ChurnInterventionService.sendIntervention',
@@ -143,24 +150,28 @@ export const KNOWN_GAPS: Record<KnownGapId, KnownGap> = {
     rule: 'quiet hours',
     why: `the coach's payout notice push goes out when the refund or dispute lands, at any local hour; ${QH_DIRECT}`,
     audit: THIS_PR,
+    tripwire: { file: 'src/checkout/payout-notice.service.ts', fn: 'PayoutNoticeService.deliverPush', has: 'pushToUser', lacks: 'sendPush' },
   },
   'KG-QH-TRIAL': {
     where: 'src/packages/trials/trial-notice.service.ts:TrialNoticeService.deliverPush',
     rule: 'quiet hours',
     why: `the trial-ending push goes out on the 10-minute UTC sweep, at any local hour; ${QH_DIRECT}`,
     audit: THIS_PR,
+    tripwire: { file: 'src/packages/trials/trial-notice.service.ts', fn: 'TrialNoticeService.deliverPush', has: 'pushToUser', lacks: 'sendPush' },
   },
   'KG-QH-WORKOUT-REMINDER': {
     where: 'src/engagement/workout-reminder.service.ts:WorkoutReminderService.processClient',
     rule: 'quiet hours',
     why: `the "morning" slot opens at 07:00 local (REMINDER_SLOT_MINUTES), inside quiet hours; ${QH_DIRECT}`,
     audit: THIS_PR,
+    tripwire: { file: 'src/engagement/workout-reminder.service.ts', fn: 'WorkoutReminderService.processClient', has: 'pushToUser', lacks: 'sendPush' },
   },
   'KG-HELD-BLOCK-MESSAGE': {
     where: 'src/messaging/messaging.service.ts:MessagingService.notifyNewMessage',
     rule: 'block and ban',
     why: 'a coach and client message push held to 08:00 is sent even if one side blocked the other while it waited: at send time the push outbox (push-delivery.service.ts) plans again only space pushes (spacePushDropReason), so the block is never read (owner 10-22: a block hides all messaging)',
     audit: THIS_PR,
+    tripwire: { file: 'src/notifications/push/push-delivery.service.ts', textLacks: /userBlock|isEitherSideBlocked/ },
   },
 };
 

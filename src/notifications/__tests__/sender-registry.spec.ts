@@ -22,9 +22,18 @@
  *     registry: file:function, the rule it misses, one line why, the AUDIT link) and name it on the rule.
  *  4. A KNOWN GAP case is red because the gap is fixed: delete the gap from the rule and from KNOWN_GAPS.
  *  5. "has no send site": the row's function moved or stopped sending. Move or delete the row.
+ *  6. "Fix the row's funnel entries": a sendPush call passes a kind, `urgent` or a Mute all pass (passesMuteAll,
+ *     MUTE_ALL_PASS, safetyAlert) its row's `funnel` entries do not declare, or the reverse. The funnel table
+ *     sends the values the code passes (LO-1186 B2), so make the entries say what the code does.
+ *  7. "looks fixed (tripwire)": the code a KNOWN GAP names is gone. Check the gap, then delete it.
+ * The registry is per function: a second send of a kind its row already lists, in the same function, adds no
+ * row. When you add one, read the row again and make sure its five rules still hold for the new send.
+ * The scan finds a sender however it is reached (called, bound, destructured, by `x['name']`, or under any name
+ * typed with the sender); sender-scan-forms.spec.ts proves each form it knows. A new way to send goes there.
  * Never skip a case, loosen a check or add to FUNNEL_SITES to make this green; that is the trap KT-4 names.
  */
 import { randomUUID } from 'crypto';
+import * as fs from 'fs';
 import * as path from 'path';
 import { Logger } from '@nestjs/common';
 import { Expo, type ExpoPushMessage, type ExpoPushTicket } from 'expo-server-sdk';
@@ -57,20 +66,26 @@ import {
   SENDERS,
   type SenderRow,
 } from '../../../test/utils/notify-sender-registry';
-import { scanSenders, type SendHit } from '../../../test/utils/notify-sender-scan';
+import {
+  directTransport,
+  funnelArgFindings,
+  keyOf,
+  KT4,
+  sendPushHitsByRow,
+  sentValues,
+  unregistered,
+} from '../../../test/utils/notify-sender-checks';
+import { scanSenders } from '../../../test/utils/notify-sender-scan';
 
 const stub = <T>(v: unknown): T => v as T;
 const REPO = path.resolve(__dirname, '../../..');
-const KT4 = 'KT-4 (KNOWN_TRAPS.md; read the header of src/notifications/__tests__/sender-registry.spec.ts)';
-const keyOf = (file: string, fn: string): string => `${file}#${fn}`;
-const where = (h: SendHit): string => `${h.file}:${h.line} ${h.fn} [${h.via}] ${h.code}`;
+/** One scan of src/ for every block below. */
+const HITS = scanSenders(REPO);
 
 // ─── (b) Architecture: every send site in src/ is the funnel or a registered sender ─────────────────────────────
 
 describe('KT-4 sender registry: the send sites in src/', () => {
-  const hits = scanSenders(REPO);
-  const funnel = new Set(FUNNEL_SITES.map((s) => keyOf(s.file, s.fn)));
-  const rows = new Map(SENDERS.map((r) => [keyOf(r.file, r.fn), r]));
+  const hits = HITS;
 
   it('the scan still sees the funnel (a scan that finds nothing proves nothing)', () => {
     const missing = FUNNEL_SITES.filter((s) => !hits.some((h) => h.file === s.file && h.fn === s.fn && h.via === s.via));
@@ -79,18 +94,34 @@ describe('KT-4 sender registry: the send sites in src/', () => {
   });
 
   it('nothing outside the funnel calls the push transport directly', () => {
-    const direct = hits.filter((h) => h.via === 'transport' && !funnel.has(keyOf(h.file, h.fn)));
-    expect(direct.map((h) => `calls the push transport directly, outside the funnel. ${KT4}: ${where(h)}`)).toEqual([]);
+    expect(directTransport(hits)).toEqual([]);
   });
 
   it('every other send site is a registered sender', () => {
-    const unregistered = hits.filter((h) => {
-      if (h.via === 'transport') return false; // the test above
-      if (funnel.has(keyOf(h.file, h.fn))) return false;
-      const row = rows.get(keyOf(h.file, h.fn));
-      return !row || !row.via.includes(h.via);
+    expect(unregistered(hits)).toEqual([]);
+  });
+
+  it("each sendPush sender's funnel entries declare what its code passes (kind, urgent, a Mute all pass)", () => {
+    expect(funnelArgFindings(hits)).toEqual([]);
+  });
+
+  it('every KNOWN GAP no driver runs still has the code that causes it (tripwire)', () => {
+    const findings = (Object.entries(KNOWN_GAPS) as Array<[KnownGapId, (typeof KNOWN_GAPS)[KnownGapId]]>).flatMap(([id, g]) => {
+      if (g.today) return []; // driven: the behavior cases below measure it
+      const t = g.tripwire;
+      if (!t) return [`${id} is not driven, so it needs a tripwire in KNOWN_GAPS. ${KT4}`];
+      const at = hits.filter((h) => h.file === t.file && (!t.fn || h.fn === t.fn));
+      const out: string[] = [];
+      if (t.has && !at.some((h) => h.via === t.has)) out.push(`${id} looks fixed (tripwire): ${t.file} ${t.fn ?? ''} has no [${t.has}] send site any more`);
+      if (t.lacks) {
+        for (const h of at.filter((x) => x.via === t.lacks)) out.push(`${id} looks fixed (tripwire): ${h.file}:${h.line} ${h.fn} now has [${t.lacks}]`);
+      }
+      if (t.textLacks && t.textLacks.test(fs.readFileSync(path.join(REPO, t.file), 'utf8'))) {
+        out.push(`${id} looks fixed (tripwire): ${t.file} now says ${t.textLacks}`);
+      }
+      return out.map((m) => `${m}. Check the gap, then delete it from its rule and from KNOWN_GAPS. ${KT4}`);
     });
-    expect(unregistered.map((h) => `not in the sender registry (test/utils/notify-sender-registry.ts). ${KT4}: ${where(h)}`)).toEqual([]);
+    expect(findings).toEqual([]);
   });
 
   it('every registry row still has its send sites', () => {
@@ -445,11 +476,15 @@ describe('KT-4 sender registry: the funnel holds every registered push kind to i
   beforeAll(quiet);
   afterAll(() => jest.restoreAllMocks());
 
-  const pushes = SENDERS.flatMap((r) => (r.funnel ?? []).map((p) => [r, p] as const));
-  const cases = pushes.flatMap(([row, p]) =>
+  // LO-1186 B2: each push is sent with the kind, urgent and context its sender's own sendPush call passes; an
+  // entry's declared value is used only where the code picks at run time (funnelArgFindings checks the entries
+  // cover each choice). A row with no sendPush call of its own (an emitter caller) sends its declared values.
+  const byRow = sendPushHitsByRow(HITS);
+  const pushes = SENDERS.flatMap((r) => (r.funnel ?? []).map((p) => [r, p, sentValues(byRow.get(r), p)] as const));
+  const cases = pushes.flatMap(([row, p, sent]) =>
     (['baseline', 'muteAll', 'quietHours'] as const).map((s) => {
       const outcome: Outcome = s === 'baseline' ? 'sent' : s === 'muteAll' ? (p.muteAll === 'stops' ? 'none' : 'sent') : p.quietHours === 'held' ? 'held' : 'sent';
-      return [`${row.fn}: ${p.kind} (${p.note}) ${s}: ${outcome}`, row, p, s, outcome] as const;
+      return [`${row.fn}: ${sent.kind} (${p.note}; ${sent.from}) ${s}: ${outcome}`, row, sent, s, outcome] as const;
     }),
   );
 
@@ -466,7 +501,7 @@ describe('KT-4 sender registry: the funnel holds every registered push kind to i
         urgent: p.urgent,
         dedupe_key: `kt4:${randomUUID()}`,
       });
-      const hint = `${row.file} ${row.fn}: ${p.kind} must ${s === 'muteAll' ? p.muteAll : p.quietHours} (${s}). ${KT4}`;
+      const hint = `${row.file} ${row.fn}: ${p.kind} (${p.from}) must ${outcome} (${s}). ${KT4}`;
       expect({ case: s, got: await c.outcome(), hint }).toEqual({ case: s, got: outcome, hint });
     } finally {
       expoSend.mockRestore();
