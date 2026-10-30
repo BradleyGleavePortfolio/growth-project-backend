@@ -29,7 +29,10 @@ import type { SupabaseService } from '../../../src/supabase/supabase.service';
 import { assertEnv, PHOTO_CHECK_KEY_GHOST } from '../../../src/common/env-validation';
 import { safetyWithBlocks } from '../safety/safety-test-helpers';
 import { egressWithGrants } from '../../ai-egress/ai-egress.fakes';
-import { JFIF, SCAN, SOI, jpeg, exifApp1, xmpApp1, segment } from './jpeg-fixtures';
+import {
+  JFIF, SCAN, SOI, jpeg, exifApp1, xmpApp1, segment, tiff,
+  extendedXmpApp1, EXTENDED_GUID, LOCATED,
+} from './jpeg-fixtures';
 
 function stub<T>(v: unknown): T {
   return v as T;
@@ -299,6 +302,146 @@ describe('the automatic photo check on a space chat photo send (PHOTO-CHECK-BE)'
     const wire = Buffer.from(photoInput.image_url.url.split(',')[1], 'base64');
     expect(wire.toString('latin1')).not.toContain(creator);
     expect(wire).toEqual(validPicture);
+  });
+
+  // Independent round-2 transport matrix. All assertions use the real shared
+  // service -> store -> egress -> SDK path, not a second stripper.
+  const progressivePicture = Buffer.from(
+    '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wgARCAAIABADASIAAhEBAxEB/8QAFgABAQEAAAAAAAAAAAAAAAAAAAUG/8QAFQEBAQAAAAAAAAAAAAAAAAAAAwT/2gAMAwEAAhADEAAAAY2iCl//xAAWEAADAAAAAAAAAAAAAAAAAAAAAwX/2gAIAQEAAQUCVOFTj//EABgRAAIDAAAAAAAAAAAAAAAAAAAhAwQF/9oACAEDAQE/Acy9Mmf/xAAYEQACAwAAAAAAAAAAAAAAAAAAAwQhIv/aAAgBAgEBPwFMtmrP/8QAFRABAQAAAAAAAAAAAAAAAAAAADH/2gAIAQEABj8CiP/EABUQAQEAAAAAAAAAAAAAAAAAAAAx/9oACAEBAAE/IVk//9oADAMBAAIAAwAAABCL/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAwEBPxAD/8QAFhEAAwAAAAAAAAAAAAAAAAAAAJHB/9oACAECAQE/EESn/8QAFxABAAMAAAAAAAAAAAAAAAAAADHB8f/aAAgBAQABPxCGjAf/2Q==',
+    'base64',
+  );
+  const u16le = (n: number) => [n & 0xff, n >>> 8 & 0xff];
+  const u32le = (n: number) => [...u16le(n), ...u16le(n >>> 16)];
+  const u32be = (n: number) => [n >>> 24 & 0xff, n >>> 16 & 0xff, n >>> 8 & 0xff, n & 0xff];
+  const creatorBytes = [...Buffer.from(creator, 'latin1')];
+  const byline = [0x1c, 2, 80, 0, creatorBytes.length, ...creatorBytes];
+  const iptcBlock = segment(0xed, [
+    ...Buffer.from('Photoshop 3.0\0', 'latin1'), ...Buffer.from('8BIM', 'latin1'), 4, 4, 0, 0,
+    ...u32be(byline.length), ...byline, ...(byline.length % 2 ? [0] : []),
+  ]);
+  const description = [...Buffer.from('desc\0\0\0\0', 'latin1'), ...u32be(creatorBytes.length + 1), ...creatorBytes, 0];
+  const profileHeader = Array<number>(128).fill(0);
+  profileHeader.splice(0, 4, ...u32be(144 + description.length));
+  profileHeader.splice(36, 4, ...Buffer.from('acsp', 'latin1'));
+  const iccBlock = segment(0xe2, [
+    ...Buffer.from('ICC_PROFILE\0', 'latin1'), 1, 1,
+    ...profileHeader, ...u32be(1), ...Buffer.from('desc', 'latin1'),
+    ...u32be(144), ...u32be(description.length), ...description,
+  ]);
+  const namedThumbnail = [...SOI, ...artist, ...validPicture.subarray(20)];
+  const thumbnailExif = exifApp1([
+    0x49, 0x49, ...u16le(42), ...u32le(8),
+    ...u16le(0), ...u32le(14), // IFD0: no tags; next IFD at offset 14.
+    ...u16le(2),
+    ...u16le(0x0201), ...u16le(4), ...u32le(1), ...u32le(44),
+    ...u16le(0x0202), ...u16le(4), ...u32le(1), ...u32le(namedThumbnail.length),
+    ...u32le(0),
+    ...namedThumbnail,
+  ]);
+  const independentBlocks: Array<[string, number[]]> = [
+    ['EXIF Artist', artist],
+    ['EXIF OwnerName', ownerName],
+    ['EXIF thumbnail with its own creator', thumbnailExif],
+    ['XMP creator', xmpCreator],
+    ['IPTC By-line', iptcBlock],
+    ['ICC description', iccBlock],
+    ['MPF index', segment(0xe2, [...Buffer.from(`MPF\0MM\0*${creator}`, 'latin1')])],
+    ['COM creator', segment(0xfe, [...Buffer.from(creator, 'latin1')])],
+    ['APP15 writer data', segment(0xef, [...Buffer.from(creator, 'latin1')])],
+  ];
+  const wirePhoto = (w: ReturnType<typeof world>) => {
+    const part = w.checks.find((c) => c.part === 'image')?.body.input[0] as { image_url: { url: string } };
+    return Buffer.from(part.image_url.url.split(',')[1], 'base64');
+  };
+  it.each(independentBlocks)('LS-1187R2 matrix: %s before the frame is absent from the wire only', async (_label, block) => {
+    const upload = Buffer.from([...validPicture.subarray(0, 20), ...block, ...validPicture.subarray(20)]);
+    const w = world({ photo: upload });
+    expect(await codeOf(w.send(''))).toBe('ok');
+    expect(wirePhoto(w)).toEqual(validPicture);
+    expect(w.objects.get(w.key)).toEqual(upload);
+    expect(w.objects.get(sentImageKey(w.key))).toEqual(upload);
+  });
+  it.each([
+    ...independentBlocks,
+    ['ExtendedXMP creator', extendedXmpApp1(EXTENDED_GUID, creator.length, 0, creator)] as [string, number[]],
+  ])('LS-1187R2 matrix: %s between real progressive scans is absent from the wire only', async (_label, block) => {
+    const firstScan = progressivePicture.indexOf(Buffer.from([0xff, 0xda]));
+    const nextTable = progressivePicture.indexOf(Buffer.from([0xff, 0xc4]), firstScan + 2);
+    expect(firstScan).toBeGreaterThan(0);
+    expect(nextTable).toBeGreaterThan(firstScan);
+    const upload = Buffer.from([...progressivePicture.subarray(0, nextTable), ...block, ...progressivePicture.subarray(nextTable)]);
+    const w = world({ photo: upload });
+    expect(await codeOf(w.send(''))).toBe('ok');
+    expect(wirePhoto(w)).toEqual(progressivePicture);
+    expect(w.objects.get(sentImageKey(w.key))).toEqual(upload);
+  });
+  it('LS-1187R2 matrix: a two-picture MPF index and second JPEG are both absent from the SDK copy', async () => {
+    const makeIndex = (primarySize: number) => segment(0xe2, [
+      ...Buffer.from('MPF\0II', 'latin1'), ...u16le(42), ...u32le(8), ...u16le(2),
+      ...u16le(0xb001), ...u16le(4), ...u32le(1), ...u32le(2),
+      ...u16le(0xb002), ...u16le(7), ...u32le(32), ...u32le(38),
+      ...u32le(0),
+      ...u32le(0x20000000), ...u32le(primarySize), ...u32le(0), ...u16le(0), ...u16le(0),
+      ...u32le(0), ...u32le(namedThumbnail.length), ...u32le(primarySize - 28), ...u16le(0), ...u16le(0),
+    ]);
+    const index = makeIndex(validPicture.length + makeIndex(0).length);
+    const upload = Buffer.from([
+      ...validPicture.subarray(0, 20), ...index, ...validPicture.subarray(20), ...namedThumbnail,
+    ]);
+    const w = world({ photo: upload });
+    expect(await codeOf(w.send(''))).toBe('ok');
+    expect(wirePhoto(w)).toEqual(validPicture);
+    expect(w.objects.get(sentImageKey(w.key))).toEqual(upload);
+  });
+  it.each([
+    ['second MPF JPEG and creator', [...namedThumbnail]],
+    ['unframed trailing creator', [...Buffer.from(creator, 'latin1')]],
+  ])('LS-1187R2 matrix: %s after primary EOI is not sent', async (_label, trailing) => {
+    const upload = Buffer.from([...validPicture, ...trailing]);
+    const w = world({ photo: upload });
+    expect(await codeOf(w.send(''))).toBe('ok');
+    expect(wirePhoto(w)).toEqual(validPicture);
+    expect(w.objects.get(sentImageKey(w.key))).toEqual(upload);
+  });
+  it('LS-1187R2 matrix: pre-scan ExtendedXMP remains refused before any SDK call', async () => {
+    const block = extendedXmpApp1(EXTENDED_GUID, creator.length, 0, creator);
+    const w = world({ photo: Buffer.from([...validPicture.subarray(0, 20), ...block, ...validPicture.subarray(20)]) });
+    expect(await codeOf(w.send(''))).toBe('422 community.image.has_location');
+    expect(w.checks).toEqual([]);
+    expect(w.messages).toEqual([]);
+    expect(w.objects.has(w.key)).toBe(false);
+  });
+  it.each(Object.entries(LOCATED))('LS-1187R2 matrix: %s location remains refused before any SDK call', async (_label, bytes) => {
+    const w = world({ photo: Buffer.from(bytes) });
+    expect(await codeOf(w.send(''))).toBe('422 community.image.has_location');
+    expect(w.checks).toEqual([]);
+    expect(w.messages).toEqual([]);
+  });
+  it.each<[string, number[]]>([
+    ['APP1 length past object end', [...SOI, ...JFIF, ...SCAN.slice(0, -2), 0xff, 0xe1, 0x7f, 0xff, 0]],
+    ['partial table length after scan', [...SOI, ...JFIF, ...SCAN.slice(0, -2), 0xff, 0xdb, 0]],
+    ['zero APP1 length', [...SOI, ...JFIF, ...SCAN.slice(0, -2), 0xff, 0xe1, 0, 0]],
+  ])('LS-1187R2 matrix: %s returns 503 and sends no image', async (_label, bytes) => {
+    const w = world({ photo: Buffer.from(bytes) });
+    expect(await codeOf(w.send(''))).toBe('503 PHOTO_CHECK_UNAVAILABLE');
+    expect(w.checks).toEqual([]);
+    expect(w.messages).toEqual([]);
+  });
+  it('LS-1187R2 characterises orientation: source remains oriented but SDK copy has no EXIF and unchanged frame', async () => {
+    const exif = exifApp1(tiff('MM'));
+    // tiff fixture's final inline SHORT is the orientation value.
+    exif[exif.length - 8] = 0;
+    exif[exif.length - 7] = 6;
+    const upload = Buffer.from([...validPicture.subarray(0, 20), ...exif, ...validPicture.subarray(20)]);
+    const w = world({ photo: upload });
+    expect(await codeOf(w.send(''))).toBe('ok');
+    expect(wirePhoto(w)).toEqual(validPicture);
+    expect(w.objects.get(sentImageKey(w.key))).toEqual(upload);
+  });
+  it('LS-1187R2 characterises scan EOF: missing EOI is repaired and forwarded, not refused', async () => {
+    const w = world({ photo: validPicture.subarray(0, -2) });
+    expect(await codeOf(w.send(''))).toBe('ok');
+    expect(wirePhoto(w)).toEqual(validPicture);
   });
 
   // FR-1187 (operator ruling on LS-1187 B1): what reaches OpenAI is the photo with no metadata, for every
