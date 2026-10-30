@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { DUNNING_V2_CADENCE_DAYS } from '../checkout/dunning-v2/dunning-v2.cadence';
 import { movedAwayClientIds } from '../checkout/moved-client-money';
@@ -284,6 +285,17 @@ export const PAID_WHERE = {
     { disputes: { none: { status: { in: [...LOST_DISPUTE_STATUSES] } } } },
     BILLED_WHERE,
   ],
+};
+
+/**
+ * FR-1191 (LS-1191 B1): the `paid` charge filter is today's state, so a sale
+ * whose current collection failed (an earlier invoice paid, the renewal did
+ * not) is a Failed row, not a Paid one. PAID_WHERE and BILLED_WHERE stay the
+ * historical "this sale was paid once" evidence for MRR, churn, new and
+ * returning clients.
+ */
+export const PAID_NOW_WHERE = {
+  AND: [...PAID_WHERE.AND, { status: { notIn: [...FAILED_PURCHASE_STATUSES] } }],
 };
 
 /** `refunded` filter: money went back by refund OR by a lost chargeback. */
@@ -1571,7 +1583,7 @@ export class CoachMoneyService {
     );
     const statusWhere =
       opts.status === 'paid'
-        ? PAID_WHERE
+        ? PAID_NOW_WHERE
         : opts.status === 'failed'
           ? { status: { in: [...FAILED_PURCHASE_STATUSES] } }
           : opts.status === 'refunded'
@@ -1579,13 +1591,23 @@ export class CoachMoneyService {
             : opts.status === 'disputed'
               ? DISPUTED_WHERE
               : {};
-    const rows = await this.prisma.clientPurchase.findMany({
-      where: { coach_user_id: coachId, source: null, amount_cents: { gt: 0 }, ...statusWhere },
-      orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
-      take: limit + 1,
-      ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
-      select: this.chargeSelect(),
-    });
+    const find = (where: Prisma.ClientPurchaseWhereInput) =>
+      this.prisma.clientPurchase.findMany({
+        where: { coach_user_id: coachId, source: null, amount_cents: { gt: 0 }, ...where },
+        orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+        take: limit + 1,
+        ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
+        select: this.chargeSelect(),
+      });
+    let rows = await find(statusWhere);
+    // FR-1191 (LO-1191 C1): `paid` with limit 1 and no cursor is the phone's
+    // setup checklist asking "was this coach ever paid?" (mobile
+    // src/lib/coachSetup/setupStatus.ts). When every paid sale's renewal is
+    // failing now, that answer is still yes, so it falls back to the
+    // historical evidence; the Money Paid list (20 a page) never takes this.
+    if (opts.status === 'paid' && limit === 1 && !opts.cursor && rows.length === 0) {
+      rows = await find(PAID_WHERE);
+    }
     const hasMore = rows.length > limit;
     const page = hasMore ? rows.slice(0, limit) : rows;
     const moved = await movedAwayClientIds(this.prisma, coachId, page.map((r) => r.client?.id));

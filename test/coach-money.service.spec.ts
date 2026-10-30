@@ -21,6 +21,7 @@ import {
   CHARGE_STATUS_FILTERS,
   CoachMoneyService,
   DISPUTED_WHERE,
+  PAID_NOW_WHERE,
   PAID_WHERE,
   REFUNDED_WHERE,
   allocateReversal,
@@ -394,8 +395,9 @@ describe('CoachMoneyService.listCharges', () => {
       REFUNDED_WHERE,
     );
     await svc(p).listCharges(COACH, { status: 'paid' });
+    // FR-1191 (LS-1191 B1): the Paid list is today's state, not PAID_WHERE's history.
     expect((p.clientPurchase.findMany.mock.calls[3][0] as { where: unknown }).where).toMatchObject(
-      PAID_WHERE,
+      PAID_NOW_WHERE,
     );
     await svc(p).listCharges(COACH, { status: 'disputed' });
     expect((p.clientPurchase.findMany.mock.calls[4][0] as { where: unknown }).where).toMatchObject(
