@@ -3,6 +3,7 @@ import { join } from 'path';
 import { ForbiddenException, HttpException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
+import { CheckoutService } from '../src/checkout/checkout.service';
 import { DunningService } from '../src/checkout/dunning.service';
 import { DunningV2Service } from '../src/checkout/dunning-v2/dunning-v2.service';
 import { DunningV2Dispatcher } from '../src/checkout/dunning-v2/dunning-v2.dispatcher';
@@ -296,6 +297,24 @@ describe('Smart Dunning v2 end-to-end lifecycle (Stripe fixtures, fake clock)', 
   afterAll(() => {
     if (prevFlag === undefined) delete process.env['FEATURE_DUNNING_V2'];
     else process.env['FEATURE_DUNNING_V2'] = prevFlag;
+  });
+
+  it('LS-PAYFAIL B2: the phone entitlement read preserves grace when invoice failure arrives before subscription resync', async () => {
+    // A real renewing purchase reaches its old period end at T0. Stripe's
+    // invoice failure and subscription update are independently delivered.
+    await failAttempt(w, 1);
+    expect(purchaseRow(w)).toMatchObject({ status: 'past_due', entitlement_active: true });
+    expect((await w.v2.getClientStatus('client-1')).state).toBe('past_due');
+    expect(await entitlementVerdict(w)).toBe('allowed');
+    expect(await lockVerdict(w, '/api/v1/workouts')).toBe('allowed');
+
+    const checkout = new CheckoutService(
+      w.fake.client(),
+      stub({}), stub({}), stub({}), stub({}), stub({}),
+    );
+    // GET /v1/checkout/entitlement drives the real phone's paid-screen gate.
+    // No forced pastDueResync is inserted to hide normal webhook ordering.
+    expect(await checkout.hasActiveEntitlement('client-1')).toBe(true);
   });
 
   it('A. fail Day 0 -> Stripe retry Day 1 fails -> pays on the Day 3 retry -> recovered, never locked', async () => {
