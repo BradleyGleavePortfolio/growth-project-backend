@@ -360,17 +360,17 @@ describe('Smart Dunning v2 end-to-end lifecycle (Stripe fixtures, fake clock)', 
       });
       const repo = new CommunityCohortMembersRepository(db);
       const access = async () => (await repo.packageAccess(
-        db, 'space-paid', ['client-1', 'client-2'],
-      )).get('client-1');
+        'space-paid', 'coach-1', ['client-1', 'client-2'],
+      )).get('client-1')?.package_id;
       const checkout = new CheckoutService(db, stub({}), stub({}), stub({}), stub({}), stub({}));
 
       jest.setSystemTime(at(7 * DAY));
-      expect(await access()).toBe('paid_package');
+      expect(await access()).toBe('pkg-1');
       jest.setSystemTime(at(8 * DAY + HOUR));
       await w.v2.runSweep();
       expect(stateRow(w)?.locked_out_at).toBeNull();
       expect(await checkout.hasActiveEntitlement('client-1', {})).toBe(true);
-      expect(await access()).toBe('paid_package');
+      expect(await access()).toBe('pkg-1');
     },
   );
 
