@@ -468,28 +468,85 @@ describe('carriesLocation (PHOTO-GPS)', () => {
     expect(located(flir([[0x0e, Buffer.from(shared(60, 4000))]]))).toBe(true); // the same inside FLIR chunks
   });
 
-  it('FR-1189R2: a directory past IFD0 that starts past the end, loops back or is cut short holds no more; IFD0 and GPSInfo still fail closed', () => {
-    // A little-endian TIFF: IFD0 at 8, each directory [count, entries (tag, type LONG, count 1, value), next IFD].
-    const dir = (entries: Array<[number, number]>, next = 0, count = entries.length): number[] => {
-      const b = Buffer.alloc(2 + entries.length * 12 + 4);
-      b.writeUInt16LE(count, 0);
-      entries.forEach(([tag, value], k) => {
-        b.writeUInt16LE(tag, 2 + k * 12);
-        b.writeUInt16LE(4, 4 + k * 12);
-        b.writeUInt32LE(1, 6 + k * 12);
-        b.writeUInt32LE(value, 10 + k * 12);
-      });
-      b.writeUInt32LE(next, 2 + entries.length * 12);
-      return [...b];
+  // FR-1189R2 (LO-1189R2 B1): every directory a TIFF can reach, in every carrier that holds a TIFF. A little-endian
+  // TIFF, IFD0 at 8; each directory is [count, entries (tag, type LONG, count, value), next IFD].
+  const dir = (entries: Array<[number, number, number?]>, next = 0, count = entries.length): number[] => {
+    const b = Buffer.alloc(2 + entries.length * 12 + 4);
+    b.writeUInt16LE(count, 0);
+    entries.forEach(([tag, value, n = 1], k) => {
+      b.writeUInt16LE(tag, 2 + k * 12);
+      b.writeUInt16LE(4, 4 + k * 12);
+      b.writeUInt32LE(n, 6 + k * 12);
+      b.writeUInt32LE(value, 10 + k * 12);
+    });
+    b.writeUInt32LE(next, 2 + entries.length * 12);
+    return [...b];
+  };
+  const photo = (...dirs: number[][]): number[] => jpeg(JFIF, exifApp1([...latin1('II*\0'), 8, 0, 0, 0, ...dirs.flat()]));
+  const GPS_IFD = dir([[0x0001, 0x4e]]); // GPSLatitudeRef "N"
+  const u32le = (...ns: number[]): number[] => ns.flatMap((n) => [n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff, n >>> 24]);
+  /** The TIFF with GPSInfo (or, when `gps` is false, ImageWidth in its place) in the named directory. */
+  const reach = (where: string, gps: boolean): number[] => {
+    const leaf = (at: number): number[][] => (gps ? [dir([[0x8825, at + 18]]), GPS_IFD] : [dir([[0x0100, 1]])]);
+    const dirs: Record<string, () => number[][]> = {
+      IFD0: () => leaf(8),
+      'the Exif IFD': () => [dir([[0x8769, 26]]), ...leaf(26)],
+      'the Interop IFD (from the Exif IFD)': () => [dir([[0x8769, 26]]), dir([[0xa005, 44]]), ...leaf(44)],
+      'a SubIFD (one, inline)': () => [dir([[0x014a, 26]]), ...leaf(26)],
+      'the second of two SubIFDs': () => [dir([[0x014a, 26, 2]]), u32le(34, 52), dir([[0x0100, 1]]), ...leaf(52)],
+      IFD1: () => [dir([[0x0100, 1]], 26), ...leaf(26)],
+      IFD2: () => [dir([[0x0100, 1]], 26), dir([[0x0100, 1]], 44), ...leaf(44)],
     };
-    const photo = (...dirs: number[][]): number[] => jpeg(JFIF, exifApp1([...latin1('II*\0'), 8, 0, 0, 0, ...dirs.flat()]));
-    const GPS_AT_44 = dir([[0x0001, 0x4e]]); // GPSLatitudeRef "N"
+    return [...latin1('II*\0'), 8, 0, 0, 0, ...dirs[where]().flat()];
+  };
+  const DIRECTORIES = ['IFD0', 'the Exif IFD', 'the Interop IFD (from the Exif IFD)', 'a SubIFD (one, inline)',
+    'the second of two SubIFDs', 'IFD1', 'IFD2'];
+  const CARRIERS: Record<string, (t: number[]) => Form> = {
+    'an EXIF APP1': (t) => inSegments(exifApp1(t)),
+    'a Parrot APP1': (t) => inSegments(segment(0xe1, [...latin1('PARROT\0'), ...t])),
+    'Photoshop 1058': (t) => inSegments(app13(resource(0x0422, t))),
+    'Photoshop 1059': (t) => inSegments(app13(resource(0x0423, t))),
+    'bytes after EOI': (t) => afterEoi([...latin1('Exif\0\0'), ...t]),
+    'FLIR chunks': (t) => (pad) => jpeg(JFIF, ...pad, ...flirChunks(fffBlock([[0x0e, Buffer.from([...latin1('Exif\0\0'), ...t])]]))),
+  };
+  const REACH = Object.keys(CARRIERS).flatMap((carrier) => DIRECTORIES.map((where) => [where, carrier]));
+  it.each(REACH)('FR-1189R2 (LO-1189R2 B1): GPSInfo in %s, in %s, is a location, unpadded and past 256 KB', (where, carrier) => {
+    const form = CARRIERS[carrier](reach(where, true));
+    expect([located(form([])), located(form(PAD))]).toEqual([true, true]);
+  });
+  it.each(REACH)('FR-1189R2 (LO-1189R2 B1): %s with no GPSInfo, in %s, carries none, unpadded and past 256 KB', (where, carrier) => {
+    const form = CARRIERS[carrier](reach(where, false));
+    expect([located(form([])), located(form(PAD))]).toEqual([false, false]);
+  });
+  const xmpIn = (encode: (text: string) => Buffer): number[] =>
+    segment(0xe1, [...latin1('http://ns.adobe.com/xap/1.0/\0'), ...encode(xmpPacket('exif:GPSLatitude="34,4.5N"'))]);
+  const utf32 = (le: boolean) => (text: string): Buffer => {
+    const b = Buffer.alloc(text.length * 4);
+    for (let k = 0; k < text.length; k += 1) {
+      if (le) b.writeUInt32LE(text.charCodeAt(k), k * 4);
+      else b.writeUInt32BE(text.charCodeAt(k), k * 4);
+    }
+    return b;
+  };
+  const XMP_ENCODINGS: Record<string, (text: string) => Buffer> = {
+    'UTF-8': (t) => Buffer.from(t, 'utf8'),
+    'UTF-16LE': (t) => Buffer.from(t, 'utf16le'),
+    'UTF-16BE': (t) => Buffer.from(t, 'utf16le').swap16(),
+    'UTF-32LE': utf32(true),
+    'UTF-32BE': utf32(false),
+  };
+  it.each(Object.keys(XMP_ENCODINGS))('FR-1189R2 (LO-1189R2 B1): XMP GPSLatitude in %s is a location, unpadded and past 256 KB', (name) => {
+    const form = inSegments(xmpIn(XMP_ENCODINGS[name]));
+    expect([located(form([])), located(form(PAD))]).toEqual([true, true]);
+  });
+
+  it('FR-1189R2: a directory past IFD0 that starts past the end, loops back or is cut short holds no more; IFD0 and GPSInfo still fail closed', () => {
     // Real cameras write the first three (exiftool: "Bad InteropOffset", "InteropIFD pointer references previous IFD0").
     expect(located(photo(dir([[0xa005, 0x7fff0000]])))).toBe(false); // Interop IFD past the end (Canon PowerShot S30)
     expect(located(photo(dir([[0xa005, 8]])))).toBe(false); // Interop IFD back at IFD0 (Kodak ProBack)
     expect(located(photo(dir([[0x0100, 1]], 0x7fff0000)))).toBe(false); // IFD1 past the end
     expect(located(photo(dir([[0x8769, 26]]), dir([[0x0100, 1]], 0, 5)))).toBe(false); // Exif IFD of 5 entries, 1 there
-    expect(located(photo(dir([[0x8769, 26]]), dir([[0x8825, 44]], 0, 5), GPS_AT_44))).toBe(true); // the 1 there is GPSInfo
+    expect(located(photo(dir([[0x8769, 26]]), dir([[0x8825, 44]], 0, 5), GPS_IFD))).toBe(true); // the 1 there is GPSInfo
     expect(located(photo(dir([[0x8769, 26]]), dir([[0x8769, 8], [0x8825, 0x7fff0000]])))).toBe(true); // GPSInfo past the end
     expect(located(photo(dir([[0x0100, 1]], 0, 3)))).toBe(true); // IFD0 of 3 entries, 1 there
   });
