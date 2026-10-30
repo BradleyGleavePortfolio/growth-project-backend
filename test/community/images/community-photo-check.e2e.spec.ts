@@ -33,6 +33,7 @@ import {
   JFIF, SCAN, SOI, jpeg, exifApp1, xmpApp1, segment, tiff,
   extendedXmpApp1, EXTENDED_GUID, LOCATED,
 } from './jpeg-fixtures';
+import { REAL_PHOTOS } from './real-photos';
 
 function stub<T>(v: unknown): T {
   return v as T;
@@ -414,10 +415,9 @@ describe('the automatic photo check on a space chat photo send (PHOTO-CHECK-BE)'
     expect(w.objects.get(w.key)).toEqual(upload);
     expect(w.objects.get(sentImageKey(w.key))).toEqual(upload);
   });
-  it.each([
-    ...independentBlocks,
-    ['ExtendedXMP creator', extendedXmpApp1(EXTENDED_GUID, creator.length, 0, creator)] as [string, number[]],
-  ])('LS-1187R2 matrix: %s between real progressive scans is absent from the wire only', async (_label, block) => {
+  // FR-1187R2: ExtendedXMP between the scans is refused like ExtendedXMP before them (LS-1187R2 B2: every APP1 is read);
+  // see the ExtendedXMP placement test below.
+  it.each(independentBlocks)('LS-1187R2 matrix: %s between real progressive scans is absent from the wire only', async (_label, block) => {
     const firstScan = progressivePicture.indexOf(Buffer.from([0xff, 0xda]));
     const nextTable = progressivePicture.indexOf(Buffer.from([0xff, 0xc4]), firstScan + 2);
     expect(firstScan).toBeGreaterThan(0);
@@ -454,6 +454,25 @@ describe('the automatic photo check on a space chat photo send (PHOTO-CHECK-BE)'
     const w = world({ photo: upload });
     expect(await codeOf(w.send(''))).toBe('ok');
     expect(wirePhoto(w)).toEqual(validPicture);
+    expect(w.objects.get(sentImageKey(w.key))).toEqual(upload);
+  });
+  it('FR-1187R2: ExtendedXMP between real progressive scans is refused before any SDK call, as it is before them', async () => {
+    const firstScan = progressivePicture.indexOf(Buffer.from([0xff, 0xda]));
+    const nextTable = progressivePicture.indexOf(Buffer.from([0xff, 0xc4]), firstScan + 2);
+    const block = extendedXmpApp1(EXTENDED_GUID, creator.length, 0, creator);
+    const w = world({ photo: Buffer.from([...progressivePicture.subarray(0, nextTable), ...block, ...progressivePicture.subarray(nextTable)]) });
+    expect(await codeOf(w.send(''))).toBe('422 community.image.has_location');
+    expect(w.checks).toEqual([]);
+    expect(w.messages).toEqual([]);
+    expect(w.objects.has(w.key)).toBe(false);
+  });
+  // FR-1187R2: ordinary photos from a real encoder, no location (real-photos.ts): still accepted, and OpenAI gets the same
+  // picture (each `sent` decodes to the photo's pixels, Pillow); the stored copy is the upload.
+  it.each(REAL_PHOTOS)('FR-1187R2: a real %s photo is accepted and sent as the same picture', async (_label, { photo, sent }) => {
+    const upload = Buffer.from(photo, 'base64');
+    const w = world({ photo: upload });
+    expect(await codeOf(w.send(''))).toBe('ok');
+    expect(wirePhoto(w)).toEqual(Buffer.from(sent, 'base64'));
     expect(w.objects.get(sentImageKey(w.key))).toEqual(upload);
   });
   it('LS-1187R2 matrix: pre-scan ExtendedXMP remains refused before any SDK call', async () => {
