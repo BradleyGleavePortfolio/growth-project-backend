@@ -39,7 +39,7 @@ export const SUPPORT_EMAIL = 'support@thegrowthproject.site';
 
 // Last-reviewed date for the policy text. Bump when copy changes.
 // Format ISO-8601 (UTC) so it sorts and renders consistently.
-export const POLICY_LAST_REVIEWED = '2026-10-20';
+export const POLICY_LAST_REVIEWED = '2026-10-30';
 
 // #CRISIS-WORDING / #CRISIS-PRIVACY-PLACES (owner op 1): follows every Roman
 // safety-reply exception sentence on these pages, only while Roman's crisis
@@ -317,6 +317,7 @@ function privacyContent(): TrustPageContent {
           'Fly.io — hosting for our servers.',
           'Stripe — card payments, invoices and coach payouts.',
           'Anthropic — Roman and coach AI drafts, after you agree; sorting and summarising a coach’s unanswered community posts and messages for that coach, if turned on, only for members who agreed; learning a coach’s methods from that coach’s content, if turned on (see “Roman and AI”).',
+          'OpenAI — an automatic safety check of photos posted in Community, before they appear. It receives the photo and its caption, with no name or account details.',
           'Perplexity — generic milestone messages, if enabled.',
           'PostHog — product analytics. Session recording is off.',
           'Sentry — crash and performance monitoring.',
