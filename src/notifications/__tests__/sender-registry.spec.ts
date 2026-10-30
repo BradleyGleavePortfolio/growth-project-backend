@@ -22,16 +22,23 @@
  *     registry: file:function, the rule it misses, one line why, the AUDIT link) and name it on the rule.
  *  4. A KNOWN GAP case is red because the gap is fixed: delete the gap from the rule and from KNOWN_GAPS.
  *  5. "has no send site": the row's function moved or stopped sending. Move or delete the row.
- *  6. "Fix the row's funnel entries": a sendPush call passes a kind, `urgent` or a Mute all pass (passesMuteAll,
- *     MUTE_ALL_PASS, safetyAlert) its row's `funnel` entries do not declare, or the reverse. The funnel table
- *     sends the values the code passes (LO-1186 B2), so make the entries say what the code does.
+ *  6. "Fix the row's funnel entries": a sendPush call passes a kind, `urgent`, a Mute all pass (passesMuteAll,
+ *     MUTE_ALL_PASS, safetyAlert) or a renewal offer (RENEWAL_OFFER) its row's `funnel` entries do not declare,
+ *     or the reverse. The funnel table sends the values the code passes (LO-1186 B2), so make the entries say
+ *     what the code does. "a value the scan cannot read" (a kind or a context): write it so the scan can read
+ *     it (an enum member, a literal, a push-preferences constant); a kind picked at run time is declared as the
+ *     row's `dynamicKind`. Never declare a Mute all pass to make it green (FR-1186R2, LO-1186R2 C3).
  *  7. "looks fixed (tripwire)": the code a KNOWN GAP names is gone. Check the gap, then delete it.
  * The registry is per function: a second send of a kind its row already lists, in the same function, adds no
  * row. When you add one, read the row again and make sure its five rules still hold for the new send.
- * The scan finds a sender however it is reached (called, bound, destructured, by `x['name']`, or under any name
- * typed with the sender); sender-scan-forms.spec.ts proves each form it knows. A new way to send goes there.
+ * The scan finds the forms its header (test/utils/notify-sender-scan.ts) lists: called, bound, destructured, by
+ * `x['name']`, and under a name that holds the sender (typed, a type alias, an interface field, `@Inject(X)`, a
+ * local copy). It does not see a method name built at run time, `Reflect.get`, assignment destructuring, a
+ * string DI token, or `any`. sender-scan-forms.spec.ts proves each form it knows; a new way to send goes there.
  * What is driven and what is a claim (LO-1186 C2, C3): Mute all and quiet hours run for every funnel kind and every
- * driver. Block and ban, thread and space mute run only in the broadcast, churn and spacePush drivers; for every
+ * driver; an emitter caller of CoachAlertEmitter is run through the real emitter with the arguments its code
+ * passes (LO-1186R2 C1); a renewal offer runs with and without the person's yes (LO-1186R2 B2). Block and ban,
+ * thread and space mute run only in the broadcast, churn, spacePush and heldMessage drivers; for every
  * other row, and for every recipient rule, the registry's text is a claim the scan keeps in place, not a driven
  * case, and no driver checks an exact recipient list. Out of the scan: the CoachNudge list
  * (src/nudges/nudges.service.ts NudgesService.createForClient) and CoachAlert rows (src/coach/coach-alerts.service.ts).
@@ -54,7 +61,7 @@ import type { AnalyticsService } from '../../analytics/analytics.service';
 import type { PrismaService } from '../../prisma.service';
 import { ScoutService } from '../../scout/scout.service';
 import type { SupabaseService } from '../../supabase/supabase.service';
-import { CoachAlertEmitter } from '../emitters/coach-alert.emitter';
+import { CoachAlertEmitter, type CoachAlertNotificationPayload } from '../emitters/coach-alert.emitter';
 import { MessageReceivedEmitter } from '../emitters/message-received.emitter';
 import { NotificationKind, type NotificationKindValue } from '../notification-kind';
 import { NotificationsService } from '../notifications.service';
@@ -63,6 +70,7 @@ import { pushOutboxWorld } from '../../../test/utils/push-outbox-fake';
 import { spaceAtSendTime } from '../../../test/utils/space-push-send-time-fake';
 import {
   type DriverName,
+  type FunnelPush,
   FUNNEL_SITES,
   KNOWN_GAPS,
   type KnownGapId,
@@ -80,7 +88,7 @@ import {
   sentValues,
   unregistered,
 } from '../../../test/utils/notify-sender-checks';
-import { scanSenders } from '../../../test/utils/notify-sender-scan';
+import { type SendHit, scanSenders } from '../../../test/utils/notify-sender-scan';
 
 const stub = <T>(v: unknown): T => v as T;
 const REPO = path.resolve(__dirname, '../../..');
@@ -173,14 +181,21 @@ const prefsOf = (s: Scenario): Record<string, unknown> => ({ muted: s === 'muteA
 let expoSend: jest.SpyInstance<Promise<ExpoPushTicket[]>, [ExpoPushMessage[]]>;
 
 /** The real core for one recipient: NotificationsService, the push outbox (PushDeliveryService) and Expo. */
-function core(user: string, scenario: Scenario) {
+function core(user: string, scenario: Scenario, extraPrefs: Record<string, unknown> = {}) {
   const clock = { at: nowOf(scenario) };
   const w = pushOutboxWorld({ now: () => clock.at });
-  w.prefs[user] = prefsOf(scenario);
+  w.prefs[user] = { ...prefsOf(scenario), ...extraPrefs };
   w.tokens[user] = TOKEN;
   const rows: Array<Record<string, unknown>> = [];
+  // FR-1186R2 (LO-1186R2 C2): blocks the heldMessage driver makes while a push waits, readable by a worker that checks.
+  const blocks: Array<{ blocker_id: string; blocked_id: string }> = [];
   const db = {
     ...w.db,
+    userBlock: {
+      findFirst: jest.fn(async () => blocks[0] ?? null),
+      findMany: jest.fn(async () => [...blocks]),
+      count: jest.fn(async () => blocks.length),
+    },
     notification: {
       findFirst: jest.fn(async () => null),
       create: jest.fn(async (a: { data: Record<string, unknown> }) => {
@@ -207,6 +222,10 @@ function core(user: string, scenario: Scenario) {
     w,
     svc,
     clock,
+    blocks,
+    delivery,
+    /** How many pushes the outbox worker handed to its transport. */
+    workerSent: (): number => (client.send as jest.Mock).mock.calls.length,
     rows: () => rows.filter((r) => r.user_id === user),
     /** What reached the person: a push sent now (Expo) or due now (the outbox), a push held to 08:00, or nothing. */
     outcome: async (): Promise<string> => {
@@ -408,6 +427,22 @@ async function spacePush(s: Scenario): Promise<string> {
   return held.every((r) => r.not_before.getTime() === MORNING.getTime()) ? 'held' : `held to ${held.map((r) => r.not_before.toISOString())}`;
 }
 
+/**
+ * FR-1186R2 (LO-1186R2 C2, KG-HELD-BLOCK-MESSAGE): a coach's message push to CLIENT through the real
+ * MessageReceivedEmitter and the real funnel, held at 23:30 by quiet hours. In `blocked`, CLIENT blocks the
+ * coach while it waits. At 08:00 the real outbox worker runs: 'sent' when it hands the push to the transport.
+ */
+async function heldMessage(s: Scenario): Promise<string> {
+  const c = core(CLIENT, 'quietHours');
+  await new MessageReceivedEmitter(c.svc).emit(CLIENT, { senderName: 'Coach A', threadId: 'thread-1' });
+  const at2330 = await c.outcome();
+  if (at2330 !== 'held') return `not held at 23:30 (${at2330})`;
+  if (s === 'blocked') c.blocks.push({ blocker_id: CLIENT, blocked_id: COACH });
+  c.clock.at = MORNING;
+  await c.delivery.drain();
+  return c.workerSent() > 0 ? 'sent' : 'none';
+}
+
 const DRIVERS: Record<DriverName, { run: (s: Scenario) => Promise<string>; scenarios: Scenario[] }> = {
   broadcast: { run: broadcast, scenarios: ['baseline', 'muteAll', 'quietHours', 'blocked', 'threadMuted'] },
   churnIntervention: { run: churnIntervention, scenarios: ['baseline', 'muteAll', 'quietHours', 'blocked'] },
@@ -415,6 +450,7 @@ const DRIVERS: Record<DriverName, { run: (s: Scenario) => Promise<string>; scena
   communityPush: { run: communityPush, scenarios: ['baseline', 'muteAll', 'quietHours'] },
   dunningClientPush: { run: dunningClientPush, scenarios: ['baseline', 'muteAll', 'quietHours'] },
   spacePush: { run: spacePush, scenarios: ['baseline', 'muteAll', 'quietHours', 'blocked', 'banned', 'spaceMuted', 'threadMuted'] },
+  heldMessage: { run: heldMessage, scenarios: ['baseline', 'blocked'] },
 };
 
 /** What the registry row says must happen in this case; a KNOWN GAP case expects what the code does today. */
@@ -477,26 +513,109 @@ describe('KT-4 sender registry: each driven sender does what its row says', () =
   });
 });
 
+/** FR-1186R2 (LO-1186R2 C1): an emitter caller's CoachAlertEmitter calls, each with the argument the scan read. */
+function coachAlertCalls(row: SenderRow): SendHit[] {
+  return HITS.filter((h) => h.file === row.file && h.fn === row.fn && h.via === 'emitter' && h.relay?.name === 'CoachAlertEmitter');
+}
+
+/** The props of a CoachAlertEmitter.emit argument that pick its push's context and urgent. */
+const ALERT_PROPS = ['money', 'alertType', 'severity', 'spaceId'] as const;
+
+/**
+ * FR-1186R2 (LO-1186R2 C1): what the real CoachAlertEmitter queues for one funnel entry of a caller. Each prop in
+ * ALERT_PROPS is the caller's own literal when every call passes the same one, left out when no call passes it,
+ * and the entry's stand-in (from its context and urgent) only when the caller picks it at run time.
+ */
+async function coachAlertSent(row: SenderRow, e: FunnelPush) {
+  const vs = coachAlertCalls(row).flatMap((h) => (h.callArgs && !h.callArgs.opaque ? h.callArgs.variants : []));
+  const cx = (e.context ?? {}) as Record<string, unknown>;
+  const payload: Record<string, unknown> = {
+    coachId: CLIENT,
+    alertId: 'kt4-alert',
+    message: 'Body',
+    clientUserId: 'client-x',
+    alertType: typeof cx.safetyAlert === 'string' ? cx.safetyAlert : 'kt4_alert',
+    severity: e.urgent ? 'critical' : 'warning',
+    ...(cx.passesMuteAll === true ? { money: true } : {}),
+    ...(cx.spaceAlert === true ? { spaceId: 'space-1' } : {}),
+  };
+  const from: string[] = [];
+  if (vs.length === 0) from.push('registry (the scan cannot read its argument)');
+  else {
+    for (const k of ALERT_PROPS) {
+      const seen = vs.map((v) => v[k]);
+      const values = new Set(seen.map((x) => (x && 'value' in x ? JSON.stringify(x.value) : undefined)));
+      if (seen.every((x) => x === undefined)) {
+        delete payload[k];
+        from.push(`${k}: code (none)`);
+      } else if (values.size === 1 && !values.has(undefined)) {
+        payload[k] = JSON.parse([...values][0] as string) as unknown;
+        from.push(`${k}: code`);
+      } else from.push(`${k}: registry`);
+    }
+  }
+  const queued: Array<Record<string, unknown>> = [];
+  const notifications = stub<NotificationsService>({
+    sendPush: jest.fn(async (a: Record<string, unknown>) => {
+      queued.push(a);
+      return true;
+    }),
+    createNotification: jest.fn(async () => null),
+  });
+  await new CoachAlertEmitter(notifications).emit(payload as unknown as CoachAlertNotificationPayload, { inapp: false });
+  const a = queued[0] ?? {};
+  return {
+    kind: (a.kind ?? e.kind) as FunnelPush['kind'],
+    urgent: a.urgent as boolean | undefined,
+    context: (a.context ?? null) as FunnelPush['context'],
+    from: `emitter: the real CoachAlertEmitter.emit (${from.join(', ')})`,
+  };
+}
+
 describe('KT-4 sender registry: the funnel holds every registered push kind to its rules', () => {
   beforeAll(quiet);
   afterAll(() => jest.restoreAllMocks());
 
   // LO-1186 B2: each push is sent with the kind, urgent and context its sender's own sendPush call passes; an
   // entry's declared value is used only where the code picks at run time (funnelArgFindings checks the entries
-  // cover each choice). A row with no sendPush call of its own (an emitter caller) sends its declared values.
+  // cover each choice). FR-1186R2 (LO-1186R2 C1): a caller of CoachAlertEmitter is run through the real emitter
+  // with the money, alertType, severity and spaceId its own call passes (coachAlertSent). Any other emitter
+  // caller sends its declared values: those emitters fix the kind, urgent and context themselves.
+  // FR-1186R2 (LO-1186R2 B2, LS-1186R2 B2): an entry with consent: 'needed' (a renewal offer) is sent with the
+  // person's yes (plan_renewal_offers_opt_in_at), and once without it; so is every other entry of its row
+  // (Day 0 needs no yes).
   const byRow = sendPushHitsByRow(HITS);
   const pushes = SENDERS.flatMap((r) => (r.funnel ?? []).map((p) => [r, p, sentValues(byRow.get(r), p)] as const));
-  const cases = pushes.flatMap(([row, p, sent]) =>
-    (['baseline', 'muteAll', 'quietHours'] as const).map((s) => {
-      const outcome: Outcome = s === 'baseline' ? 'sent' : s === 'muteAll' ? (p.muteAll === 'stops' ? 'none' : 'sent') : p.quietHours === 'held' ? 'held' : 'sent';
-      return [`${row.fn}: ${sent.kind} (${p.note}; ${sent.from}) ${s}: ${outcome}`, row, sent, s, outcome] as const;
-    }),
-  );
+  type FunnelCase = 'baseline' | 'muteAll' | 'quietHours' | 'noConsent';
+  const cases = pushes.flatMap(([row, p, sent]) => {
+    const consentRow = (row.funnel ?? []).some((e) => e.consent === 'needed');
+    const scenarios: FunnelCase[] = ['baseline', 'muteAll', 'quietHours', ...(consentRow ? (['noConsent'] as const) : [])];
+    const from = coachAlertCalls(row).length > 0 && !byRow.has(row) ? 'emitter: the real CoachAlertEmitter.emit with its call args' : sent.from;
+    return scenarios.map((s) => {
+      const outcome: Outcome =
+        s === 'baseline'
+          ? 'sent'
+          : s === 'noConsent'
+            ? p.consent === 'needed'
+              ? 'none'
+              : 'sent'
+            : s === 'muteAll'
+              ? p.muteAll === 'stops'
+                ? 'none'
+                : 'sent'
+              : p.quietHours === 'held'
+                ? 'held'
+                : 'sent';
+      return [`${row.fn}: ${sent.kind} (${p.note}; ${from}) ${s}: ${outcome}`, row, p, sent, s, outcome] as const;
+    });
+  });
 
-  it.each(cases)('%s', async (_label, row, p, s, outcome) => {
+  it.each(cases)('%s', async (_label, row, entry, declared, s, outcome) => {
     expoSend = jest.spyOn(Expo.prototype, 'sendPushNotificationsAsync').mockImplementation(async (chunk) => chunk.map(() => ({ status: 'ok' as const, id: 't' })));
     try {
-      const c = core(CLIENT, s);
+      const p = coachAlertCalls(row).length > 0 && !byRow.has(row) ? await coachAlertSent(row, entry) : declared;
+      const yes = entry.consent === 'needed' && s !== 'noConsent' ? { plan_renewal_offers_opt_in_at: DAY } : {};
+      const c = core(CLIENT, s === 'noConsent' ? 'baseline' : s, yes);
       await c.svc.sendPush({
         user_id: CLIENT,
         kind: p.kind,

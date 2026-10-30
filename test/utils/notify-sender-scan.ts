@@ -1,6 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as ts from 'typescript';
+import { NotificationKind } from '../../src/notifications/notification-kind';
+import { MUTE_ALL_PASS, RENEWAL_OFFER } from '../../src/notifications/push/push-preferences';
 
 /**
  * TRAPTEST-NOTIFY-BE (KT-4): reads every runtime file under src/ (never tests) and lists each place
@@ -16,8 +18,10 @@ import * as ts from 'typescript';
  *     EXPO_PUSH_CLIENT from it (or from push-delivery.service.ts, which re-exports them), any use of those
  *     names in a function, `new` of the client, and `.send` / `.getReceipts` on a name typed with it;
  *   - the Expo push URL in a string, a push_outbox write, a raw INSERT into the notice or outbox table;
- *   - PushDeliveryService.enqueue: `.enqueue` on a receiver whose name says push, or on any name typed
- *     with PushDeliveryService (also `Pick<PushDeliveryService, 'enqueue'>` and the like).
+ *   - PushDeliveryService.enqueue: `.enqueue` on a receiver whose name says push, or on any name that holds
+ *     PushDeliveryService (see "holds" below);
+ *   - FR-1186R2 (LO-1186R2 B1): importing PushDeliveryService itself, in any file but the funnel's own and a
+ *     Nest `*.module.ts` (only NotificationsService may hold the outbox; a FUNNEL_SITES row names it).
  * - `pushToUser` / `pushToCoach`: NotificationsService's direct Expo push (no outbox, no quiet hours).
  * - `sendPush`: NotificationsService.sendPush, the funnel push (Mute all, push switch, quiet hours).
  * - `createNotification`: NotificationsService.createNotification, the funnel in-app notice.
@@ -27,8 +31,20 @@ import * as ts from 'typescript';
  *
  * A method counts wherever it is reached, not only when it is called on the spot: `x.sendPush(...)`,
  * `x.sendPush.bind(x)`, `x['sendPush']`, `const { sendPush } = x`, and a parameter destructured the
- * same way. Not seen (say so in review): a method name built at run time (`x[name]`), and a send reached
- * through `any` or a value passed in from another file under a name and type that say nothing.
+ * same way. A name "holds" a relay (an emitter, the community relay, the outbox, the Expo client) when its
+ * type or initializer names the imported class, a local `type` alias of it (`type Outbox = Pick<X, 'm'>`)
+ * or a local interface that extends it; when it is an interface or type-literal field typed that way
+ * (`deps.queue`); when it is a constructor parameter with `@Inject(X)`; and when it is a local copy of a
+ * holder (`const q = this.outbox`, `const { outbox: q } = this`) (FR-1186R2, LO-1186R2 B1).
+ * Not seen (say so in review): a method name built at run time (`x[name]`), `Reflect.get(x, 'sendPush')`,
+ * assignment destructuring (`({ sendPush: send } = x)`), an `@Inject('TOKEN')` string token, and a send
+ * reached through `any` or a value passed in from another file under a name and type that say nothing.
+ *
+ * What a sendPush call passes (FR-1186R2, LS-1186R2 B1 and LO-1186R2 B2): the kind is read as a value when
+ * it is spelled statically (`NotificationKind.X`, `NotificationKind['X']`, a string or template literal,
+ * or a `const` of one of those); the context is read as a value when it is a literal or a push-preferences
+ * constant (MUTE_ALL_PASS, RENEWAL_OFFER, imported under any name). Anything else is a value the scan
+ * cannot read, and the registry checks name it with its file and line.
  */
 export type SendVia =
   | 'transport'
@@ -42,18 +58,27 @@ export type SendVia =
 
 /** How a sendPush call sets `urgent` and `context` (one variant per branch of its argument object). */
 export interface PushArgVariant {
-  /** `X` when the kind is written `NotificationKind.X`; null when the kind comes from a value. */
+  /** `X` when the kind is written `NotificationKind.X` or `NotificationKind['X']`; else null. */
   kindMember: string | null;
+  /**
+   * FR-1186R2 (LS-1186R2 B1): true when the code spells one fixed kind (an enum member, a string or template
+   * literal, or a const of one); false when the kind comes from a value chosen at run time.
+   */
+  kindStatic: boolean;
+  /** The kind's value when kindStatic (a string; it may not be a NotificationKind); null otherwise or for an unknown member. */
+  kindValue: string | null;
   /** The kind expression as written. */
   kindCode: string;
   /** `absent`, `true`, `false`, or `dynamic` (any other expression). */
   urgent: 'absent' | 'true' | 'false' | 'dynamic';
   /**
    * `absent` (none or null), `plain` (an object literal with no Mute all pass in it), `passes` (names
-   * passesMuteAll, MUTE_ALL_PASS or safetyAlert), or `dynamic` (a value the scan cannot read).
+   * passesMuteAll, MUTE_ALL_PASS or safetyAlert), `offer` (a renewal offer: RENEWAL_OFFER or renewalOffer,
+   * which Mute all stops and which needs the person's yes; FR-1186R2, LO-1186R2 B2), or `dynamic` (a value
+   * the scan cannot read).
    */
-  context: 'absent' | 'plain' | 'passes' | 'dynamic';
-  /** The context as a plain value when every part of it is a literal (or MUTE_ALL_PASS); else undefined. */
+  context: 'absent' | 'plain' | 'passes' | 'offer' | 'dynamic';
+  /** The context as a plain value when every part of it is a literal (or a push-preferences constant); else undefined. */
   contextValue?: Record<string, unknown> | null;
 }
 
@@ -74,6 +99,20 @@ export interface SendHit {
   code: string;
   /** For a `sendPush` hit: what the call passes (LO-1186 B2: the funnel table sends these values). */
   args?: PushArgs;
+  /** For an `emitter` or `communityPush` hit: the imported class it reaches (e.g. CoachAlertEmitter) and the method. */
+  relay?: { name: string; method: string };
+  /**
+   * FR-1186R2 (LO-1186R2 C1): for an `emitter` hit, the call's first argument, one variant per branch: each
+   * property's literal value, or `{ code }` when it is a value the scan cannot read. Opaque when not an object.
+   */
+  callArgs?: CallArgs;
+}
+
+/** One property of an emitter call's argument: its literal value, or only its code. */
+export type ArgProp = { value: unknown; code: string } | { code: string };
+export interface CallArgs {
+  opaque: boolean;
+  variants: Array<Record<string, ArgProp>>;
 }
 
 /** NotificationsService methods that send or write a notice; each is its own `via`. */
@@ -90,6 +129,10 @@ const EXPO_URL = /exp\.host\/--\/api\/v2\/push|api\.expo\.dev\/v2\/push/;
 const RAW_INSERT = /insert\s+into\s+"?(notifications?|push_outbox|push_outboxes|pushoutbox)"?/i;
 const ROW_WRITE = new Set(['create', 'createMany', 'upsert']);
 const PASS_WORDS = /\b(passesMuteAll|MUTE_ALL_PASS|safetyAlert)\b/;
+const OFFER_WORDS = /\b(renewalOffer|RENEWAL_OFFER)\b/;
+/** The push-preferences constants a context may name (their real values, so a change there is read here). */
+const PREF_CONSTANTS: Record<string, unknown> = { MUTE_ALL_PASS, RENEWAL_OFFER };
+const KIND_VALUES = NotificationKind as Record<string, string>;
 
 const escape = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /**
@@ -183,7 +226,7 @@ export function resolveSpecifier(rel: string, spec: string): string {
 
 const isTransportModule = (rel: string, spec: string): boolean => TRANSPORT_MODULES.includes(resolveSpecifier(rel, spec));
 
-type Relay = { via: SendVia; method: RegExp };
+type Relay = { via: SendVia; method: RegExp; name: string };
 
 /**
  * The names this file imports that stand for a sender or for the transport: every class in
@@ -201,15 +244,31 @@ function relayTypes(sf: ts.SourceFile, rel: string): Map<string, Relay> {
       const local = el.name.text;
       const imported = (el.propertyName ?? el.name).text;
       if (/(^|\/)emitters\/[a-z0-9-]+\.emitter$/.test(from) && /Emitter$/.test(imported)) {
-        types.set(local, { via: 'emitter', method: /^emit/ });
+        types.set(local, { via: 'emitter', method: /^emit/, name: imported });
       } else if (imported === 'CommunityNotificationsService') {
-        types.set(local, { via: 'communityPush', method: /^sendCommunityPush$/ });
+        types.set(local, { via: 'communityPush', method: /^sendCommunityPush$/, name: imported });
       } else if (imported === OUTBOX_CLASS) {
-        types.set(local, { via: 'transport', method: /^enqueue$/ });
+        types.set(local, { via: 'transport', method: /^enqueue$/, name: imported });
       } else if ((imported === 'FetchExpoPushClient' || imported === 'ExpoPushClient') && isTransportModule(rel, from)) {
-        types.set(local, { via: 'transport', method: /^(send|getReceipts)$/ });
+        types.set(local, { via: 'transport', method: /^(send|getReceipts)$/, name: imported });
       }
     }
+  }
+  // FR-1186R2 (LO-1186R2 B1): a local `type` alias of a relay (`type Outbox = Pick<PushDeliveryService, 'enqueue'>`)
+  // or a local interface that extends one is that relay too; an alias of an alias is followed.
+  for (let pass = 0, grew = types.size > 0; grew && pass < 8; pass++) {
+    grew = false;
+    const visit = (n: ts.Node): void => {
+      let relay: Relay | undefined;
+      if (ts.isTypeAliasDeclaration(n)) relay = relayIn(n.type, types);
+      else if (ts.isInterfaceDeclaration(n)) relay = (n.heritageClauses ?? []).map((h) => relayIn(h, types)).find((r) => !!r);
+      if (relay && (ts.isTypeAliasDeclaration(n) || ts.isInterfaceDeclaration(n)) && !types.has(n.name.text)) {
+        types.set(n.name.text, relay);
+        grew = true;
+      }
+      ts.forEachChild(n, visit);
+    };
+    visit(sf);
   }
   return types;
 }
@@ -227,20 +286,101 @@ function relayIn(node: ts.Node | undefined, types: Map<string, Relay>): Relay | 
   return found;
 }
 
-/** The names that hold a relay in this file (constructor params, class fields, locals) and the relay each holds. */
+/**
+ * The names that hold a relay in this file and the relay each holds: constructor params, class fields, locals,
+ * interface and type-literal fields (`deps.queue`), a param with `@Inject(X)`, and a local copy of a holder
+ * (`const q = this.outbox`, `const { outbox: q } = this`), followed until nothing new is found.
+ */
 function relayHolders(sf: ts.SourceFile, types: Map<string, Relay>): Map<string, Relay> {
   const holders = new Map<string, Relay>();
   if (types.size === 0) return holders;
+  const fromHolder = (e: ts.Expression | undefined): Relay | undefined => {
+    if (!e) return undefined;
+    const name = lastName(strip(e));
+    return name !== undefined ? holders.get(name) : undefined;
+  };
+  let grew = true;
+  const put = (name: string | undefined, relay: Relay | undefined): void => {
+    if (!name || !relay || holders.has(name)) return;
+    holders.set(name, relay);
+    grew = true;
+  };
   const visit = (n: ts.Node): void => {
     if (ts.isParameter(n) || ts.isPropertyDeclaration(n) || ts.isVariableDeclaration(n)) {
-      const holderName = nameOf(n.name);
-      const relay = relayIn(n.type, types) ?? relayIn(n.initializer, types);
-      if (relay && holderName) holders.set(holderName, relay);
+      const decorators = ts.canHaveDecorators(n) ? (ts.getDecorators(n) ?? []) : [];
+      const injected = decorators.map((d) => relayIn(d.expression, types)).find((r) => !!r);
+      put(nameOf(n.name), relayIn(n.type, types) ?? relayIn(n.initializer, types) ?? injected ?? fromHolder(n.initializer));
+    } else if (ts.isPropertySignature(n)) {
+      put(nameOf(n.name), relayIn(n.type, types));
+    } else if (ts.isBindingElement(n) && ts.isObjectBindingPattern(n.parent) && ts.isIdentifier(n.name)) {
+      const key = nameOf(n.propertyName ?? n.name);
+      if (key !== undefined && holders.has(key)) put(n.name.text, holders.get(key));
+    }
+    ts.forEachChild(n, visit);
+  };
+  for (let pass = 0; grew && pass < 8; pass++) {
+    grew = false;
+    visit(sf);
+  }
+  return holders;
+}
+
+/**
+ * What a file's names stand for, for reading a sendPush argument as values (FR-1186R2): the local names of
+ * NotificationKind, the push-preferences constants it imports (under any name), and its own `const`s
+ * (a name declared twice in the file is not read).
+ */
+interface Env {
+  kindNames: Set<string>;
+  prefs: Map<string, unknown>;
+  consts: Map<string, ts.Expression | null>;
+}
+
+function envOf(sf: ts.SourceFile): Env {
+  // The bare name NotificationKind is the enum too (a scratch file in the self-test may not import it).
+  const env: Env = { kindNames: new Set(['NotificationKind']), prefs: new Map(), consts: new Map() };
+  for (const st of sf.statements) {
+    if (!ts.isImportDeclaration(st) || !ts.isStringLiteral(st.moduleSpecifier)) continue;
+    const from = st.moduleSpecifier.text;
+    const named = st.importClause?.namedBindings;
+    if (!named || !ts.isNamedImports(named)) continue;
+    for (const el of named.elements) {
+      const imported = (el.propertyName ?? el.name).text;
+      if (/(^|\/)notification-kind$/.test(from) && imported === 'NotificationKind') env.kindNames.add(el.name.text);
+      if (/(^|\/)push-preferences$/.test(from) && imported in PREF_CONSTANTS) env.prefs.set(el.name.text, PREF_CONSTANTS[imported]);
+    }
+  }
+  const visit = (n: ts.Node): void => {
+    if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && ts.isVariableDeclarationList(n.parent) && n.parent.flags & ts.NodeFlags.Const) {
+      env.consts.set(n.name.text, env.consts.has(n.name.text) ? null : (n.initializer ?? null));
     }
     ts.forEachChild(n, visit);
   };
   visit(sf);
-  return holders;
+  return env;
+}
+
+/** The kind a sendPush argument spells: one fixed value (static) or a value chosen at run time. */
+function readKind(e: ts.Expression | undefined, env: Env, depth = 0): { kindStatic: boolean; kindValue: string | null; kindMember: string | null } {
+  const dynamic = { kindStatic: false, kindValue: null, kindMember: null };
+  if (!e || depth > 4) return dynamic;
+  const x = strip(e);
+  const member = (m: string): { kindStatic: boolean; kindValue: string | null; kindMember: string | null } => ({
+    kindStatic: true,
+    kindValue: Object.prototype.hasOwnProperty.call(KIND_VALUES, m) ? KIND_VALUES[m] : null,
+    kindMember: m,
+  });
+  if (ts.isPropertyAccessExpression(x) && ts.isIdentifier(x.expression) && env.kindNames.has(x.expression.text)) return member(x.name.text);
+  if (ts.isElementAccessExpression(x) && ts.isIdentifier(x.expression) && env.kindNames.has(x.expression.text)) {
+    const key = literalValue(x.argumentExpression, env);
+    return typeof key === 'string' ? member(key) : dynamic;
+  }
+  if (ts.isIdentifier(x) && !env.prefs.has(x.text)) {
+    const init = env.consts.get(x.text);
+    if (init) return readKind(init, env, depth + 1);
+  }
+  const lit = literalValue(x, env);
+  return typeof lit === 'string' ? { kindStatic: true, kindValue: lit, kindMember: null } : dynamic;
 }
 
 /** The last identifier of an expression: `this.a.b` -> b, `a` -> a, `this.a?.b` -> b. */
@@ -289,21 +429,31 @@ function variantsOf(e: ts.Expression, depth = 0): Props[] | null {
   return out;
 }
 
-/** A literal value (strings, numbers, booleans, null, nested literals, MUTE_ALL_PASS); undefined when not literal. */
-function literalValue(e: ts.Expression): unknown {
+/**
+ * A literal value (strings, numbers, booleans, null, nested literals, a push-preferences constant, a file
+ * `const` of one of these); undefined when not literal.
+ */
+function literalValue(e: ts.Expression, env?: Env, depth = 0): unknown {
   const x = strip(e);
+  if (depth > 4) return undefined;
+  if (ts.isIdentifier(x) && env) {
+    if (env.prefs.has(x.text)) return env.prefs.get(x.text);
+    const init = env.consts.get(x.text);
+    if (init) return literalValue(init, env, depth + 1);
+    if (env.consts.has(x.text)) return undefined;
+  }
   if (ts.isStringLiteral(x) || ts.isNoSubstitutionTemplateLiteral(x)) return x.text;
   if (ts.isNumericLiteral(x)) return Number(x.text);
   if (x.kind === ts.SyntaxKind.TrueKeyword) return true;
   if (x.kind === ts.SyntaxKind.FalseKeyword) return false;
   if (x.kind === ts.SyntaxKind.NullKeyword) return null;
-  if (ts.isIdentifier(x) && x.text === 'MUTE_ALL_PASS') return { passesMuteAll: true };
+  if (ts.isIdentifier(x) && x.text in PREF_CONSTANTS) return PREF_CONSTANTS[x.text];
   if (ts.isObjectLiteralExpression(x)) {
     const v = variantsOf(x);
     if (!v || v.length !== 1) return undefined;
     const out: Record<string, unknown> = {};
     for (const [k, val] of v[0]) {
-      const lit = literalValue(val);
+      const lit = literalValue(val, env, depth + 1);
       if (lit === undefined) return undefined;
       out[k] = lit;
     }
@@ -312,7 +462,12 @@ function literalValue(e: ts.Expression): unknown {
   return undefined;
 }
 
-function pushArgs(call: ts.CallExpression | undefined, sf: ts.SourceFile): PushArgs {
+/** A context value that passes Mute all (MUTE_ALL_PASS, or a safety alert key; owner #168-18 and #171-3). */
+const passesValue = (v: unknown): boolean =>
+  !!v && typeof v === 'object' && ((v as { passesMuteAll?: unknown }).passesMuteAll === true || 'safetyAlert' in (v as object));
+const offerValue = (v: unknown): boolean => !!v && typeof v === 'object' && (v as { renewalOffer?: unknown }).renewalOffer === true;
+
+function pushArgs(call: ts.CallExpression | undefined, sf: ts.SourceFile, env: Env): PushArgs {
   const arg = call?.arguments[0];
   const variants = arg ? variantsOf(arg) : null;
   if (!variants) return { opaque: true, variants: [] };
@@ -320,26 +475,44 @@ function pushArgs(call: ts.CallExpression | undefined, sf: ts.SourceFile): PushA
     opaque: false,
     variants: variants.map((m): PushArgVariant => {
       const kind = m.get('kind');
-      const k = kind ? strip(kind) : undefined;
-      const kindMember =
-        k && ts.isPropertyAccessExpression(k) && ts.isIdentifier(k.expression) && k.expression.text === 'NotificationKind' ? k.name.text : null;
+      const k = readKind(kind, env);
       const u = m.get('urgent');
       const urgent = !u ? 'absent' : strip(u).kind === ts.SyntaxKind.TrueKeyword ? 'true' : strip(u).kind === ts.SyntaxKind.FalseKeyword ? 'false' : 'dynamic';
       const c = m.get('context');
       const cx = c ? strip(c) : undefined;
       let context: PushArgVariant['context'];
+      const read = cx ? literalValue(cx, env) : undefined;
       if (!cx || cx.kind === ts.SyntaxKind.NullKeyword || (ts.isIdentifier(cx) && cx.text === 'undefined')) context = 'absent';
-      else if (PASS_WORDS.test(cx.getText(sf))) context = 'passes';
+      else if (PASS_WORDS.test(cx.getText(sf)) || passesValue(read)) context = 'passes';
+      else if (OFFER_WORDS.test(cx.getText(sf)) || offerValue(read)) context = 'offer';
       else if (ts.isObjectLiteralExpression(cx) && variantsOf(cx) !== null) context = 'plain';
       else context = 'dynamic';
-      const lit = context === 'absent' ? null : cx ? literalValue(cx) : undefined;
+      const lit = context === 'absent' ? null : read;
       return {
-        kindMember,
+        ...k,
         kindCode: kind ? kind.getText(sf) : '<no kind>',
         urgent,
         context,
         contextValue: lit === undefined ? undefined : (lit as Record<string, unknown> | null),
       };
+    }),
+  };
+}
+
+/** FR-1186R2 (LO-1186R2 C1): an emitter call's first argument, each property as a literal value or its code. */
+function callArgs(call: ts.CallExpression | undefined, sf: ts.SourceFile, env: Env): CallArgs {
+  const arg = call?.arguments[0];
+  const variants = arg ? variantsOf(arg) : null;
+  if (!variants) return { opaque: true, variants: [] };
+  return {
+    opaque: false,
+    variants: variants.map((m) => {
+      const out: Record<string, ArgProp> = {};
+      for (const [key, e] of m) {
+        const value = literalValue(e, env);
+        out[key] = value === undefined ? { code: e.getText(sf) } : { value, code: e.getText(sf) };
+      }
+      return out;
     }),
   };
 }
@@ -352,14 +525,15 @@ export function scanFile(abs: string, rel: string, text: string): SendHit[] {
   // The transport's own files: the funnel's FUNNEL_SITES rows name them at <module>; their insides are the funnel.
   const transportHome = TRANSPORT_MODULES.includes(rel.replace(/\.ts$/, ''));
   const types = relayTypes(sf, rel);
+  const env = envOf(sf);
   const holders = rel.endsWith('.module.ts') || inEmittersDir ? new Map<string, Relay>() : relayHolders(sf, types);
   // In the transport's own files, holding the client or the outbox is the funnel itself.
   if (transportHome) for (const [k, r] of holders) if (r.via === 'transport') holders.delete(k);
   /** Local names bound to an Expo client value or URL import (so a use inside a function names that function). */
   const transportLocals = new Set<string>();
-  const add = (node: ts.Node, via: SendVia, args?: PushArgs): void => {
+  const add = (node: ts.Node, via: SendVia, args?: PushArgs, more?: Pick<SendHit, 'relay' | 'callArgs'>): void => {
     const line = sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
-    hits.push({ file: rel, line, fn: enclosingFunction(node), via, code: (lines[line - 1] ?? '').trim(), ...(args ? { args } : {}) });
+    hits.push({ file: rel, line, fn: enclosingFunction(node), via, code: (lines[line - 1] ?? '').trim(), ...(args ? { args } : {}), ...(more ?? {}) });
   };
   /** A module the transport lives in: the SDK anywhere, the funnel's Expo client outside its own files. */
   const transportSpec = (spec: string): boolean => spec === SDK || (!transportHome && isTransportModule(rel, spec));
@@ -382,9 +556,11 @@ export function scanFile(abs: string, rel: string, text: string): SendHit[] {
     else if (recvName === 'pushOutbox' && ROW_WRITE.has(method)) add(node, 'transport');
     else if (method === 'enqueue' && recvName && /push/i.test(recvName)) add(node, 'transport');
     else if ((SEND_METHODS as readonly string[]).includes(method)) {
-      add(node, method as SendMethod, method === 'sendPush' ? pushArgs(call, sf) : undefined);
+      add(node, method as SendMethod, method === 'sendPush' ? pushArgs(call, sf, env) : undefined);
     } else if (recvName === 'notification' && ROW_WRITE.has(method)) add(node, 'notificationRow');
-    else if (relay?.method.test(method)) add(node, relay.via);
+    else if (relay?.method.test(method)) {
+      add(node, relay.via, undefined, relay.via === 'transport' ? undefined : { relay: { name: relay.name, method }, ...(relay.via === 'emitter' ? { callArgs: callArgs(call, sf, env) } : {}) });
+    }
   };
 
   const visit = (n: ts.Node): void => {
@@ -392,13 +568,15 @@ export function scanFile(abs: string, rel: string, text: string): SendHit[] {
       const spec = n.moduleSpecifier.text;
       if (spec === SDK) add(n, 'transport');
       else if (transportSpec(spec)) {
-        // Importing PushDeliveryService itself (or a type such as EnqueueResult) is not a send; its enqueue is.
+        // A type such as EnqueueResult is not a send. FR-1186R2 (LO-1186R2 B1): PushDeliveryService itself is, outside
+        // a Nest module file: only the funnel (NotificationsService, a FUNNEL_SITES row) may hold the outbox.
         const clause = ts.isImportDeclaration(n) ? n.importClause : undefined;
         const named = ts.isImportDeclaration(n) ? clause?.namedBindings : n.exportClause;
         const names =
           named && (ts.isNamedImports(named) || ts.isNamedExports(named)) ? named.elements.map((el) => (el.propertyName ?? el.name).text) : null;
-        // `import * as`, `export *`, a default import, or a named transport export.
-        if (names === null || clause?.name || names.some((x) => TRANSPORT_EXPORTS.includes(x))) add(n, 'transport');
+        const outbox = !!names?.includes(OUTBOX_CLASS) && !rel.endsWith('.module.ts');
+        // `import * as`, `export *`, a default import, a named transport export, or the outbox class.
+        if (names === null || clause?.name || outbox || names.some((x) => TRANSPORT_EXPORTS.includes(x))) add(n, 'transport');
       }
     } else if (ts.isImportEqualsDeclaration(n) && ts.isExternalModuleReference(n.moduleReference)) {
       const e = n.moduleReference.expression;

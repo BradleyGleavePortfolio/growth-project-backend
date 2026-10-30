@@ -9,7 +9,8 @@
  * repo's src/, so this spec can run next to the registry spec.
  *
  * WHEN THIS IS RED: a form in test/utils/notify-sender-forms.ts is not found any more (or a negative is
- * found). Fix the scan; never delete the form.
+ * found), or the registry checks no longer name a form's file:line with what is wrong (`finds`). Fix the
+ * scan or the checks; never delete the form. FR-1186R2 adds the LS-1186R2 and LO-1186R2 forms.
  */
 import * as fs from 'fs';
 import * as os from 'os';
@@ -54,13 +55,23 @@ const lineOf = (text: string, piece: string): number => {
 
 describe('KT-4 scan: every known way to send is found (file, function, line)', () => {
   it.each(SEND_FORMS.map((f) => [`${f.id} (${f.from})`, f] as const))('%s', (_label, form: SendForm) => {
-    const hits = scanScratch({ [form.file]: form.text }).map((h) => ({ file: h.file, fn: h.fn, via: h.via, line: h.line }));
+    const raw = scanScratch({ [form.file]: form.text });
+    const hits = raw.map((h) => ({ file: h.file, fn: h.fn, via: h.via, line: h.line }));
     if (form.expect.length === 0) {
       expect({ form: form.id, hits }).toEqual({ form: form.id, hits: [] });
       return;
     }
     const want = form.expect.map((e) => ({ file: form.file, fn: e.fn, via: e.via, line: lineOf(form.text, e.at) }));
     expect({ form: form.id, hits }).toEqual({ form: form.id, hits: expect.arrayContaining(want) });
+    // FR-1186R2: the registry spec's own checks then name the form's file:line and say what is wrong.
+    if (!form.finds) return;
+    const findings = [...directTransport(raw), ...unregistered(raw), ...funnelArgFindings(raw)].filter((f) => f.includes(`${form.file}:`));
+    if (form.finds.length === 0) {
+      expect({ form: form.id, findings }).toEqual({ form: form.id, findings: [] });
+      return;
+    }
+    const missing = form.finds.filter((w) => !findings.some((f) => f.includes(`${form.file}:${lineOf(form.text, w.at)}`) && f.includes(w.says)));
+    expect({ form: form.id, missing, findings }).toEqual({ form: form.id, missing: [], findings });
   });
 });
 

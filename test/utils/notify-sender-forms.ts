@@ -8,6 +8,9 @@ import type { SendVia } from './notify-sender-scan';
  * parse are the ones the sender registry spec uses.
  *
  * `at` is a piece of the line the hit must sit on. An empty `expect` means the scan must report nothing.
+ * `finds` (FR-1186R2): what the registry spec's checks (directTransport, unregistered, funnelArgFindings) must
+ * then report: a message naming `file:line` of the `at` piece and saying `says`. A form written at a real
+ * sender's path (WB, the WorkoutBuilderService row) is checked against that row's funnel entries.
  * Add a row here when you find a new way to send; the class-first path list in b#1186 names these ids.
  */
 export interface SendForm {
@@ -18,9 +21,24 @@ export interface SendForm {
   file: string;
   text: string;
   expect: Array<{ fn: string; via: SendVia; at: string }>;
+  finds?: Array<{ at: string; says: string }>;
 }
 
 const F = 'src/kt4-forms';
+/** FR-1186R2: the WorkoutBuilderService row's file (registry funnel: one plain workout_assigned push). */
+const WB = 'src/workout-builder/workout-builder.service.ts';
+/** The emitAssignmentPush send at WB with `kind` and `extra` spelled as given (one line: the hit line). */
+const wb = (head: string, kind: string, extra = ''): string => `import { NotificationKind } from '../notifications/notification-kind';
+import type { NotificationsService } from '../notifications/notifications.service';
+${head}
+export class WorkoutBuilderService {
+  private emitAssignmentPush(notifications: NotificationsService, clientId: string, body: string, deepLink: string, pick: () => string, ctx: unknown) {
+    void [pick, ctx, NotificationKind];
+    void notifications.sendPush({ user_id: clientId, kind: ${kind}, body, deep_link: deepLink${extra} });
+  }
+}
+`;
+const ENQ = `({ userId: 'u', kind: 'message_received', title: '', body: '', data: {}, collapseKey: 'k', timeZone: null })`;
 
 export const SEND_FORMS: SendForm[] = [
   // ── LS-1186 B1 ─────────────────────────────────────────────────────────────────────────────────
@@ -250,6 +268,259 @@ export async function relay(svc: Pick<CommunityNotificationsService, 'sendCommun
 }
 `,
     expect: [{ fn: 'relay', via: 'communityPush', at: 'svc.sendCommunityPush(' }],
+  },
+  // ── FR-1186R2: LO-1186R2 B1 (a relay held under another name) ──────────────────────────────────
+  {
+    id: 'type-alias-outbox',
+    from: 'LO-1186R2 B1',
+    file: `${F}/type-alias-outbox.ts`,
+    text: `import type { PushDeliveryService } from '../notifications/push/push-delivery.service';
+type Outbox = Pick<PushDeliveryService, 'enqueue'>;
+export class AliasOutbox {
+  constructor(private readonly q: Outbox) {}
+  async go() {
+    await this.q.enqueue${ENQ};
+  }
+}
+`,
+    expect: [{ fn: 'AliasOutbox.go', via: 'transport', at: 'this.q.enqueue(' }],
+    finds: [{ at: 'this.q.enqueue(', says: 'calls the push transport directly' }],
+  },
+  {
+    id: 'interface-field-outbox',
+    from: 'LO-1186R2 B1',
+    file: `${F}/interface-field-outbox.ts`,
+    text: `import type { PushDeliveryService } from '../notifications/push/push-delivery.service';
+interface NoticeDeps {
+  queue: PushDeliveryService;
+}
+export async function viaDeps(deps: NoticeDeps) {
+  await deps.queue.enqueue${ENQ};
+}
+`,
+    expect: [{ fn: 'viaDeps', via: 'transport', at: 'deps.queue.enqueue(' }],
+  },
+  {
+    id: 'type-literal-field-outbox',
+    from: 'LO-1186R2 B1',
+    file: `${F}/type-literal-field-outbox.ts`,
+    text: `import type { PushDeliveryService } from '../notifications/push/push-delivery.service';
+export async function viaLiteral(deps: { box: PushDeliveryService }) {
+  await deps.box.enqueue${ENQ};
+}
+`,
+    expect: [{ fn: 'viaLiteral', via: 'transport', at: 'deps.box.enqueue(' }],
+  },
+  {
+    id: 'local-alias-outbox',
+    from: 'LO-1186R2 B1',
+    file: `${F}/local-alias-outbox.ts`,
+    text: `import { PushDeliveryService } from '../notifications/push/push-delivery.service';
+export class LocalAlias {
+  constructor(private readonly outbox: PushDeliveryService) {}
+  async go() {
+    const q = this.outbox;
+    await q.enqueue${ENQ};
+  }
+}
+`,
+    expect: [{ fn: 'LocalAlias.go', via: 'transport', at: 'await q.enqueue(' }],
+  },
+  {
+    id: 'destructured-alias-outbox',
+    from: 'LO-1186R2 B1 (fresh form, FR-1186R2)',
+    file: `${F}/destructured-alias-outbox.ts`,
+    text: `import { PushDeliveryService } from '../notifications/push/push-delivery.service';
+export class Destructured {
+  constructor(private readonly outbox: PushDeliveryService) {}
+  async go() {
+    const { outbox: box } = this;
+    await box.enqueue${ENQ};
+  }
+}
+`,
+    expect: [{ fn: 'Destructured.go', via: 'transport', at: 'await box.enqueue(' }],
+  },
+  {
+    id: 'inject-token-outbox',
+    from: 'LO-1186R2 B1',
+    file: `${F}/inject-token-outbox.ts`,
+    text: `import { Inject } from '@nestjs/common';
+import { PushDeliveryService } from '../notifications/push/push-delivery.service';
+export class Injected {
+  constructor(@Inject(PushDeliveryService) private readonly sink: { enqueue(x: unknown): Promise<unknown> }) {}
+  async go() {
+    await this.sink.enqueue${ENQ};
+  }
+}
+`,
+    expect: [{ fn: 'Injected.go', via: 'transport', at: 'this.sink.enqueue(' }],
+  },
+  {
+    id: 'outbox-import-backstop',
+    from: 'LO-1186R2 B1 (the import backstop, FR-1186R2)',
+    file: `${F}/outbox-import-backstop.ts`,
+    text: `import { PushDeliveryService } from '../notifications/push/push-delivery.service';
+export const OUTBOX_TOKEN = PushDeliveryService;
+export async function viaAny(x: any) {
+  await x.enqueue({});
+}
+`,
+    expect: [{ fn: '<module>', via: 'transport', at: 'import { PushDeliveryService }' }],
+    finds: [{ at: 'import { PushDeliveryService }', says: 'calls the push transport directly' }],
+  },
+  {
+    id: 'type-alias-emitter',
+    from: 'LO-1186R2 B1',
+    file: `${F}/type-alias-emitter.ts`,
+    text: `import type { CoachAlertEmitter } from '../notifications/emitters/coach-alert.emitter';
+type Alerts = CoachAlertEmitter;
+export class Watcher {
+  constructor(private readonly a: Alerts) {}
+  async go() {
+    await this.a.emit({ coachId: 'c', alertId: 'a', alertType: 't', message: 'm', severity: 'warning' });
+  }
+}
+`,
+    expect: [{ fn: 'Watcher.go', via: 'emitter', at: 'this.a.emit(' }],
+    finds: [{ at: 'this.a.emit(', says: 'not in the sender registry' }],
+  },
+  {
+    id: 'interface-extends-emitter',
+    from: 'LO-1186R2 B1 (fresh form, FR-1186R2)',
+    file: `${F}/interface-extends-emitter.ts`,
+    text: `import type { CoachAlertEmitter } from '../notifications/emitters/coach-alert.emitter';
+interface Alerter extends CoachAlertEmitter {}
+export async function alertVia(x: Alerter) {
+  await x.emit({ coachId: 'c', alertId: 'a', alertType: 't', message: 'm', severity: 'warning' });
+}
+`,
+    expect: [{ fn: 'alertVia', via: 'emitter', at: 'x.emit(' }],
+  },
+  {
+    id: 'local-alias-emitter',
+    from: 'LO-1186R2 B1 (fresh form, FR-1186R2)',
+    file: `${F}/local-alias-emitter.ts`,
+    text: `import { CoachAlertEmitter } from '../notifications/emitters/coach-alert.emitter';
+export class Copy {
+  constructor(private readonly coachAlert: CoachAlertEmitter) {}
+  async go() {
+    const tell = this.coachAlert;
+    await tell.emit({ coachId: 'c', alertId: 'a', alertType: 't', message: 'm', severity: 'warning' });
+  }
+}
+`,
+    expect: [{ fn: 'Copy.go', via: 'emitter', at: 'await tell.emit(' }],
+  },
+  {
+    id: 'type-alias-community',
+    from: 'LO-1186R2 B1',
+    file: `${F}/type-alias-community.ts`,
+    text: `import type { CommunityNotificationsService } from '../community/notifications/community-notifications.service';
+type Relay = Pick<CommunityNotificationsService, 'sendCommunityPush'>;
+export async function relayVia(r: Relay) {
+  await r.sendCommunityPush({} as never);
+}
+`,
+    expect: [{ fn: 'relayVia', via: 'communityPush', at: 'r.sendCommunityPush(' }],
+  },
+  // ── FR-1186R2: LS-1186R2 B1 (a kind the guard must read as its value) ───────────────────────────
+  {
+    id: 'kind-string-literal',
+    from: 'LS-1186R2 B1',
+    file: WB,
+    text: wb('', `'first_payment'`),
+    expect: [{ fn: 'WorkoutBuilderService.emitAssignmentPush', via: 'sendPush', at: 'notifications.sendPush(' }],
+    finds: [{ at: 'notifications.sendPush(', says: 'passes kind first_payment' }],
+  },
+  {
+    id: 'kind-template-literal',
+    from: 'LS-1186R2 B1',
+    file: WB,
+    text: wb('', '`first_payment`'),
+    expect: [{ fn: 'WorkoutBuilderService.emitAssignmentPush', via: 'sendPush', at: 'notifications.sendPush(' }],
+    finds: [{ at: 'notifications.sendPush(', says: 'passes kind first_payment' }],
+  },
+  {
+    id: 'kind-element-access',
+    from: 'LS-1186R2 B1',
+    file: WB,
+    text: wb('', `NotificationKind['FIRST_PAYMENT']`),
+    expect: [{ fn: 'WorkoutBuilderService.emitAssignmentPush', via: 'sendPush', at: 'notifications.sendPush(' }],
+    finds: [{ at: 'notifications.sendPush(', says: 'passes kind first_payment' }],
+  },
+  {
+    id: 'kind-const',
+    from: 'LS-1186R2 B1 (fresh form, FR-1186R2)',
+    file: WB,
+    text: wb(`const KIND = 'first_payment' as const;`, 'KIND'),
+    expect: [{ fn: 'WorkoutBuilderService.emitAssignmentPush', via: 'sendPush', at: 'notifications.sendPush(' }],
+    finds: [{ at: 'notifications.sendPush(', says: 'passes kind first_payment' }],
+  },
+  {
+    id: 'kind-not-a-kind',
+    from: 'LS-1186R2 B1',
+    file: WB,
+    text: wb('', `'not_a_kind'`),
+    expect: [{ fn: 'WorkoutBuilderService.emitAssignmentPush', via: 'sendPush', at: 'notifications.sendPush(' }],
+    finds: [{ at: 'notifications.sendPush(', says: "passes 'not_a_kind', which is not a NotificationKind" }],
+  },
+  {
+    id: 'kind-unreadable',
+    from: 'LS-1186R2 B1',
+    file: WB,
+    text: wb('', 'pick()'),
+    expect: [{ fn: 'WorkoutBuilderService.emitAssignmentPush', via: 'sendPush', at: 'notifications.sendPush(' }],
+    finds: [{ at: 'notifications.sendPush(', says: 'passes a kind the scan cannot read (pick())' }],
+  },
+  // ── FR-1186R2: LO-1186R2 B2 (a context the guard must read as its value) ────────────────────────
+  {
+    id: 'context-renewal-offer',
+    from: 'LO-1186R2 B2',
+    file: WB,
+    text: wb(`import { RENEWAL_OFFER } from '../notifications/push/push-preferences';`, 'NotificationKind.WORKOUT_ASSIGNED', ', context: RENEWAL_OFFER'),
+    expect: [{ fn: 'WorkoutBuilderService.emitAssignmentPush', via: 'sendPush', at: 'notifications.sendPush(' }],
+    finds: [{ at: 'notifications.sendPush(', says: 'passes a renewal offer context (RENEWAL_OFFER), but no funnel entry declares one' }],
+  },
+  {
+    id: 'context-renewal-offer-aliased',
+    from: 'LO-1186R2 B2 (fresh form, FR-1186R2)',
+    file: WB,
+    text: wb(`import { RENEWAL_OFFER as OFFER } from '../notifications/push/push-preferences';`, 'NotificationKind.WORKOUT_ASSIGNED', ', context: OFFER'),
+    expect: [{ fn: 'WorkoutBuilderService.emitAssignmentPush', via: 'sendPush', at: 'notifications.sendPush(' }],
+    finds: [{ at: 'notifications.sendPush(', says: 'passes a renewal offer context (RENEWAL_OFFER), but no funnel entry declares one' }],
+  },
+  {
+    id: 'context-mute-all-pass-aliased',
+    from: 'LO-1186R2 B2 (fresh form, FR-1186R2)',
+    file: WB,
+    text: wb(`import { MUTE_ALL_PASS as PASS } from '../notifications/push/push-preferences';`, 'NotificationKind.WORKOUT_ASSIGNED', ', context: PASS'),
+    expect: [{ fn: 'WorkoutBuilderService.emitAssignmentPush', via: 'sendPush', at: 'notifications.sendPush(' }],
+    finds: [{ at: 'notifications.sendPush(', says: 'passes a context that can pass Mute all (passesMuteAll' }],
+  },
+  {
+    id: 'context-unreadable',
+    from: 'LO-1186R2 B2 / C3',
+    file: WB,
+    text: wb('', 'NotificationKind.WORKOUT_ASSIGNED', ', context: ctx as never'),
+    expect: [{ fn: 'WorkoutBuilderService.emitAssignmentPush', via: 'sendPush', at: 'notifications.sendPush(' }],
+    finds: [{ at: 'notifications.sendPush(', says: 'passes a context the scan cannot read;' }],
+  },
+  {
+    id: 'kind-enum-control',
+    from: 'control (FR-1186R2: the registered send as written, nothing to report)',
+    file: WB,
+    text: wb('', 'NotificationKind.WORKOUT_ASSIGNED'),
+    expect: [{ fn: 'WorkoutBuilderService.emitAssignmentPush', via: 'sendPush', at: 'notifications.sendPush(' }],
+    finds: [],
+  },
+  {
+    id: 'kind-string-control',
+    from: 'control (FR-1186R2: a string literal of the row\'s own kind, nothing to report)',
+    file: WB,
+    text: wb('', `'workout_assigned'`),
+    expect: [{ fn: 'WorkoutBuilderService.emitAssignmentPush', via: 'sendPush', at: 'notifications.sendPush(' }],
+    finds: [],
   },
   // ── Controls: forms the scan saw before FR-1186 ─────────────────────────────────────────────
   {

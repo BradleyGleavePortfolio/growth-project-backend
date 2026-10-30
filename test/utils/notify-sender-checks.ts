@@ -1,7 +1,7 @@
 import { NotificationKind, type NotificationKindValue } from '../../src/notifications/notification-kind';
 import { SAFETY_ALERT_PUSH_BODY } from '../../src/notifications/push/lock-screen-copy';
 import { FUNNEL_SITES, SENDERS, type FunnelPush, type FunnelSite, type SenderRow } from './notify-sender-registry';
-import type { SendHit } from './notify-sender-scan';
+import type { PushArgs, SendHit } from './notify-sender-scan';
 
 /**
  * The KT-4 checks over a scan (test/utils/notify-sender-scan.ts), shared by the sender registry spec and the
@@ -13,17 +13,8 @@ export const keyOf = (file: string, fn: string): string => `${file}#${fn}`;
 export const where = (h: SendHit): string => `${h.file}:${h.line} ${h.fn} [${h.via}] ${h.code}`;
 
 /** What the scan reads from a sendPush call (PushArgs in notify-sender-scan.ts). */
-export interface ArgsSeen {
-  opaque: boolean;
-  variants: Array<{
-    kindMember: string | null;
-    kindCode: string;
-    urgent: 'absent' | 'true' | 'false' | 'dynamic';
-    context: 'absent' | 'plain' | 'passes' | 'dynamic';
-    contextValue?: Record<string, unknown> | null;
-  }>;
-}
-type Hit = SendHit & { args?: ArgsSeen };
+export type ArgsSeen = PushArgs;
+type Hit = SendHit;
 
 const funnelKeys = (funnel: FunnelSite[]): Set<string> => new Set(funnel.map((s) => keyOf(s.file, s.fn)));
 
@@ -53,7 +44,10 @@ export function unregistered(hits: SendHit[], senders: SenderRow[] = SENDERS, fu
 export const contextPasses = (c: FunnelPush['context']): boolean =>
   !!c && (c.passesMuteAll === true || (typeof c.safetyAlert === 'string' && c.safetyAlert in SAFETY_ALERT_PUSH_BODY));
 
-const kindOf = (member: string): NotificationKindValue | undefined => (NotificationKind as Record<string, NotificationKindValue>)[member];
+const KIND_VALUES = new Set<string>(Object.values(NotificationKind));
+const isKind = (v: string | null): v is NotificationKindValue => v !== null && KIND_VALUES.has(v);
+/** A funnel push whose context is a renewal offer (RENEWAL_OFFER): Mute all stops it and it needs the person's yes. */
+export const contextOffers = (c: FunnelPush['context']): boolean => !!c && (c as { renewalOffer?: unknown }).renewalOffer === true;
 
 /** The sendPush hits of each registered sender (the funnel's own sendPush calls are left out). */
 export function sendPushHitsByRow(hits: SendHit[], senders: SenderRow[] = SENDERS, funnel: FunnelSite[] = FUNNEL_SITES): Map<SenderRow, Hit[]> {
@@ -69,9 +63,13 @@ export function sendPushHitsByRow(hits: SendHit[], senders: SenderRow[] = SENDER
 /**
  * LO-1186 B2: each sendPush sender's `funnel` entries must declare what its code passes. The scan reads every
  * sendPush call's argument (kind, urgent, context; one variant per branch of a conditional spread). Red when:
- * the code passes a kind, `urgent`, or a Mute all pass (passesMuteAll, MUTE_ALL_PASS, safetyAlert, or a
- * context the scan cannot read) that no funnel entry declares; when an entry declares one the code never
- * passes; or when the scan cannot read the argument at all.
+ * the code passes a kind, `urgent`, a Mute all pass (passesMuteAll, MUTE_ALL_PASS, safetyAlert) or a renewal
+ * offer (RENEWAL_OFFER) that no funnel entry declares; when an entry declares one the code never passes; or
+ * when the scan cannot read the argument at all.
+ * FR-1186R2 (LS-1186R2 B1): a kind spelled statically (`NotificationKind.X`, `NotificationKind['X']`, a string
+ * or template literal, a const of one) is checked as that value; any other kind is red unless the row declares
+ * that exact code as its `dynamicKind`. FR-1186R2 (LO-1186R2 B2): a context the scan cannot read is red; it is
+ * no longer taken as "can pass Mute all".
  */
 export function funnelArgFindings(hits: SendHit[], senders: SenderRow[] = SENDERS, funnel: FunnelSite[] = FUNNEL_SITES): string[] {
   const out: string[] = [];
@@ -91,14 +89,18 @@ export function funnelArgFindings(hits: SendHit[], senders: SenderRow[] = SENDER
     }
     const vs = hs.flatMap((h) => (h.args as ArgsSeen).variants.map((v) => ({ h, v })));
     // kind
-    const staticKinds = vs.every(({ v }) => v.kindMember !== null);
+    const staticKinds = vs.every(({ v }) => v.kindStatic);
     for (const { h, v } of vs) {
-      if (v.kindMember === null) continue;
-      const k = kindOf(v.kindMember);
-      if (!k) say(h, `passes ${v.kindCode}, which is not a NotificationKind`);
-      else if (!entries.some((e) => e.kind === k)) say(h, `passes kind ${k}, which no funnel entry declares`);
+      if (!v.kindStatic) {
+        if (row.dynamicKind?.code !== v.kindCode) {
+          say(h, `passes a kind the scan cannot read (${v.kindCode}); spell it NotificationKind.X or a string literal, or declare dynamicKind: { code: '${v.kindCode}' } on the row with a funnel entry for each kind it can be`);
+        }
+        continue;
+      }
+      if (!isKind(v.kindValue)) say(h, `passes ${v.kindCode}, which is not a NotificationKind`);
+      else if (!entries.some((e) => e.kind === v.kindValue)) say(h, `passes kind ${v.kindValue} (${v.kindCode}), which no funnel entry declares`);
     }
-    const codeKinds = new Set(vs.map(({ v }) => (v.kindMember ? kindOf(v.kindMember) : undefined)));
+    const codeKinds = new Set(vs.map(({ v }) => (v.kindStatic ? v.kindValue : undefined)));
     for (const e of entries) {
       if (staticKinds && !codeKinds.has(e.kind)) say(hs[0], `a funnel entry declares kind ${e.kind}, which the code never passes`);
       if (!staticKinds && !row.kinds.includes(e.kind)) say(hs[0], `a funnel entry declares kind ${e.kind}, which is not in the row's kinds`);
@@ -110,11 +112,21 @@ export function funnelArgFindings(hits: SendHit[], senders: SenderRow[] = SENDER
     if (!urgentAt && entries.some((e) => e.urgent === true)) say(hs[0], 'a funnel entry declares urgent: true, but the code never passes urgent');
     if (plainAt && !entries.some((e) => e.urgent !== true)) say(plainAt.h, 'can send without urgent, but every funnel entry is urgent');
     if (!plainAt && entries.some((e) => e.urgent !== true)) say(hs[0], 'always passes urgent: true, but a funnel entry is not urgent');
+    // context: a value the scan cannot read is red (FR-1186R2, LO-1186R2 B2: RENEWAL_OFFER is read as its value)
+    for (const { h } of vs.filter(({ v }) => v.context === 'dynamic')) {
+      say(h, 'passes a context the scan cannot read; write it as an object literal or a push-preferences constant (MUTE_ALL_PASS, RENEWAL_OFFER) so the funnel table sends the same value');
+    }
+    // context: a renewal offer (Mute all stops it; it needs the person's yes)
+    const offerAt = vs.find(({ v }) => v.context === 'offer');
+    if (offerAt && !entries.some((e) => contextOffers(e.context))) say(offerAt.h, 'passes a renewal offer context (RENEWAL_OFFER), but no funnel entry declares one');
+    if (!offerAt && entries.some((e) => contextOffers(e.context))) say(hs[0], 'a funnel entry declares a renewal offer context, but the code never passes one');
+    const noOfferAt = vs.find(({ v }) => v.context !== 'offer');
+    if (noOfferAt && !entries.some((e) => !contextOffers(e.context))) say(noOfferAt.h, 'can send without a renewal offer context, but every funnel entry is an offer');
     // context: a Mute all pass
-    const passAt = vs.find(({ v }) => v.context === 'passes' || v.context === 'dynamic');
+    const passAt = vs.find(({ v }) => v.context === 'passes');
     const noPassAt = vs.find(({ v }) => v.context !== 'passes');
     if (passAt && !entries.some((e) => contextPasses(e.context))) {
-      say(passAt.h, `passes a context that can pass Mute all (${passAt.v.context === 'passes' ? 'passesMuteAll, MUTE_ALL_PASS or safetyAlert' : 'a value the scan cannot read'}), but no funnel entry declares one`);
+      say(passAt.h, 'passes a context that can pass Mute all (passesMuteAll, MUTE_ALL_PASS or safetyAlert), but no funnel entry declares one');
     }
     if (!passAt && entries.some((e) => contextPasses(e.context))) say(hs[0], 'a funnel entry declares a Mute all pass, but the code never passes one');
     if (noPassAt && !entries.some((e) => !contextPasses(e.context))) say(noPassAt.h, 'can send without a Mute all pass, but every funnel entry passes Mute all');
@@ -138,10 +150,11 @@ export function sentValues(
   });
   if (vs.length === 0) return { kind: e.kind, urgent: e.urgent, context: e.context ?? null, from: 'registry (no sendPush call of its own: the emitter it calls sends)' };
   const from: string[] = [];
-  const members = new Set(vs.map((v) => v.kindMember));
-  const one = members.size === 1 ? [...members][0] : null;
-  const kind = one && kindOf(one) ? (kindOf(one) as NotificationKindValue) : e.kind;
-  from.push(one && kindOf(one) ? 'kind: code' : 'kind: registry');
+  // FR-1186R2 (LS-1186R2 B1): the kind the code spells, whatever the spelling; the registry's only when the code picks it at run time.
+  const values = new Set(vs.map((v) => (v.kindStatic ? v.kindValue : null)));
+  const one = values.size === 1 ? [...values][0] : null;
+  const kind = one !== null ? (one as NotificationKindValue) : e.kind;
+  from.push(one !== null ? 'kind: code' : 'kind: registry');
   const us = new Set(vs.map((v) => v.urgent));
   let urgent = e.urgent;
   if (us.size === 1 && !us.has('dynamic')) {

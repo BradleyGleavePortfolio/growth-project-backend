@@ -1,6 +1,6 @@
 import { NotificationKind, type NotificationKindValue } from '../../src/notifications/notification-kind';
 import { SAFETY_ALERT_PUSH_BODY, type PushContext } from '../../src/notifications/push/lock-screen-copy';
-import { MUTE_ALL_PASS, type MuteAllPass } from '../../src/notifications/push/push-preferences';
+import { MUTE_ALL_PASS, RENEWAL_OFFER, type MuteAllPass, type RenewalOffer } from '../../src/notifications/push/push-preferences';
 import type { SendVia } from './notify-sender-scan';
 
 /**
@@ -12,7 +12,8 @@ import type { SendVia } from './notify-sender-scan';
  * The five rules (KT-4):
  * - Mute all (`NotificationPreferences.muted`, owner #171-3): stops every device push except money kinds
  *   (MONEY_NOTIFICATION_KINDS) and a push whose context passes (MUTE_ALL_PASS, or a safety alert key of
- *   SAFETY_ALERT_PUSH_BODY, owner #168-18). It never stops an in-app row.
+ *   SAFETY_ALERT_PUSH_BODY, owner #168-18). It never stops an in-app row. A renewal offer (RENEWAL_OFFER,
+ *   STORE-B2) is not a money pass: Mute all stops it, and it is sent only after the person's yes in the app.
  * - Quiet hours (21:00 to 08:00 in the recipient's zone, OR-113-5): a push waits to 08:00 unless it is urgent
  *   (quietHoursFor in push-quiet-hours.ts, or the nudge QuietHoursPolicy for the senders that use it).
  * - Thread and space mute: a muted or left thread or space hears nothing from there.
@@ -33,8 +34,15 @@ export interface Rule {
 /** A push the sender queues through NotificationsService.sendPush; the funnel table in the spec sends it. */
 export interface FunnelPush {
   kind: NotificationKindValue;
-  context?: (PushContext & MuteAllPass) | null;
+  /** FR-1186R2 (LO-1186R2 B2): the same type sendPush takes, so a renewal offer (RENEWAL_OFFER) can be declared. */
+  context?: (PushContext & MuteAllPass & RenewalOffer) | null;
   urgent?: boolean;
+  /**
+   * FR-1186R2 (LO-1186R2 B2, LS-1186R2 B2): `needed` when the push goes only to a person who said yes in the
+   * app (a renewal offer: plan_renewal_offers_opt_in_at). The funnel table sends it with that yes, and once
+   * without it (nothing may be queued). Without this field the push needs no yes (the table checks that too).
+   */
+  consent?: 'needed';
   /** Mute all on: `stops` (nothing queued) or `passes` (queued). */
   muteAll: 'stops' | 'passes';
   /** Inside quiet hours: `held` (waits to 08:00 local) or `passes` (due now). */
@@ -43,7 +51,7 @@ export interface FunnelPush {
 }
 
 /** The senders the spec runs through their real code (see DRIVERS in the spec). */
-export type DriverName = 'broadcast' | 'churnIntervention' | 'scoutImport' | 'communityPush' | 'spacePush' | 'dunningClientPush';
+export type DriverName = 'broadcast' | 'churnIntervention' | 'scoutImport' | 'communityPush' | 'spacePush' | 'dunningClientPush' | 'heldMessage';
 
 export interface SenderRow {
   file: string;
@@ -60,6 +68,11 @@ export interface SenderRow {
   recipient: string;
   /** Pushes queued through sendPush, sent by the spec's funnel table. */
   funnel?: FunnelPush[];
+  /**
+   * FR-1186R2 (LS-1186R2 B1): the one sendPush kind expression this sender may pass that the scan cannot read
+   * as a value (it picks the kind at run time), and why. Any other kind the scan cannot read is red.
+   */
+  dynamicKind?: { code: string; why: string };
   /** A driver in the spec that runs this sender's real code. */
   driver?: DriverName;
   /** Where else the behavior is driven (an existing spec), or why it is not driven here. */
@@ -98,7 +111,9 @@ export interface KnownGap {
   /**
    * FR-1186 (LS-1186 C1): for a gap no driver runs, the code that causes it. The spec goes red when that code
    * is gone (the gap may be fixed: check it, then delete the gap). `has` / `lacks`: send sites the scan must or
-   * must not find in file:fn. `textLacks`: the file must not say this.
+   * must not find in file:fn. `textLacks`: the file must not say this. FR-1186R2 (LO-1186R2 C2): a pushToUser
+   * quiet-hours gap also lacks QuietHoursPolicy and quietHoursFor, so a fix that keeps pushToUser but adds the
+   * quiet-hours check in the sender turns it red too.
    */
   tripwire?: { file: string; fn?: string; has?: SendVia; lacks?: SendVia; textLacks?: RegExp };
 }
@@ -150,27 +165,48 @@ export const KNOWN_GAPS: Record<KnownGapId, KnownGap> = {
     rule: 'quiet hours',
     why: `the coach's payout notice push goes out when the refund or dispute lands, at any local hour; ${QH_DIRECT}`,
     audit: THIS_PR,
-    tripwire: { file: 'src/checkout/payout-notice.service.ts', fn: 'PayoutNoticeService.deliverPush', has: 'pushToUser', lacks: 'sendPush' },
+    tripwire: {
+      file: 'src/checkout/payout-notice.service.ts',
+      fn: 'PayoutNoticeService.deliverPush',
+      has: 'pushToUser',
+      lacks: 'sendPush',
+      textLacks: /QuietHoursPolicy|quietHoursFor/,
+    },
   },
   'KG-QH-TRIAL': {
     where: 'src/packages/trials/trial-notice.service.ts:TrialNoticeService.deliverPush',
     rule: 'quiet hours',
     why: `the trial-ending push goes out on the 10-minute UTC sweep, at any local hour; ${QH_DIRECT}`,
     audit: THIS_PR,
-    tripwire: { file: 'src/packages/trials/trial-notice.service.ts', fn: 'TrialNoticeService.deliverPush', has: 'pushToUser', lacks: 'sendPush' },
+    tripwire: {
+      file: 'src/packages/trials/trial-notice.service.ts',
+      fn: 'TrialNoticeService.deliverPush',
+      has: 'pushToUser',
+      lacks: 'sendPush',
+      textLacks: /QuietHoursPolicy|quietHoursFor/,
+    },
   },
   'KG-QH-WORKOUT-REMINDER': {
     where: 'src/engagement/workout-reminder.service.ts:WorkoutReminderService.processClient',
     rule: 'quiet hours',
     why: `the "morning" slot opens at 07:00 local (REMINDER_SLOT_MINUTES), inside quiet hours; ${QH_DIRECT}`,
     audit: THIS_PR,
-    tripwire: { file: 'src/engagement/workout-reminder.service.ts', fn: 'WorkoutReminderService.processClient', has: 'pushToUser', lacks: 'sendPush' },
+    tripwire: {
+      file: 'src/engagement/workout-reminder.service.ts',
+      fn: 'WorkoutReminderService.processClient',
+      has: 'pushToUser',
+      lacks: 'sendPush',
+      textLacks: /QuietHoursPolicy|quietHoursFor/,
+    },
   },
   'KG-HELD-BLOCK-MESSAGE': {
     where: 'src/messaging/messaging.service.ts:MessagingService.notifyNewMessage',
     rule: 'block and ban',
     why: 'a coach and client message push held to 08:00 is sent even if one side blocked the other while it waited: at send time the push outbox (push-delivery.service.ts) plans again only space pushes (spacePushDropReason), so the block is never read (owner 10-22: a block hides all messaging)',
     audit: THIS_PR,
+    // FR-1186R2 (LO-1186R2 C2): driven by the heldMessage driver through the real outbox worker (held at 23:30, the
+    // block made while it waits, sent at 08:00). The tripwire stays as a second check on the worker's text.
+    today: 'sent',
     tripwire: { file: 'src/notifications/push/push-delivery.service.ts', textLacks: /userBlock|isEitherSideBlocked/ },
   },
 };
@@ -371,13 +407,26 @@ export const SENDERS: SenderRow[] = [
     via: ['sendPush'],
     kinds: ['plan_renewal'],
     sends: 'push (no inbox row)',
-    muteAll: MUTE_MONEY,
+    muteAll: {
+      does: 'passes',
+      why: 'Day 0 (the plan ended) is a money kind and passes Mute all (MONEY_NOTIFICATION_KINDS, owner #171-3); Day 1 and Day 7 are renewal offers (RENEWAL_OFFER, STORE-B2, App Store 4.5.4): Mute all stops them, and they go only to a client who said yes in the app (plan_renewal_offers_opt_in_at)',
+    },
     quietHours: QH_CORE,
     mute: NO_MUTE,
     blockBan: NO_ACTOR,
-    recipient: 'the client whose plan renews (STORE-B2 changes this row; this is main today)',
-    funnel: [{ kind: NotificationKind.PLAN_RENEWAL, muteAll: 'passes', quietHours: 'held', note: 'money kind' }],
-    covered: 'funnel table here; test/plan-renewal.spec.ts',
+    recipient: 'the client whose plan ended; Day 1 and Day 7 only after their yes in the app (renewalOffersConsented)',
+    funnel: [
+      { kind: NotificationKind.PLAN_RENEWAL, muteAll: 'passes', quietHours: 'held', note: 'Day 0: the plan ended (money kind; needs no yes)' },
+      {
+        kind: NotificationKind.PLAN_RENEWAL,
+        context: RENEWAL_OFFER,
+        consent: 'needed',
+        muteAll: 'stops',
+        quietHours: 'held',
+        note: 'Day 1 and Day 7: a renewal offer (STORE-B2): needs the yes, and Mute all stops it',
+      },
+    ],
+    covered: 'funnel table here (Day 0, and the offer with the yes, without it, and with the yes and Mute all on); test/plan-renewal.spec.ts',
   },
   {
     file: 'src/checkout/plan-renewal/switch-tell.ts',
@@ -460,7 +509,9 @@ export const SENDERS: SenderRow[] = [
     },
     recipient: "the other side of the coach and client thread (a client's reply tells their assigned coach)",
     funnel: [{ kind: NotificationKind.MESSAGE_RECEIVED, muteAll: 'stops', quietHours: 'held', note: 'not urgent' }],
-    covered: 'funnel table here; test/messaging/messaging-core-v2.spec.ts drives the thread mute',
+    driver: 'heldMessage',
+    covered:
+      'funnel table here; heldMessage driver here (a push held at 23:30, then a block, then the real outbox worker at 08:00: KG-HELD-BLOCK-MESSAGE); test/messaging/messaging-core-v2.spec.ts drives the thread mute and the send-path block',
   },
   // ── Coach tools ───────────────────────────────────────────────────────────────────────────────
   {
@@ -641,6 +692,7 @@ export const SENDERS: SenderRow[] = [
     blockBan: OWN_COACH,
     recipient: 'the coach and the client of the session (its callers below)',
     funnel: BOOKING_FUNNEL,
+    dynamicKind: { code: 'args.kind', why: 'each BookingEmitter.emit* method passes its own booking kind; BOOKING_FUNNEL has an entry for each' },
     covered: 'funnel table here; test/booking-emitter.spec.ts',
   },
   ...(
