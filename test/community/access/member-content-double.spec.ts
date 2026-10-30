@@ -8,6 +8,10 @@
  *      SQL that names one predicate applies that rule and only it;
  *   3. the removal sweep: for each reader the double answers, each access predicate cut from the SQL the real reader
  *      sends (the test copy of its query) turns that reader's check red, and the untouched query keeps it green.
+ * FR-1185R3 class 3 (LS-1185R3 B3): the double reads only the active SQL (activeSql). A predicate or a marker inside
+ * a comment (line, block, nested block) or a string literal ('...', E'...', $$...$$, $tag$...$tag$) is not asked
+ * for: table-tested on every branch and predicate, and the sweep comments out (and quotes) each predicate of each
+ * real reader's SQL as well as cutting it, each turning that reader's check red.
  * Not here: SQL the double does not answer (community-space-reads.service.ts, community-search.repository.ts and the
  * rule D report readers' joins) runs on Postgres under row security in test/rls (community-space-reads-rls,
  * community-moved-client-rls, community-rule-d-readers-rls); the double refuses SQL no branch knows.
@@ -18,7 +22,7 @@ import { join } from 'path';
 import { authorsWhoLeft, rowsByAuthorsWhoStay, spacesOpenTo } from '../../../src/community/community-space-access';
 import { unbannedSpaces } from '../../../src/community/community-public-row';
 import type { PrismaService } from '../../../src/prisma.service';
-import { InMemoryPrisma, RAW_SQL_ASKS, RAW_SQL_BRANCHES, type RawSqlAsk, type Row } from '../safety/in-memory-prisma';
+import { activeSql, InMemoryPrisma, RAW_SQL_ASKS, RAW_SQL_BRANCHES, type RawSqlAsk, type Row } from '../safety/in-memory-prisma';
 import { accessWorld, type AccessWorld } from './member-content-fixture';
 import { REPO_ROOT } from './member-content-scan';
 
@@ -39,6 +43,21 @@ function raw(db: InMemoryPrisma, parts: string[], ...values: unknown[]): Promise
 }
 
 const on = (names: readonly RawSqlAsk[], k: RawSqlAsk, text: string): string => (names.includes(k) ? text : '');
+
+/** The predicate as a query writes it, in SQL that runs. */
+const active = (k: RawSqlAsk): string => (k === 'live' ? RAW_SQL_ASKS[k] : `${RAW_SQL_ASKS[k]}(t."w", t."a")`);
+
+/** LS-1185R3 B3: every way SQL text can sit in a query without running (Postgres comments and string literals). */
+const INACTIVE: Array<[string, (text: string) => string]> = [
+  ['a line comment', (t) => `\n  -- AND ${t}\n`],
+  ['a line comment that ends the query', (t) => ` -- AND ${t}`],
+  ['a block comment', (t) => ` /* AND ${t} */`],
+  ['a nested block comment', (t) => ` /* off /* AND ${t} */ still off */`],
+  ['a string literal', (t) => ` AND 'x' <> 'AND ${t.split("'").join("''")}'`],
+  ['an E string with an escaped quote', (t) => ` AND E'it\\'s AND ${t}' IS NOT NULL`],
+  ['a dollar-quoted string', (t) => ` AND $$AND ${t}$$ IS NOT NULL`],
+  ['a tagged dollar-quoted string', (t) => ` AND $q$AND ${t}$q$ IS NOT NULL`],
+];
 
 /** A world with one author who wrote one live message in the space, in good standing until `hit`. */
 async function world(): Promise<{ w: AccessWorld; a: User; messageId: string }> {
@@ -131,6 +150,8 @@ describe('FR-1185R2 class 3: every $queryRaw branch of the double, with the pred
   it('$queryRaw answers only through RAW_SQL_BRANCHES and hands each branch only the predicates it lists', () => {
     const src = readFileSync(join(REPO_ROOT, 'test/community/safety/in-memory-prisma.ts'), 'utf8');
     const body = src.slice(src.indexOf('async $queryRaw('), src.indexOf('async $transaction<'));
+    // LS-1185R3 B3: the marker and the predicates are read in the active SQL only (no comment, no string literal).
+    expect(body).toContain('const sql = activeSql(strings);');
     expect(body).toContain('RAW_SQL_BRANCHES.find((b) => sql.includes(b.marker))');
     expect(body).toContain('for (const k of hit.reads) asks[k] = sql.includes(RAW_SQL_ASKS[k]);');
     // No branch outside the table: the method body names no SQL text of its own.
@@ -169,7 +190,8 @@ describe('FR-1185R2 class 3: every $queryRaw branch of the double, with the pred
         // A predicate the branch does not read: naming it or not, the rule never applies here.
         await hit(w, a, messageId, k);
         const without = await shape.run(w, a, named.filter((n) => n !== k)).catch((e: Error) => e.message);
-        unread = ` AND TRUE /* ${RAW_SQL_ASKS[k]} */`;
+        // Named in active SQL (a comment would not name it at all, LS-1185R3 B3), where it cannot change the answer.
+        unread = ` AND (TRUE OR ${active(k)})`;
         const withIt = await shape.run(w, a, named.filter((n) => n !== k)).catch((e: Error) => e.message).finally(() => {
           unread = '';
         });
@@ -187,15 +209,75 @@ describe('FR-1185R2 class 3: every $queryRaw branch of the double, with the pred
   });
 });
 
-/** Cut `k`'s predicate from every SQL text the double is handed while `run` runs; returns how many texts held it. */
-async function withCut<T>(k: RawSqlAsk, run: () => Promise<T>): Promise<{ out: T | Error; cut: number }> {
+describe('FR-1185R3 class 3: the double reads only the active SQL (LS-1185R3 B3)', () => {
+  it.each(INACTIVE)('activeSql drops text in %s and keeps the SQL around it', (_form, wrap) => {
+    for (const k of RULES) {
+      const sql = activeSql([`SELECT "deleted_at" FROM t WHERE "a--b" = 1${wrap(active(k))}\n  AND "w" = `, '::uuid']);
+      expect(sql).not.toContain(RAW_SQL_ASKS[k]);
+      expect(sql).toContain('SELECT "deleted_at" FROM t WHERE "a--b" = 1');
+      expect(sql).toContain('AND "w" = ');
+    }
+    // Control: the same predicate in active SQL is kept.
+    expect(activeSql([`SELECT 1 WHERE ${active('unbanned')}`])).toContain(RAW_SQL_ASKS.unbanned);
+  });
+
+  describe.each(RAW_SQL_BRANCHES.map((b) => [b.reader, b] as const))('%s', (_reader, b) => {
+    const shape = SHAPES[b.marker];
+    const always = shape.always ?? [];
+
+    it.each(INACTIVE)('its marker only in %s answers nothing: the double refuses the SQL', async (_form, wrap) => {
+      const { w } = await world();
+      await expect(raw(w.db, [`SELECT 1 FROM unnest(`, `::uuid[])${wrap(b.marker)}`], [w.cohortId])).rejects.toThrow('unsupported $queryRaw');
+    });
+
+    const cases = b.reads.flatMap((k) => INACTIVE.map(([form, wrap]) => [`${k} only in ${form}`, k, wrap] as const));
+    if (cases.length === 0) {
+      it('reads no predicate, so no inactive form can change its answer', () => expect(b.reads).toEqual([]));
+      return;
+    }
+    it.each(cases)('%s is not applied', async (_name, k, wrap) => {
+      const { w, a, messageId } = await world();
+      await hit(w, a, messageId, k);
+      const named = [...new Set([...always, ...(k === 'live' ? ['stays' as const] : []), k])].filter((n) => b.reads.includes(n));
+      const rest = named.filter((n) => n !== k);
+      // Control: named in active SQL, the rule applies.
+      expect(await shape.run(w, a, named)).toEqual(shape.ruled(w, a, k));
+      const without = await shape.run(w, a, rest).catch((e: Error) => e.message);
+      unread = wrap(active(k));
+      const inactive = await shape.run(w, a, rest).catch((e: Error) => e.message).finally(() => {
+        unread = '';
+      });
+      expect(inactive).toEqual(without);
+      if (always.includes(k)) expect(inactive).toContain('unsupported $queryRaw');
+      else expect(inactive).not.toEqual(shape.ruled(w, a, k));
+    });
+  });
+});
+
+const escapeRe = (text: string): string => text.replace(/[.*+?^$()|[\]\\{}]/g, '\\$&');
+
+/** How the sweep takes `name` out of a real reader's SQL: renamed, commented out (line or block), or quoted. */
+const CUTS: Array<[string, (part: string, name: string) => string]> = [
+  ['cut', (part, name) => part.split(name).join('app.kt2_predicate_cut')],
+  // From the predicate to the end of its line (past a ${} on that line, as Postgres reads a line comment).
+  ['line-commented', (part, name) => part.replace(new RegExp(`${escapeRe(name)}[^\n]*`, 'g'), (m) => `-- ${m}`)],
+  ['block-commented', (part, name) => part.split(name).join(`/* ${name} */`)],
+  ['quoted as a string', (part, name) => part.split(name).join(`'${name.split("'").join("''")}'`)],
+];
+
+/** Take `k`'s predicate out of every SQL text the double is handed while `run` runs; returns how many texts held it. */
+async function withCut<T>(
+  k: RawSqlAsk,
+  run: () => Promise<T>,
+  how: (part: string, name: string) => string = CUTS[0][1],
+): Promise<{ out: T | Error; cut: number }> {
   const original = InMemoryPrisma.prototype.$queryRaw;
   const name = RAW_SQL_ASKS[k];
   let cut = 0;
   InMemoryPrisma.prototype.$queryRaw = function (this: InMemoryPrisma, strings: TemplateStringsArray, ...values: unknown[]) {
     if (!strings.join('').includes(name)) return original.call(this, strings, ...values);
     cut += 1;
-    const copy = strings.map((s) => s.split(name).join('app.kt2_predicate_cut'));
+    const copy = strings.map((s) => how(s, name));
     return original.call(this, Object.assign(copy, { raw: copy }), ...values);
   };
   try {
@@ -249,14 +331,16 @@ describe('FR-1185R2 class 3: removal sweep, each access predicate cut from the r
     expect([...swept].sort()).toEqual(expected.sort());
   });
 
-  it.each(SWEEP.map((s) => [`${s.reader} without ${RAW_SQL_ASKS[s.predicate]}`, s] as const))('%s', async (_name, s) => {
+  const rows = SWEEP.flatMap((s) => CUTS.map(([how, fn]) => [`${s.reader} with ${RAW_SQL_ASKS[s.predicate]} ${how}`, s, fn] as const));
+  it.each(rows)('%s', async (_name, s, how) => {
     expect(readFileSync(join(REPO_ROOT, s.file), 'utf8')).toContain(RAW_SQL_ASKS[s.predicate]);
     const { w, a, messageId } = await world();
     await hit(w, a, messageId, s.predicate);
     // Green: the reader as written applies the rule.
     expect(await s.check(w, a)).toBe(true);
-    // Red: the same reader with the predicate cut from its SQL no longer does (or the double refuses the SQL).
-    const { out, cut } = await withCut(s.predicate, () => s.check(w, a));
+    // Red: the same reader with the predicate cut from its SQL, commented out or quoted no longer applies it (or
+    // the double refuses the SQL).
+    const { out, cut } = await withCut(s.predicate, () => s.check(w, a), how);
     expect(cut).toBeGreaterThan(0);
     expect(out === true).toBe(false);
   });

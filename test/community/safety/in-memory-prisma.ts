@@ -185,11 +185,13 @@ export class InMemoryPrisma {
   /**
    * The raw SQL readers the community code runs, answered from the tables by RAW_SQL_BRANCHES: the first branch
    * whose marker the SQL holds answers it, and it is handed only the predicates it lists in `reads`, each true only
-   * when the SQL names it (LO-1185 B2, LO-1185R2 B1). A real query that drops a rule therefore makes the specs that
-   * run it red instead of being covered by this double; SQL no branch knows is refused.
+   * when the SQL names it (LO-1185 B2, LO-1185R2 B1). Both are read in the active SQL only (activeSql, LS-1185R3
+   * B3): a predicate or marker inside a comment or a string literal is not asked for. A real query that drops a
+   * rule, or comments it out, therefore makes the specs that run it red instead of being covered by this double;
+   * SQL no branch knows is refused.
    */
   async $queryRaw(strings: TemplateStringsArray, ...values: unknown[]): Promise<Row[]> {
-    const sql = strings.join('');
+    const sql = activeSql(strings);
     const hit = RAW_SQL_BRANCHES.find((b) => sql.includes(b.marker));
     if (!hit) throw new Error('InMemoryPrisma: unsupported $queryRaw');
     const asks: Partial<Record<RawSqlAsk, boolean>> = {};
@@ -444,6 +446,63 @@ export class InMemoryPrisma {
 function eq(a: unknown, b: unknown): boolean {
   if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime();
   return a === b;
+}
+
+/**
+ * The SQL Postgres runs from a tagged template's text (LS-1185R3 B3): every comment (`--` to the end of the line,
+ * `/* ... *\/`, nested as Postgres nests them) is cut out and every string literal ('...', E'...', $$...$$,
+ * $tag$...$tag$) is emptied, so a predicate, marker or table named only there is not asked for. Quoted identifiers
+ * ("deleted_at") stay as written. Each ${} value is a bind parameter, so it joins the parts as one.
+ */
+export function activeSql(strings: readonly string[]): string {
+  const s = strings.join(' $0 ');
+  let out = '';
+  let i = 0;
+  while (i < s.length) {
+    const c = s[i];
+    const next = s[i + 1];
+    if (c === '-' && next === '-') {
+      const end = s.indexOf('\n', i);
+      i = end < 0 ? s.length : end;
+      out += ' ';
+    } else if (c === '/' && next === '*') {
+      let depth = 1;
+      i += 2;
+      while (i < s.length && depth > 0) {
+        const pair = s.slice(i, i + 2);
+        depth += pair === '/*' ? 1 : pair === '*/' ? -1 : 0;
+        i += pair === '/*' || pair === '*/' ? 2 : 1;
+      }
+      out += ' ';
+    } else if (c === "'") {
+      // E'...' takes backslash escapes; every form takes '' for a quote.
+      const escapes = /[eE]/.test(s[i - 1] ?? '') && !/\w/.test(s[i - 2] ?? '');
+      i += 1;
+      while (i < s.length) {
+        if (escapes && s[i] === '\\') i += 2;
+        else if (s[i] === "'" && s[i + 1] === "'") i += 2;
+        else if (s[i] === "'") break;
+        else i += 1;
+      }
+      i += 1;
+      out += "''";
+    } else if (c === '"') {
+      // A quoted identifier is SQL, kept whole ("" is a quote inside it).
+      let j = i + 1;
+      while (j < s.length && !(s[j] === '"' && s[j + 1] !== '"')) j += s[j] === '"' ? 2 : 1;
+      out += s.slice(i, j + 1);
+      i = j + 1;
+    } else if (c === '$' && !/\w/.test(s[i - 1] ?? '') && /^\$(?:[A-Za-z_]\w*)?\$/.test(s.slice(i))) {
+      const tag = (/^\$(?:[A-Za-z_]\w*)?\$/.exec(s.slice(i)) as RegExpExecArray)[0];
+      const end = s.indexOf(tag, i + tag.length);
+      i = end < 0 ? s.length : end + tag.length;
+      out += "''";
+    } else {
+      out += c;
+      i += 1;
+    }
+  }
+  return out;
 }
 
 /** The predicates a raw SQL text can name; a branch reads one only when it lists it, true only when the SQL names it. */
