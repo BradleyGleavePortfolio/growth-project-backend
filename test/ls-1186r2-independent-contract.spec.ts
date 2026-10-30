@@ -123,13 +123,16 @@ describe('LS-1186R2 deterministic recipient-local quiet hours', () => {
 
 describe('LS-1186R2 B1: static literal kinds must remain bound to real sender values', () => {
   // FR-1186R2 (agent 185): at fb77e305 this control showed the escape (funnelArgFindings was []). B1 below asks
-  // for the opposite, so with B1 fixed the control now pins that the one changed argument is the only finding.
+  // for the opposite, so with B1 fixed the control now pins that the args check names only the one changed argument (both sides of it).
   it('control: only one runtime send argument changed; the architecture checks accept it and the args check names only it', () => {
     expect(changed).not.toBe(original);
     expect(changed.split(after).length).toBe(2);
     expect(directTransport(allHits)).toEqual([]);
     expect(unregistered(allHits)).toEqual([]);
-    expect(funnelArgFindings(allHits)).toEqual([expect.stringMatching(/workout-builder\.service\.ts:\d+ .*passes kind first_payment/)]);
+    expect(funnelArgFindings(allHits)).toEqual([
+      expect.stringMatching(/workout-builder\.service\.ts:\d+ .*passes kind first_payment/),
+      expect.stringMatching(/workout-builder\.service\.ts:\d+ .*declares kind workout_assigned, which the code never passes/),
+    ]);
   });
 
   it('control: the actual assignment method with a literal money kind queues through Mute all', async () => {
