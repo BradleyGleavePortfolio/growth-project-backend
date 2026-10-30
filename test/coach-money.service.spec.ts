@@ -1380,3 +1380,40 @@ describe('C-641-6 — the tax export can be limited to one currency (S-COACH-3)'
     expect(() => parseCurrency('xyz')).toThrow(BadRequestException);
   });
 });
+
+// LO-1191 B2 (lens LO-1191 on b#1191 PF-5-BE): class 2, "Try n of m counts
+// bank tries only". DunningState is one row per purchase and failure_count is
+// never reset when a cycle resolves (only adminReset clears it), so it counts
+// every failed try in the plan's life. The current invoice's try is Stripe's
+// attempt_count (last_attempt_number).
+describe('LO-1191 B2: Try n of m counts this cycle, not every failure in the plan life', () => {
+  it('LO-1191 B2: a first decline after an earlier recovered cycle reads Try 1 of 4', async () => {
+    const p = buildPrisma();
+    p.clientPurchase.findMany.mockResolvedValue([
+      {
+        id: 'p-lo1191',
+        amount_cents: 14900,
+        currency: 'usd',
+        updated_at: new Date('2026-10-30T09:00:00Z'),
+        last_error: 'Your card was declined.',
+        client: { id: 'c-lo1191', name: 'Test client' },
+        package: { name: 'Monthly coaching' },
+        dunning: {
+          status: 'active',
+          // Three failed tries in an earlier month (then the client paid),
+          // plus today's first try on the new invoice.
+          failure_count: 4,
+          last_attempt_number: 1,
+          locked_out_at: null,
+          last_failed_amount_cents: 14900,
+          last_failure_at: new Date('2026-10-30T09:00:00Z'),
+          last_failure_reason: 'card_declined',
+          attempts: [],
+        },
+      },
+    ]);
+    const out = await svc(p).getAttention(COACH);
+    const fp = out.items.find((i) => i.kind === 'failed_payment')?.failed_payment;
+    expect(fp).toMatchObject({ attempt: 1, max_attempts: 4 });
+  });
+});
