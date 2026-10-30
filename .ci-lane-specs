@@ -1,0 +1,4 @@
+test/.*(workout|exercise|program)
+src/exercise-
+src/wearables/.*(normalizer|dedup|ingestion).*spec
+test/wearables/(samples-ingest|ingest-contract|ingestion-source-record)
