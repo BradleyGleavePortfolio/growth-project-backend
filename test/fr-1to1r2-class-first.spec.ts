@@ -24,7 +24,7 @@ describe('FR-1TO1R2 class: every package publisher uses the one coaching rule fi
     ['POST /packages/:id/publish', 'packages/packages.controller.ts', /@Post\(':id\/publish'\)[\s\S]*?resolveSellingCoachId\(req\.user\.id\)/],
     ['resolveSellingCoachId', 'packages/packages.service.ts', /resolveSellingCoachId[\s\S]*?await assertCoachSelling\(this\.prisma, coachId\)/],
     ['join writer (code or link): coach read before any package is picked or published', 'invite-codes/invite-codes.service.ts', /const coach = await joinCoachFor\(this\.prisma, target\.coachId, buyerId\);\s+if \(!coach\) return null;[\s\S]*?findJoinPackage[\s\S]*?createGettingStartedPackage/],
-    ['joinCoachFor', 'packages/coach-selling.ts', /where: \{ \.\.\.coachingCoachFor\(buyerId\), id: coachId \}/],
+    ['joinCoachFor', 'packages/coach-selling.ts', /where: \{ id: coachId, AND: \[coachingCoachFor\(buyerId\)\] \}/],
   ])('%s', (_path, file, rule) => {
     expect(src(file)).toMatch(rule);
   });
