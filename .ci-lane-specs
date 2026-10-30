@@ -1,0 +1,2 @@
+test/community/images/community-photo-check.e2e.spec.ts
+--testNamePattern=LO-1187R4
