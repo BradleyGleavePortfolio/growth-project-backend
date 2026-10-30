@@ -20,7 +20,9 @@ export const SELLING_COACH = {
  * owner) account that sells and is not locked for deletion. The package writers refuse any other
  * coach (assertCoachSelling), and every in-app buy-side read (list, detail, card checkout,
  * subscription intent, free claim) reads through coachingCoachFor(buyer), which also drops a coach
- * the buyer is in a block with (#168-4: a block closes their coaching chat).
+ * the buyer is in a block with (#168-4: a block closes their coaching chat). The web reads (pay page,
+ * guest intent, checkout recovery) use COACHING_COACH, and the one entitlement writer
+ * (InviteGrantService.grant: invite, free, prepaid, consent activation) uses coachingCoachFor(buyer).
  */
 const NOT_LEAVING = { ...SELLING_COACH, deletion_scheduled_at: null } satisfies Prisma.UserWhereInput;
 export const COACHING_COACH = {

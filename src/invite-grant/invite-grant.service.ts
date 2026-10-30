@@ -393,7 +393,11 @@ export class InviteGrantService implements OnModuleInit {
     db: GrantDb = this.prisma,
   ): Promise<GrantOutcome> {
     const active = input.active !== false;
-    const pkg = await db.coachPackage.findUnique({ where: { id: input.packageId } });
+    // STORE-1TO1: every invite / free / prepaid entitlement (and its consent activation) is
+    // written here, so the buyer-specific coaching rule lives here (coach-selling.ts).
+    const pkg = await db.coachPackage.findUnique({
+      where: { id: input.packageId, coach: coachingCoachFor(input.clientUserId) },
+    });
     if (!pkg || pkg.coach_id !== input.coachUserId || !pkg.is_active || pkg.archived_at) {
       throw new NotFoundException({ error: 'PACKAGE_NOT_FOUND', message: 'Package not available' });
     }
