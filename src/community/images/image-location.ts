@@ -2,8 +2,8 @@
  * PHOTO-GPS (agent 174): does a space photo carry a location?
  *
  * A pure reader over the whole JPEG (the upload check reads every byte; the
- * bucket's cap is IMAGE_MAX_BYTES, 10 MB). It answers true when an APP1
- * segment carries a location:
+ * bucket's cap is IMAGE_MAX_BYTES, 10 MB). It answers true when a segment
+ * or bytes it reads ("Where it looks", below) carry a location:
  *   - EXIF: IFD0 has the GPSInfo pointer (tag 0x8825) to a GPS IFD with at
  *     least one entry, in either byte order ("II" little or "MM" big endian);
  *   - XMP (any other APP1): its text holds a location name, in any letter
@@ -31,13 +31,18 @@
  *   - every APP1 after it, between the scans of a progressive JPEG, by the
  *     same walk the photo check's copy for OpenAI uses (walkJpeg in
  *     image-metadata.ts);
- *   - a JFXX JPEG thumbnail (APP0 "JFXX\0", extension 0x10) and an EXIF
- *     thumbnail (the JPEG inside EXIF), read as bytes (below);
+ *   - inside an EXIF APP1, everything after its TIFF header (its IFDs, their
+ *     values and the EXIF JPEG thumbnail), read as bytes (FR-1187R3,
+ *     LS-1187R3 B1: XMP and ExtendedXMP in an EXIF thumbnail);
+ *   - every other APPn (APP0 to APP15 but APP1: a JFXX JPEG thumbnail, ICC,
+ *     MPF, Photoshop's IPTC and XMP in APP13, any writer's own), read as
+ *     bytes (FR-1187R3, LO-1187R3 N2);
  *   - everything after the first EOI (MPF's extra images, a motion photo's
  *     appended data, any trailing data), read as bytes.
- * Read as bytes: any EXIF header ("Exif\0\0" then a TIFF header) is read as
- * EXIF above (unreadable = located), and the text is matched for the XMP and
- * ExtendedXMP names above, so no structure inside has to be walked.
+ * Read as bytes (bytesLocated, the one reader for all three): any EXIF header
+ * ("Exif\0\0" then a TIFF header) is read as EXIF above (unreadable =
+ * located), and the text is matched for the XMP and ExtendedXMP names above,
+ * so no structure inside has to be walked.
  * A JPEG whose segments after the first SOS cannot be walked answers false
  * here: the photo check's copy for OpenAI is the same walk, answers null, and
  * the send is refused (503 PHOTO_CHECK_UNAVAILABLE) with nothing published
@@ -58,8 +63,10 @@
  *   - a StandardXMP packet cut over two XMP APP1 segments (each segment is
  *     matched alone; Adobe XMP Part 3 keeps StandardXMP in one APP1);
  *   - a location in a non-JPEG format after EOI (an appended motion-photo
- *     video's own location box, MP4 "\xA9xyz"), IPTC (APP13), comments,
- *     UTF-16 XMP, and bytes inside a scan's picture data.
+ *     video's own location box, MP4 "\xA9xyz"), IPTC's own binary fields
+ *     in APP13 (place names only, above), EXIF in Photoshop's resource 1058
+ *     (no "Exif\0\0" header to find), comments, UTF-16 XMP, and bytes
+ *     inside a scan's picture data.
  */
 import { walkJpeg } from './image-metadata';
 
@@ -67,11 +74,11 @@ const SOI = 0xd8;
 const SOS = 0xda;
 const APP0 = 0xe0;
 const APP1 = 0xe1;
+const APP15 = 0xef;
 const GPS_INFO_TAG = 0x8825;
 const EXIF_HEADER = [0x45, 0x78, 0x69, 0x66, 0x00]; // "Exif\0" (then one pad byte)
 /** An EXIF header and the TIFF header after it, in either byte order: "Exif\0\0" then "II*\0" or "MM\0*". */
 const EXIF_IN_BYTES = [Buffer.from('Exif\0\0II*\0', 'latin1'), Buffer.from('Exif\0\0MM\0*', 'latin1')];
-const JFXX_JPEG_THUMBNAIL = Buffer.from('JFXX\0\x10', 'latin1'); // JFIF 1.02 extension 0x10: a JPEG thumbnail
 /** XMP that names a location, in any letter case (FR-1164R2): see the header for what it covers. */
 const XMP_LOCATION_NAME = /latitude|longt?itude|lrftargetl(?:at|on)/i;
 /** XMP that says part of it sits in ExtendedXMP (not read, so refused); unchanged since FR-1164R. */
@@ -104,16 +111,13 @@ function headerLocated(b: Uint8Array): boolean {
   }
 }
 
-/** FR-1187R2 (LS-1187R2 B2): every APP1 and JFXX thumbnail to the first EOI, then every byte after it. */
+/** FR-1187R2 (LS-1187R2 B2), FR-1187R3 (LO-1187R3 N2): every APPn to the first EOI, then every byte after it. */
 function laterLocated(jpeg: Uint8Array): boolean {
   let located = false;
   const after = walkJpeg(jpeg, (part) => {
-    if (located || part.kind !== 'segment') return;
+    if (located || part.kind !== 'segment' || part.marker < APP0 || part.marker > APP15) return;
     const payload = jpeg.subarray(part.start + 4, part.end);
-    if (part.marker === APP1) located = app1Located(payload);
-    else if (part.marker === APP0 && JFXX_JPEG_THUMBNAIL.every((c, k) => payload[k] === c)) {
-      located = bytesLocated(payload.subarray(JFXX_JPEG_THUMBNAIL.length));
-    }
+    located = part.marker === APP1 ? app1Located(payload) : bytesLocated(payload);
   });
   // A walk that stops is refused by the photo check (the same walk; see the header).
   return located || (after !== null && bytesLocated(jpeg.subarray(after)));
@@ -138,9 +142,10 @@ function exifInBytesLocated(b: Buffer): boolean {
 
 function app1Located(payload: Uint8Array): boolean {
   if (EXIF_HEADER.every((c, k) => payload[k] === c)) {
-    // FR-1187R2: an EXIF thumbnail is a JPEG with segments of its own; any EXIF inside it is read too.
+    // FR-1187R3 (LS-1187R3 B1): an EXIF thumbnail is a JPEG with segments of its own (EXIF, XMP,
+    // ExtendedXMP); the bytes after the TIFF header are read as bytes, like every other thumbnail.
     const tiff = Buffer.from(payload.buffer, payload.byteOffset, payload.byteLength).subarray(6);
-    return exifLocated(tiff) || exifInBytesLocated(tiff.subarray(8));
+    return exifLocated(tiff) || bytesLocated(tiff.subarray(8));
   }
   const text = Buffer.from(payload.buffer, payload.byteOffset, payload.byteLength).toString('latin1');
   return xmpTextLocated(text);

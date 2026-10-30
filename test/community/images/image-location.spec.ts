@@ -136,6 +136,9 @@ describe('carriesLocation (PHOTO-GPS)', () => {
     ['between two scans', (b) => [...SOI, ...JFIF, ...FIRST_SCAN, ...b, ...SCAN]],
     ['in a JFXX JPEG thumbnail before the first scan', (b) => jpeg(JFIF, jfxx(jpeg(b)))],
     ['in a JFXX JPEG thumbnail between two scans', (b) => [...SOI, ...JFIF, ...FIRST_SCAN, ...jfxx(jpeg(b)), ...SCAN]],
+    // FR-1187R3 (LS-1187R3 B1, LO-1187R3 C1): the JPEG thumbnail inside EXIF, read as bytes like the JFXX one.
+    ['in an EXIF JPEG thumbnail before the first scan', (b) => jpeg(JFIF, exifApp1([...tiff('II'), ...jpeg(b)]))],
+    ['in an EXIF JPEG thumbnail between two scans', (b) => [...SOI, ...JFIF, ...FIRST_SCAN, ...exifApp1([...tiff('MM'), ...jpeg(b)]), ...SCAN]],
     ['in a second image after EOI (MPF)', (b) => [...jpeg(JFIF), ...jpeg(JFIF, b)]],
     ['after EOI, the block with no segment around it', (b) => [...jpeg(JFIF), ...b.slice(4)]],
     ['after EOI, behind a second image', (b) => [...jpeg(JFIF), ...jpeg(JFIF), ...Array<number>(100).fill(0), ...b]],
@@ -162,6 +165,28 @@ describe('carriesLocation (PHOTO-GPS)', () => {
     expect(located(jpeg(JFIF, exifApp1([...tiff('II'), ...jpeg(exifApp1(tiff('MM', 3)))])))).toBe(true);
     expect(located(jpeg(JFIF, exifApp1([...tiff('II'), ...jpeg(exifApp1(tiff('MM')))])))).toBe(false);
   });
+  // FR-1187R3 (LO-1187R3 N2): every APPn but APP1 (APP0, APP2 to APP15) is read as bytes: EXIF with GPS behind an EXIF
+  // header, XMP's location names, or ExtendedXMP in it is a location, wherever the segment sits; the same blocks with no
+  // location are not.
+  const OTHER_APPN = [0xe0, ...Array.from({ length: 14 }, (_, k) => 0xe2 + k)];
+  const inAppn = (marker: number, app1: number[]) => segment(marker, app1.slice(4)); // the APP1's payload, in this APPn
+  const appnPlaces: Array<[string, (block: number[]) => number[]]> = [
+    ['before the first scan', (b) => jpeg(JFIF, b)],
+    ['between two scans', (b) => [...SOI, ...JFIF, ...FIRST_SCAN, ...b, ...SCAN]],
+  ];
+  const appnTable = (blocks: Array<[string, number[]]>) =>
+    OTHER_APPN.flatMap((marker) => appnPlaces.flatMap(([place, put]) =>
+      blocks.map(([kind, block]): [string, string, string, number[]] => [
+        kind, `0x${marker.toString(16)}`, place, put(inAppn(marker, block)),
+      ])));
+  const appnLocations: Array<[string, number[]]> = [...locations, ['HasExtendedXMP', HAS_EXTENDED_XMP]];
+  it.each(appnTable(appnLocations))('%s in APPn %s %s carries a location', (_kind, _marker, _place, bytes) => {
+    expect(located(bytes)).toBe(true);
+  });
+  it.each(appnTable(noLocation))('%s in APPn %s %s carries none', (_kind, _marker, _place, bytes) => {
+    expect(located(bytes)).toBe(false);
+  });
+
   it('an EXIF APP1 cut inside its header, at the very end of the bytes, counts as a location (no throw)', () => {
     const cut = [...SOI, ...segment(0xe1, [...Buffer.from('Exif\0', 'latin1')])];
     expect(located(cut)).toBe(true);
