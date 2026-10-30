@@ -522,6 +522,72 @@ describe('the automatic photo check on a space chat photo send (PHOTO-CHECK-BE)'
     expect(w.checks).toEqual([]);
     expect(w.messages).toEqual([]);
   });
+  // LS-1189 B1: the pre-b#1187 reader refused these valid JPEG segment layouts because
+  // the pre-SOS metadata exceeds 256 KB. The FLIR-only replacement still posts all
+  // three with readable coordinates. ExifTool independently reads GPS from each carrier.
+  it.each(['Photoshop 1058 EXIF', 'UTF16 XMP', 'GoPro GPMF GPS5'])(
+    'LS-1189 B1: oversized %s location metadata is refused before SDK and publication',
+    async (carrier) => {
+      const be32 = (n: number): Buffer => {
+        const b = Buffer.alloc(4);
+        b.writeUInt32BE(n);
+        return b;
+      };
+      let payload: Buffer;
+      let marker: number;
+      if (carrier === 'Photoshop 1058 EXIF') {
+        const rawTiff = preciseGps.subarray(10); // remove JPEG marker/length and Exif\0\0
+        marker = 0xed;
+        payload = Buffer.concat([
+          Buffer.from('Photoshop 3.0\0'), Buffer.from('8BIM'), Buffer.from([0x04, 0x22, 0, 0]),
+          be32(rawTiff.length), rawTiff, ...(rawTiff.length % 2 ? [Buffer.from([0])] : []),
+        ]);
+      } else if (carrier === 'UTF16 XMP') {
+        marker = 0xe1;
+        const xml = '<?xpacket begin="\ufeff" id="W5M0MpCehiHzreSzNTczkc9d"?>' +
+          '<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">' +
+          '<rdf:Description rdf:about="" xmlns:exif="http://ns.adobe.com/exif/1.0/" ' +
+          'exif:GPSLatitude="1,14.07036N" exif:GPSLongitude="2,20.74068E"/>' +
+          '</rdf:RDF></x:xmpmeta><?xpacket end="w"?>';
+        payload = Buffer.concat([Buffer.from('http://ns.adobe.com/xap/1.0/\0'), Buffer.from(xml, 'utf16le')]);
+      } else {
+        marker = 0xe6;
+        payload = Buffer.concat([
+          Buffer.from('GoPro\0SCALl'), Buffer.from([4, 0, 5]),
+          ...[10000000, 10000000, 1000, 1000, 100].map(be32),
+          Buffer.from('GPS5l'), Buffer.from([20, 0, 1]),
+          ...[12345678, 23456789, 100, 0, 0].map(be32),
+        ]);
+      }
+      const filler = Buffer.from(segment(0xe2, Array<number>(65533).fill(0)));
+      const location = Buffer.from(segment(marker, [...payload]));
+      const upload = Buffer.concat([
+        validPicture.subarray(0, 20), filler, filler, filler, filler, location, validPicture.subarray(20),
+      ]);
+      const w = world({ photo: upload });
+      const code = await codeOf(w.send(''));
+      if (code === 'ok') {
+        // Prove the privacy impact, rather than merely asserting a scanner boolean:
+        // the clean moderation wire is not what members get; the original is published.
+        expect(w.objects.get(sentImageKey(w.key))).toEqual(upload);
+        expect(w.objects.get(sentImageKey(w.key))?.includes(payload)).toBe(true);
+        expect(wirePhoto(w)).toEqual(validPicture);
+      }
+      expect(code).toBe('422 community.image.has_location');
+      expect(w.checks).toEqual([]);
+      expect(w.messages).toEqual([]);
+    },
+  );
+  it('LS-1189 B1 control: an oversized JPEG without location still posts with clean SDK bytes', async () => {
+    const filler = Buffer.from(segment(0xe2, Array<number>(65533).fill(0)));
+    const upload = Buffer.concat([
+      validPicture.subarray(0, 20), filler, filler, filler, filler, validPicture.subarray(20),
+    ]);
+    const w = world({ photo: upload });
+    expect(await codeOf(w.send(''))).toBe('ok');
+    expect(wirePhoto(w)).toEqual(validPicture);
+    expect(w.objects.get(sentImageKey(w.key))).toEqual(upload);
+  });
   it.each(independentBlocks)('LS-1187R2 matrix: %s before the frame is absent from the wire only', async (_label, block) => {
     const upload = Buffer.from([...validPicture.subarray(0, 20), ...block, ...validPicture.subarray(20)]);
     const w = world({ photo: upload });
