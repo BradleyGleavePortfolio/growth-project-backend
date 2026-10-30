@@ -189,7 +189,9 @@ export async function applyCoachRule(w: AccessWorld, rule: AccessRule, author: U
       await w.safety.block(w.coach, author.id);
       return;
     case 'has blocked the viewer':
-      await w.safety.block(author, w.coach.id);
+      // A client blocks their coach from the coaching chat (MessagesSafetyService.blockUser writes this row);
+      // the community block refuses a member blocking the workspace coach (BLOCK_WORKSPACE_COACH).
+      w.db.seed('userBlock', { blocker_id: author.id, blocked_id: w.coach.id });
       return;
     case 'removed or deleted': {
       const row = w.db.table('coachMessage').find((m) => m.id === messageId);
