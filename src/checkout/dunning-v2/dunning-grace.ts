@@ -35,6 +35,37 @@ export function dunningGraceWhere(): Prisma.ClientPurchaseWhereInput | null {
     : null;
 }
 
+/**
+ * FR-1190 (LS-1190 B1-B5): the ONE live paid-access rule for a purchase's own access, the rule the
+ * app guard and the shared reads already use: entitled, not under its own Day-10 lock, and inside
+ * its paid window or (v2 on) its live grace. Every paid reader and delivery path uses this pair.
+ */
+export function liveAccessWhere(now: Date = new Date()): Prisma.ClientPurchaseWhereInput {
+  const window: Prisma.ClientPurchaseWhereInput[] = [{ access_expires_at: null }, { access_expires_at: { gt: now } }];
+  const grace = dunningGraceWhere();
+  return { entitlement_active: true, AND: [NOT_DUNNING_LOCKED, { OR: grace ? [...window, grace] : window }] };
+}
+
+/** The same rule on a loaded row (select status, entitlement_active, access_expires_at, dunning). */
+export function isLiveAccess(
+  p: {
+    entitlement_active: boolean;
+    status: string;
+    access_expires_at?: Date | null;
+    dunning?: { status: string; locked_out_at: Date | null } | null;
+  },
+  now: Date = new Date(),
+): boolean {
+  if (!p.entitlement_active || dunningLockInForce(p.dunning)) return false;
+  if (p.access_expires_at == null || p.access_expires_at.getTime() > now.getTime()) return true;
+  return (
+    isDunningV2Enabled() &&
+    DUNNING_V2_GRACE_STATUSES.includes(p.status) &&
+    p.dunning?.status === 'active' &&
+    p.dunning.locked_out_at == null
+  );
+}
+
 /** Thrown to fail a webhook delivery so Stripe redelivers it (a closed code, never provider text). */
 export class DunningWebhookRetryError extends Error {
   constructor(readonly code: string) {
