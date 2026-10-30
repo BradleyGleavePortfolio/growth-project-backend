@@ -467,4 +467,30 @@ describe('carriesLocation (PHOTO-GPS)', () => {
     expect(located([...jpeg(JFIF), ...shared(60, 4000)])).toBe(true); // 240,060: past it
     expect(located(flir([[0x0e, Buffer.from(shared(60, 4000))]]))).toBe(true); // the same inside FLIR chunks
   });
+
+  it('FR-1189R2: a directory past IFD0 that starts past the end, loops back or is cut short holds no more; IFD0 and GPSInfo still fail closed', () => {
+    // A little-endian TIFF: IFD0 at 8, each directory [count, entries (tag, type LONG, count 1, value), next IFD].
+    const dir = (entries: Array<[number, number]>, next = 0, count = entries.length): number[] => {
+      const b = Buffer.alloc(2 + entries.length * 12 + 4);
+      b.writeUInt16LE(count, 0);
+      entries.forEach(([tag, value], k) => {
+        b.writeUInt16LE(tag, 2 + k * 12);
+        b.writeUInt16LE(4, 4 + k * 12);
+        b.writeUInt32LE(1, 6 + k * 12);
+        b.writeUInt32LE(value, 10 + k * 12);
+      });
+      b.writeUInt32LE(next, 2 + entries.length * 12);
+      return [...b];
+    };
+    const photo = (...dirs: number[][]): number[] => jpeg(JFIF, exifApp1([...latin1('II*\0'), 8, 0, 0, 0, ...dirs.flat()]));
+    const GPS_AT_44 = dir([[0x0001, 0x4e]]); // GPSLatitudeRef "N"
+    // Real cameras write the first three (exiftool: "Bad InteropOffset", "InteropIFD pointer references previous IFD0").
+    expect(located(photo(dir([[0xa005, 0x7fff0000]])))).toBe(false); // Interop IFD past the end (Canon PowerShot S30)
+    expect(located(photo(dir([[0xa005, 8]])))).toBe(false); // Interop IFD back at IFD0 (Kodak ProBack)
+    expect(located(photo(dir([[0x0100, 1]], 0x7fff0000)))).toBe(false); // IFD1 past the end
+    expect(located(photo(dir([[0x8769, 26]]), dir([[0x0100, 1]], 0, 5)))).toBe(false); // Exif IFD of 5 entries, 1 there
+    expect(located(photo(dir([[0x8769, 26]]), dir([[0x8825, 44]], 0, 5), GPS_AT_44))).toBe(true); // the 1 there is GPSInfo
+    expect(located(photo(dir([[0x8769, 26]]), dir([[0x8769, 8], [0x8825, 0x7fff0000]])))).toBe(true); // GPSInfo past the end
+    expect(located(photo(dir([[0x0100, 1]], 0, 3)))).toBe(true); // IFD0 of 3 entries, 1 there
+  });
 });
