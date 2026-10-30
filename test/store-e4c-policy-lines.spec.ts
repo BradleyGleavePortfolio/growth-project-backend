@@ -4,6 +4,9 @@
 // and after the phone update ships (people who joined on the two-box screen
 // keep their records), never calls the box "consent" (RCW 19.373.010(6)(b)(i)),
 // and ships only with the owner's word (Wording needed POL-1 to POL-6 on b#1188).
+// FR-E4B (fix round 1): RENEW-1, the uses line naming the plan renewal offers the
+// box turns on (LO-E4 N3). POL-7 and POL-8 (Roman's memory and notes, LS-E4 R1_B1)
+// are pinned in test/trust-pages.spec.ts.
 import { renderTrustPage, type TrustPage } from '../src/public-pages/trust-pages.html';
 
 function visibleText(html: string): string {
@@ -50,6 +53,11 @@ const LINES: { id: string; page: TrustPage; text: string }[] = [
     id: 'POL-6',
     page: 'terms',
     text: 'Before your consultation you are asked to accept the personal-training waiver, which you need to do to continue. Letting Roman and your coach’s AI drafts use your information, processed by Anthropic, is a separate, optional choice.',
+  },
+  {
+    id: 'RENEW-1',
+    page: 'privacy',
+    text: 'To send the messages you expect: account emails, reminders and push notifications. TGP Fitness may send you plan renewal offers, which you can turn off in Settings.',
   },
 ];
 
