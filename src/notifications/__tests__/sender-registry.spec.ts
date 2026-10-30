@@ -30,6 +30,11 @@
  * row. When you add one, read the row again and make sure its five rules still hold for the new send.
  * The scan finds a sender however it is reached (called, bound, destructured, by `x['name']`, or under any name
  * typed with the sender); sender-scan-forms.spec.ts proves each form it knows. A new way to send goes there.
+ * What is driven and what is a claim (LO-1186 C2, C3): Mute all and quiet hours run for every funnel kind and every
+ * driver. Block and ban, thread and space mute run only in the broadcast, churn and spacePush drivers; for every
+ * other row, and for every recipient rule, the registry's text is a claim the scan keeps in place, not a driven
+ * case, and no driver checks an exact recipient list. Out of the scan: the CoachNudge list
+ * (src/nudges/nudges.service.ts NudgesService.createForClient) and CoachAlert rows (src/coach/coach-alerts.service.ts).
  * Never skip a case, loosen a check or add to FUNNEL_SITES to make this green; that is the trap KT-4 names.
  */
 import { randomUUID } from 'crypto';
