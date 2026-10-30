@@ -40,6 +40,10 @@ import { usableTimeZone } from '../../notifications/local-time';
 import { ConsentScope, ConsentService } from '../../consent/consent.service';
 import { coachSharingCheck } from '../../consent/coach-sharing-gate';
 import { inBlockWith } from '../../messaging/block-pair';
+import {
+  DUNNING_V2_REVERSAL_REASON,
+  FULL_REFUND_PAUSE_REASON,
+} from '../../checkout/dunning-v2/dunning-v2.service';
 
 /**
  * Sentinel error surfaced by `markBriefRead` when the briefId either does
@@ -131,6 +135,113 @@ function plural(n: number, one: string, many: string): string {
   return n === 1 ? one : many;
 }
 
+// PF-5-BE (LS-PAYFAIL B5, LO-PAYFAIL B-PF-1): an active DunningState is one of
+// three things, and the brief says each one apart. No TGP card retry is ever
+// promised: Stripe runs its own tries, TGP only reminds the client.
+//   - inside the 10 days: not locked, not paused, client has not ended the plan;
+//   - Day-10 lock: locked_out_at set by lockCycle (access paused until paid);
+//   - on hold: a full refund or a bank dispute (pauseAfterFullRefund /
+//     applyDisputePause mark last_failure_reason); only the coach restarts it.
+// `count` / `total` keep their old column names for the inside-the-10-days row.
+export function dunningBriefSql(scope: Prisma.Sql): Prisma.Sql {
+  const onHold = Prisma.sql`COALESCE(ds."last_failure_reason", '') IN (${DUNNING_V2_REVERSAL_REASON}, ${FULL_REFUND_PAUSE_REASON})`;
+  const inWindow = Prisma.sql`NOT (${onHold}) AND ds."locked_out_at" IS NULL AND ds."client_canceled_at" IS NULL`;
+  const locked = Prisma.sql`NOT (${onHold}) AND ds."locked_out_at" IS NOT NULL`;
+  return Prisma.sql`
+    SELECT
+      COUNT(*) FILTER (WHERE ${inWindow})::bigint AS count,
+      COALESCE(SUM(ds."last_failed_amount_cents") FILTER (WHERE ${inWindow}), 0)::bigint AS total,
+      COUNT(*) FILTER (WHERE ${locked})::bigint AS locked,
+      COALESCE(SUM(ds."last_failed_amount_cents") FILTER (WHERE ${locked}), 0)::bigint AS locked_total,
+      COUNT(*) FILTER (WHERE ${onHold})::bigint AS on_hold
+    FROM "DunningState" ds
+    JOIN "ClientPurchase" cp ON cp."id" = ds."purchase_id"
+    WHERE ds."status" = 'active'
+      AND ${scope}
+  `;
+}
+
+export interface DunningBriefRow {
+  count?: bigint | number | null;
+  total?: bigint | number | null;
+  locked?: bigint | number | null;
+  locked_total?: bigint | number | null;
+  on_hold?: bigint | number | null;
+}
+
+export function readDunningBrief(row: DunningBriefRow | undefined): {
+  inWindow: number;
+  inWindowCents: number;
+  locked: number;
+  lockedCents: number;
+  onHold: number;
+} {
+  return {
+    inWindow: Number(row?.count ?? 0),
+    inWindowCents: Number(row?.total ?? 0),
+    locked: Number(row?.locked ?? 0),
+    lockedCents: Number(row?.locked_total ?? 0),
+    onHold: Number(row?.on_hold ?? 0),
+  };
+}
+
+// Payment amounts in the approved payment lines always show cents ("$447.00").
+function formatUsdExact(cents: number): string {
+  const safe = Number.isFinite(cents) ? Math.max(0, Math.round(cents)) : 0;
+  return `$${(safe / 100).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+/**
+ * PF-5-BE: the approved payment lines (owner, PF-W1..PF-W4), one string per
+ * state, in this order: inside the 10 days, Day-10 lock, on hold. The brief
+ * says these words as written and nothing else about failed payments.
+ */
+export function briefPaymentLines(ctx: BriefContext | BriefContextHeadCoach): string[] {
+  const head = ctx.brief_mode === 'head_coach';
+  const failing = Math.max(0, ctx.dunning_in_progress ?? 0);
+  const locked = Math.max(0, ctx.dunning_locked ?? 0);
+  const onHold = Math.max(0, ctx.dunning_on_hold ?? 0);
+  const lines: string[] = [];
+  if (failing > 0) {
+    const what = `${failing} ${plural(failing, 'payment', 'payments')}`;
+    const worth = head
+      ? ` worth ${formatUsdExact((ctx as BriefContextHeadCoach).dunning_amount_cents ?? 0)}`
+      : '';
+    lines.push(
+      `${what}${worth} failed. TGP is reminding ${plural(failing, 'the client', 'the clients')} to update their card.`,
+    );
+  }
+  if (locked > 0) {
+    lines.push(
+      `Access is paused on ${locked} ${plural(locked, 'plan', 'plans')} after 10 days unpaid. ` +
+        `It comes back when ${plural(locked, 'the client pays', 'the clients pay')}.`,
+    );
+  }
+  if (onHold > 0) {
+    const who = head ? 'their coach' : 'you';
+    lines.push(
+      `${onHold} ${plural(onHold, 'plan is', 'plans are')} on hold after a refund or a bank dispute. ` +
+        `Only ${who} can restart ${plural(onHold, 'it', 'them')}.`,
+    );
+  }
+  return lines;
+}
+
+/** Head coach: failed payments still unpaid (inside the 10 days + Day-10 lock). */
+function failedPaymentCount(ctx: BriefContextHeadCoach): number {
+  return Math.max(0, ctx.dunning_in_progress ?? 0) + Math.max(0, ctx.dunning_locked ?? 0);
+}
+
+/** Prompt data: the approved payment lines, to be said word for word. */
+function paymentPromptLines(ctx: BriefContext | BriefContextHeadCoach): string[] {
+  const lines = briefPaymentLines(ctx);
+  if (lines.length === 0) return ['PAYMENT LINES: none (no failed payments).'];
+  return ['PAYMENT LINES (say each word for word, in this order):', ...lines.map((l) => `  ${l}`)];
+}
+
 // Format a Date as YYYY-MM-DD in the given IANA timezone. Uses
 // Intl.DateTimeFormat with an explicit `timeZone` so production hosts
 // running with TZ=UTC (Fly.io) still bucket dates in the coach's local
@@ -194,7 +305,7 @@ export function buildSoloCoachSystemPrompt(): string {
 Rules (all mandatory):
 - The first sentence is exactly "Good morning, <coach first name>." using the first name given.
 - Then the highlights, most important first: money that came in, messages waiting for a reply, check-ins, workouts completed, anything flagged. Use the exact numbers and dollar amounts given. Leave out anything that is zero, unless nothing happened at all.
-- If failed payments are being retried, say the retries run automatically and nothing is needed from the coach.
+- If PAYMENT LINES are given, copy each one word for word, in the order given. Say nothing else about failed payments: never say a payment is being retried or that nothing is needed from the coach.
 - If there are action items, end with one short sentence that points to them below, matching the count given.
 - 2 to 4 short sentences, under ${BRIEF_TARGET_NARRATIVE_CHARS} characters in total.
 - Plain prose only: no lists, no markdown, no headings, no emojis, no exclamation marks.
@@ -210,8 +321,8 @@ This coach runs a team, so the brief is about the business, not single clients.
 
 Rules (all mandatory):
 - The first sentence is exactly "Good morning, <coach first name>." using the first name given.
-- Then the business highlights, most important first: team revenue today, monthly recurring revenue, failed payments being retried, team growth and sub-coach highlights. Use the exact numbers and dollar amounts given. Leave out anything that is zero, unless nothing happened at all.
-- If failed payments are being retried, say the retries run automatically and nothing is needed from the coach.
+- Then the business highlights, most important first: team revenue today, monthly recurring revenue, failed payments, team growth and sub-coach highlights. Use the exact numbers and dollar amounts given. Leave out anything that is zero, unless nothing happened at all.
+- If PAYMENT LINES are given, copy each one word for word, in the order given. Say nothing else about failed payments: never say a payment is being retried or that nothing is needed from the coach.
 - Never mention individual clients.
 - If there are action items, end with one short sentence that points to them below.
 - 2 to 4 short sentences, under ${BRIEF_TARGET_NARRATIVE_CHARS} characters in total.
@@ -343,10 +454,7 @@ function buildSoloOrSubCoachPrompt(ctx: BriefContext): string {
     `--- PAYMENTS / TGP HANDLING ---`,
     `Payments received since midnight: ${ctx.paid_today_count} payment(s), ${formatUsd(ctx.revenue_today_cents)} total`,
     `Healthy renewals in next 7 days: ${ctx.renewals_upcoming_7d}`,
-    `Failed payments TGP is retrying (dunning active): ${ctx.dunning_in_progress}`,
-    ctx.dunning_in_progress > 0
-      ? `→ Retries for the ${ctx.dunning_in_progress} failed payment${ctx.dunning_in_progress > 1 ? 's' : ''} run automatically; nothing is needed from the coach.`
-      : `→ No failed payments.`,
+    ...paymentPromptLines(ctx),
     ``,
     handoffHint,
   ];
@@ -359,7 +467,7 @@ function buildSoloOrSubCoachPrompt(ctx: BriefContext): string {
 // dunning value, team headcount, and sub-coach highlights.
 function buildHeadCoachPrompt(ctx: BriefContextHeadCoach): string {
   const businessActionCount =
-    (ctx.dunning_in_progress > 0 ? 1 : 0) +
+    (failedPaymentCount(ctx) > 0 ? 1 : 0) +
     (ctx.total_revenue_today_cents > 0 ? 1 : 0) +
     (ctx.sub_coach_highlights.length > 0 ? 1 : 0);
   const handoffHint =
@@ -381,10 +489,7 @@ function buildHeadCoachPrompt(ctx: BriefContextHeadCoach): string {
     `Team revenue since midnight: ${formatUsd(ctx.total_revenue_today_cents)} from ${ctx.paid_today_count} payment(s)`,
     `Team revenue last 30 days: ${formatUsd(ctx.team_revenue_30d_cents)}`,
     `Projected MRR (active recurring subscriptions): ${formatUsd(ctx.mrr_projected_cents)}`,
-    `Failed payments TGP is retrying — ${ctx.dunning_in_progress} client(s), ${formatUsd(ctx.dunning_amount_cents)}`,
-    ctx.dunning_in_progress > 0
-      ? `→ Retries for the ${ctx.dunning_in_progress} failed payment${ctx.dunning_in_progress > 1 ? 's' : ''} run automatically; nothing is needed from the coach.`
-      : `→ No failed payments this morning.`,
+    ...paymentPromptLines(ctx),
     ``,
     `Sub-coach highlights (top 3 by active clients):`,
     ...(ctx.sub_coach_highlights.length === 0
@@ -394,7 +499,7 @@ function buildHeadCoachPrompt(ctx: BriefContextHeadCoach): string {
             `  - ${sc.coach_name}: ${sc.active_clients} active client(s), +${sc.new_clients_24h} new in 24h`,
         )),
     ``,
-    `→ This coach runs a team. Lead with team revenue and TGP dunning handling. Mention sub-coach highlights if notable. NEVER mention individual clients by name; that's the sub-coach brief, not the head coach's.`,
+    `→ This coach runs a team. Lead with team revenue and the payment lines. Mention sub-coach highlights if notable. NEVER mention individual clients by name; that's the sub-coach brief, not the head coach's.`,
     handoffHint,
   ];
 
@@ -466,11 +571,10 @@ function buildSoloOrSubCoachFallbackSentences(ctx: BriefContext): string[] {
       `${formatUsd(ctx.revenue_today_cents)} came in from ${ctx.paid_today_count} ${plural(ctx.paid_today_count, 'payment', 'payments')} since midnight.`,
     );
   }
-  if (ctx.dunning_in_progress > 0) {
-    sentences.push(
-      `${ctx.dunning_in_progress} failed ${plural(ctx.dunning_in_progress, 'payment is', 'payments are')} being retried automatically, so nothing is needed from you there.`,
-    );
-  }
+  // PF-5-BE: every payment line is ONE element, so the 5-element cap below
+  // never drops the check-in or waiting line for it.
+  const paymentLines = briefPaymentLines(ctx);
+  if (paymentLines.length > 0) sentences.push(paymentLines.join(' '));
 
   // Check-in snapshot, with workouts completed today (reported, not an action).
   const workouts =
@@ -529,10 +633,9 @@ function buildHeadCoachFallbackSentences(ctx: BriefContextHeadCoach): string[] {
     );
   }
 
-  if (ctx.dunning_in_progress > 0) {
-    sentences.push(
-      `${ctx.dunning_in_progress} failed ${plural(ctx.dunning_in_progress, 'payment', 'payments')} worth ${formatUsd(ctx.dunning_amount_cents)} ${plural(ctx.dunning_in_progress, 'is', 'are')} being retried automatically, so nothing is needed from you there.`,
-    );
+  const paymentLines = briefPaymentLines(ctx);
+  if (paymentLines.length > 0) {
+    sentences.push(paymentLines.join(' '));
   } else {
     sentences.push('No failed payments need chasing.');
   }
@@ -561,9 +664,12 @@ function buildHeadCoachFallbackSentences(ctx: BriefContextHeadCoach): string[] {
 //   - No meta prefix ("Here is", "Sure,", "Of course")
 //   - Length ≤ BRIEF_MAX_NARRATIVE_CHARS
 //   - Ends with terminal punctuation (never a cut-off sentence)
+//   - PF-5-BE: no payment retry promise, and every approved payment line
+//     given in the prompt appears word for word
 export function validateClaudeNarrative(
   narrative: string,
   coachFirstName: string,
+  paymentLines: readonly string[] = [],
 ): string | null {
   if (!narrative.trim()) return 'empty';
 
@@ -597,6 +703,12 @@ export function validateClaudeNarrative(
   );
   const opener = sentences.slice(0, 2).join(' ');
   if (!namePattern.test(opener)) return 'missing_first_name';
+
+  // PF-5-BE: TGP never retries a card, and a paused or locked plan is never
+  // "nothing needed". The approved payment lines are the only payment words.
+  if (/\bretr(?:y|ies|ied|ying)\b|nothing is needed/i.test(narrative)) return 'payment_retry_promise';
+  const flat = narrative.replace(/\s+/g, ' ');
+  if (paymentLines.some((line) => !flat.includes(line))) return 'missing_payment_line';
 
   return null;
 }
@@ -766,10 +878,14 @@ export function buildHeadCoachActionItems(
 ): HeadCoachActionItem[] {
   const items: HeadCoachActionItem[] = [];
 
-  if (ctx.dunning_in_progress > 0) {
+  // PF-5-BE (PF-W4): failed payments still unpaid, inside the 10 days or
+  // locked at Day 10. A refund or dispute hold is not a failed payment.
+  const failed = failedPaymentCount(ctx);
+  if (failed > 0) {
+    const cents = (ctx.dunning_amount_cents ?? 0) + (ctx.dunning_locked_amount_cents ?? 0);
     items.push({
       type: 'dunning_queue',
-      detail: `${ctx.dunning_in_progress} failed payment${ctx.dunning_in_progress === 1 ? '' : 's'} (${formatUsd(ctx.dunning_amount_cents)}) being retried by TGP`,
+      detail: `${failed} failed ${plural(failed, 'payment', 'payments')} (${formatUsdExact(cents)})`,
       priority: 1,
       deep_link: 'tgp://billing/dunning',
     });
@@ -1060,14 +1176,9 @@ export class CoachBriefService {
           dunning: { is: null },
         },
       }),
-      this.prisma.$queryRaw<Array<{ count: bigint }>>(
-        Prisma.sql`
-          SELECT COUNT(*)::bigint AS count
-          FROM "DunningState" ds
-          JOIN "ClientPurchase" cp ON cp."id" = ds."purchase_id"
-          WHERE ds."status" = 'active'
-            AND cp."coach_user_id" = ${coachId}
-        `,
+      // PF-5-BE: the three dunning states counted apart (see dunningBriefSql).
+      this.prisma.$queryRaw<DunningBriefRow[]>(
+        dunningBriefSql(Prisma.sql`cp."coach_user_id" = ${coachId}`),
       ),
       this.prisma.$queryRaw<
         Array<{ user_id: string; user_name: string; delta_lbs: number; logged_at: Date }>
@@ -1241,7 +1352,7 @@ export class CoachBriefService {
       return [{ client_id: u.id, client_name: u.name, joined_at: at, joined_today }];
     });
 
-    const dunningInProgress = Number(dunningInProgressRaw[0]?.count ?? 0);
+    const dunning = readDunningBrief(dunningInProgressRaw[0]);
 
     const context: BriefContext = {
       brief_mode: 'solo_coach',
@@ -1253,7 +1364,9 @@ export class CoachBriefService {
       paid_today_count: paidTodayAgg._count._all,
       revenue_today_cents: paidTodayAgg._sum.gross_cents ?? 0,
       renewals_upcoming_7d: renewalsUpcoming7d,
-      dunning_in_progress: dunningInProgress,
+      dunning_in_progress: dunning.inWindow,
+      dunning_locked: dunning.locked,
+      dunning_on_hold: dunning.onHold,
       weight_logs_flagged: flaggedWeightLogs.length,
       unread_messages: unreadThreads.length,
       checkins_to_review: reviewCheckIns.length,
@@ -1465,7 +1578,7 @@ export class CoachBriefService {
     //   - other intervals (week / day / null) contribute 0.
     // ROUND() floors the partial cent the same way Math.round() did.
     let mrrProjectedCents = 0;
-    let dunningStateRaw: Array<{ count: bigint; total: bigint | null }> = [];
+    let dunningStateRaw: DunningBriefRow[] = [];
 
     if (tenantClientIds.length > 0) {
       const [revenueTodayAgg, revenue30dAgg, mrrAgg, dunningRows] =
@@ -1511,18 +1624,9 @@ export class CoachBriefService {
                 AND cp."entitlement_active" = true
             `,
           ),
-          this.prisma.$queryRaw<
-            Array<{ count: bigint; total: bigint | null }>
-          >(
-            Prisma.sql`
-              SELECT
-                COUNT(*)::bigint AS count,
-                COALESCE(SUM(ds."last_failed_amount_cents"), 0)::bigint AS total
-              FROM "DunningState" ds
-              JOIN "ClientPurchase" cp ON cp."id" = ds."purchase_id"
-              WHERE ds."status" = 'active'
-                AND cp."client_user_id" = ANY(${tenantClientIds}::text[])
-            `,
+          // PF-5-BE: the three dunning states counted apart (see dunningBriefSql).
+          this.prisma.$queryRaw<DunningBriefRow[]>(
+            dunningBriefSql(Prisma.sql`cp."client_user_id" = ANY(${tenantClientIds}::text[])`),
           ),
         ]);
       revenueTodayCents = revenueTodayAgg._sum.gross_cents ?? 0;
@@ -1532,8 +1636,7 @@ export class CoachBriefService {
       dunningStateRaw = dunningRows;
     }
 
-    const dunningInProgress = Number(dunningStateRaw[0]?.count ?? 0);
-    const dunningAmountCents = Number(dunningStateRaw[0]?.total ?? 0);
+    const dunning = readDunningBrief(dunningStateRaw[0]);
 
     // P1-4: sub-coach highlights derived from SubCoachAssignment, NOT
     // User.coach_id. Each sub-coach's active_clients = open assignments
@@ -1573,8 +1676,11 @@ export class CoachBriefService {
       team_revenue_30d_cents: revenue30dCents,
       mrr_projected_cents: mrrProjectedCents,
       paid_today_count: revenueTodayCount,
-      dunning_in_progress: dunningInProgress,
-      dunning_amount_cents: dunningAmountCents,
+      dunning_in_progress: dunning.inWindow,
+      dunning_amount_cents: dunning.inWindowCents,
+      dunning_locked: dunning.locked,
+      dunning_locked_amount_cents: dunning.lockedCents,
+      dunning_on_hold: dunning.onHold,
       sub_coach_highlights: subCoachHighlights,
     };
 
@@ -1634,6 +1740,8 @@ export class CoachBriefService {
       const headlineActivity =
         ctx.total_revenue_today_cents +
         ctx.dunning_in_progress +
+        (ctx.dunning_locked ?? 0) +
+        (ctx.dunning_on_hold ?? 0) +
         ctx.new_clients_last_24h;
       if (headlineActivity === 0) {
         return {
@@ -1688,6 +1796,8 @@ export class CoachBriefService {
         : buildSoloCoachSystemPrompt();
     // R2b — the prompt is built from the AI context only (consented clients).
     const userPrompt = buildBriefPrompt(ai.ctx, ai.scope);
+    // PF-5-BE: the approved payment lines the AI was given, checked word for word.
+    const paymentLines = briefPaymentLines(ai.ctx);
     // P1-8: every downstream prompt interpolation of the coach's name
     // (repair prompt, contract validator) must run through
     // sanitizePromptIdentifier so a malicious
@@ -1713,6 +1823,7 @@ export class CoachBriefService {
       const violation = validateClaudeNarrative(
         firstAttempt.narrative,
         safeCoachFirstName,
+        paymentLines,
       );
       if (!violation) {
         return { narrative: firstAttempt.narrative, generated_by: 'ai' };
@@ -1721,7 +1832,7 @@ export class CoachBriefService {
         `CoachBrief Claude output failed contract (${violation}) for ${logRef}; attempting one repair`,
       );
 
-      const repairPrompt = `${userPrompt}\n\nThe previous response broke the format (${violation}). Output a fresh brief that:\n- Opens with the sentence "Good morning, ${safeCoachFirstName}."\n- Is 2 to 4 complete sentences.\n- Uses no first person ("I", "we", "us", "our"), no exclamation marks and no emojis.\n- Contains no markdown, no bullet points, no meta prefix like "Here is".\n- Stays under ${BRIEF_TARGET_NARRATIVE_CHARS} characters.`;
+      const repairPrompt = `${userPrompt}\n\nThe previous response broke the format (${violation}). Output a fresh brief that:\n- Opens with the sentence "Good morning, ${safeCoachFirstName}."\n- Is 2 to 4 complete sentences.\n- Uses no first person ("I", "we", "us", "our"), no exclamation marks and no emojis.\n- Contains no markdown, no bullet points, no meta prefix like "Here is".\n- Stays under ${BRIEF_TARGET_NARRATIVE_CHARS} characters.${paymentLines.length > 0 ? `\n- Copies each payment line word for word: ${paymentLines.join(' ')}` : ''}`;
 
       const secondAttempt = await this.invokeClaudeOnce(
         client,
@@ -1733,6 +1844,7 @@ export class CoachBriefService {
         const violation2 = validateClaudeNarrative(
           secondAttempt.narrative,
           safeCoachFirstName,
+          paymentLines,
         );
         if (!violation2) {
           return { narrative: secondAttempt.narrative, generated_by: 'ai' };

@@ -27,8 +27,14 @@ export const MONEY_CHARGES_PAGE_MAX = 50;
 
 const DAY_MS = 86_400_000;
 
-/** Purchase statuses that mean "the client's payment did not go through". */
-export const FAILED_PURCHASE_STATUSES = ['past_due', 'payment_failed'] as const;
+/**
+ * Purchase statuses that mean "the client's payment did not go through".
+ * PF-5-BE (LS-PAYFAIL B9): 'unpaid' is the status the webhook writes when
+ * Stripe stops trying an invoice; it is a failed collection too. The one list
+ * for the to-do list, the failed charge filter, the charge state and the
+ * coach's failed-payments route.
+ */
+export const FAILED_PURCHASE_STATUSES = ['past_due', 'payment_failed', 'unpaid'] as const;
 /** Purchase statuses that mean "the client paid and access is live". */
 export const PAID_PURCHASE_STATUSES = ['paid', 'active'] as const;
 /** Dispute statuses that still need the coach's attention. */
@@ -205,8 +211,11 @@ export interface MoneyAttentionItem {
   failed_payment?: {
     purchase_id: string;
     package_name: string;
+    /** Bank tries so far (never reminder emails); 0 when none is known. */
     attempt: number;
+    /** Stripe's tries in a cycle; 0 when no bank try is known (no "Try n of m"). */
     max_attempts: number;
+    /** The card's real next try when the server knows it, else null (PF-5-BE B8). */
     next_retry_at: string | null;
     locked_out_at: string | null;
     /**
@@ -1744,8 +1753,7 @@ export class CoachMoneyService {
             select: {
               status: true,
               failure_count: true,
-              step_index: true,
-              next_attempt_at: true,
+              last_attempt_number: true,
               locked_out_at: true,
               last_failed_amount_cents: true,
               last_failure_at: true,
@@ -1805,10 +1813,13 @@ export class CoachMoneyService {
     for (const p of failed) {
       if (p.client && moved.has(p.client.id)) continue;
       const d = p.dunning;
-      const attempt = Math.min(
-        maxAttempts,
-        Math.max(1, d ? Math.max(d.failure_count, d.step_index + 1) : 1),
-      );
+      // PF-5-BE (LS-PAYFAIL B8): bank tries only. last_attempt_number is
+      // Stripe's invoice attempt count, failure_count the failed tries seen;
+      // the reminder step (step_index) is not a card try. No known try (a
+      // refund or dispute hold, or no dunning row) sends max_attempts 0, so
+      // the phone shows no "Try n of m".
+      const bankTries = d ? Math.max(d.last_attempt_number ?? 0, d.failure_count) : 0;
+      const attempt = Math.min(maxAttempts, bankTries);
       items.push({
         kind: 'failed_payment',
         id: `failed:${p.id}`,
@@ -1820,8 +1831,11 @@ export class CoachMoneyService {
           purchase_id: p.id,
           package_name: p.package?.name ?? 'Package',
           attempt,
-          max_attempts: maxAttempts,
-          next_retry_at: d?.next_attempt_at ? d.next_attempt_at.toISOString() : null,
+          max_attempts: bankTries > 0 ? maxAttempts : 0,
+          // PF-5-BE (LS-PAYFAIL B8): the card's real next try. The server does
+          // not store Stripe's next_payment_attempt; DunningState.next_attempt_at
+          // is the next reminder email, never a card try. So: unknown, null.
+          next_retry_at: null,
           locked_out_at: d?.locked_out_at ? d.locked_out_at.toISOString() : null,
           card_update_link_sent_at: d?.attempts[0]?.sent_at
             ? d.attempts[0].sent_at.toISOString()
