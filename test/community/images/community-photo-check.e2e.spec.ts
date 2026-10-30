@@ -29,7 +29,7 @@ import type { SupabaseService } from '../../../src/supabase/supabase.service';
 import { assertEnv, PHOTO_CHECK_KEY_GHOST } from '../../../src/common/env-validation';
 import { safetyWithBlocks } from '../safety/safety-test-helpers';
 import { egressWithGrants } from '../../ai-egress/ai-egress.fakes';
-import { JFIF, jpeg } from './jpeg-fixtures';
+import { JFIF, jpeg, exifApp1, xmpApp1 } from './jpeg-fixtures';
 
 function stub<T>(v: unknown): T {
   return v as T;
@@ -97,6 +97,7 @@ function world(
     stallBody?: boolean;
     space?: SpaceOpts; // the space's visibility, workspace owner and memberships
     blocks?: Array<[string, string]>;
+    photo?: Buffer;
   } = {},
 ) {
   const objects = new Map<string, Buffer>();
@@ -207,7 +208,7 @@ function world(
     moduleRef,
   );
   const key = mintImageKey(ME, SPACE);
-  objects.set(key, PHOTO);
+  objects.set(key, opts.photo ?? PHOTO);
   const send = (body = CAPTION, who: User = me) =>
     service.send(who, SPACE, body, undefined, undefined, { key, width: 1200, height: 900 });
   const edit = (id: string, body: string, who: User = me) => service.edit(who, id, body);
@@ -236,6 +237,40 @@ afterEach(() => {
 });
 
 describe('the automatic photo check on a space chat photo send (PHOTO-CHECK-BE)', () => {
+  // LS-1187 B1: ordinary creator metadata is not location. The public policy
+  // now promises that the photo reaches OpenAI with no name attached.
+  const creator = 'Example Photo Author';
+  const nameBytes = [...Buffer.from(`${creator}\0`, 'ascii')];
+  const u16 = (n: number) => [n & 0xff, (n >>> 8) & 0xff];
+  const u32 = (n: number) => [...u16(n), ...u16(n >>> 16)];
+  const entry = (tag: number, type: number, count: number, value: number) =>
+    [...u16(tag), ...u16(type), ...u32(count), ...u32(value)];
+  const tiffHeader = [0x49, 0x49, ...u16(42), ...u32(8)];
+  const artist = exifApp1([
+    ...tiffHeader, ...u16(1), ...entry(0x013b, 2, nameBytes.length, 26), ...u32(0), ...nameBytes,
+  ]);
+  const ownerName = exifApp1([
+    ...tiffHeader, ...u16(1), ...entry(0x8769, 4, 1, 26), ...u32(0),
+    ...u16(1), ...entry(0xa430, 2, nameBytes.length, 44), ...u32(0), ...nameBytes,
+  ]);
+  const xmpCreator = xmpApp1(
+    '<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">' +
+    '<rdf:Description xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:creator><rdf:Seq>' +
+    `<rdf:li>${creator}</rdf:li></rdf:Seq></dc:creator></rdf:Description></rdf:RDF></x:xmpmeta>`,
+  );
+  it.each([
+    ['EXIF Artist', artist],
+    ['EXIF OwnerName', ownerName],
+    ['XMP creator', xmpCreator],
+  ])('LS-1187 B1: accepted photo with %s does not send the embedded name to OpenAI', async (_label, segment) => {
+    const w = world({ photo: Buffer.from(jpeg(JFIF, segment)) });
+    await w.send();
+    const photoInput = w.checks.find((c) => c.part === 'image')?.body.input[0] as
+      { image_url: { url: string } };
+    const wireBytes = Buffer.from(photoInput.image_url.url.split(',')[1], 'base64');
+    expect(wireBytes.toString('latin1')).not.toContain(creator);
+  });
+
   it('a clean photo posts: the whole checked upload and its caption are each checked once, apart, then written', async () => {
     const w = world();
     const sent = await w.send();
