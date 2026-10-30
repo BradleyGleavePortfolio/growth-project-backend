@@ -5,7 +5,7 @@ import { randomUUID } from 'crypto';
  * and repositories touch. Enough of the query language for the safety flow
  * spec: equality, null, in / notIn / lt / lte / gt / gte / not, OR / AND,
  * composite unique keys, to-one relation filters, `some` on to-many
- * relations, nested select, orderBy, take. It is deliberately strict: an
+ * relations, nested select, orderBy, take, distinct, groupBy with _count. It is deliberately strict: an
  * unknown delegate method throws so the spec cannot pass by accident.
  *
  * Transactions (B-610-13) behave like Postgres for what the specs assert:
@@ -26,6 +26,10 @@ interface Args {
   select?: Record<string, unknown>;
   orderBy?: unknown;
   take?: number;
+  distinct?: string[];
+  /** groupBy: the fields to group on and the `_count: { _all: true }` it returns per group. */
+  by?: string[];
+  _count?: Record<string, boolean>;
   data?: Row;
   create?: Row;
   update?: Row;
@@ -42,6 +46,7 @@ const TO_ONE: Record<string, [string, string, string]> = {
   sender: ['user', 'sender_id', 'id'],
   author: ['user', 'author_id', 'id'],
   user: ['user', 'user_id', 'id'],
+  client: ['user', 'client_id', 'id'],
 };
 const TO_MANY: Record<string, [string, string]> = {
   memberships: ['communityMembership', 'workspace_id'],
@@ -157,19 +162,38 @@ export class InMemoryPrisma {
     return full;
   }
 
-  /** C6-WINS-MOVE app.community_author_stays, plus (#168-4) an active ban in that community. */
-  private authorGone(workspaceId: string, spaceId: string | null, a: string): boolean {
+  /** C6-WINS-MOVE app.community_author_stays: the author no longer belongs to the community of this place. */
+  private authorLeft(workspaceId: string, spaceId: string | null, a: string): boolean {
     const w = this.table('communityWorkspace').find((r) => r.id === workspaceId);
     const u = this.table('user').find((r) => r.id === a);
-    const left = !!w && !!u && u.role === 'student' && (u.coach_id ?? null) !== (w.coach_id ?? null) &&
+    return !!w && !!u && u.role === 'student' && (u.coach_id ?? null) !== (w.coach_id ?? null) &&
       !this.table('communityCohort').some((c) => c.id === spaceId && c.visibility === 'public') &&
       !this.table('communityMembership').some((m) => m.workspace_id === w.id && m.user_id === a &&
         m.role !== 'student' && m.status !== 'removed');
-    return left || this.table('communityWorkspaceBan').some((b) => b.workspace_id === workspaceId && b.user_id === a && b.lifted_at == null);
   }
 
+  /** (#168-4) NOT app.community_author_unbanned: an active ban on the author in that community. */
+  private authorBanned(workspaceId: string, a: string): boolean {
+    return this.table('communityWorkspaceBan').some((b) => b.workspace_id === workspaceId && b.user_id === a && b.lifted_at == null);
+  }
+
+  /** app.users_in_block: a block either way between the two people. */
+  private inBlock(x: string, y: string): boolean {
+    return this.table('userBlock').some((b) => (b.blocker_id === x && b.blocked_id === y) || (b.blocker_id === y && b.blocked_id === x));
+  }
+
+  /**
+   * The raw SQL readers the community code runs, answered from the tables. LO-1185 B2: each rule applies only when
+   * the SQL names its function (app.community_author_stays, app.community_author_unbanned, app.users_in_block), so
+   * a real query that drops one of them makes the specs that run it red instead of being covered by this double.
+   */
   async $queryRaw(strings: TemplateStringsArray, ...values: unknown[]): Promise<Row[]> {
     const sql = strings.join('');
+    const asks = {
+      stays: sql.includes('app.community_author_stays'),
+      unbanned: sql.includes('app.community_author_unbanned'),
+      block: sql.includes('app.users_in_block'),
+    };
     if (sql.includes('WITH t AS MATERIALIZED')) {
       // authorsWhoLeft: [space, author] pairs of these spaces' rows whose author is gone or in a block with the viewer.
       const [spaceIds, , viewer] = values as [string[], string[], string];
@@ -178,8 +202,10 @@ export class InMemoryPrisma {
         const a = (r.sender_id ?? r.author_id) as string;
         if (spaceIds.includes(r.cohort_id as string) && r.deleted_at == null) pairs.set(`${r.cohort_id}:${a}`, { w: r.workspace_id, s: r.cohort_id, a });
       }
-      return [...pairs.values()].filter((p) => this.authorGone(p.w as string, p.s as string, p.a as string) ||
-        this.table('userBlock').some((b) => (b.blocker_id === viewer && b.blocked_id === p.a) || (b.blocker_id === p.a && b.blocked_id === viewer)))
+      return [...pairs.values()].filter((p) =>
+        (asks.stays && this.authorLeft(p.w as string, p.s as string, p.a as string)) ||
+        (asks.unbanned && this.authorBanned(p.w as string, p.a as string)) ||
+        (asks.block && this.inBlock(viewer, p.a as string)))
         .map((p) => ({ s: p.s, a: p.a }));
     }
     if (sql.includes('AS t("id", "w")')) {
@@ -188,13 +214,15 @@ export class InMemoryPrisma {
       return ids.flatMap((id, n) => (this.table('communityWorkspaceBan').some((b) =>
         b.workspace_id === ws[n] && b.user_id === viewer && b.lifted_at == null) ? [] : [{ id }]));
     }
-    if (sql.includes('app.community_author_stays')) {
-      const [ws, spaces, authors] = values as [string[], string[], string[]];
-      return authors.flatMap((a, n) => (this.authorGone(ws[n], spaces[n] || null, a) ? [] : [{ n }]));
-    }
     // FR-1173 rule D report readers (CommunityModerationRepository.listForRuleDReader): this store models no one
     // on another community's team or coaching a member there; test/rls/community-rule-d-readers-rls.spec.ts runs it.
     if (sql.includes('"community_moderation_actions" a')) return [];
+    if (asks.stays || (asks.unbanned && sql.includes('WITH ORDINALITY'))) {
+      // rowsByAuthorsWhoStay: the positions of the [workspace, space, author] triples the query keeps.
+      const [ws, spaces, authors] = values as [string[], string[], string[]];
+      return authors.flatMap((a, n) =>
+        (asks.stays && this.authorLeft(ws[n], spaces[n] || null, a)) || (asks.unbanned && this.authorBanned(ws[n], a)) ? [] : [{ n }]);
+    }
     if (!sql.includes('app.community_can_access')) throw new Error('InMemoryPrisma: unsupported $queryRaw');
     const [spaces, people, listed] = values as [string[], string[], boolean | undefined];
     return spaces.flatMap((c, i) => {
@@ -401,10 +429,28 @@ export class InMemoryPrisma {
       },
       findMany: async (a = {}) => {
         let out = this.sort(find(a), a.orderBy);
+        if (a.distinct?.length) {
+          const seen = new Set<string>();
+          out = out.filter((r) => {
+            const k = JSON.stringify((a.distinct as string[]).map((f) => r[f] ?? null));
+            return seen.has(k) ? false : (seen.add(k), true);
+          });
+        }
         if (typeof a.take === 'number') out = out.slice(0, a.take);
         return out.map((r) => this.project(name, r, a.select));
       },
       count: async (a = {}) => find(a).length,
+      groupBy: async (a = {}) => {
+        const groups = new Map<string, Row[]>();
+        for (const r of find(a)) {
+          const k = JSON.stringify((a.by ?? []).map((f) => r[f] ?? null));
+          groups.set(k, [...(groups.get(k) ?? []), r]);
+        }
+        return [...groups.values()].map((rs) => ({
+          ...Object.fromEntries((a.by ?? []).map((f) => [f, rs[0][f] ?? null])),
+          ...(a._count ? { _count: { _all: rs.length } } : {}),
+        }));
+      },
       create: async (a = {}) => this.project(name, this.seed(name, a.data ?? {}), a.select),
       update: async (a = {}) => {
         const r = find(a)[0];
