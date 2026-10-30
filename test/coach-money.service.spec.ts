@@ -387,7 +387,7 @@ describe('CoachMoneyService.listCharges', () => {
     expect(
       (p.clientPurchase.findMany.mock.calls[1][0] as { where: { status: unknown } }).where.status,
     ).toEqual({
-      in: ['past_due', 'payment_failed'],
+      in: ['past_due', 'payment_failed', 'unpaid'],
     });
     await svc(p).listCharges(COACH, { status: 'refunded' });
     expect((p.clientPurchase.findMany.mock.calls[2][0] as { where: unknown }).where).toMatchObject(
