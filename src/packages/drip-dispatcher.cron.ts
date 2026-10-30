@@ -221,9 +221,16 @@ export class DripDispatcherCron {
       // Account deletion (backend #608 B-608-5): never deliver to a deleted
       // account even if a drop escaped cancellation. COACH-GONE-DELIVERY: a
       // deleted coach's drop still fires, on a purchase its client still holds.
+      // PF-2-BE (LS-PAYFAIL B3): a drop is picked to deliver only while its own
+      // purchase is entitled (grace days are), so a Day-10 lock holds it pending
+      // until the client pays; a live coach's refund-stopped drop is still picked,
+      // to be canceled below.
       client_purchase: {
         client: { deleted_at: null },
-        OR: [{ coach: { deleted_at: null } }, { entitlement_active: true }],
+        OR: [
+          { entitlement_active: true },
+          { coach: { deleted_at: null }, status: { in: Object.keys(REFUND_STOPS) } },
+        ],
       },
       OR: [
         {
@@ -329,6 +336,7 @@ export class DripDispatcherCron {
         coach_user_id: true,
         package_id: true,
         status: true,
+        entitlement_active: true,
       },
     });
     // No purchase: defensive (Cascade should never let this happen); never spin forever.
@@ -347,6 +355,16 @@ export class DripDispatcherCron {
       const line = `drip-dispatcher: drop=${drop.id} ${stop} — canceled`;
       if (purchase) this.logger.log(line);
       else this.logger.error(line);
+      return 'noop';
+    }
+    // PF-2-BE (LS-PAYFAIL B3): the same live-entitlement check as dueWhere, right
+    // before materialising (a lock can land after the claim). Hand the claim back
+    // untouched: no attempt spent, no push; it waits until the purchase is entitled.
+    if (!purchase.entitlement_active) {
+      await this.prisma.scheduledDrop.updateMany({
+        where: { id: drop.id, status: 'dispatching' },
+        data: { status: 'pending', locked_at: null },
+      });
       return 'noop';
     }
 

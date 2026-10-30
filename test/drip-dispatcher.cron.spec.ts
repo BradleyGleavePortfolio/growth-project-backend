@@ -179,6 +179,7 @@ function makePurchase(over: Partial<Row> = {}): Row {
     client_user_id: 'client-1',
     coach_user_id: 'coach-1',
     package_id: 'package-1',
+    entitlement_active: true, // PF-2-BE: a drop delivers only on an entitled purchase
     ...over,
   };
 }
@@ -1349,4 +1350,18 @@ describe('DripDispatcherCron', () => {
       expect(state.drops[0].status).not.toBe('delivered');
     },
   );
+
+  it('PF-2-BE: a held drop keeps its attempts and delivers once the client pays; grace days deliver', async () => {
+    const purchase = makePurchase({ status: 'past_due', billing_type: 'recurring', entitlement_active: false });
+    const state: MockPrismaState = { drops: [makeDrop()], purchases: [purchase] };
+    const materialise = jest.fn().mockResolvedValue({ materialisedRef: 'week-3' });
+    const cron = new DripDispatcherCron(asPrisma(makeMockPrisma(state)), makeRegistry(materialise), makeNotifications());
+
+    await cron.runOnce(NOW); // Day 10 lock: handed back untouched
+    expect(state.drops[0]).toMatchObject({ status: 'pending', locked_at: null, attempt_count: 0 });
+    purchase.entitlement_active = true; // paid: unlocked (also every grace day before the lock)
+    expect((await cron.runOnce(NOW)).delivered).toBe(1);
+    expect(materialise).toHaveBeenCalledTimes(1);
+    expect(state.drops[0].status).toBe('delivered');
+  });
 });

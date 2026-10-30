@@ -11,7 +11,7 @@ function stub<T>(value: unknown): T {
 }
 
 describe('DripDispatcherCron deleted-account fence', () => {
-  it('only selects drops to a live client, from a live coach or a purchase the client still holds', async () => {
+  it('only selects drops to a live client on a purchase the client still holds, or a live coach\'s refund-stopped drop', async () => {
     const findMany = jest.fn().mockResolvedValue([]);
     const cron = new DripDispatcherCron(
       stub<PrismaService>({ scheduledDrop: { findMany } }),
@@ -21,7 +21,11 @@ describe('DripDispatcherCron deleted-account fence', () => {
     expect(findMany).toHaveBeenCalledTimes(1);
     expect(findMany.mock.calls[0][0].where.client_purchase).toEqual({
       client: { deleted_at: null },
-      OR: [{ coach: { deleted_at: null } }, { entitlement_active: true }],
+      // PF-2-BE (LS-PAYFAIL B3): a Day-10 lock (entitlement_active false) is no longer picked.
+      OR: [
+        { entitlement_active: true },
+        { coach: { deleted_at: null }, status: { in: ['refunded', 'chargeback_lost'] } },
+      ],
     });
   });
 });
