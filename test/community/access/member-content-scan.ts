@@ -5,39 +5,49 @@
  * test helper) and lists each place that READS a member-content table:
  *   prisma    a Prisma read call on the model (findMany, findFirst, findUnique, count, groupBy, aggregate and
  *             their OrThrow forms), however the delegate is reached: `x.communityPost`, `x['communityPost']`,
- *             `x[KEY]` with KEY a string constant, `const { communityPost } = x`, on any receiver (only the
- *             ambiguous `message` delegate still needs a receiver named like a client: prisma, tx, db, ...);
+ *             `x[KEY]`, `const { communityPost } = x`, `const { [KEY]: d } = x`, on any receiver (only the ambiguous
+ *             `message` delegate still needs a receiver named like a client: prisma, tx, db, ...). A key is named by
+ *             the checker in its own scope (a literal, a `const`, an `as const` member), never by its spelling: an
+ *             outer `const model = 'user'` does not name an inner `model: string` (LS-1185R3 B1);
  *   sql       a SQL string that reads the table: FROM or JOIN it, a schema-qualified or quoted name, or a FROM
  *             list (`FROM users u, community_messages m`);
  *   relation  a relation field of a member-content model in `include` or `select`, in any object literal that
  *             reads like a Prisma argument (`{ community_messages_sent: true }`), or held in a constant, a spread,
  *             a `?:` / `??` branch or a function's return (the scan follows each to its initializer), or a fluent
- *             relation read (`findUnique(...).community_messages_sent()`);
+ *             relation read (`findUnique(...).community_messages_sent()`); a relation filter (`{ rel: { some |
+ *             none | every | is | isNot: ... } }` anywhere, `{ rel: { field: ... } }` in a `where`) and an order by
+ *             a relation count (`{ rel: { _count: 'desc' } }`), each an EXISTS or a count over the table, are reads
+ *             like an include (LO-1185R3 B1);
  *   aliased   the delegate kept in a variable, passed along, destructured, or named in a string ('communityWin'
  *             handed to a generic reader);
- *   dynamic   FAIL CLOSED: a read the scan cannot tie to one model (a delegate picked by a runtime key, a table
- *             named through Prisma.raw or a ${} after FROM/JOIN, also schema-qualified with or without quotes
- *             (`FROM public.${...}`, `FROM "public".${...}`), SQL built at runtime for $queryRawUnsafe, an include or
- *             select whose value or key the scan cannot follow, `{ [relation]: true }` with a runtime key). The
- *             site's model is ANY_MODEL ('*'); the registry must list the reader with '*' and say what it reads;
+ *   dynamic   FAIL CLOSED: a read the scan cannot tie to one model (a delegate picked by a runtime key: `x[model]`
+ *             on a client or read later, `const { [model]: d } = x` from a client or read later; a table named
+ *             through Prisma.raw or a ${} after FROM/JOIN, also schema-qualified with or without quotes (`FROM
+ *             public.${...}`, `FROM "public".${...}`); SQL built at runtime for $queryRawUnsafe or handed to
+ *             Prisma.raw (LO-1185R3 C2); an include or select whose value or key the scan cannot follow, `{
+ *             [relation]: true }` with a runtime key, `_count: true` (every relation of the model)). The site's model
+ *             is ANY_MODEL ('*'); the registry must list the reader with '*' and say what it reads;
  *   caller    a reference to a reader that leaves the rules to its caller, from another function: every repository
  *             reader (a *Repository class method that reads a model, passesRowsOn), every registry row that lists
  *             `callers` (ScanOptions.passThrough: MessagingService.listThread), and, to a fixed point, every
- *             repository method that wraps one (same class or not). One TypeScript program over src/ resolves the
- *             reference with the checker: import aliases, `this.x` and getter types, untyped locals, `const { x } =
- *             this`, destructured methods, `x['name']` and `x[NAME]`, `.call` / `.apply` / `.bind`, subclasses, and
- *             an interface or abstract member (each passing reader whose class fits the receiver type). FAIL CLOSED
- *             (callee `?.name`, model '*'): a passing reader's name on a value typed `any`, and a computed key on a
- *             value whose type holds a passing reader. The caller is a read site unless the reader's row lists it
- *             in `callers` (LO-1185 B3, LS-1185R2 B1, LO-1185R2 B2 and C1).
+ *             repository method that wraps one (same class or not). One TypeScript program over src/ (with the
+ *             ES2021 lib: a Map, a Promise or an array callback resolves) resolves the reference with the checker:
+ *             import aliases, `this.x` and getter types, untyped locals, `const { x } = this`, destructured methods,
+ *             `x['name']` and `x[NAME]`, `.call` / `.apply` / `.bind`, subclasses, and an interface, type-literal or
+ *             abstract member (each passing reader whose class fits the receiver type). FAIL CLOSED (callee
+ *             `?.name`, model '*'): a passing reader's name on a value typed `any`, and a key the checker cannot
+ *             name (`x[key]`, `const { [key]: f } = x`) on a value whose type can hold a passing reader: a class
+ *             member that is one, or an interface, type-literal, abstract or class member one fits (LS-1185R3 B2).
+ *             The caller is a read site unless the reader's row lists it in `callers` (LO-1185 B3, LS-1185R2 B1,
+ *             LO-1185R2 B2 and C1).
  * Writes (create, update, upsert, delete) are not reads and are not listed. A write that returns rows is a
  * write here; the registry still lists the function when it also reads.
  *
- * Limits (each shown by a test in member-content-access.spec.ts, 'limit L1' to 'limit L7'):
- *   L1 the program loads no lib and no node_modules (speed: one program over src/ in about 10 s), so a value whose
- *      type comes from a package or a built-in (`moduleRef.get(Repo)`, a string method's result) is unresolved,
- *      not `any`; a reader's name called on it is not seen (failing closed there flags Supabase storage `list`
- *      and String `search`, a false read on every package call named like a reader);
+ * Limits (each shown by a test in member-content-access.spec.ts, 'limit L1' to 'limit L10'):
+ *   L1 the program loads no node_modules (noResolve: one program over src/ in about 10 s), so a value whose type
+ *      comes from a package (`moduleRef.get(Repo)`) is unresolved, not `any`; a reader's name called on it is not
+ *      seen (failing closed there flags Supabase storage `list`, a false read on every package call named like a
+ *      reader). Built-in types resolve (the ES2021 lib is loaded, LO-1185R3 C1);
  *   L2 a reader named only at runtime (`Reflect.get(repo, name)`, a generic invoker taking the method name as a
  *      string) is not seen;
  *   L3 a method outside a *Repository class that hands a reader's rows on is a pass-through only when its row
@@ -45,10 +55,17 @@
  *      applied the rules from one that did not);
  *   L4 a reader's rows kept in a field or a closure and read by another method are not traced (only the reference
  *      to the reader is a site);
- *   L5 SQL assembled from string concatenation outside an Unsafe call is matched piece by piece;
+ *   L5 SQL assembled from string concatenation outside an Unsafe or Prisma.raw call is matched piece by piece;
  *   L6 the registry has one row per function and model, so a second read of a model inside a function already
  *      registered for it is covered by that row (LO-1185 N4);
- *   L7 a write that returns rows (create, update, upsert, delete) is a write, not a read (LO-1185 N3).
+ *   L7 a write that returns rows (create, update, upsert, delete) is a write, not a read (LO-1185 N3);
+ *   L8 the legacy `message` delegate (Message) kept in a variable or destructured from a receiver not named like a
+ *      client is not seen (`x.message` is every error's message); its read calls on any receiver are;
+ *   L9 a key the checker cannot name on a value typed `any` (`anyValue[key](...)`) is not a caller site (every
+ *      dynamic key on an untyped value would be); on a client, or with a read call after it, it fails closed;
+ *   L10 a to-one relation filter written without `is` (`{ message: { read_at: null } }`) and held outside a
+ *      `where` (a constant passed as the where later) is not seen; with some / none / every / is / isNot, or
+ *      inside a `where`, it is.
  *
  * Nothing here changes runtime code or the schema; both are only read.
  */
@@ -102,8 +119,22 @@ export const WRITE_METHODS = new Set([
   'fields',
 ]);
 
-/** Keys that make an object literal read like a Prisma relation argument (`{ replies: { where, select } }`). */
-const RELATION_ARG_KEYS = new Set(['select', 'include', 'where', 'orderBy', 'take', 'skip', 'cursor', 'distinct']);
+/**
+ * Keys that make an object literal read like a Prisma relation argument: an include or select of the relation
+ * (`{ replies: { where, select } }`), a relation filter (`{ community_messages_sent: { some: {...} } }`, also none,
+ * every, is, isNot) or an order by its count (`{ community_posts_authored: { _count: 'desc' } }`). Postgres runs an
+ * EXISTS or a count over the relation's table for each, so each is a read like an include (LO-1185R3 B1).
+ */
+const RELATION_ARG_KEYS = new Set(['select', 'include', 'where', 'orderBy', 'take', 'skip', 'cursor', 'distinct',
+  'some', 'none', 'every', 'is', 'isNot', '_count']);
+
+/** The operators of a scalar filter (`{ contains: q, mode: 'insensitive' }`): a value of only these is no relation filter. */
+const SCALAR_FILTER_KEYS = new Set(['equals', 'in', 'notIn', 'lt', 'lte', 'gt', 'gte', 'not', 'contains', 'startsWith',
+  'endsWith', 'mode', 'search', 'has', 'hasEvery', 'hasSome', 'isEmpty', 'path', 'string_contains', 'array_contains']);
+
+/** Keys of a Prisma argument that hold no filter: a relation key under one of these is not in a `where`. */
+const NOT_A_FILTER_KEYS = new Set(['data', 'create', 'update', 'upsert', 'connect', 'connectOrCreate', 'set',
+  'select', 'include', 'orderBy', 'cursor', 'by', 'distinct']);
 
 export interface ReadSite {
   /** Repo-relative path with forward slashes, e.g. src/community/messages/community-messages.repository.ts */
@@ -252,7 +283,9 @@ export function passesRowsOn(member: ts.ClassElement | undefined): boolean {
 /** One program over the scanned files: the checker resolves receivers, aliases and imports between them. */
 const PROGRAM_OPTIONS: ts.CompilerOptions = {
   noResolve: true, // only the scanned files: an import from a package stays untyped (a limit, named above)
-  noLib: true,
+  // LO-1185R3 C1: the bundled ES2021 lib, so a reader behind a built-in type (a Map, a Promise, an array callback)
+  // resolves; it adds well under a second to the program over src/.
+  lib: ['lib.es2021.d.ts'],
   types: [],
   noEmit: true,
   target: ts.ScriptTarget.ES2021,
@@ -335,20 +368,26 @@ export function scanMemberContentReads(srcRoot = join(REPO_ROOT, 'src'), options
       sites.push({ file, line, reader: readerOf(node), model, via, ...(callee ? { callee } : {}) });
       siteMembers.push(memberOf(node));
     };
-    // String constants of this file (`const KEY = 'communityMessage'`), so `x[KEY]` resolves.
-    const constants = new Map<string, string>();
-    const collect = (n: ts.Node): void => {
-      if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer) {
-        const init = unwrap(n.initializer);
-        if (ts.isStringLiteral(init) || ts.isNoSubstitutionTemplateLiteral(init)) constants.set(n.name.text, init.text);
-      }
-      ts.forEachChild(n, collect);
-    };
-    collect(sf);
-    const keyOf = (e: ts.Expression): string | undefined => {
-      const k = unwrap(e);
-      if (ts.isIdentifier(k) && constants.has(k.text)) return constants.get(k.text);
-      return literalKey(k);
+    // LS-1185R3 B1: a key is named through the checker in its own scope (literalKey), never by its spelling, so an
+    // outer `const model = 'user'` does not name an inner parameter `model: string` (that read fails closed).
+    const keyOf = literalKey;
+    /** A local bound by `name` and later read like a delegate (`name.findMany(...)`) in its function. */
+    const readLater = (name: ts.BindingName): boolean => {
+      if (!ts.isIdentifier(name)) return false;
+      const sym = checker.getSymbolAtLocation(name);
+      const scope = ts.findAncestor(name.parent, (n) => ts.isFunctionLike(n) || ts.isSourceFile(n));
+      if (!sym || !scope) return false;
+      let found = false;
+      const look = (n: ts.Node): void => {
+        if (found) return;
+        if (ts.isPropertyAccessExpression(n) && READ_METHODS.has(n.name.text)) {
+          const x = unwrap(n.expression);
+          if (ts.isIdentifier(x) && checker.getSymbolAtLocation(x) === sym) found = true;
+        }
+        ts.forEachChild(n, look);
+      };
+      look(scope);
+      return found;
     };
     /** An identifier of `sym` written after its initializer: reassigned, a key set on it, Object.assign into it. */
     const changedLater = (sym: ts.Symbol, d: ts.VariableDeclaration): boolean => {
@@ -439,6 +478,21 @@ export function scanMemberContentReads(srcRoot = join(REPO_ROOT, 'src'), options
       if (checker.getTypeAtLocation(v).flags & PLAIN) return { models: [], unknown: false };
       return UNKNOWN;
     };
+    /** The property sits in a Prisma `where`: directly, or under AND / OR / NOT, some / every / ..., or a relation. */
+    const inWhere = (prop: ts.ObjectLiteralElementLike): boolean => {
+      let n: ts.Node = prop.parent;
+      for (let depth = 0; depth < 16; depth++) {
+        let up: ts.Node | undefined = n.parent;
+        while (up && (ts.isParenthesizedExpression(up) || ts.isAsExpression(up) || ts.isSatisfiesExpression(up) ||
+          ts.isArrayLiteralExpression(up))) up = up.parent;
+        if (!up || !ts.isPropertyAssignment(up) || !ts.isObjectLiteralExpression(up.parent)) return false;
+        const k = nameOf(up.name) ?? '';
+        if (k === 'where') return true;
+        if (NOT_A_FILTER_KEYS.has(k)) return false;
+        n = up.parent;
+      }
+      return false;
+    };
     const isStaticKey = (e: ts.Expression): boolean => {
       const k = unwrap(e);
       return ts.isNumericLiteral(k) || ts.isPrefixUnaryExpression(k);
@@ -471,17 +525,23 @@ export function scanMemberContentReads(srcRoot = join(REPO_ROOT, 'src'), options
           const parent = node.parent;
           const readCall = ts.isPropertyAccessExpression(parent) && READ_METHODS.has(parent.name.text) &&
             ts.isCallExpression(parent.parent) && parent.parent.expression === parent;
-          if (readCall || isClient(unwrap(node.expression).getText(sf))) add(node, ANY_MODEL, 'dynamic');
+          const held = ts.isVariableDeclaration(parent) && parent.initializer === node && readLater(parent.name);
+          if (readCall || held || isClient(unwrap(node.expression).getText(sf))) add(node, ANY_MODEL, 'dynamic');
         }
       }
-      // const { communityPost } = x;  const { communityMessage: rows } = x;
+      // const { communityPost } = x;  const { communityMessage: rows } = x;  const { [model]: d } = x (LS-1185R3 B1)
       if (ts.isBindingElement(node) && ts.isObjectBindingPattern(node.parent)) {
-        const key = nameOf(node.propertyName ?? node.name);
+        const prop = node.propertyName ?? node.name;
+        const computed = ts.isComputedPropertyName(prop);
+        const key = computed ? keyOf(prop.expression) : nameOf(prop);
+        const decl = node.parent.parent;
+        const from = ts.isVariableDeclaration(decl) && decl.initializer ? unwrap(decl.initializer).getText(sf) : '';
         if (key && byDelegate.has(key)) {
           const model = byDelegate.get(key) as string;
-          const decl = node.parent.parent;
-          const from = ts.isVariableDeclaration(decl) && decl.initializer ? unwrap(decl.initializer).getText(sf) : '';
           if (model !== 'Message' || looksLikeClient(from)) add(node, model, 'aliased');
+        } else if (computed && key === undefined && !isStaticKey(prop.expression) && (isClient(from) || readLater(node.name))) {
+          // A delegate picked by a runtime key from a client, or read like one later: the model cannot be named.
+          add(node, ANY_MODEL, 'dynamic');
         }
       }
       // 'communityWin' handed to a generic reader (DataExportService._streamAll and the like)
@@ -497,6 +557,17 @@ export function scanMemberContentReads(srcRoot = join(REPO_ROOT, 'src'), options
       if (ts.isPropertyAssignment(node) && ts.isComputedPropertyName(node.name) && propKey(node.name) === undefined) {
         const holder = node.parent?.parent;
         if (holder && ts.isPropertyAssignment(holder) && ['include', 'select'].includes(nameOf(holder.name) ?? '')) {
+          add(node, ANY_MODEL, 'dynamic');
+        }
+      }
+      // `_count: true` (or a value the scan cannot follow) in an include or select counts every relation of the
+      // model, member-content ones included, and names none (LO-1185R3 B1): fails closed. `_count: { select: {...} }`
+      // names its relations, each reported below.
+      if (ts.isPropertyAssignment(node) && nameOf(node.name) === '_count') {
+        const holder = node.parent?.parent;
+        const v = unwrap(node.initializer);
+        if (holder && ts.isPropertyAssignment(holder) && ['include', 'select'].includes(nameOf(holder.name) ?? '') &&
+          v.kind !== ts.SyntaxKind.FalseKeyword && !ts.isObjectLiteralExpression(v)) {
           add(node, ANY_MODEL, 'dynamic');
         }
       }
@@ -522,7 +593,12 @@ export function scanMemberContentReads(srcRoot = join(REPO_ROOT, 'src'), options
         if (ts.isPropertyAssignment(node)) {
           const v = unwrap(node.initializer);
           argLike = v.kind === ts.SyntaxKind.TrueKeyword ||
-            (ts.isObjectLiteralExpression(v) && v.properties.some((p) => RELATION_ARG_KEYS.has(nameOf(p.name) ?? '')));
+            (ts.isObjectLiteralExpression(v) && v.properties.some((p) => RELATION_ARG_KEYS.has(nameOf(p.name) ?? ''))) ||
+            // A to-one relation filter written without `is` (`where: { message: { cohort_id } }`): a relation key
+            // inside a `where` whose value is not a plain value or a scalar filter (a scalar of the same name takes
+            // a string, null or `{ contains, ... }`).
+            (inWhere(node) && !(checker.getTypeAtLocation(v).flags & PLAIN) && !(ts.isObjectLiteralExpression(v) &&
+              v.properties.length > 0 && v.properties.every((p) => SCALAR_FILTER_KEYS.has(nameOf(p.name) ?? ''))));
         }
         if (inHolder || argLike) {
           for (const model of (relations.get(relation) as string).split('|')) add(node, model, 'relation');
@@ -544,9 +620,10 @@ export function scanMemberContentReads(srcRoot = join(REPO_ROOT, 'src'), options
           add(node, ANY_MODEL, 'dynamic');
         }
       }
-      // SQL built at runtime for an Unsafe call
+      // SQL built at runtime for an Unsafe call, or handed to Prisma.raw (LO-1185R3 C2: `$queryRaw(Prisma.raw(sql))`)
       if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
-        /^\$(query|execute)RawUnsafe$/.test(node.expression.name.text) && node.arguments.length > 0) {
+        (/^\$(query|execute)RawUnsafe$/.test(node.expression.name.text) || /(^|\.)Prisma\.raw$/.test(node.expression.getText(sf))) &&
+        node.arguments.length > 0) {
         const sql = unwrap(node.arguments[0]);
         // A template is checked piece by piece above; anything else (a variable, a concatenation) is unknown SQL.
         if (!ts.isStringLiteral(sql) && !ts.isNoSubstitutionTemplateLiteral(sql) && !ts.isTemplateExpression(sql)) {
@@ -641,6 +718,18 @@ export function scanMemberContentReads(srcRoot = join(REPO_ROOT, 'src'), options
     return out;
   };
   const canAssign = (checker as { isTypeAssignableTo?: (a: ts.Type, b: ts.Type) => boolean }).isTypeAssignableTo;
+  /** The passing readers named `name` whose class fits the receiver type `t` (`?` when the checker cannot tell). */
+  const fitting = (t: ts.Type, name: string): string[] => {
+    const out: string[] = [];
+    for (const [reader, cls] of throughClass) {
+      if (methodName(reader) !== name) continue;
+      const sym = cls.name ? checker.getSymbolAtLocation(cls.name) : undefined;
+      const inst = sym ? checker.getDeclaredTypeOfSymbol(sym) : undefined;
+      if (!inst || !canAssign) out.push('?');
+      else if (canAssign.call(checker, inst, t)) out.push(reader);
+    }
+    return out;
+  };
   /** The passing readers a reference names: `?` for one that fails closed. */
   let names = new Set<string>();
   const calleesOf = (ref: Ref): string[] => {
@@ -648,22 +737,18 @@ export function scanMemberContentReads(srcRoot = join(REPO_ROOT, 'src'), options
     // checker is asked about nothing else: one program over src/ stays fast).
     if (ref.name !== undefined && !names.has(ref.name)) return [];
     if (ref.name === undefined) {
-      // x[key] with a key the checker cannot name, on a value whose type holds a passing reader.
-      if (!ts.isElementAccessExpression(ref.node)) return [];
-      const t = checker.getApparentType(receiverType(ref));
-      return t.getProperties().some((p) => (p.declarations ?? []).some((d) => through.has(declReader(d) ?? ''))) ? ['?'] : [];
+      // FR-1185R3 class 1 (LS-1185R3 B2): `x[key]` or `const { [key]: f } = x` with a key the checker cannot name,
+      // on a value whose type can hold a passing reader, fails closed: a member that is one (a class member), or a
+      // member of that name that one fits (an interface, type-literal, abstract or class member; the same rule as a
+      // named reference below).
+      const t = receiverType(ref);
+      const holds = checker.getApparentType(t).getProperties().some((p) =>
+        (p.declarations ?? []).some((d) => through.has(declReader(d) ?? '')) || (names.has(p.name) && fitting(t, p.name).length > 0));
+      return holds ? ['?'] : [];
     }
     const res = resolve(ref);
     const out = res.readers.filter((r) => through.has(r));
-    if (res.open) {
-      for (const [reader, cls] of throughClass) {
-        if (methodName(reader) !== ref.name) continue;
-        const sym = cls.name ? checker.getSymbolAtLocation(cls.name) : undefined;
-        const inst = sym ? checker.getDeclaredTypeOfSymbol(sym) : undefined;
-        if (!inst || !canAssign) out.push('?');
-        else if (canAssign.call(checker, inst, res.open)) out.push(reader);
-      }
-    }
+    if (res.open) out.push(...fitting(res.open, ref.name));
     if (res.untyped && [...through.keys()].some((r) => methodName(r) === ref.name)) out.push('?');
     return [...new Set(out)];
   };
