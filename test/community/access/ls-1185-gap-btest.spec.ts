@@ -15,7 +15,7 @@ describe('LS-1185 B2: each fixed KNOWN GAP must invalidate its registry row', ()
         .replace('const answered = received.filter(', 'const answered = visibleReceived.filter(')
         .replace('replies: { answered, received: received.length }', 'replies: { answered, received: visibleReceived.length }')
         + '\nexport { contactRings as __LS1185_contactRings };\n',
-      'const { __LS1185_contactRings } = require("../../../src/coach/command-center/coach-home-day"); const read = async () => (await __LS1185_contactRings(w.db, {coachId: w.coach.id, findMany: async () => []}, w.coach.id, [author.id, w.control.id], [], [], new Date(0), new Date("2100-01-01T00:00:00Z"))).replies.received;',
+      'const { __LS1185_contactRings } = require("../../../src/coach/command-center/coach-home-day"); const read = async () => (await __LS1185_contactRings(w.db, {coachId: w.coach.id, ownerCoachId: w.coach.id, clientIds: [author.id, w.control.id], needsYou: []}, new Date(0), new Date("2100-01-01T00:00:00Z"))).replies.received;',
     ],
     [
       'CoachHomeService.countReview',
