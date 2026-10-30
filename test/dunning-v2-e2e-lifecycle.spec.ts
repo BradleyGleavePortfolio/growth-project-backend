@@ -334,6 +334,30 @@ describe('Smart Dunning v2 end-to-end lifecycle (Stripe fixtures, fake clock)', 
   });
 
   it.each(['past_due', 'unpaid'])(
+    'LS-1190 B3: another %s plan in live grace waives the older plan lock',
+    async (status) => {
+      await failAttempt(w, 1);
+      jest.setSystemTime(at(10 * DAY + HOUR));
+      await w.v2.runSweep();
+      expect(await lockVerdict(w)).toBe('DUNNING_LOCKED');
+      w.fake.seed('clientPurchase', {
+        ...purchaseRow(w), id: 'second-plan', package_id: 'pkg-2',
+        status, entitlement_active: true, access_expires_at: at(13 * DAY),
+      });
+      w.fake.seed('dunningState', {
+        id: 'second-cycle', purchase_id: 'second-plan', status: 'active',
+        entered_at: at(5 * DAY), locked_out_at: null, step: 0,
+      });
+      const db = w.fake.client();
+      const checkout = new CheckoutService(db, stub({}), stub({}), stub({}), stub({}), stub({}));
+      expect(await checkout.hasActiveEntitlement('client-1', { packageId: 'pkg-2' })).toBe(true);
+      const entitlementGuard = new ClientEntitlementGuard(stub(reflector()), db);
+      expect(await entitlementGuard.canActivate(context())).toBe(true);
+      expect(await lockVerdict(w)).toBe('allowed');
+    },
+  );
+
+  it.each(['past_due', 'unpaid'])(
     'LS-1190 B1: weekly %s grace keeps linked package community access',
     async (status) => {
       const db = w.fake.client();
