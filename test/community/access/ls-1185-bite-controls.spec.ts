@@ -65,9 +65,9 @@ describe('LS-1185 independent bite positive controls', () => {
       'this.safety.filterBlocked(user.id, rows, (m) => m.sender_id)',
     ],
     [
-      'registered DM removal filter removed',
-      'src/community/dms/community-dms.repository.ts',
-      '        deleted_at: null,',
+      'registered removed-message words exposed',
+      'src/community/messages/community-messages.service.ts',
+      'if (coachRemoved(m) && chat) return this.placeholder(m, chat, true);',
       '',
     ],
     [
@@ -82,7 +82,11 @@ describe('LS-1185 independent bite positive controls', () => {
     const original = readFileSync(runtime, 'utf8');
     expect(original.includes(before)).toBe(true);
     try {
-      writeFileSync(runtime, original.replace(before, after));
+      let mutated = original.replace(before, after);
+      if (name === 'registered removed-message words exposed') {
+        mutated = mutated.replace('body: m.deleted_at ? null : m.body,', 'body: m.body,');
+      }
+      writeFileSync(runtime, mutated);
       const result = runContract();
       expect(result.numFailedTests).toBeGreaterThan(0);
       if (name === 'covered reaction gap genuinely fixed') expect(result.diagnostic).toContain('KNOWN GAP fixed:');
