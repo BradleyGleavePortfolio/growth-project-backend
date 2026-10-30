@@ -1814,11 +1814,14 @@ export class CoachMoneyService {
       if (p.client && moved.has(p.client.id)) continue;
       const d = p.dunning;
       // PF-5-BE (LS-PAYFAIL B8): bank tries only. last_attempt_number is
-      // Stripe's invoice attempt count, failure_count the failed tries seen;
-      // the reminder step (step_index) is not a card try. No known try (a
-      // refund or dispute hold, or no dunning row) sends max_attempts 0, so
+      // Stripe's attempt count for the current invoice, failure_count the
+      // failed tries seen over the plan's life; the reminder step (step_index)
+      // is not a card try. FR-1191 (LS-1191 B2, LO-1191 B2): the current
+      // invoice's count wins, so a recovered earlier cycle never adds tries;
+      // failure_count only stands in when Stripe sent no count. No known try
+      // (a refund or dispute hold, or no dunning row) sends max_attempts 0, so
       // the phone shows no "Try n of m".
-      const bankTries = d ? Math.max(d.last_attempt_number ?? 0, d.failure_count) : 0;
+      const bankTries = d ? (d.last_attempt_number ?? d.failure_count) : 0;
       const attempt = Math.min(maxAttempts, bankTries);
       items.push({
         kind: 'failed_payment',
