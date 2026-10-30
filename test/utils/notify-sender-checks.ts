@@ -149,7 +149,7 @@ export function sentValues(
     from.push('urgent: code');
   } else from.push('urgent: registry');
   const cs = vs.map((v) => (v.context === 'absent' ? 'null' : v.contextValue === undefined ? undefined : JSON.stringify(v.contextValue)));
-  let context = e.context ?? null;
+  let context: FunnelPush['context'] = e.context ?? null;
   if (cs.every((c) => c !== undefined && c === cs[0])) {
     context = JSON.parse(cs[0] as string) as FunnelPush['context'];
     from.push('context: code');
