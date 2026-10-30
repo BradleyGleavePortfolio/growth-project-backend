@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, statSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../src/prisma.service';
@@ -31,10 +31,10 @@ describe('FR-1TO1 class A: every package read that sells or grants uses the one 
   it('leaves no buy-side read on the older, wider SELLING_COACH rule', () => {
     const hits: string[] = [];
     const walk = (dir: string): void => {
-      for (const name of readdirSync(dir)) {
-        const p = join(dir, name);
-        if (statSync(p).isDirectory()) walk(p);
-        else if (p.endsWith('.ts') && !p.endsWith('.spec.ts') && /\bSELLING_COACH\b/.test(readFileSync(p, 'utf8'))) hits.push(name);
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const p = join(dir, entry.name);
+        if (entry.isDirectory()) walk(p);
+        else if (p.endsWith('.ts') && !p.endsWith('.spec.ts') && /\bSELLING_COACH\b/.test(readFileSync(p, 'utf8'))) hits.push(entry.name);
       }
     };
     walk(join(__dirname, '..', 'src'));
