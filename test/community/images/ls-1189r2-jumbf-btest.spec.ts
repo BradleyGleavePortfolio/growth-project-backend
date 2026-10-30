@@ -5,7 +5,7 @@ describe('LS-1189R2 JUMBF bounded work', () => {
   it('LS-1189R2 B2: a 10 MB JPEG of tiny distinct APP11 boxes cannot hold the send check for seconds', () => {
     // A valid segment envelope, many unrelated box types; no location bytes.
     // Build the upload outside the timer. Each segment consumes exactly 21 bytes.
-    const count = 450_000;
+    const count = 499_000;
     const header = Buffer.concat([Buffer.from(SOI), Buffer.from(JFIF)]);
     const segments = Buffer.alloc(count * 21);
     for (let k = 0; k < count; k += 1) {
@@ -18,10 +18,15 @@ describe('LS-1189R2 JUMBF bounded work', () => {
     }
     const photo = Buffer.concat([header, segments, Buffer.from(SCAN)]);
     expect(photo.length).toBeLessThanOrEqual(10 * 1024 * 1024);
+    const before = process.memoryUsage();
     const start = Date.now();
     const located = carriesLocation(photo);
     const elapsed = Date.now() - start;
-    console.log('LS1189R2 tiny JUMBF bound', { bytes: photo.length, count, located, elapsed });
+    const after = process.memoryUsage();
+    console.log('LS1189R2 tiny JUMBF bound', {
+      bytes: photo.length, count, located, elapsed,
+      heapBefore: before.heapUsed, heapAfter: after.heapUsed, rssBefore: before.rss, rssAfter: after.rss,
+    });
     expect(elapsed).toBeLessThan(1000);
   }, 30_000);
 });
