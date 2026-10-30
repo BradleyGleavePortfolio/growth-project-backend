@@ -314,7 +314,7 @@ describe('Smart Dunning v2 end-to-end lifecycle (Stripe fixtures, fake clock)', 
     );
     // GET /v1/checkout/entitlement drives the real phone's paid-screen gate.
     // No forced pastDueResync is inserted to hide normal webhook ordering.
-    expect(await checkout.hasActiveEntitlement('client-1')).toBe(true);
+    expect(await checkout.hasActiveEntitlement('client-1', {})).toBe(true);
   });
 
   it('A. fail Day 0 -> Stripe retry Day 1 fails -> pays on the Day 3 retry -> recovered, never locked', async () => {
