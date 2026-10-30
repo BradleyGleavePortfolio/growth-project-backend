@@ -18,7 +18,7 @@ function visibleText(html: string): string {
 }
 
 const ASK =
-  'the app asks it the first time you open Roman, or, in earlier versions of the app, in a second box on the same screen.';
+  'the app asks it the first time you open Roman or, in some versions of the app, in a second box on the same screen.';
 
 const LINES: { id: string; page: TrustPage; text: string }[] = [
   {

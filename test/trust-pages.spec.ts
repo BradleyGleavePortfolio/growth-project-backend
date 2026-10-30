@@ -280,7 +280,7 @@ describe('Consumer Health Data Privacy Policy (/consumer-health-privacy)', () =>
   it('states the D2 Consent section byte for byte (approved 2026-10-01 09:07 PDT; first paragraph = STORE-E4C POL-5, needs owner)', () => {
     const text = visibleText(renderTrustPage('consumer-health'));
     const approved = [
-      "Before we collect your consultation answers, the app asks you to tick a box, which you need to do to continue: it covers the personal-training waiver and lets TGP and your coach collect and use your information to coach you. Letting Roman and your coach's AI drafts use your information is a separate, optional choice that names Anthropic as the AI provider and lists the data it receives: the app asks it the first time you open Roman, or, in earlier versions of the app, in a second box on the same screen. If you do not allow it, nothing about you is sent to Anthropic. Connecting Apple Health or Health Connect asks for separate permission on your phone. We will not collect new categories of health data, or use or share it for new purposes, without telling you first and asking for your agreement.",
+      "Before we collect your consultation answers, the app asks you to tick a box, which you need to do to continue: it covers the personal-training waiver and lets TGP and your coach collect and use your information to coach you. Letting Roman and your coach's AI drafts use your information is a separate, optional choice that names Anthropic as the AI provider and lists the data it receives: the app asks it the first time you open Roman or, in some versions of the app, in a second box on the same screen. If you do not allow it, nothing about you is sent to Anthropic. Connecting Apple Health or Health Connect asks for separate permission on your phone. We will not collect new categories of health data, or use or share it for new purposes, without telling you first and asking for your agreement.",
       'You can withdraw the optional AI agreement at any time in Settings > Privacy; Roman and AI drafts about you then stop. To stop all collection, delete your account in Settings > Account. You can also disconnect Apple Health or Health Connect, and delete your data, as described below.',
     ];
     for (const paragraph of approved) expect(text).toContain(paragraph);
@@ -683,7 +683,7 @@ describe('policy copy hygiene', () => {
   it('describes the Roman and AI choice as optional AI processing by Anthropic, withdrawn in Settings > Privacy > Roman and AI', () => {
     const privacy = visibleText(renderTrustPage('privacy'));
     expect(privacy).toContain(
-      'Letting Roman and your coach’s AI drafts use your information is a separate, optional choice that names Anthropic as the AI provider and lists the data it receives: the app asks it the first time you open Roman, or, in earlier versions of the app, in a second box on the same screen.',
+      'Letting Roman and your coach’s AI drafts use your information is a separate, optional choice that names Anthropic as the AI provider and lists the data it receives: the app asks it the first time you open Roman or, in some versions of the app, in a second box on the same screen.',
     );
     expect(privacy).toContain(
       'You can allow or withdraw the optional AI agreement at any time in Settings > Privacy > Roman and AI',
