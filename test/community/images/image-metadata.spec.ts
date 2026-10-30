@@ -1,14 +1,18 @@
 /**
  * FR-1187 (LS-1187 B1, operator ruling): the copy of a space photo sent to
- * OpenAI carries no metadata. stripJpegMetadata drops APP1 to APP13, APP15 and
- * COM wherever they sit, and everything after EOI; it keeps APP0, APP14, the
- * frame, the tables and the scans byte for byte; and it answers null for bytes
- * it cannot walk, so the check fails closed. JPEG is the only format the photo
- * check accepts (community-photo-check.e2e.spec.ts: every other format is
- * refused before any call to OpenAI).
+ * OpenAI carries no metadata. FR-1187R2 (LS-1187R2 B1, LO-1187R2 C2):
+ * stripJpegMetadata keeps an allowlist: the frame, the tables and the scans
+ * byte for byte, a JFIF APP0 rebuilt as its encoding fields with no
+ * thumbnail, an Adobe APP14 rebuilt as its fixed fields; it drops every other
+ * segment wherever it sits (every other APP0 and APP14, APP1 to APP13, APP15,
+ * COM, JPG, JPGn, reserved) and everything after EOI; and it answers null for
+ * bytes it cannot walk, so the check fails closed. JPEG is the only format
+ * the photo check accepts (community-photo-check.e2e.spec.ts: every other
+ * format is refused before any call to OpenAI).
  */
-import { isMetadataMarker, stripJpegMetadata } from '../../../src/community/images/image-metadata';
+import { isPictureMarker, keptHeader, stripJpegMetadata } from '../../../src/community/images/image-metadata';
 import { JFIF, SCAN, SOI, segment, exifApp1, xmpApp1, xmpPacket, extendedXmpApp1, EXTENDED_GUID, tiff } from './jpeg-fixtures';
+import { REAL_PHOTOS } from './real-photos';
 
 const NAME = 'Example Photo Author';
 const latin1 = (s: string): number[] => [...Buffer.from(s, 'latin1')];
@@ -76,6 +80,10 @@ describe('stripJpegMetadata (FR-1187: what reaches OpenAI)', () => {
     expect(stripJpegMetadata(Uint8Array.from(plain))).toEqual(Buffer.from(plain));
   });
 
+  it.each(REAL_PHOTOS)('FR-1187R2: a real %s photo is sent as the same picture (decoded with Pillow)', (_label, { photo, sent }) => {
+    expect(stripJpegMetadata(Buffer.from(photo, 'base64'))).toEqual(Buffer.from(sent, 'base64'));
+  });
+
   it('ends a scan that runs to the end of the bytes with EOI', () => {
     expect(stripJpegMetadata(Uint8Array.from([...SOI, ...PICTURE, ...SOS, ...DATA.slice(0, 6)]))).toEqual(
       Buffer.from([...SOI, ...PICTURE, ...SOS, ...DATA.slice(0, 6), ...EOI]),
@@ -99,8 +107,56 @@ describe('stripJpegMetadata (FR-1187: what reaches OpenAI)', () => {
     expect(stripJpegMetadata(Uint8Array.from(bytes))).toBeNull();
   });
 
-  it('names APP1 to APP13, APP15 and COM as metadata, and nothing else', () => {
-    const all = Array.from({ length: 256 }, (_, m) => m).filter(isMetadataMarker);
-    expect(all).toEqual([0xe1, 0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8, 0xe9, 0xea, 0xeb, 0xec, 0xed, 0xef, 0xfe]);
+  it('keeps the frame, tables and scans byte for byte: SOFn but JPG (0xC8), DHT, DAC, DQT, SOS, DNL, DRI, DHP, EXP, and nothing else', () => {
+    const all = Array.from({ length: 256 }, (_, m) => m).filter(isPictureMarker);
+    const sof = [0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf];
+    expect(all).toEqual([...sof.slice(0, 4), 0xc4, ...sof.slice(4, 7), ...sof.slice(7, 10), 0xcc, ...sof.slice(10), 0xda, 0xdb, 0xdc, 0xdd, 0xde, 0xdf]);
+  });
+
+  // LO-1187R2 C2: JPG, JPGn and the reserved markers draw nothing a baseline or progressive decoder reads: dropped, like metadata.
+  it.each<[string, number]>([
+    ['JPG (0xC8)', 0xc8],
+    ...Array.from({ length: 14 }, (_, k): [string, number] => [`JPG${k} (0x${(0xf0 + k).toString(16).toUpperCase()})`, 0xf0 + k]),
+    ['reserved 0x02', 0x02],
+    ['reserved 0xBF', 0xbf],
+  ])('drops %s, with the name in it, before the frame and between scans', (_label, marker) => {
+    const meta = segment(marker, named('w'));
+    const before = stripJpegMetadata(Uint8Array.from([...SOI, ...JFIF, ...meta, ...PICTURE.slice(JFIF.length), ...SOS, ...DATA, ...EOI]));
+    expect(before).toEqual(Buffer.from(BARE));
+    const between = stripJpegMetadata(Uint8Array.from([...SOI, ...PICTURE, ...SOS, ...DATA, ...meta, ...DHT, ...SOS, 0x77, ...EOI]));
+    expect(between).toEqual(Buffer.from([...SOI, ...PICTURE, ...SOS, ...DATA, ...DHT, ...SOS, 0x77, ...EOI]));
+    expect(between?.toString('latin1')).not.toContain(NAME);
+  });
+
+  // LS-1187R2 B1: APP0 and APP14 in every form, as sent (null: dropped).
+  const jfif = (major: number, minor: number, units: number, rest: number[] = [0, 0]) =>
+    [...latin1('JFIF\0'), major, minor, units, 0, 72, 0, 72, ...rest];
+  const adobe = (transform: number, rest: number[] = []) => [...latin1('Adobe'), 0, 100, 0x80, 0, 0, 0, transform, ...rest];
+  const thumb = [2, 1, ...latin1(NAME.slice(0, 6))]; // a 2 x 1 RGB thumbnail whose bytes spell the name
+  it.each<[string, number, number[], number[] | null]>([
+    ['JFIF 1.01, no thumbnail', 0xe0, jfif(1, 1, 1), jfif(1, 1, 1)],
+    ['JFIF 1.02, no thumbnail', 0xe0, jfif(1, 2, 0), jfif(1, 2, 0)],
+    ['JFIF 1.02, units 2 (dots per cm)', 0xe0, jfif(1, 2, 2), jfif(1, 2, 2)],
+    ['JFIF with an RGB thumbnail', 0xe0, jfif(1, 2, 1, thumb), jfif(1, 2, 1)],
+    ['JFIF with bytes past its header', 0xe0, [...jfif(1, 1, 1), ...latin1(NAME)], jfif(1, 1, 1)],
+    ['JFIF, major version 2', 0xe0, jfif(2, 0, 1), null],
+    ['JFIF, units 3', 0xe0, jfif(1, 2, 3), null],
+    ['JFIF cut short', 0xe0, jfif(1, 2, 1).slice(0, 13), null],
+    ['JFXX JPEG thumbnail (0x10)', 0xe0, [...latin1('JFXX\0'), 0x10, ...SOI, ...exifArtist, ...SCAN], null],
+    ['JFXX palette thumbnail (0x11)', 0xe0, [...latin1('JFXX\0'), 0x11, 1, 1, ...Array<number>(768).fill(0), 0], null],
+    ['JFXX RGB thumbnail (0x13)', 0xe0, [...latin1('JFXX\0'), 0x13, ...thumb], null],
+    ['Canon CIFF', 0xe0, [...latin1('II'), 26, 0, 0, 0, ...latin1('HEAPJPGM'), ...latin1(NAME)], null],
+    ['another writer\'s APP0', 0xe0, named('AVI1\0'), null],
+    ['Adobe, transform 0 (none)', 0xee, adobe(0), adobe(0)],
+    ['Adobe, transform 1 (YCbCr)', 0xee, adobe(1), adobe(1)],
+    ['Adobe, transform 2 (YCCK)', 0xee, adobe(2), adobe(2)],
+    ['Adobe with bytes past its fixed part', 0xee, adobe(1, latin1(NAME)), adobe(1)],
+    ['Adobe cut short', 0xee, adobe(1).slice(0, 11), null],
+    ['another writer\'s APP14', 0xee, named('Ducky'), null],
+  ])('%s: sent as its fixed fields only', (_label, marker, payload, sent) => {
+    expect(keptHeader(marker, Uint8Array.from(payload))).toEqual(sent && Buffer.from(sent));
+    const out = stripJpegMetadata(Uint8Array.from([...SOI, ...segment(marker, payload), ...DQT, ...SOF0, ...DHT, ...SOS, ...DATA, ...EOI]));
+    expect(out).toEqual(Buffer.from([...SOI, ...(sent ? segment(marker, sent) : []), ...DQT, ...SOF0, ...DHT, ...SOS, ...DATA, ...EOI]));
+    expect(out?.toString('latin1')).not.toContain(NAME.slice(0, 6));
   });
 });
