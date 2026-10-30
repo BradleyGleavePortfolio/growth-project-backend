@@ -419,7 +419,7 @@ export class Copy {
     text: `import type { CommunityNotificationsService } from '../community/notifications/community-notifications.service';
 type Relay = Pick<CommunityNotificationsService, 'sendCommunityPush'>;
 export async function relayVia(r: Relay) {
-  await r.sendCommunityPush({} as never);
+  await r.sendCommunityPush({});
 }
 `,
     expect: [{ fn: 'relayVia', via: 'communityPush', at: 'r.sendCommunityPush(' }],
@@ -502,7 +502,7 @@ export async function relayVia(r: Relay) {
     id: 'context-unreadable',
     from: 'LO-1186R2 B2 / C3',
     file: WB,
-    text: wb('', 'NotificationKind.WORKOUT_ASSIGNED', ', context: ctx as never'),
+    text: wb('', 'NotificationKind.WORKOUT_ASSIGNED', ', context: ctx'),
     expect: [{ fn: 'WorkoutBuilderService.emitAssignmentPush', via: 'sendPush', at: 'notifications.sendPush(' }],
     finds: [{ at: 'notifications.sendPush(', says: 'passes a context the scan cannot read;' }],
   },

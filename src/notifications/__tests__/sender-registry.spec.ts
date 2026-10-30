@@ -529,14 +529,14 @@ const ALERT_PROPS = ['money', 'alertType', 'severity', 'spaceId'] as const;
 async function coachAlertSent(row: SenderRow, e: FunnelPush) {
   const vs = coachAlertCalls(row).flatMap((h) => (h.callArgs && !h.callArgs.opaque ? h.callArgs.variants : []));
   const cx = (e.context ?? {}) as Record<string, unknown>;
-  const payload: Record<string, unknown> = {
+  const payload: CoachAlertNotificationPayload = {
     coachId: CLIENT,
     alertId: 'kt4-alert',
     message: 'Body',
     clientUserId: 'client-x',
     alertType: typeof cx.safetyAlert === 'string' ? cx.safetyAlert : 'kt4_alert',
     severity: e.urgent ? 'critical' : 'warning',
-    ...(cx.passesMuteAll === true ? { money: true } : {}),
+    ...(cx.passesMuteAll === true ? { money: true as const } : {}),
     ...(cx.spaceAlert === true ? { spaceId: 'space-1' } : {}),
   };
   const from: string[] = [];
@@ -546,10 +546,10 @@ async function coachAlertSent(row: SenderRow, e: FunnelPush) {
       const seen = vs.map((v) => v[k]);
       const values = new Set(seen.map((x) => (x && 'value' in x ? JSON.stringify(x.value) : undefined)));
       if (seen.every((x) => x === undefined)) {
-        delete payload[k];
+        Reflect.deleteProperty(payload, k);
         from.push(`${k}: code (none)`);
       } else if (values.size === 1 && !values.has(undefined)) {
-        payload[k] = JSON.parse([...values][0] as string) as unknown;
+        Reflect.set(payload, k, JSON.parse([...values][0] as string));
         from.push(`${k}: code`);
       } else from.push(`${k}: registry`);
     }
@@ -562,7 +562,7 @@ async function coachAlertSent(row: SenderRow, e: FunnelPush) {
     }),
     createNotification: jest.fn(async () => null),
   });
-  await new CoachAlertEmitter(notifications).emit(payload as unknown as CoachAlertNotificationPayload, { inapp: false });
+  await new CoachAlertEmitter(notifications).emit(payload, { inapp: false });
   const a = queued[0] ?? {};
   return {
     kind: (a.kind ?? e.kind) as FunnelPush['kind'],
