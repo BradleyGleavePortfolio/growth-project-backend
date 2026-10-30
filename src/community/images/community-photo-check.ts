@@ -171,7 +171,7 @@ async function judgePhoto(
   } catch {
     return { unavailable: 'download_failed' };
   }
-  // The whole checked object, JPEG from its first bytes, or nothing is sent.
+  // The whole checked object, JPEG from its first bytes, or no photo is sent (the caption is still checked, LO-1187R2 N1).
   if (jpeg.length !== size || jpeg[0] !== 0xff || jpeg[1] !== 0xd8 || jpeg[2] !== 0xff) {
     return { unavailable: 'download_failed' };
   }
