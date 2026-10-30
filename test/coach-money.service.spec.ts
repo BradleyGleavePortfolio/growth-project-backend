@@ -468,6 +468,42 @@ describe('CoachMoneyService.getChargeBreakdown', () => {
 });
 
 describe('CoachMoneyService.getAttention', () => {
+  it('LS-PAYFAIL B8: a reminder deadline does not become a promised card retry', async () => {
+    const p = buildPrisma();
+    // recordFailure schedules DunningAttempt reminders and stamps their
+    // earliest time into DunningState.next_attempt_at even with v2 enabled.
+    // That is not Stripe's invoice.next_payment_attempt. MoneyScreen renders
+    // next_retry_at as "TGP tries the card again on ...", so an unknown bank
+    // retry must stay unknown rather than inheriting this communication time.
+    p.clientPurchase.findMany.mockResolvedValue([
+      {
+        id: 'synthetic-payfail-b8-purchase',
+        amount_cents: 4900,
+        currency: 'usd',
+        updated_at: new Date('2026-10-30T09:00:00Z'),
+        last_error: 'The card has expired.',
+        client: { id: 'synthetic-payfail-b8-client', name: 'Test client' },
+        package: { name: 'Monthly coaching' },
+        dunning: {
+          status: 'active',
+          failure_count: 1,
+          step_index: 0,
+          next_attempt_at: new Date('2026-10-30T09:00:00Z'),
+          locked_out_at: null,
+          last_failed_amount_cents: 4900,
+          last_failure_at: new Date('2026-10-30T09:00:00Z'),
+          last_failure_reason: 'expired_card',
+          attempts: [],
+        },
+      },
+    ]);
+
+    const out = await svc(p).getAttention(COACH);
+
+    expect(out.items).toHaveLength(1);
+    expect(out.items[0].failed_payment?.next_retry_at).toBeNull();
+  });
+
   it('lists failed payments with dunning status, open disputes and Stripe requirements', async () => {
     const p = buildPrisma();
     p.clientPurchase.findMany.mockResolvedValue([
