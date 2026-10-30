@@ -39,7 +39,7 @@ export const SUPPORT_EMAIL = 'support@thegrowthproject.site';
 
 // Last-reviewed date for the policy text. Bump when copy changes.
 // Format ISO-8601 (UTC) so it sorts and renders consistently.
-export const POLICY_LAST_REVIEWED = '2026-10-20';
+export const POLICY_LAST_REVIEWED = '2026-10-30';
 
 // #CRISIS-WORDING / #CRISIS-PRIVACY-PLACES (owner op 1): follows every Roman
 // safety-reply exception sentence on these pages, only while Roman's crisis
@@ -53,6 +53,16 @@ function crisisToldText(): string {
 // /consumer-health-privacy "Categories we share". The first box-2 agreement
 // names it too (owner #162-6: client-ai-v10 to v13).
 export const WEARABLE_AI_NOTES_TEXT = ROMAN_HEALTH_NOTES_SENTENCE;
+
+/**
+ * FR-1187 (LO-1187): what a self-harm refusal by the photo check does
+ * (community-messages.service.ts alertCoachOfPhotoSafety: one critical alert to
+ * the member's coach, and in a public space one to its owner and coach-role
+ * team; the alert holds no photo, caption or category). Both trust pages, once
+ * each, where they describe the photo check. Needs the owner's word (137-2).
+ */
+export const PHOTO_CHECK_ALERT_TEXT =
+  'If the photo check refuses a photo or caption for self-harm, your coach gets a safety alert, and so do the coach and team who run a public space; the alert does not show the photo or caption.';
 
 // Who sees community and leaderboard data (B-PRIVACY-1). Shared by /privacy
 // "Who can see your data" and /consumer-health-privacy "Categories we share".
@@ -236,6 +246,7 @@ function privacyContent(): TrustPageContent {
           'Coaching logs — meals and foods you log, macros, water, fasting, workouts (exercises, sets, reps, load and duration), check-ins (mood, energy, sleep and notes), habits, weight and progress entries.',
           'Apple Health or Health Connect data, only if you connect it — steps, active energy, heart rate, resting heart rate, heart-rate variability, VO2 max, workouts and distance, weight, body fat, blood pressure, sleep, blood-oxygen saturation, respiratory rate and body temperature, with the source, time and time zone of each reading. Apple Health is on iPhone; Health Connect is on Android. The app reads this data with your permission and sends it to our servers so you and your coach can see it; it does not write data back to Apple Health or Health Connect.',
           'Messages and community content — messages with your coach; posts, comments and reactions in the community spaces your coach runs, your space memberships and when you joined them; direct messages and voice notes if enabled; and reports and blocks you make.',
+          'Community photos — the photos you post in a community space, and their captions.',
           'Roman conversations — what you write to Roman and Roman’s replies.',
           'Roman’s notes and summaries — short notes Roman keeps about your training, preferences and circumstances, from your Roman chats and from everything you log or connect in the app, as part of the Roman permission (see “Roman and AI” below).',
           'Payments — card details are entered into Stripe’s checkout and are collected by Stripe. We receive and store payment status, amounts, currency, the package or subscription purchased, refunds, invoices, billing email, and your card brand, last four digits and expiry month. For coaches we also store Stripe payout status and amounts, the bank name and last four digits of the payout account, and AI-credit balances and spending. We never receive or store full card or bank account numbers.',
@@ -318,6 +329,7 @@ function privacyContent(): TrustPageContent {
           'Fly.io — hosting for our servers.',
           'Stripe — card payments, invoices and coach payouts.',
           'Anthropic — Roman and coach AI drafts, after you agree; sorting and summarising a coach’s unanswered community posts and messages for that coach, if turned on, only for members who agreed; learning a coach’s methods from that coach’s content, if turned on (see “Roman and AI”).',
+          'OpenAI — an automatic safety check of photos posted in Community, before they appear. It receives the photo and its caption, with no name or account details.',
           'Perplexity — generic milestone messages, if enabled.',
           'PostHog — product analytics. Session recording is off.',
           'Sentry — crash and performance monitoring.',
@@ -329,6 +341,7 @@ function privacyContent(): TrustPageContent {
           'Apple Health (iPhone) and Health Connect (Android) — the on-device health stores you can choose to connect. We read from them; we do not send your TGP data to them.',
           'USDA FoodData Central and Open Food Facts — food search. Our servers send them only the words you search for, never your name, account or health data. Search results are cached for 24 hours.',
         ],
+        closing: [PHOTO_CHECK_ALERT_TEXT],
       },
       {
         heading: 'Legal reasons',
@@ -498,6 +511,9 @@ function consumerHealthContent(): TrustPageContent {
           COMMUNITY_VISIBILITY_TEXT,
           LEADERBOARD_VISIBILITY_TEXT,
           'Service providers that process data on our behalf: Supabase (database, sign-in and file storage) and Fly.io (hosting) receive all categories; Anthropic receives the categories listed in your AI agreement to generate Roman’s replies, his short notes on your Health pages and your coach’s AI drafts and AI notes; if you keep Roman’s memory on and the feature is on, your coach’s messages to you, their private session notes about you, the guidelines and meal plans written for you and figures from your plan combined with those of at least two other clients, with names and contact details removed, so Roman can learn your coach’s methods; and, if turned on, up to 240 characters of each community post or message your coach has not yet answered, with your name, the cohort name and its age, so it can sort and summarise them for your coach (only if you allowed Roman and AI to use your information); Sentry (error monitoring) and PostHog (product analytics) may receive health details that appear in an error report or app event; Crisp (support chat) receives what you choose to tell support; Resend (email) and Expo (push notifications) receive the content of the emails and notifications we send you; Mux (video hosting and playback) receives the videos coaches upload.',
+          // FR-1187 (LS-1187 B2): a caption can be health data ("Health information in your words" above).
+          'OpenAI — an automatic safety check of photos posted in Community, before they appear. It receives the photo and its caption, with no name or account details.',
+          PHOTO_CHECK_ALERT_TEXT,
           'Authorities, when the law requires it or to protect someone’s safety.',
         ],
         closing: [
