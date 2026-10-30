@@ -146,6 +146,8 @@ const GOPRO_GPS = [Buffer.from('GPS5', 'latin1'), Buffer.from('GPS9', 'latin1')]
 const PHOTOSHOP_HEADER = Buffer.from('Photoshop 3.0\0', 'latin1');
 /** Photoshop image resources 1058 (0x0422, EXIFInfo) and 1059 (0x0423, ExifInfo2): a TIFF with no "Exif\0\0" header. */
 const PHOTOSHOP_EXIF = [Buffer.from('8BIM\x04\x22', 'latin1'), Buffer.from('8BIM\x04\x23', 'latin1')];
+/** A TIFF header, either byte order. */
+const TIFF_HEADERS = [Buffer.from('II*\0', 'latin1'), Buffer.from('MM\0*', 'latin1')];
 /** FR-1189 (LO-1189 B1): the IFD entries one check may read, over every EXIF it finds; past it the photo is located. */
 const EXIF_ENTRY_BUDGET = 200_000;
 /**
@@ -349,7 +351,9 @@ function exifInBytesLocated(b: Buffer, budget: Budget): boolean {
 
 /**
  * FR-1189 (LO-1189 B2): each Photoshop resource 1058 or 1059 in the bytes ("8BIM", the id, a Pascal name padded to an
- * even length, a u32 size, then a TIFF), read as EXIF. A resource that runs past the bytes answers true.
+ * even length, a u32 size, then a TIFF), read as EXIF. A resource that runs past the bytes answers true. FR-1189R2
+ * (LO-1189R2 N1): exiftool reads 1058 as EXIF but keeps 1059 as binary, so a 1059 that does not start with a TIFF
+ * header is not read as one (its bytes are still read with the rest); one that does is read like 1058.
  */
 function photoshopExifLocated(b: Buffer, budget: Budget): boolean {
   for (const header of PHOTOSHOP_EXIF) {
@@ -359,6 +363,8 @@ function photoshopExifLocated(b: Buffer, budget: Budget): boolean {
       if (name >= b.length || sizeAt + 4 > b.length) return true;
       const start = sizeAt + 4;
       const end = start + b.readUInt32BE(sizeAt);
+      const tiff = b.subarray(start, start + 4);
+      if (header === PHOTOSHOP_EXIF[1] && tiff.length === 4 && !TIFF_HEADERS.some((t) => t.equals(tiff))) continue;
       if (end > b.length || exifLocated(b.subarray(start, end), budget)) return true;
     }
   }

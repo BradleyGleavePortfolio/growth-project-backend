@@ -493,4 +493,12 @@ describe('carriesLocation (PHOTO-GPS)', () => {
     expect(located(photo(dir([[0x8769, 26]]), dir([[0x8769, 8], [0x8825, 0x7fff0000]])))).toBe(true); // GPSInfo past the end
     expect(located(photo(dir([[0x0100, 1]], 0, 3)))).toBe(true); // IFD0 of 3 entries, 1 there
   });
+
+  it('FR-1189R2 (LO-1189R2 N1): a Photoshop 1059 that is not a TIFF stays bytes, as exiftool keeps it; 1058, or a 1059 TIFF, is EXIF', () => {
+    const binary = [...latin1('ExifInfo2 binary'), 0, 0, 0, 0];
+    expect(located(inSegments(app13(resource(0x0423, binary)))([]))).toBe(false);
+    expect(located(inSegments(app13(resource(0x0422, binary)))([]))).toBe(true); // 1058: not a TIFF, fail closed
+    expect(located(inSegments(app13(resource(0x0423, tiff('MM', 1))))([]))).toBe(true); // a 1059 TIFF with a GPS IFD
+    expect(located(inSegments(app13(resource(0x0423, tiff('II')).slice(0, 14)))([]))).toBe(true); // header cut short
+  });
 });
