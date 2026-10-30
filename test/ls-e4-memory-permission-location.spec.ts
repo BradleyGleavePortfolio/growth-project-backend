@@ -16,7 +16,8 @@ describe('LS-E4 B1: every policy describes the one-box Roman permission location
       const text = visibleText(page);
       // A new one-box agreement grants no Roman permission. Its first Roman
       // permission is requested later, as the updated policy itself states.
-      expect(text).toContain('the app asks it the first time you open Roman');
+      // FR-E4B (agent 186): anchor follows the approved phrase B (185-W4, 10-30).
+      expect(text).toContain('the app asks for it when you first open Roman');
       expect(text).not.toMatch(/Roman permission you give in the consultation/);
     },
   );
