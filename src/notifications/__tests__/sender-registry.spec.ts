@@ -506,7 +506,7 @@ describe('KT-4 sender registry: the funnel holds every registered push kind to i
         urgent: p.urgent,
         dedupe_key: `kt4:${randomUUID()}`,
       });
-      const hint = `${row.file} ${row.fn}: ${p.kind} (${p.from}) must ${outcome} (${s}). ${KT4}`;
+      const hint = `${row.file} ${row.fn}: ${p.kind} (${p.from}) must give ${outcome} (${s}). ${KT4}`;
       expect({ case: s, got: await c.outcome(), hint }).toEqual({ case: s, got: outcome, hint });
     } finally {
       expoSend.mockRestore();
