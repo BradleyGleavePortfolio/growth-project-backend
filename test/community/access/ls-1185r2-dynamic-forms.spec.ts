@@ -36,7 +36,7 @@ describe('LS-1185R2 B2: ordinary dynamic read forms fail closed', () => {
     const root = mkdtempSync(join(tmpdir(), 'ls1185r2-dynamic-'));
     try {
       const parsed = ts.createSourceFile('dynamic-reader.ts', source, ts.ScriptTarget.ES2021, true);
-      expect((parsed as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics).toEqual([]);
+      expect(Reflect.get(parsed, 'parseDiagnostics')).toEqual([]);
       writeFileSync(join(root, 'dynamic-reader.ts'), source);
       expect(scanMemberContentReads(root).map((site) => site.model)).toContain(ANY_MODEL);
     } finally {

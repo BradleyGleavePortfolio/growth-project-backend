@@ -49,7 +49,7 @@ describe('LS-1185R2 B1: ordinary new callers of a registered reader remain inven
       }
       const source = `${imported}\nexport class PreviewService { ${members} }\n`;
       const parsed = ts.createSourceFile('preview.ts', source, ts.ScriptTarget.ES2021, true);
-      expect((parsed as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics).toEqual([]);
+      expect(Reflect.get(parsed, 'parseDiagnostics')).toEqual([]);
       writeFileSync(join(root, 'preview.ts'), source);
       const calls = scanMemberContentReads(root).filter(
         (site) => site.file.endsWith('/preview.ts') && site.via === 'caller',
@@ -67,9 +67,8 @@ describe('LS-1185R2 B1: ordinary new callers of a registered reader remain inven
     await w.messages.send(author, w.cohortId, words);
     await w.messages.send(w.control, w.cohortId, 'Visible control words');
     await w.safety.block(w.viewer, author.id);
-    const repo = new CommunityMessagesRepository(
-      w.db as unknown as ConstructorParameters<typeof CommunityMessagesRepository>[0],
-    );
+    const prisma: unknown = w.db;
+    const repo = new CommunityMessagesRepository(prisma as ConstructorParameters<typeof CommunityMessagesRepository>[0]);
     const raw = await repo.listCohortMessages({ cohortId: w.cohortId, before: null, limit: 20 });
     expect(raw.some((row) => row.body === words)).toBe(true);
     expect(JSON.stringify(await w.messages.list(w.viewer, w.cohortId, {}))).not.toContain(words);
