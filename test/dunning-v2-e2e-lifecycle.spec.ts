@@ -299,11 +299,26 @@ describe('Smart Dunning v2 end-to-end lifecycle (Stripe fixtures, fake clock)', 
     else process.env['FEATURE_DUNNING_V2'] = prevFlag;
   });
 
-  it('LS-PAYFAIL B2: the phone entitlement read preserves grace when invoice failure arrives before subscription resync', async () => {
-    // A real renewing purchase reaches its old period end at T0. Stripe's
-    // invoice failure and subscription update are independently delivered.
+  it('LS-PAYFAIL B2: a weekly renewal keeps phone access for the full ten-day grace', async () => {
+    // Weekly plans are offered by the real package and subscription contracts.
+    // Resync normally, so this case needs no missing or delayed webhook.
+    await w.fake.client().coachPackage.update({
+      where: { id: 'pkg-1' },
+      data: { interval: 'week' },
+    });
+    const weekly = fixture('customer.subscription.updated.past_due', {
+      current_period_start: sec(at(0)),
+      current_period_end: sec(at(7 * DAY)),
+    });
+    w.stripe.retrieveSubscription.mockResolvedValue(weekly.data.object);
+    await w.handler.handle(weekly);
     await failAttempt(w, 1);
     expect(purchaseRow(w)).toMatchObject({ status: 'past_due', entitlement_active: true });
+    // Production expiry computation adds one day to the new weekly period.
+    expect(purchaseRow(w)?.access_expires_at).toEqual(at(8 * DAY));
+    jest.setSystemTime(at(8 * DAY + HOUR));
+    await w.v2.runSweep();
+    expect(stateRow(w)?.locked_out_at).toBeNull();
     expect((await w.v2.getClientStatus('client-1')).state).toBe('past_due');
     expect(await entitlementVerdict(w)).toBe('allowed');
     expect(await lockVerdict(w, '/api/v1/workouts')).toBe('allowed');
@@ -313,7 +328,7 @@ describe('Smart Dunning v2 end-to-end lifecycle (Stripe fixtures, fake clock)', 
       stub({}), stub({}), stub({}), stub({}), stub({}),
     );
     // GET /v1/checkout/entitlement drives the real phone's paid-screen gate.
-    // No forced pastDueResync is inserted to hide normal webhook ordering.
+    // Day 8 is still grace, even after access_expires_at was reached.
     expect(await checkout.hasActiveEntitlement('client-1', {})).toBe(true);
   });
 
