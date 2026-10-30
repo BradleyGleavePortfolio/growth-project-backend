@@ -1,9 +1,11 @@
 /**
- * PHOTO-GPS (agent 174): the location reader over a JPEG's first bytes
+ * PHOTO-GPS (agent 174): the location reader over a JPEG
  * (src/community/images/image-location.ts). Every photo is built byte by
  * byte in jpeg-fixtures.ts; the send check is in community-images.e2e.spec.ts.
+ * FR-1187R2 (LS-1187R2 B2): it reads the whole photo, every place a JPEG the
+ * bucket keeps can hold a location (the placement table below).
  */
-import { carriesLocation, LOCATION_READ_BYTES } from '../../../src/community/images/image-location';
+import { carriesLocation } from '../../../src/community/images/image-location';
 import {
   CLEAN,
   exifApp1,
@@ -22,6 +24,7 @@ import {
   XMP_NO_LOCATION,
   xmpPacket,
 } from './jpeg-fixtures';
+import { REAL_PHOTOS } from './real-photos';
 
 const located = (bytes: number[]) => carriesLocation(Uint8Array.from(bytes));
 
@@ -119,19 +122,98 @@ describe('carriesLocation (PHOTO-GPS)', () => {
     expect(located([...SOI, 0xff, 0xff, 0xff, ...JFIF.slice(1), ...SCAN])).toBe(false); // fill bytes are allowed
   });
 
-  it('stops at the first SOS: picture data that happens to spell GPSLatitude is not read', () => {
-    const text = [...Buffer.from('GPSLatitude Exif', 'latin1')];
-    expect(located([...jpeg(JFIF), ...text, ...exifApp1(tiff('II', 3))])).toBe(false);
+  it('reads segments, not picture data: a scan whose bytes spell GPSLatitude and Exif is not read', () => {
+    const text = [...Buffer.from('GPSLatitude Exif\0\0II*\0', 'latin1')];
+    expect(located([...SOI, ...JFIF, ...SCAN.slice(0, -2), ...text, 0xff, 0xd9])).toBe(false);
   });
 
-  it(`reads at most the first ${LOCATION_READ_BYTES / 1024} KB: a header that runs past it counts as a location`, () => {
+  // FR-1187R2 (LS-1187R2 B2): every place a JPEG the bucket keeps can hold a location, for each kind of location block.
+  const latin1 = (s: string): number[] => [...Buffer.from(s, 'latin1')];
+  const jfxx = (thumbnail: number[]) => segment(0xe0, [...latin1('JFXX\0'), 0x10, ...thumbnail]);
+  const FIRST_SCAN = SCAN.slice(0, -2); // SOS and its picture data, no EOI: another scan follows
+  const places: Array<[string, (block: number[]) => number[]]> = [
+    ['before the first scan', (b) => jpeg(JFIF, b)],
+    ['between two scans', (b) => [...SOI, ...JFIF, ...FIRST_SCAN, ...b, ...SCAN]],
+    ['in a JFXX JPEG thumbnail before the first scan', (b) => jpeg(JFIF, jfxx(jpeg(b)))],
+    ['in a JFXX JPEG thumbnail between two scans', (b) => [...SOI, ...JFIF, ...FIRST_SCAN, ...jfxx(jpeg(b)), ...SCAN]],
+    // FR-1187R3 (LS-1187R3 B1, LO-1187R3 C1): the JPEG thumbnail inside EXIF, read as bytes like the JFXX one.
+    ['in an EXIF JPEG thumbnail before the first scan', (b) => jpeg(JFIF, exifApp1([...tiff('II'), ...jpeg(b)]))],
+    ['in an EXIF JPEG thumbnail between two scans', (b) => [...SOI, ...JFIF, ...FIRST_SCAN, ...exifApp1([...tiff('MM'), ...jpeg(b)]), ...SCAN]],
+    ['in a second image after EOI (MPF)', (b) => [...jpeg(JFIF), ...jpeg(JFIF, b)]],
+    ['after EOI, the block with no segment around it', (b) => [...jpeg(JFIF), ...b.slice(4)]],
+    ['after EOI, behind a second image', (b) => [...jpeg(JFIF), ...jpeg(JFIF), ...Array<number>(100).fill(0), ...b]],
+  ];
+  const locations: Array<[string, number[]]> = [
+    ['GPS in EXIF, little endian', exifApp1(tiff('II', 3))],
+    ['GPS in EXIF, big endian', exifApp1(tiff('MM', 3))],
+    ['a GPS name in XMP', xmpApp1(xmpPacket('exif:GPSLatitude="1,0.0N" exif:GPSLongitude="2,0.0E"'))],
+    ['an ExtendedXMP chunk', extendedXmpApp1(EXTENDED_GUID, 40, 0, xmpPacket('xmp:CreatorTool="TGP"').slice(0, 40))],
+  ];
+  const noLocation: Array<[string, number[]]> = [
+    ['EXIF without GPS', exifApp1(tiff('II'))],
+    ['XMP with no location', xmpApp1(XMP_NO_LOCATION)],
+  ];
+  const table = (blocks: Array<[string, number[]]>) =>
+    places.flatMap(([place, put]) => blocks.map(([kind, block]): [string, string, number[]] => [kind, place, put(block)]));
+  it.each(table(locations))('%s %s carries a location', (_kind, _place, bytes) => {
+    expect(located(bytes)).toBe(true);
+  });
+  it.each(table(noLocation))('%s %s carries none', (_kind, _place, bytes) => {
+    expect(located(bytes)).toBe(false);
+  });
+  it('GPS in EXIF inside the EXIF block (its thumbnail, a JPEG of its own) carries a location; the same thumbnail without GPS does not', () => {
+    expect(located(jpeg(JFIF, exifApp1([...tiff('II'), ...jpeg(exifApp1(tiff('MM', 3)))])))).toBe(true);
+    expect(located(jpeg(JFIF, exifApp1([...tiff('II'), ...jpeg(exifApp1(tiff('MM')))])))).toBe(false);
+  });
+  // FR-1187R3 (LO-1187R3 N2): every APPn but APP1 (APP0, APP2 to APP15) is read as bytes: EXIF with GPS behind an EXIF
+  // header, XMP's location names, or ExtendedXMP in it is a location, wherever the segment sits; the same blocks with no
+  // location are not.
+  const OTHER_APPN = [0xe0, ...Array.from({ length: 14 }, (_, k) => 0xe2 + k)];
+  const inAppn = (marker: number, app1: number[]) => segment(marker, app1.slice(4)); // the APP1's payload, in this APPn
+  const appnPlaces: Array<[string, (block: number[]) => number[]]> = [
+    ['before the first scan', (b) => jpeg(JFIF, b)],
+    ['between two scans', (b) => [...SOI, ...JFIF, ...FIRST_SCAN, ...b, ...SCAN]],
+  ];
+  const appnTable = (blocks: Array<[string, number[]]>) =>
+    OTHER_APPN.flatMap((marker) => appnPlaces.flatMap(([place, put]) =>
+      blocks.map(([kind, block]): [string, string, string, number[]] => [
+        kind, `0x${marker.toString(16)}`, place, put(inAppn(marker, block)),
+      ])));
+  const appnLocations: Array<[string, number[]]> = [...locations, ['HasExtendedXMP', HAS_EXTENDED_XMP]];
+  it.each(appnTable(appnLocations))('%s in APPn %s %s carries a location', (_kind, _marker, _place, bytes) => {
+    expect(located(bytes)).toBe(true);
+  });
+  it.each(appnTable(noLocation))('%s in APPn %s %s carries none', (_kind, _marker, _place, bytes) => {
+    expect(located(bytes)).toBe(false);
+  });
+
+  it('an EXIF APP1 cut inside its header, at the very end of the bytes, counts as a location (no throw)', () => {
+    const cut = [...SOI, ...segment(0xe1, [...Buffer.from('Exif\0', 'latin1')])];
+    expect(located(cut)).toBe(true);
+    expect(located([...SOI, ...JFIF, ...FIRST_SCAN, ...segment(0xe1, [...Buffer.from('Exif\0', 'latin1')])])).toBe(true);
+  });
+  it('after EOI, an EXIF header with no readable EXIF behind it counts as a location (unreadable = located)', () => {
+    expect(located([...jpeg(JFIF), ...latin1('Exif\0\0II*\0'), 0xff, 0xff])).toBe(true);
+    expect(located([...jpeg(JFIF), ...Array<number>(1000).fill(0)])).toBe(false); // zeros after EOI carry nothing
+  });
+  it('segments after the first scan it cannot walk: false here, refused by the photo check (the same walk; 503, nothing published)', () => {
+    const broken = [0xff, 0xd8, 0x34]; // a stray SOI inside the picture data
+    expect(located([...SOI, ...JFIF, ...FIRST_SCAN, ...broken, ...exifApp1(tiff('II', 3)), ...SCAN])).toBe(false);
+    // A location the walk reaches before it stops is still found.
+    expect(located([...SOI, ...JFIF, ...FIRST_SCAN, ...exifApp1(tiff('II', 3)), ...FIRST_SCAN, ...broken, ...SCAN])).toBe(true);
+  });
+
+  it.each(REAL_PHOTOS)('FR-1187R2: a real %s photo with no location carries none', (_label, { photo }) => {
+    expect(carriesLocation(Buffer.from(photo, 'base64'))).toBe(false);
+  });
+
+  it('reads the whole photo: a location past the first 256 KB is found, a header past 256 KB is read, not refused', () => {
     const filler = segment(0xe2, new Array(65533).fill(0)); // the largest segment there is (length 65535)
     const big = jpeg(JFIF, filler, filler, filler, filler, exifApp1(tiff('II')));
-    expect(big.length).toBeGreaterThan(LOCATION_READ_BYTES);
-    expect(located(big)).toBe(true);
+    expect(big.length).toBeGreaterThan(256 * 1024);
+    expect(located(big)).toBe(false);
+    expect(located(jpeg(JFIF, filler, filler, filler, filler, exifApp1(tiff('II', 3))))).toBe(true);
     const three = jpeg(JFIF, filler, filler, filler);
-    expect(three.length).toBeLessThan(LOCATION_READ_BYTES);
-    expect(located(three)).toBe(false);
-    expect(located([...three, ...new Array(LOCATION_READ_BYTES).fill(0), ...exifApp1(tiff('II', 3))])).toBe(false);
+    expect(located([...three, ...new Array(256 * 1024).fill(0), ...exifApp1(tiff('II', 3))])).toBe(true);
   });
 });
