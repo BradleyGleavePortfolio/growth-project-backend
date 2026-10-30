@@ -62,19 +62,23 @@ function matchValue(actual: any, cond: any): boolean {
 }
 
 // FR-1TO1: a to-one relation filter registered in db.relations (e.g. CoachPackage.where.coach)
-// is matched against the related row. A list filter inside it ({ none | some | every }, e.g. the
-// block-pair rule) reads db.listRelations[key](related); an unmodelled list is empty.
+// is matched against the related row. A list filter ({ none | some | every }, e.g. the block-pair
+// rule), on the related row or (FR-1TO1R2) on the row itself, reads db.listRelations[key](row);
+// an unmodelled list is empty.
 function matchRelation(related: Row | null, cond: Row, db: StatefulPrisma): boolean {
-  if (!related) return false;
-  for (const [k, c] of Object.entries(cond)) {
-    const list = c && typeof c === 'object' && !Array.isArray(c) && ['none', 'some', 'every'].find((op) => op in c);
-    if (list) {
-      const rows = db.listRelations[k]?.(related) ?? [];
-      const hit = (r: Row) => matchWhere(r, c[list], db);
-      if (list === 'none' ? rows.some(hit) : list === 'some' ? !rows.some(hit) : !rows.every(hit)) return false;
-    } else if (!matchWhere(related, { [k]: c }, db)) return false;
-  }
-  return true;
+  return !!related && matchWhere(related, cond, db);
+}
+
+function listOp(cond: unknown): 'none' | 'some' | 'every' | undefined {
+  if (!cond || typeof cond !== 'object' || Array.isArray(cond) || cond instanceof Date) return undefined;
+  const keys = Object.keys(cond);
+  return keys.length === 1 ? (['none', 'some', 'every'] as const).find((op) => op === keys[0]) : undefined;
+}
+
+function matchList(row: Row, key: string, cond: Row, op: 'none' | 'some' | 'every', db: StatefulPrisma): boolean {
+  const rows = db.listRelations[key]?.(row) ?? [];
+  const hit = (r: Row) => matchWhere(r, cond[op], db);
+  return op === 'none' ? !rows.some(hit) : op === 'some' ? rows.some(hit) : rows.every(hit);
 }
 
 export function matchWhere(row: Row, where: Row | undefined, db?: StatefulPrisma): boolean {
@@ -90,6 +94,11 @@ export function matchWhere(row: Row, where: Row | undefined, db?: StatefulPrisma
     }
     if (k === 'NOT') {
       if (matchWhere(row, cond, db)) return false;
+      continue;
+    }
+    const op = db ? listOp(cond) : undefined;
+    if (db && op) {
+      if (!matchList(row, k, cond as Row, op, db)) return false;
       continue;
     }
     if (db?.relations[k] && cond && typeof cond === 'object' && !(cond instanceof Date) && !Array.isArray(cond)) {

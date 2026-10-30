@@ -23,6 +23,9 @@ export const SELLING_COACH = {
  * the buyer is in a block with (#168-4: a block closes their coaching chat). The web reads (pay page,
  * guest intent, checkout recovery) use COACHING_COACH, and the one entitlement writer
  * (InviteGrantService.grant: invite, free, prepaid, consent activation) uses coachingCoachFor(buyer).
+ * The join writer (a coach code or link: InviteCodesService.planJoin) reads its coach through
+ * joinCoachFor(buyer) BEFORE it picks or publishes the join's package, so a refused coach gets no
+ * "Getting started" package, no attach and no grant (FR-1TO1R2).
  */
 const NOT_LEAVING = { ...SELLING_COACH, deletion_scheduled_at: null } satisfies Prisma.UserWhereInput;
 export const COACHING_COACH = {
@@ -33,6 +36,15 @@ export const COACHING_COACH = {
 
 export function coachingCoachFor(buyerId: string): Prisma.UserWhereInput {
   return { ...COACHING_COACH, ...notInBlockWith(buyerId) };
+}
+
+/** The join's coach (name for the package screen), or null when he cannot coach this buyer one to one. */
+export function joinCoachFor(
+  db: Pick<Prisma.TransactionClient, 'user'>,
+  coachId: string,
+  buyerId: string,
+): Promise<{ name: string } | null> {
+  return db.user.findUnique({ where: { id: coachId, ...coachingCoachFor(buyerId) }, select: { name: true } });
 }
 
 /** Package create, publish and reactivate: refused for a coach who cannot coach one to one. */
