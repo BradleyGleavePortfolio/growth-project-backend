@@ -356,7 +356,7 @@ export function scanMemberContentReads(srcRoot = join(REPO_ROOT, 'src'), options
       let changed = false;
       const look = (n: ts.Node): void => {
         if (changed) return;
-        if (ts.isIdentifier(n) && n !== d.name && checker.getSymbolAtLocation(n) === sym) {
+        if (ts.isIdentifier(n) && n !== d.name && n.text === sym.name && checker.getSymbolAtLocation(n) === sym) {
           const p = n.parent;
           const assigned = (e: ts.Node) => ts.isBinaryExpression(e.parent) && e.parent.left === e &&
             e.parent.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && e.parent.operatorToken.kind <= ts.SyntaxKind.LastAssignment;
@@ -642,7 +642,11 @@ export function scanMemberContentReads(srcRoot = join(REPO_ROOT, 'src'), options
   };
   const canAssign = (checker as { isTypeAssignableTo?: (a: ts.Type, b: ts.Type) => boolean }).isTypeAssignableTo;
   /** The passing readers a reference names: `?` for one that fails closed. */
+  let names = new Set<string>();
   const calleesOf = (ref: Ref): string[] => {
+    // Only a reference by a passing reader's name, or by a key the checker cannot name, can call one (and the
+    // checker is asked about nothing else: one program over src/ stays fast).
+    if (ref.name !== undefined && !names.has(ref.name)) return [];
     if (ref.name === undefined) {
       // x[key] with a key the checker cannot name, on a value whose type holds a passing reader.
       if (!ts.isElementAccessExpression(ref.node)) return [];
@@ -668,12 +672,14 @@ export function scanMemberContentReads(srcRoot = join(REPO_ROOT, 'src'), options
   const passing = refs.filter((ref) => passes(ref.reader, ref.member));
   for (let grew = true; grew; ) {
     grew = false;
+    names = new Set([...through.keys()].map(methodName));
     for (const ref of passing) {
       for (const callee of calleesOf(ref)) {
         if (callee !== ref.reader && grow(ref.reader, ref.member, modelsOf(callee))) grew = true;
       }
     }
   }
+  names = new Set([...through.keys()].map(methodName));
   const seen = new Set<string>();
   for (const ref of refs) {
     for (const callee of calleesOf(ref)) {
