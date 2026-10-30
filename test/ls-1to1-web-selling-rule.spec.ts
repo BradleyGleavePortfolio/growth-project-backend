@@ -6,6 +6,11 @@ import { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
 import { GuestCheckoutService } from '../src/storefront/guest-checkout.service';
 import { StorefrontService } from '../src/storefront/storefront.service';
 
+// R75: the repo's typed test double (as in test/gc2-pay-done.spec.ts), in place of inline casts.
+function stub<T>(value: unknown): T {
+  return value as T;
+}
+
 describe('LS-1TO1: web and in-app share one coaching seller rule', () => {
   it.each([
     ['former coach', { role: 'student' }],
@@ -39,7 +44,7 @@ describe('LS-1TO1: web and in-app share one coaching seller rule', () => {
       if (rule?.deletion_scheduled_at === null && coach.deletion_scheduled_at) return null;
       return pkg;
     });
-    const db = {
+    const db = stub<PrismaService>({
       coachPackage: { findUnique },
       user: { findFirst: jest.fn(async () => null) },
       coachProfile: { findUnique: jest.fn(async () => null) },
@@ -49,17 +54,17 @@ describe('LS-1TO1: web and in-app share one coaching seller rule', () => {
         update: jest.fn(async () => ({})),
         delete: jest.fn(async () => ({})),
       },
-    } as unknown as PrismaService;
+    });
     const config = new ConfigService({ STRIPE_PUBLISHABLE_KEY: 'test-public-value' });
     const packages = new PackagesService(db, {} as SubCoachScopeService);
-    const display = new StorefrontService(db, {} as never, config);
+    const display = new StorefrontService(db, stub<never>({}), config);
     const createIntent = jest.fn(async () => ({
       client_secret: 'test-confirmation', id: 'test-payment',
     }));
     const checkout = new GuestCheckoutService(
-      db, { createPaymentIntent: createIntent } as never, {} as never,
-      config, {} as never, { preflightWebSale: jest.fn() } as never,
-      { getPercent: () => 2 } as never,
+      db, stub<never>({ createPaymentIntent: createIntent }), stub<never>({}),
+      config, stub<never>({}), stub<never>({ preflightWebSale: jest.fn() }),
+      stub<never>({ getPercent: () => 2 }),
     );
     const input = {
       guest_email: 'new-buyer@example.test', guest_name: 'Buyer',

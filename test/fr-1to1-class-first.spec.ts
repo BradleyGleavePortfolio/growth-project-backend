@@ -7,6 +7,11 @@ import { COACHING_COACH, coachingCoachFor } from '../src/packages/coach-selling'
 import { renderPayPage } from '../src/storefront/pay-page.html';
 import type { PublicPackageData } from '../src/storefront/storefront.types';
 
+// R75: the repo's typed test double (as in test/gc2-pay-done.spec.ts), in place of inline casts.
+function stub<T>(value: unknown): T {
+  return value as T;
+}
+
 // FR-1TO1 (agent 185) class-first tests: one table per class, over its whole path list.
 const src = (file: string) => readFileSync(join(__dirname, '..', 'src', file), 'utf8');
 
@@ -57,8 +62,8 @@ describe('FR-1TO1 class B: the one entitlement writer refuses a coach who cannot
     ));
     const db = { coachPackage: { findUnique }, clientPurchase: { upsert } };
     const grants = new InviteGrantService(
-      db as unknown as PrismaService, { write: jest.fn(async () => undefined) } as never,
-      undefined, undefined, { isGranted: jest.fn(async () => true) } as never,
+      stub<PrismaService>(db), stub<never>({ write: jest.fn(async () => undefined) }),
+      undefined, undefined, stub<never>({ isGranted: jest.fn(async () => true) }),
     );
     return { grants, upsert, findUnique };
   }
