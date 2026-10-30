@@ -314,6 +314,25 @@ describe('the automatic photo check on a space chat photo send (PHOTO-CHECK-BE)'
   const u32le = (n: number) => [...u16le(n), ...u16le(n >>> 16)];
   const u32be = (n: number) => [n >>> 24 & 0xff, n >>> 16 & 0xff, n >>> 8 & 0xff, n & 0xff];
   const creatorBytes = [...Buffer.from(creator, 'latin1')];
+  it('LS-1187R2 B1: Canon APP0 CIFF OwnerName is absent from the SDK copy', async () => {
+    // Canon's real APP0 CIFF family, not an arbitrary extra payload:
+    // https://exiftool.org/TagNames/CanonRaw.html (OwnerName tag 0x0810).
+    // Header length 26; owner data 32 bytes; directory has one 10-byte
+    // entry, then its block-relative directory offset. Independently
+    // decoded as OwnerName by ExifTool 13.50; pixels decoded by Pillow.
+    const owner = [...creatorBytes, ...Array<number>(32 - creatorBytes.length).fill(0)];
+    const ciff = segment(0xe0, [
+      ...Buffer.from('II', 'latin1'), ...u32le(26),
+      ...Buffer.from('HEAPJPGM', 'latin1'), ...Array<number>(12).fill(0),
+      ...owner, ...u16le(1), ...u16le(0x0810), ...u32le(32), ...u32le(0), ...u32le(32),
+    ]);
+    const upload = Buffer.from([...validPicture.subarray(0, 20), ...ciff, ...validPicture.subarray(20)]);
+    const w = world({ photo: upload });
+    expect(await codeOf(w.send(''))).toBe('ok');
+    expect(w.objects.get(sentImageKey(w.key))).toEqual(upload);
+    expect(wirePhoto(w).toString('latin1')).not.toContain(creator);
+    expect(wirePhoto(w)).toEqual(validPicture);
+  });
   const byline = [0x1c, 2, 80, 0, creatorBytes.length, ...creatorBytes];
   const iptcBlock = segment(0xed, [
     ...Buffer.from('Photoshop 3.0\0', 'latin1'), ...Buffer.from('8BIM', 'latin1'), 4, 4, 0, 0,
