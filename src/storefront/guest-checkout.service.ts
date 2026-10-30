@@ -39,7 +39,7 @@ import { PurchaseFanoutService } from '../packages/purchase-fanout.service';
 import { alertCoachOfFlaggedJoinTx } from '../onboarding/flagged-join-alert';
 import { type GuestCheckoutStatus } from './guest-checkout-status';
 import { EmailSenderConfigError, resolveEmailSender } from '../email/email-sender';
-import { SELLING_COACH } from '../packages/coach-selling';
+import { COACHING_COACH } from '../packages/coach-selling';
 import { BuyerHasOtherCoachError, assertBuyerMayPay, buyerVerdict } from './buyer-check';
 import { payPageUrl } from './storefront-links';
 
@@ -261,7 +261,7 @@ export class GuestCheckoutService {
     landingPageId?: string,
   ): Promise<GuestCheckoutResult> {
     const pkg = await this.prisma.coachPackage.findUnique({
-      where: { share_token: token, coach: SELLING_COACH },
+      where: { share_token: token, coach: COACHING_COACH },
       include: {
         coach: { include: { connect_account: true } },
       },

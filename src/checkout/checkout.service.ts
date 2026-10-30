@@ -393,7 +393,7 @@ export class CheckoutService {
       });
     }
 
-    const pkg = await this.packages.getById(input.package_id);
+    const pkg = await this.packages.getById(input.package_id, clientUserId);
     if (!pkg || !pkg.is_active || pkg.archived_at || !pkg.published_at) {
       // PR-6 — DRAFT packages (published_at IS NULL) are not purchasable.
       throw new NotFoundException({
@@ -676,7 +676,7 @@ export class CheckoutService {
       });
     }
 
-    const pkg = await this.packages.getById(input.package_id);
+    const pkg = await this.packages.getById(input.package_id, clientUserId);
     if (!pkg || !pkg.is_active || pkg.archived_at || !pkg.published_at) {
       // PR-6 — DRAFT packages (published_at IS NULL) are not purchasable.
       throw new NotFoundException({

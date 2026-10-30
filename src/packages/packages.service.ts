@@ -15,7 +15,7 @@ import { COACH_PURCHASE_SELECT } from '../checkout/coach-payments.select';
 import { movedAwayClientIds } from '../checkout/moved-client-money';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { assertValidTrial, TRIAL_DAYS_NONE } from './trials/trial-rules';
-import { SELLING_COACH, assertCoachSelling } from './coach-selling';
+import { assertCoachSelling, coachingCoachFor } from './coach-selling';
 import {
   monthlyEquivalent,
   MRR_SUBSCRIPTION_STATUSES,
@@ -811,11 +811,13 @@ export class PackagesService {
 
   // Public client-facing list: only active, non-archived, PUBLISHED
   // packages for a coach. PR-6 added the published gate so DRAFT
-  // packages never appear on the buy-side.
-  async listPublicForCoach(coachUserId: string): Promise<CoachPackage[]> {
+  // packages never appear on the buy-side. STORE-1TO1: only while that coach
+  // can coach this buyer one to one (coach-selling.ts).
+  async listPublicForCoach(coachUserId: string, buyerId: string): Promise<CoachPackage[]> {
     return this.prisma.coachPackage.findMany({
       where: {
         coach_id: coachUserId,
+        coach: coachingCoachFor(buyerId),
         is_active: true,
         archived_at: null,
         published_at: { not: null },
@@ -824,10 +826,12 @@ export class PackagesService {
     });
   }
 
-  /** The buy-side read (package detail, in-app checkout, payment and subscription intents): a
-   *  leaving or gone coach's package reads as not available. */
-  async getById(packageId: string): Promise<CoachPackage | null> {
-    return this.prisma.coachPackage.findUnique({ where: { id: packageId, coach: SELLING_COACH } });
+  /** The buy-side read (package detail, in-app checkout, payment and subscription intents): the
+   *  package of a coach who cannot coach this buyer one to one reads as not available. */
+  async getById(packageId: string, buyerId: string): Promise<CoachPackage | null> {
+    return this.prisma.coachPackage.findUnique({
+      where: { id: packageId, coach: coachingCoachFor(buyerId) },
+    });
   }
 
   // PR-6 — owner-detail read. IDOR-guarded via requireOwnedPackage;
@@ -936,7 +940,7 @@ export class PackagesService {
   }
 
   /** COACH-GONE-DELIVERY: create, publish and reactivate go through here; refused while the
-   *  catalog's coach is leaving or gone. */
+   *  catalog's coach is leaving or gone, or (STORE-1TO1) cannot coach one to one. */
   async resolveSellingCoachId(callerUserId: string): Promise<string> {
     const coachId = await this.resolveEffectiveCoachId(callerUserId);
     await assertCoachSelling(this.prisma, coachId);
