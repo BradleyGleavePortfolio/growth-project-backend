@@ -1,4 +1,4 @@
-import { APP_STORE_URL_DEFAULT, PAY_PAGE_COPY, doc, esc } from './pay-page.html';
+import { APP_STORE_URL_DEFAULT, PAY_PAGE_COPY, doc, esc, shortDate } from './pay-page.html';
 
 // GC-2 — what /p/:token/done shows after Stripe sends the buyer back (card or
 // wallet). Same document, tokens and classes as the pay page; the few extra
@@ -10,6 +10,9 @@ export const PAY_DONE_COPY = {
   brand: 'TGP Fitness',
   paidH: 'Payment received',
   paidLine: (amount: string, pkg: string, coach: string) => `You paid ${amount} for ${pkg} with ${coach}.`,
+  // GC-3 (#GC-TRIAL op 1): a web trial's card saved. Heading: Wording needed
+  // (GC3-W1); the line is the pay page's approved PF-W5.
+  trialH: 'Your free trial has started',
   stepEmail: (email: string) => `Open the email we're sending to ${email} and tap Confirm my email.`,
   // WEB-BUYER-FLOW (#172-7 op 1): password on the confirm page, then the app.
   stepPassword: 'Set a password on the page that opens.',
@@ -46,6 +49,8 @@ export type PayDoneView =
       coach: string;
       packageName: string;
       amountCents: number | null;
+      /** GC-3 — a web trial: card saved, nothing charged; its first charge. */
+      trial?: { firstChargeCents: number | null; firstChargeAt: string | null };
     }
   | { kind: 'confirming'; email: string; again: boolean; checkUrl: string }
   | { kind: 'failed'; reason: string | null; payUrl: string; spent: SpentKey }
@@ -111,6 +116,14 @@ function body(v: PayDoneView, appStoreUrl: string): string {
         v.buyer === 'new'
           ? `<ol class="steps"><li>${esc(PAY_DONE_COPY.stepEmail(v.email))}</li><li>${PAY_DONE_COPY.stepPassword}</li><li>${PAY_DONE_COPY.stepApp}${store(appStoreUrl)}</li></ol>`
           : `<p>${PAY_DONE_COPY.existingNext}</p>${store(appStoreUrl)}`;
+      if (v.trial) {
+        const t = v.trial;
+        const first =
+          t.firstChargeCents !== null && t.firstChargeAt
+            ? `<p>${esc(PAY_PAGE_COPY.trialToday(usd(t.firstChargeCents), shortDate(t.firstChargeAt)))}</p>`
+            : '';
+        return `<section id="trial">${TICK}<h1 class="state">${PAY_DONE_COPY.trialH}</h1>${first}<h2>${PAY_PAGE_COPY.nextH}</h2>${next}${who}</section>`;
+      }
       return `<section id="paid">${TICK}<h1 class="state">${PAY_DONE_COPY.paidH}</h1>${line}<h2>${PAY_PAGE_COPY.nextH}</h2>${next}${who}</section>`;
     }
     case 'confirming':

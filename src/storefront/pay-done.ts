@@ -19,6 +19,9 @@ import { payPageUrl } from './storefront-links';
 // and its dispute row, never from a status kept for access (see moneyState).
 
 const PI_ID = /^pi_[A-Za-z0-9]{8,64}$/;
+/** GC-3 — a web trial returns with its SetupIntent (card saved, nothing charged). */
+const SETI_ID = /^seti_[A-Za-z0-9]{8,64}$/;
+const DAY_MS = 24 * 60 * 60 * 1000;
 const LANDING_PAGE_ID = /^[a-z0-9]{20,40}$/i;
 /** Not paid for: the claim refuses these once expires_at passes (guest-checkout.service.ts). */
 const UNCLAIMED = new Set(['pending', 'failed']);
@@ -33,6 +36,8 @@ export const PAY_DONE_MAX_CHECKS = 5;
 export interface PayDoneQuery {
   payment_intent?: unknown;
   payment_intent_client_secret?: unknown;
+  setup_intent?: unknown;
+  setup_intent_client_secret?: unknown;
   redirect_status?: unknown;
   lp?: unknown;
   n?: unknown;
@@ -40,7 +45,8 @@ export interface PayDoneQuery {
 
 export interface PayDoneDeps {
   db: Pick<PrismaService, 'guestCheckout' | 'user' | 'chargeDispute'>;
-  stripe: Pick<StripeConnectApiService, 'retrievePaymentIntent' | 'retrieveCharge'>;
+  stripe: Pick<StripeConnectApiService, 'retrievePaymentIntent' | 'retrieveCharge'> &
+    Partial<Pick<StripeConnectApiService, 'retrieveSetupIntent'>>;
   storefrontBase: string | undefined;
 }
 
@@ -64,6 +70,7 @@ export async function readPayDone(
   q: PayDoneQuery,
 ): Promise<PayDoneResult> {
   const none: PayDoneResult = { view: { kind: 'unknown' }, refresh: null };
+  if (q.setup_intent !== undefined) return readTrialDone(deps, token, q, none);
   const piId = str(q.payment_intent);
   const secret = str(q.payment_intent_client_secret);
   if (!SHARE_TOKEN_REGEX.test(token) || !PI_ID.test(piId) || !secret.startsWith(`${piId}_secret_`)) {
@@ -144,6 +151,104 @@ export async function readPayDone(
   if (status === 'canceled') return { view: { kind: 'cancelled', payUrl, spent }, refresh: null };
   // requires_payment_method / requires_confirmation / requires_action: not paid.
   const err = pi.last_payment_error as { message?: unknown } | null | undefined;
+  const reason = typeof err?.message === 'string' && err.message.trim() ? err.message.trim().slice(0, 300) : null;
+  return { view: { kind: 'failed', reason, payUrl, spent }, refresh: null };
+}
+
+// GC-3 — the same checks for a web trial's return (its row holds the
+// SetupIntent id): the row must be this token's, the secret the intent's own,
+// the state Stripe's. Saved card = the trial started (the webhook converts);
+// nothing was charged in any state. The first charge line is the pay page's
+// PF-W5, from the row's own snapshot (plan amount, trial days from the start).
+async function readTrialDone(
+  deps: PayDoneDeps,
+  token: string,
+  q: PayDoneQuery,
+  none: PayDoneResult,
+): Promise<PayDoneResult> {
+  const siId = str(q.setup_intent);
+  const secret = str(q.setup_intent_client_secret);
+  if (
+    !deps.stripe.retrieveSetupIntent ||
+    !SHARE_TOKEN_REGEX.test(token) ||
+    !SETI_ID.test(siId) ||
+    !secret.startsWith(`${siId}_secret_`)
+  ) {
+    return none;
+  }
+  const row = await deps.db.guestCheckout.findUnique({
+    where: { stripe_payment_intent_id: siId },
+    select: {
+      guest_email: true,
+      created_at: true,
+      status: true,
+      expires_at: true,
+      idempotency_key: true,
+      package_snapshot: true,
+      package: { select: { share_token: true, name: true, coach: { select: { name: true } } } },
+    },
+  });
+  if (!row || row.package.share_token !== token) return none;
+  if (UNCLAIMED.has(row.status) && !(row.expires_at.getTime() > Date.now())) return none;
+  let si: Awaited<ReturnType<NonNullable<PayDoneDeps['stripe']['retrieveSetupIntent']>>>;
+  try {
+    si = await deps.stripe.retrieveSetupIntent(siId);
+  } catch {
+    return { view: { kind: 'unavailable' }, refresh: null };
+  }
+  const own = (si as { client_secret?: unknown }).client_secret;
+  if (si.id !== siId || typeof own !== 'string' || !sameSecret(own, secret)) return none;
+
+  const lp = str(q.lp);
+  const landing = LANDING_PAGE_ID.test(lp) ? lp : undefined;
+  const payUrl = payPageUrl(deps.storefrontBase, token, { lp: landing });
+  const status = str(si.status);
+  if (status === 'succeeded') {
+    const snap = (row.package_snapshot ?? {}) as { price_cents?: unknown; trial_days?: unknown };
+    const cents = typeof snap.price_cents === 'number' ? snap.price_cents : null;
+    const days = typeof snap.trial_days === 'number' && snap.trial_days > 0 ? snap.trial_days : null;
+    const user = await deps.db.user.findFirst({
+      where: { email: { equals: row.guest_email, mode: 'insensitive' } },
+      select: { created_at: true },
+    });
+    return {
+      view: {
+        kind: 'paid',
+        buyer: user && user.created_at < row.created_at ? 'existing' : 'new',
+        email: row.guest_email,
+        coach: row.package.coach.name.trim() || 'Your Coach',
+        packageName: row.package.name,
+        amountCents: null,
+        trial:
+          cents !== null && days !== null
+            ? {
+                firstChargeCents: cents,
+                firstChargeAt: new Date(row.created_at.getTime() + days * DAY_MS).toISOString(),
+              }
+            : { firstChargeCents: null, firstChargeAt: null },
+      },
+      refresh: null,
+    };
+  }
+  if (status === 'processing') {
+    const n = Number.parseInt(str(q.n), 10);
+    const done = Number.isFinite(n) && n >= 0 ? Math.min(n, PAY_DONE_MAX_CHECKS) : 0;
+    const again = done < PAY_DONE_MAX_CHECKS;
+    const at = (k: number) =>
+      `/p/${encodeURIComponent(token)}/done?${new URLSearchParams({
+        setup_intent: siId,
+        setup_intent_client_secret: secret,
+        ...(landing ? { lp: landing } : {}),
+        n: String(k),
+      }).toString()}`;
+    return {
+      view: { kind: 'confirming', email: row.guest_email, again, checkUrl: at(0) },
+      refresh: again ? at(done + 1) : null,
+    };
+  }
+  const spent = { token, tag: payKeyTag(row.idempotency_key) };
+  if (status === 'canceled') return { view: { kind: 'cancelled', payUrl, spent }, refresh: null };
+  const err = (si as { last_setup_error?: { message?: unknown } | null }).last_setup_error;
   const reason = typeof err?.message === 'string' && err.message.trim() ? err.message.trim().slice(0, 300) : null;
   return { view: { kind: 'failed', reason, payUrl, spent }, refresh: null };
 }

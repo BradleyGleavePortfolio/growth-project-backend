@@ -195,16 +195,17 @@ describe('PR-14 — Guest storefront recurring + landing_page_id propagation', (
         idempotency_key: IDEMP_KEY,
       });
       stripe.createCustomer.mockResolvedValueOnce({ id: 'synthetic-customer' });
+      // GC-3 — Stripe's reply to a trial create (trial_period_days): the
+      // subscription is trialing, its $0 first invoice has no payment, and
+      // the card is collected through the expanded pending_setup_intent.
       stripe.createSubscription.mockResolvedValueOnce({
         id: 'synthetic-subscription',
-        status: 'incomplete',
-        latest_invoice: {
-          id: 'synthetic-invoice',
-          payment_intent: {
-            id: 'synthetic-current-payment',
-            client_secret: 'synthetic-client-secret',
-            status: 'requires_payment_method',
-          },
+        status: 'trialing',
+        latest_invoice: { id: 'synthetic-invoice', amount_due: 0, payment_intent: null },
+        pending_setup_intent: {
+          id: 'seti_synthetictrial01',
+          client_secret: 'seti_synthetictrial01_secret_x',
+          status: 'requires_payment_method',
         },
       });
       prisma.guestCheckout.update.mockResolvedValueOnce({});
@@ -215,6 +216,83 @@ describe('PR-14 — Guest storefront recurring + landing_page_id propagation', (
       expect(stripe.createSubscription).toHaveBeenCalledWith(
         expect.objectContaining({ trialPeriodDays: 7 }),
       );
+    });
+
+    it('GC-3: a web trial returns its SetupIntent (card saved, nothing charged) and the row holds that SetupIntent', async () => {
+      prisma.coachPackage.findUnique.mockResolvedValueOnce(
+        makePkg({ billing_type: 'recurring', amount_cents: 14900, interval: 'month', interval_count: 1, trial_days: 7 }),
+      );
+      prisma.guestCheckout.findUnique.mockResolvedValueOnce(null);
+      prisma.guestCheckout.create.mockResolvedValueOnce({ id: 'gc-trial-1', idempotency_key: IDEMP_KEY });
+      stripe.createCustomer.mockResolvedValueOnce({ id: 'cus_trial' });
+      stripe.createSubscription.mockResolvedValueOnce({
+        id: 'sub_trial',
+        status: 'trialing',
+        latest_invoice: { id: 'in_trial', amount_due: 0, payment_intent: null },
+        pending_setup_intent: { id: 'seti_trialone01', client_secret: 'seti_trialone01_secret_y', status: 'requires_payment_method' },
+      });
+      prisma.guestCheckout.update.mockResolvedValueOnce({});
+
+      const result = await service.createIntent('tok123', baseDto);
+
+      expect(result).toMatchObject({
+        intent: 'setup',
+        client_secret: 'seti_trialone01_secret_y',
+        payment_intent_id: 'seti_trialone01',
+        subscription_id: 'sub_trial',
+      });
+      expect(stripe.createSubscription.mock.calls[0][0].trialPeriodDays).toBe(7);
+      expect(stripe.createPaymentIntent).not.toHaveBeenCalled();
+      const snap = prisma.guestCheckout.create.mock.calls[0][0].data.package_snapshot;
+      expect(snap.trial_days).toBe(7);
+      const patch = prisma.guestCheckout.update.mock.calls[0][0].data;
+      expect(patch).toMatchObject({ stripe_payment_intent_id: 'seti_trialone01', stripe_subscription_id: 'sub_trial' });
+    });
+
+    it('GC-3: a subscription Stripe did not put on trial is cancelled and refused (never charged on the trial day)', async () => {
+      prisma.coachPackage.findUnique.mockResolvedValueOnce(
+        makePkg({ billing_type: 'recurring', amount_cents: 14900, interval: 'month', interval_count: 1, trial_days: 7 }),
+      );
+      prisma.guestCheckout.findUnique.mockResolvedValueOnce(null);
+      prisma.guestCheckout.create.mockResolvedValueOnce({ id: 'gc-trial-2', idempotency_key: IDEMP_KEY });
+      stripe.createCustomer.mockResolvedValueOnce({ id: 'cus_trial' });
+      stripe.cancelSubscription = jest.fn().mockResolvedValue({});
+      stripe.createSubscription.mockResolvedValueOnce({
+        id: 'sub_not_trial',
+        status: 'incomplete',
+        latest_invoice: { id: 'in_x', payment_intent: { id: 'pi_x', client_secret: 'pi_x_secret', status: 'requires_payment_method' } },
+      });
+
+      await expect(service.createIntent('tok123', baseDto)).rejects.toThrow();
+      expect(stripe.cancelSubscription).toHaveBeenCalledWith('sub_not_trial');
+    });
+
+    it('GC-3: a combo package keeps its first charge today even with trial_days set (no trial for combos)', async () => {
+      prisma.coachPackage.findUnique.mockResolvedValueOnce(
+        makePkg({
+          billing_type: 'one_time',
+          amount_cents: 19900,
+          recurring_amount_cents: 4900,
+          recurring_interval: 'month',
+          recurring_interval_count: 1,
+          trial_days: 7,
+        }),
+      );
+      prisma.guestCheckout.findUnique.mockResolvedValueOnce(null);
+      prisma.guestCheckout.create.mockResolvedValueOnce({ id: 'gc-combo-t', idempotency_key: IDEMP_KEY });
+      stripe.createCustomer.mockResolvedValueOnce({ id: 'cus_combo' });
+      stripe.createSubscription.mockResolvedValueOnce({
+        id: 'sub_combo',
+        status: 'incomplete',
+        latest_invoice: { id: 'in_combo', payment_intent: { id: 'pi_combo', client_secret: 'pi_combo_secret', status: 'requires_payment_method' } },
+      });
+      prisma.guestCheckout.update.mockResolvedValueOnce({});
+
+      const result = await service.createIntent('tok123', baseDto);
+
+      expect(result.intent).toBe('payment');
+      expect(result.payment_intent_id).toBe('pi_combo');
+      expect(stripe.createSubscription.mock.calls[0][0].trialPeriodDays).toBeUndefined();
     });
 
     it('pure recurring: creates Customer + Subscription + returns the latest_invoice PI client_secret', async () => {

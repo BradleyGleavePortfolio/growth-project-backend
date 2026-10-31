@@ -236,7 +236,9 @@ describe('GC-1 pay page GET /p/:token', () => {
         ['$149.00 every 3 months, plus $100.00 once', 'April 30, 2026', 'You pay $249.00 today: $100.00 once plus your first 3 months at $149.00.', 'Subscribe, pay $249.00 today'],
         [],
       ],
-      ['trial (#GC-TRIAL interim: paid today)', { trial_days: 14 }, 'subscription', 14900, ['You pay $149.00 today', 'Subscribe for $149.00 a month'], ['trial', 'Free']],
+      // GC-3 (#GC-TRIAL op 1): the trial runs on the web page — card saved
+      // (Elements setup mode), nothing due today, PF-W5 / PF-W6.
+      ['trial (GC-3: nothing charged today)', { trial_days: 14 }, 'setup', 0, ['Nothing is charged today. Your first charge of $149.00 is on Feb 14.', 'Start free trial', 'February 14, 2026'], ['You pay', 'Subscribe for']],
     ])('%s', async (_label, over, mode, amount, shown, hidden) => {
       rows[A] = pkg(A, over);
       const res = await get(`/p/${A}`);
@@ -299,6 +301,8 @@ describe('GC-1 pay page GET /p/:token', () => {
     const keys: string[] = [];
     const store = new Map<string, string>();
     const mounted: string[] = [];
+    const elementsOpts: Record<string, unknown>[] = [];
+    const confirmed: string[] = [];
     const checkout = [...(answers.checkout ?? [])];
     const confirm = [...(answers.confirm ?? [])];
     const reply = (status: number, body: unknown) => ({ ok: status < 400, status, json: async () => body });
@@ -327,8 +331,9 @@ describe('GC-1 pay page GET /p/:token', () => {
     };
     if (!answers.noStripe) {
       sandbox.Stripe = () => ({
-        elements: () => ({ create: (type: string) => ({ on: (t: string, h: never) => (on[`${type}:${t}`] = h), mount: () => mounted.push(type) }), submit: async () => ({}) }),
-        confirmPayment: async () => ((confirm.shift() ?? true) ? {} : { error: { message: 'Your card was declined.' } }),
+        elements: (o: Record<string, unknown>) => (elementsOpts.push(o), { create: (type: string) => ({ on: (t: string, h: never) => (on[`${type}:${t}`] = h), mount: () => mounted.push(type) }), submit: async () => ({}) }),
+        confirmPayment: async () => (confirmed.push('payment'), (confirm.shift() ?? true) ? {} : { error: { message: 'Your card was declined.' } }),
+        confirmSetup: async () => (confirmed.push('setup'), (confirm.shift() ?? true) ? {} : { error: { message: 'Your card was declined.' } }),
       });
     }
     sandbox.window = sandbox;
@@ -364,8 +369,26 @@ describe('GC-1 pay page GET /p/:token', () => {
     };
     const shown = () => ['f1', 'f2', 's3', 'pay'].filter((id) => !nodes[id].hidden);
     const checkouts = () => bodies.filter((b) => b.route === 'checkout');
-    return { tap, bodies, checkouts, calls, keys, nodes, kinds, mounted, shown, on, msg: () => nodes.msg.textContent };
+    return { tap, bodies, checkouts, calls, keys, nodes, kinds, mounted, shown, on, elementsOpts, confirmed, msg: () => nodes.msg.textContent };
   }
+
+  // GC-3 (#GC-TRIAL op 1): a trial package saves the card — Elements in setup
+  // mode with no amount, stripe.confirmSetup on the SetupIntent's secret.
+  it('GC-3: a trial package mounts Elements in setup mode and confirms a SetupIntent; a paid one still confirms a payment', async () => {
+    rows[A] = pkg(A, { trial_days: 7 });
+    const trial = await bootPage({ account: 'new', checkout: ['pay'], confirm: [true] });
+    await trial.tap.email();
+    await trial.tap.card();
+    expect(trial.elementsOpts[0]).toMatchObject({ mode: 'setup', currency: 'usd' });
+    expect(trial.elementsOpts[0]).not.toHaveProperty('amount');
+    expect(trial.confirmed).toEqual(['setup']);
+    rows[A] = pkg(A, {});
+    const paid = await bootPage({ account: 'new', checkout: ['pay'], confirm: [true] });
+    await paid.tap.email();
+    await paid.tap.card();
+    expect(paid.elementsOpts[0]).toMatchObject({ mode: 'subscription', amount: 14900 });
+    expect(paid.confirmed).toEqual(['payment']);
+  });
 
   describe('paying again after a failed attempt', () => {
     it.each([
