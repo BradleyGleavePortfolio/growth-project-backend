@@ -507,9 +507,11 @@ describe('GC-3 — web page trials: card saved, nothing charged that day, one tr
     expect(world.state.guestCheckout[0].status).toBe('conversion_failed_retryable');
   });
 
-  it.each([3, 7])(
-    'LS-1193R2 S4: a real %i-day web conversion sends the dated amount once without a repair webhook',
-    async (days) => {
+  it.each([3, 7].flatMap((days) =>
+    ['none', 'invoice.paid', 'customer.subscription.created'].map((path) => ({ days, path })),
+  ))(
+    'LS-1193R2 S4: a real $days-day web conversion keeps live state and sends the dated amount once ($path)',
+    async ({ days, path }) => {
       jest.useFakeTimers({
         now: new Date('2026-10-30T17:00:00Z'),
         doNotFake: ['setImmediate', 'nextTick', 'setTimeout', 'clearTimeout'],
@@ -519,8 +521,17 @@ describe('GC-3 — web page trials: card saved, nothing charged that day, one tr
         world.pkg.trial_days = days;
         const gc = world.addCheckout({ package_snapshot: { price_cents: 14900, trial_days: days } });
         const { service, stripe } = build(world);
+        const liveSub = {
+          id: gc.stripe_subscription_id,
+          status: 'trialing',
+          trial_start: Math.floor(Date.now() / 1000),
+          trial_end: Math.floor((Date.now() + days * DAY) / 1000),
+          current_period_end: Math.floor((Date.now() + days * DAY) / 1000),
+          default_payment_method: 'pm_saved',
+          cancel_at_period_end: false,
+        };
         stripe.retrieveSubscription.mockImplementation(async (id: string) => ({
-          id, status: 'trialing', trial_end: Math.floor((Date.now() + days * DAY) / 1000),
+          ...liveSub, id,
         }));
         await service.handlePaymentSucceeded(gc.stripe_payment_intent_id);
         const [purchase] = world.state.clientPurchase;
@@ -554,8 +565,27 @@ describe('GC-3 — web page trials: card saved, nothing charged that day, one tr
         };
         const email = { send: jest.fn(async () => ({ status: 'sent' })) };
         const notice = new TrialNoticeService(world.db, cast(notifications), cast(email));
+        if (path !== 'none') {
+          const handler = new CheckoutWebhookHandlerService(
+            world.db, cast(stripe), undefined, undefined, undefined, undefined, undefined,
+            undefined, undefined, new TrialUsageService(world.db), notice,
+          );
+          const result = await handler.handle({
+            id: `synthetic-r2-${path}`,
+            type: path,
+            data: { object: path === 'invoice.paid' ? {
+              id: 'synthetic-zero-invoice', subscription: liveSub.id,
+              amount_paid: 0, billing_reason: 'subscription_create',
+              period_end: liveSub.trial_end,
+            } : liveSub },
+          });
+          expect(result.claimed).toBe(true);
+          expect(await world.db.clientPurchase.findUnique({ where: { id: purchase.id } }))
+            .toMatchObject({ status: 'trialing', entitlement_active: true, card_on_file: true });
+          if (result.deferredTrialNoticeId) await notice.deliver(result.deferredTrialNoticeId);
+        }
         const end = purchase.trial_ends_at as Date;
-        jest.setSystemTime(new Date(end.getTime() - 3 * DAY));
+        jest.setSystemTime(new Date(Math.max(end.getTime() - 3 * DAY, Date.now() + 3 * 60 * 1000)));
         await notice.sweep(new Date());
         await notice.sweep(new Date());
         expect({
