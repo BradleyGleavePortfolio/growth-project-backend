@@ -25,7 +25,10 @@ describe('LS-1195 B2: recover every renewal accrued during an account hold', () 
 
   it('a weekly plan held across its next renewal collects both unpaid invoices before retiring the hold', async () => {
     const w = buildWorld({ stripeNow: RESTRICTED });
-    w.fake.update('coachPackage', { id: 'pkg-1' }, { interval: 'week' });
+    await w.prisma.coachPackage.update({
+      where: { id: 'pkg-1' },
+      data: { interval: 'week' },
+    });
     await w.fail();
 
     const [older] = await w.stripe.listOpenInvoices();

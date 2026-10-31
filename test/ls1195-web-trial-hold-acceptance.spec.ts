@@ -20,7 +20,7 @@ describe('LS-1195 R8: first real payment after a web trial', () => {
 
   it('GC3 trialing row and SetupIntent marker enter the hold through the outer-tx webhook path', async () => {
     const w = buildWorld({ stripeNow: RESTRICTED });
-    w.fake.update('clientPurchase', { id: 'purchase-1' }, {
+    await w.prisma.clientPurchase.update({ where: { id: 'purchase-1' }, data: {
       status: 'trialing',
       entitlement_active: true,
       stripe_payment_intent_id: 'setup-marker',
@@ -28,7 +28,7 @@ describe('LS-1195 R8: first real payment after a web trial', () => {
       trial_started_at: at(-7 * DAY),
       trial_ends_at: T0,
       card_on_file: true,
-    });
+    } });
     const event = fixture('invoice.payment_failed', { billing_reason: 'subscription_cycle', amount_due: 15000 });
     const prefetch = await w.handler.prefetchForOuterTx(event);
     const reads = w.stripe.retrieveAccount.mock.calls.length;
@@ -53,11 +53,11 @@ describe('LS-1195 R8: first real payment after a web trial', () => {
 
   it('the trial-day subscription_create invoice never becomes a failed renewal', async () => {
     const w = buildWorld({ stripeNow: RESTRICTED });
-    w.fake.update('clientPurchase', { id: 'purchase-1' }, {
+    await w.prisma.clientPurchase.update({ where: { id: 'purchase-1' }, data: {
       status: 'trialing',
       trial_started_at: T0,
       entitlement_active: true,
-    });
+    } });
     const event = fixture('invoice.payment_failed', { billing_reason: 'subscription_create', amount_due: 0 });
     const prefetch = await w.handler.prefetchForOuterTx(event);
     await w.handler.handle(event, stub(w.prisma), prefetch);
