@@ -236,6 +236,17 @@ function pushWorld() {
       findFirst: jest.fn(async () => null),
       create: jest.fn(async (a: { data: object }) => ({ id: 'n-push', ...a.data })),
     },
+    // FR-1192R3 (ruling R4): a money push reads its dunning cycle again when it goes, and a cycle it cannot read
+    // waits; this world's cycle ('ds-pay', key '1': entered at epoch + 1 ms) is live.
+    dunningState: {
+      findUnique: jest.fn(async () => ({
+        status: 'active',
+        locked_out_at: null,
+        last_failure_reason: null,
+        client_canceled_at: null,
+        entered_at: new Date(1),
+      })),
+    },
   };
   class Clocked extends PushDeliveryService {
     protected now(): Date {
