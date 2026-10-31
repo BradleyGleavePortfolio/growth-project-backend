@@ -76,7 +76,7 @@ function makeDb() {
       .filter((x) => x.routine_id === r.id)
       .sort((a, b) => Number(a.order_index) - Number(b.order_index)),
   });
-  const db = {
+  const tables = {
     workoutRoutine: {
       findMany: jest.fn(async ({ where }: { where: Where }) =>
         routines.filter((r) => r.creator_id === where.OR?.[0]?.creator_id || r.is_template === true).map(full),
@@ -115,7 +115,11 @@ function makeDb() {
         return ids.filter((id) => library.has(id)).map((id) => ({ id }));
       }),
     },
-    $transaction: jest.fn(async (cb: (tx: unknown) => unknown) => cb(db)),
+  };
+  // The interactive transaction gets the same tables (one in-memory store).
+  const db = {
+    ...tables,
+    $transaction: jest.fn(async (cb: (tx: typeof tables) => unknown) => cb(tables)),
   };
   return { db, routines, exercises, lookups };
 }
