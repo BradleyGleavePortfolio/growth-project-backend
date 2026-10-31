@@ -23,14 +23,19 @@ describe('LS-1195 B1: recover an undelivered coach account-hold notice', () => {
     }
   });
 
-  it.each(['push', 'email'] as const)(
+  it.each(['inapp', 'push', 'email'] as const)(
     'retries a failed %s without duplicating the successful transport',
     async (failedTransport) => {
       const w = buildWorld({ saved: READY, stripeNow: RESTRICTED });
-      const coachAlert = jest.fn(async () => ({ inapp: 'sent', push: 'sent' }));
+      const coachAlert = jest.fn(async (
+        _payload: unknown,
+        _only?: { inapp?: boolean; push?: boolean },
+      ) => ({ inapp: 'sent', push: 'sent' }));
       Reflect.set(w.hold, 'coachAlert', { emit: coachAlert });
       if (failedTransport === 'push') {
         coachAlert.mockResolvedValueOnce({ inapp: 'sent', push: 'failed' });
+      } else if (failedTransport === 'inapp') {
+        coachAlert.mockResolvedValueOnce({ inapp: 'failed', push: 'sent' });
       } else {
         w.email.mockResolvedValueOnce({ status: 'failed' });
       }
@@ -47,9 +52,12 @@ describe('LS-1195 B1: recover an undelivered coach account-hold notice', () => {
       await w.hold.runSweep();
       await flush();
 
-      if (failedTransport === 'push') {
+      if (failedTransport !== 'email') {
         expect(coachAlert).toHaveBeenCalledTimes(2);
         expect(w.email).toHaveBeenCalledTimes(1);
+        expect(coachAlert.mock.calls[1]?.[1]).toEqual(expect.objectContaining(
+          failedTransport === 'push' ? { inapp: false } : { push: false },
+        ));
       } else {
         expect(w.email).toHaveBeenCalledTimes(2);
         expect(coachAlert).toHaveBeenCalledTimes(1);
