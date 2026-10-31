@@ -158,9 +158,9 @@ export class LostWebhookReconcileService {
         siStatus = (await this.stripe.retrieveSetupIntent(paymentIntentId)).status;
       } catch (err) {
         this.logger.warn(
-          `lost-webhook-reconcile: Stripe retrieve failed for ${paymentIntentId}: ${
-            err instanceof Error ? err.message : 'unknown'
-          }`,
+          `lost-webhook-reconcile: Stripe SetupIntent retrieve failed for ${paymentIntentId} (tag=${
+            err instanceof Error ? err.name : 'unknown'
+          })`,
         );
         return false;
       }

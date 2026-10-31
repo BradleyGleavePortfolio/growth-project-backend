@@ -887,7 +887,7 @@ export class GuestCheckoutService {
     } catch (err) {
       if (!this.isUniqueViolation(err)) {
         this.logger.warn(
-          `mintRecurringForGuest: sentinel patch failed for ${sentinelId} (will retry via outer patch / reconciler): ${(err as Error).message}`,
+          `mintRecurringForGuest: sentinel patch failed for ${sentinelId} (will retry via outer patch / reconciler; tag=${safeErrorTag(err)})`,
         );
       }
     }
