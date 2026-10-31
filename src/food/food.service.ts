@@ -207,9 +207,12 @@ function matchOf(item: FoodResult, rawQuery: string): { score: number; whole: bo
  * source tag (usda:<fdcId>, off:<barcode>), so it still meets its upstream row.
  */
 function identityOf(item: FoodResult): string {
+  // FR-1198 (LS-1198 B2): a stored row with no upstream source (a custom or
+  // seeded food) is its own food, so its id is its identity; two custom foods
+  // with one name and calories but other macros both stay.
   const source = /^(usda|off)_/.test(item.id)
     ? item.id.replace('_', ':')
-    : (item.tags ?? []).find((t) => /^(usda|off):/.test(t)) ?? '';
+    : (item.tags ?? []).find((t) => /^(usda|off):/.test(t)) ?? `id:${item.id}`;
   const norm = (v: string | null | undefined) => (v ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
   return [norm(item.name), norm(item.brand_or_restaurant), Math.round(Number(item.calories)), source].join('|');
 }
