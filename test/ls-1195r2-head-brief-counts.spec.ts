@@ -15,7 +15,7 @@ import {
 } from './_fixtures/coach-brief-mocks';
 import { grantAllEgress } from './ai-egress/ai-egress.fakes';
 
-describe('LS-1195R2 head-coach waiting counts reach fresh fallback and AI briefs', () => {
+describe('LS-1195R2 head-coach waiting counts (his own Stripe account, R-1195-C1) reach fresh fallback and AI briefs', () => {
   it.each([0, 1, 2, 101])('keeps %i held renewals separate from failed payments', async (count) => {
     const prisma = makeMockPrisma();
     prisma.user.findUnique.mockResolvedValue({ name: 'Alex Review' });
@@ -64,6 +64,9 @@ describe('LS-1195R2 head-coach waiting counts reach fresh fallback and AI briefs
     expect(sqlText).toContain('cp."coach_user_id" = ANY');
     expect(heldQuery!.values).toContainEqual(['team-buyer']);
     expect(heldQuery!.values).toContainEqual(['head-review', 'seated-sub']);
+    // FR-1195R3 (ruling R-1195-C1): the waiting count is his own Stripe account's only.
+    expect(sqlText).toContain('"client_canceled_at" IS NULL AND cp."coach_user_id" = ?');
+    expect(heldQuery!.values).toContain('head-review');
 
     const base = buildFallbackNarrative({ ...context, coach_account_waiting: undefined });
     const ai = makeMockAnthropic(base);
