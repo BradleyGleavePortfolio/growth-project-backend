@@ -23,7 +23,7 @@ describe('LS-1195 R8: first real payment after a web trial', () => {
     await w.prisma.clientPurchase.update({ where: { id: 'purchase-1' }, data: {
       status: 'trialing',
       entitlement_active: true,
-      stripe_payment_intent_id: 'setup-marker',
+      stripe_payment_intent_id: ['seti', 'web-trial-marker'].join('_'),
       trial_days: 7,
       trial_started_at: at(-7 * DAY),
       trial_ends_at: T0,
