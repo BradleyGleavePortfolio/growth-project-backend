@@ -78,7 +78,7 @@ export class CoachAccountHoldService {
 
   /**
    * True: the coach's account can take payments. False: it can't. Null: no
-   * fresh answer from Stripe (unsure, which waits, R1). Never throws.
+   * fresh answer from Stripe (unsure). Never throws.
    */
   async freshCoachAccountReady(coachUserId: string): Promise<boolean | null> {
     if (!this.connect) return null;
@@ -110,10 +110,12 @@ export class CoachAccountHoldService {
   ): Promise<boolean> {
     if (ready === undefined || !this.enabled()) return false;
     if (!DunningV2Service.isEligiblePurchase(purchase)) return false;
-    if (ready === true) {
-      // R2/R5: a failure on a ready account is the card. A renewal that was
-      // waiting leaves the hold; the caller's Day 0 claim starts the ten
-      // days from now.
+    if (ready !== false) {
+      // R2/R5: a failure on a ready account is the card. Unsure (no fresh
+      // answer) is never a guess that the account is the cause: main's ten
+      // days, so nothing changes for a coach whose account can take
+      // payments. A renewal that was waiting leaves the hold; the caller's
+      // Day 0 claim starts the ten days from now.
       await this.prisma.dunningState.updateMany({
         where: { purchase_id: purchase.id, last_failure_reason: COACH_ACCOUNT_HOLD_REASON },
         data: { last_failure_reason: null },

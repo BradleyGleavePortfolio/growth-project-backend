@@ -100,11 +100,13 @@ describe('PF-7-BE: a renewal waiting on the coach Stripe account', () => {
       expect(w.fake.find('connectAccount', { id: 'ca-1' })?.charges_enabled).toBe(true);
     });
 
-    it('no fresh answer from Stripe (unsure): the renewal waits', async () => {
-      const w = buildWorld({ saved: READY, stripeNow: { ...READY, unreachable: true } });
+    it('no fresh answer from Stripe (unsure): main ten days, never a guess', async () => {
+      const w = buildWorld({ saved: RESTRICTED, stripeNow: { ...READY, unreachable: true } });
       await w.fail();
-      expect(w.state()?.last_failure_reason).toBe(COACH_ACCOUNT_HOLD_REASON);
-      expect(w.clientPushes()).toBe(0);
+      expect(w.state()?.last_failure_reason).not.toBe(COACH_ACCOUNT_HOLD_REASON);
+      expect((await w.v2.getClientStatus('client-1')).state).toBe('past_due');
+      expect(w.clientPushes()).toBe(1);
+      expect(holdNotices(w)).toHaveLength(0);
     });
 
     it('a card failure on a ready account is unchanged: Day 0 now, client told, no coach hold notice', async () => {
