@@ -6,11 +6,14 @@
 // has no ClientPurchase" is checked against the rolled-back state.
 import { GuestCheckoutService, GUEST_TRIAL_COPY, isGuestTrialIntent } from '../src/storefront/guest-checkout.service';
 import { TrialUsageService } from '../src/packages/trials/trial-usage.service';
+import { TrialNoticeService } from '../src/packages/trials/trial-notice.service';
+import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
 import { LostWebhookReconcileService } from '../src/storefront/lost-webhook-reconcile.service';
 import { readPayDone } from '../src/storefront/pay-done';
 import { BillingService } from '../src/billing/billing.service';
 import { renderPayDonePage } from '../src/storefront/pay-done.html';
 import { payPageTerms, PAY_PAGE_COPY } from '../src/storefront/pay-page.html';
+import { makeTable, makeTrialNoticeTable } from './utils/trial-fakes';
 
 type Row = Record<string, any>;
 // Test doubles stand in for injected services; `cast` keeps the doubles typed at the call site.
@@ -90,7 +93,7 @@ function makeDb() {
         if (state.clientPurchase.some((r) => r.idempotency_key === data.idempotency_key)) {
           throw Object.assign(new Error('unique'), { code: 'P2002' });
         }
-        const row = { id: id('purchase'), trial_started_at: null, ...data };
+        const row = { id: id('purchase'), trial_started_at: null, cancel_at_period_end: false, created_at: new Date(), ...data };
         state.clientPurchase.push(row);
         return row;
       },
@@ -266,7 +269,8 @@ describe('GC-3 — web page trials: card saved, nothing charged that day, one tr
     expect(purchase).toMatchObject({
       coach_user_id: COACH,
       stripe_subscription_id: 'sub_webtrial01',
-      status: 'active',
+      // FR-1193 (LS-1193 B2) — stored like an app trial.
+      status: 'trialing',
       entitlement_active: true,
       trial_days: 7,
       card_on_file: true,
@@ -354,6 +358,127 @@ describe('GC-3 — web page trials: card saved, nothing charged that day, one tr
     expect(stripe.cancelSubscription).toHaveBeenCalledWith('sub_webtrial01');
     expect(stripe.setSubscriptionDefaultPaymentMethod).not.toHaveBeenCalled();
   });
+
+  it('LS-1193-B1: a refused second trial never renders trial-started success', async () => {
+    const world = makeDb();
+    const { service, stripe } = build(world);
+    world.state.user.push({ id: 'user-app', supabase_id: 'sb-jane', email: 'jane@example.com', role: 'student', coach_id: COACH, created_at: new Date(0) });
+    world.state.packageTrialUsage.push({ id: 'usage-app', client_user_id: 'user-app', coach_user_id: COACH, package_id: PKG, purchase_id: 'purchase-app', status: 'started' });
+    const gc = world.addCheckout();
+
+    await service.handlePaymentSucceeded(gc.stripe_payment_intent_id);
+    expect(world.state.guestCheckout[0]).toMatchObject({
+      status: 'conversion_failed_terminal', last_error: 'trial_already_used',
+    });
+    expect(world.state.clientPurchase).toHaveLength(0);
+    expect(stripe.cancelSubscription).toHaveBeenCalledWith(gc.stripe_subscription_id);
+
+    const result = await readPayDone(
+      { db: world.db, stripe, storefrontBase: 'https://app.example.com' },
+      world.pkg.share_token,
+      { setup_intent: gc.stripe_payment_intent_id, setup_intent_client_secret: `${gc.stripe_payment_intent_id}_secret_z` },
+    );
+    const html = renderPayDonePage(result.view, 'nonce', 'https://apps.example.com/tgp');
+    expect(html).not.toContain('Your free trial has started');
+    expect(html).not.toContain('Your first charge of');
+    expect(html).not.toContain('The package shows under Your plans.');
+  });
+
+  it.each(['sweep', 'trial_will_end', 'subscription_update_then_notice', 'subscription_update_then_sweep'])(
+    'LS-1193-B2 S4: a converted web trial gets one push and email with amount and date via %s',
+    async (path) => {
+      jest.useFakeTimers({
+        now: new Date('2026-10-30T17:00:00Z'),
+        doNotFake: ['setImmediate', 'nextTick', 'setTimeout', 'clearTimeout'],
+      });
+      try {
+        const world = makeDb();
+        const gc = world.addCheckout();
+        const { service, stripe } = build(world);
+        await service.handlePaymentSucceeded(gc.stripe_payment_intent_id);
+        expect(world.state.guestCheckout[0].status).toBe('converted');
+        expect(stripe.setSubscriptionDefaultPaymentMethod).toHaveBeenCalledTimes(1);
+        const [purchase] = world.state.clientPurchase;
+        expect(purchase.trial_started_at).toBeInstanceOf(Date);
+        const end = purchase.trial_ends_at as Date;
+
+        // Read the actual conversion output with the existing query-aware
+        // table fake. No native purchase or trial-state correction is seeded.
+        const purchases = makeTable([['id']], () => ({}));
+        purchases.rows.push(cast(purchase));
+        world.db.clientPurchase.findMany = purchases.findMany;
+        world.db.clientPurchase.update = purchases.update;
+        world.db.clientPurchase.findUnique = async (args: any) => {
+          const row = await purchases.findUnique(args);
+          return row ? {
+            ...row, package: world.pkg, coach: world.pkg.coach,
+            client: { name: 'Jane', email: gc.guest_email },
+          } : null;
+        };
+        const notices = makeTrialNoticeTable();
+        world.db.packageTrialNotice = notices;
+        world.db.connectCustomer = { findUnique: async () => null };
+        world.db.notificationPreferences = {
+          findUnique: async () => ({ timezone: 'America/Los_Angeles', timezone_updated_at: new Date() }),
+        };
+        world.db.coachPackage = { findUnique: async () => world.pkg };
+        const notifications = {
+          createNotification: jest.fn(async () => ({ id: 'notice-row' })),
+          getPreferences: jest.fn(async () => ({ muted: false })),
+          pushToUser: jest.fn(async () => ({ delivered: true, code: 'delivered' })),
+        };
+        const email = { send: jest.fn(async () => ({ status: 'sent' })) };
+        const noticeSvc = new TrialNoticeService(world.db, cast(notifications), cast(email));
+        const handler = new CheckoutWebhookHandlerService(
+          world.db, stripe, undefined, undefined, undefined, undefined, undefined,
+          undefined, undefined, new TrialUsageService(world.db), noticeSvc,
+        );
+        const sub = {
+          id: gc.stripe_subscription_id, status: 'trialing',
+          trial_start: Math.floor(purchase.trial_started_at.getTime() / 1000),
+          trial_end: Math.floor(end.getTime() / 1000),
+          current_period_end: Math.floor(end.getTime() / 1000),
+          cancel_at_period_end: false, default_payment_method: 'pm_card_saved',
+          items: { data: [{ quantity: 1, price: { unit_amount: 14900, currency: 'usd' } }] },
+        };
+        // Positive control: the real native lifecycle handler can refine the
+        // web purchase. The two other paths must not require that extra event.
+        if (path.startsWith('subscription_update_then_')) {
+          await handler.handle({ id: 'event-update', type: 'customer.subscription.updated', data: { object: sub } });
+        }
+        jest.setSystemTime(new Date(end.getTime() - 3 * DAY));
+        if (path === 'sweep' || path === 'subscription_update_then_sweep') {
+          await noticeSvc.sweep(new Date());
+          await noticeSvc.sweep(new Date());
+        } else {
+          for (let n = 0; n < 2; n += 1) {
+            const result = await handler.handle({
+              id: `event-end-${n}`, type: 'customer.subscription.trial_will_end', data: { object: sub },
+            });
+            if (result.deferredTrialNoticeId) await handler.deliverTrialNotice(result.deferredTrialNoticeId);
+          }
+        }
+        expect({
+          push: notifications.pushToUser.mock.calls.length,
+          email: email.send.mock.calls.length,
+        }).toEqual({ push: 1, email: 1 });
+        expect(notifications.pushToUser.mock.calls[0]).toEqual(expect.arrayContaining([
+          purchase.client_user_id,
+          expect.stringContaining('Your free trial'),
+          'Your free trial ends on Nov 6. Your card will be charged $149 then. Cancel anytime before.',
+        ]));
+        expect(email.send).toHaveBeenCalledWith(expect.objectContaining({
+          to: gc.guest_email,
+          data: expect.objectContaining({
+            amount_display: '$149', trial_end_date: 'Nov 6', will_charge: true,
+          }),
+        }));
+        expect(notices.rows).toHaveLength(1);
+      } finally {
+        jest.useRealTimers();
+      }
+    },
+  );
 
   it('a legacy purchase whose trial started (no ledger row) also refuses — the in-app eligibility read', async () => {
     const world = makeDb();
@@ -539,7 +664,7 @@ describe('GC-3 — pay page and return page words', () => {
           findUnique: jest.fn(async () => ({
             guest_email: 'jane@example.com',
             created_at: created,
-            status: 'paid',
+            status: 'converted',
             expires_at: new Date(Date.now() + DAY),
             idempotency_key: 'idem-key-trial-1',
             package_snapshot: { price_cents: 14900, trial_days: 7 },
@@ -573,5 +698,121 @@ describe('GC-3 — pay page and return page words', () => {
       setup_intent_client_secret: 'seti_other00001_secret_z',
     });
     expect(wrong.view.kind).toBe('unknown');
+  });
+  // FR-1193 (LO-1193 B1, LS-1193 B1) — the saved card alone never says the
+  // trial started: the row's conversion result decides the view.
+  it.each([
+    ['paid', null, 'confirming'],
+    ['pending', null, 'confirming'],
+    ['conversion_failed_retryable', 'db:x', 'confirming'],
+    ['conversion_failed_terminal', 'trial_already_used', 'trialRefused'],
+    ['conversion_failed_terminal', 'buyer_has_other_coach', 'unknown'],
+    ['refunded', null, 'unknown'],
+  ])('FR-1193: a saved card with row %s (%s) shows %s, never the trial started', async (status, lastError, kind) => {
+    const deps: any = {
+      storefrontBase: 'https://app.example.com',
+      db: {
+        guestCheckout: {
+          findUnique: jest.fn(async () => ({
+            guest_email: 'jane@example.com',
+            created_at: new Date(Date.now() - 60 * 1000),
+            status,
+            last_error: lastError,
+            expires_at: new Date(Date.now() + DAY),
+            idempotency_key: 'idem-key-trial-2',
+            package_snapshot: { price_cents: 14900, trial_days: 7 },
+            package: { share_token: 'tok_trial_page_012345', name: 'Monthly Coaching', coach: { name: 'Alex' } },
+          })),
+        },
+        user: { findFirst: jest.fn(async () => null) },
+      },
+      stripe: {
+        retrievePaymentIntent: jest.fn(),
+        retrieveCharge: jest.fn(),
+        retrieveSetupIntent: jest.fn(async () => ({
+          id: 'seti_webtrial02', status: 'succeeded', client_secret: 'seti_webtrial02_secret_z',
+        })),
+      },
+    };
+    const res = await readPayDone(deps, 'tok_trial_page_012345', {
+      setup_intent: 'seti_webtrial02',
+      setup_intent_client_secret: 'seti_webtrial02_secret_z',
+      n: '1',
+    });
+    expect(res.view.kind).toBe(kind);
+    const html = renderPayDonePage(cast(res.view), 'nonce-gc3', 'https://apps.example.com/tgp');
+    expect(html).not.toContain('Your free trial has started');
+    expect(html).not.toContain('Your first charge of');
+    expect(html).not.toContain('The package shows under Your plans.');
+    if (kind === 'confirming') {
+      // The existing confirming view, checking this SetupIntent again.
+      expect(res.refresh).toContain('setup_intent=seti_webtrial02');
+      expect(res.refresh).toContain('n=2');
+    } else {
+      expect(res.refresh).toBeNull();
+    }
+    if (kind === 'trialRefused') {
+      expect(html).toContain(`<h1 class="state">${GUEST_TRIAL_COPY.refusedSubject('Alex')}</h1>`);
+      expect(html).toContain(
+        'You&#39;ve already had a free trial with Alex, so this one was not started and nothing was charged. Open the app to subscribe.',
+      );
+    }
+  });
+
+  // FR-1193 (LS-1193 B2) — a short web trial is already inside the notice
+  // window when it converts: the shared sweep reaches it at once, with no
+  // later subscription webhook.
+  it('FR-1193: a 3-day web trial gets its notice from the sweep right after conversion', async () => {
+    jest.useFakeTimers({
+      now: new Date('2026-10-30T17:00:00Z'),
+      doNotFake: ['setImmediate', 'nextTick', 'setTimeout', 'clearTimeout'],
+    });
+    try {
+      const world = makeDb();
+      world.pkg.trial_days = 3;
+      const gc = world.addCheckout({ package_snapshot: { price_cents: 14900, trial_days: 3 } });
+      const { service, stripe } = build(world);
+      stripe.retrieveSubscription.mockImplementation(async (subId: string) => ({
+        id: subId, status: 'trialing', trial_end: Math.floor((Date.now() + 3 * DAY) / 1000),
+      }));
+      await service.handlePaymentSucceeded(gc.stripe_payment_intent_id);
+      const [purchase] = world.state.clientPurchase;
+      expect(purchase).toMatchObject({ status: 'trialing', entitlement_active: true, card_on_file: true });
+
+      const purchases = makeTable([['id']], () => ({}));
+      purchases.rows.push(cast(purchase));
+      world.db.clientPurchase.findMany = purchases.findMany;
+      world.db.clientPurchase.update = purchases.update;
+      world.db.clientPurchase.findUnique = async (args: any) => {
+        const row = await purchases.findUnique(args);
+        return row ? { ...row, package: world.pkg, coach: world.pkg.coach, client: { name: 'Jane', email: gc.guest_email } } : null;
+      };
+      const notices = makeTrialNoticeTable();
+      world.db.packageTrialNotice = notices;
+      world.db.connectCustomer = { findUnique: async () => null };
+      world.db.notificationPreferences = {
+        findUnique: async () => ({ timezone: 'America/Los_Angeles', timezone_updated_at: new Date() }),
+      };
+      world.db.coachPackage = { findUnique: async () => world.pkg };
+      const notifications = {
+        createNotification: jest.fn(async () => ({ id: 'notice-row' })),
+        getPreferences: jest.fn(async () => ({ muted: false })),
+        pushToUser: jest.fn(async () => ({ delivered: true, code: 'delivered' })),
+      };
+      const email = { send: jest.fn(async () => ({ status: 'sent' })) };
+      const noticeSvc = new TrialNoticeService(world.db, cast(notifications), cast(email));
+      await noticeSvc.sweep(new Date());
+      await noticeSvc.sweep(new Date());
+      expect({ push: notifications.pushToUser.mock.calls.length, email: email.send.mock.calls.length }).toEqual({ push: 1, email: 1 });
+      expect(notifications.pushToUser.mock.calls[0]).toEqual(expect.arrayContaining([
+        'Your free trial ends on Nov 2. Your card will be charged $149 then. Cancel anytime before.',
+      ]));
+      expect(email.send).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ amount_display: '$149', trial_end_date: 'Nov 2', will_charge: true }),
+      }));
+      expect(notices.rows).toHaveLength(1);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
