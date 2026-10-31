@@ -303,6 +303,16 @@
     "nutrientName": "Protein",
     "unitName": "G",
     "value": 13.5
+   },
+   {
+    "nutrientName": "Energy (Atwater General Factors)",
+    "unitName": "KCAL",
+    "value": 382
+   },
+   {
+    "nutrientName": "Energy (Atwater Specific Factors)",
+    "unitName": "KCAL",
+    "value": 379
    }
   ]
  },
@@ -372,6 +382,11 @@
     "nutrientName": "Total lipid (fat)",
     "unitName": "G",
     "value": 6.85
+   },
+   {
+    "nutrientName": "Energy (Atwater General Factors)",
+    "unitName": "KCAL",
+    "value": 402
    },
    {
     "nutrientName": "Protein",
