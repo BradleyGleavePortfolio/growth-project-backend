@@ -1,4 +1,10 @@
 import { FoodService } from '../src/food/food.service';
+import type { PrismaService } from '../src/prisma.service';
+
+// Typed test double without a banned cast (repo pattern, see food-custom-privacy.spec.ts).
+function stub<T>(value: unknown): T {
+  return value as T;
+}
 
 // LO-FOOD B2 (audit of backend main 1f88b354): a USDA row with no package
 // serving (Survey/FNDDS, SR Legacy, Foundation) is sent as
@@ -26,10 +32,10 @@ describe('LO-FOOD B2 serving label', () => {
 
   beforeEach(() => {
     process.env.USDA_API_KEY = 'test-key';
-    fetchSpy = jest.spyOn(global, 'fetch' as any).mockImplementation(async (url: any) => ({
+    fetchSpy = jest.spyOn(global, 'fetch').mockImplementation(async (url: RequestInfo | URL) => stub<Response>({
       ok: true,
       json: async () => (String(url).includes('api.nal.usda.gov') ? { foods: [BIG_MAC] } : { products: [] }),
-    }) as any);
+    }));
   });
 
   afterEach(() => {
@@ -41,8 +47,8 @@ describe('LO-FOOD B2 serving label', () => {
     const prisma = {
       foodItem: { findMany: jest.fn().mockResolvedValue([]) },
       $queryRaw: jest.fn().mockResolvedValue([]),
-    } as any;
-    const service = new FoodService(prisma);
+    };
+    const service = new FoodService(stub<PrismaService>(prisma));
 
     const res = await service.search('big mac', 50, 'user-a');
     const row = res.results.find((r) => r.id === 'usda_2706916');

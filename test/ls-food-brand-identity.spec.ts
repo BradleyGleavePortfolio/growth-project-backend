@@ -1,6 +1,11 @@
 import { FoodService } from '../src/food/food.service';
 import type { PrismaService } from '../src/prisma.service';
 
+// Typed test double without a banned cast (repo pattern, see food-custom-privacy.spec.ts).
+function stub<T>(value: unknown): T {
+  return value as T;
+}
+
 const product = (id: string, brand: string) => ({
   id, name: 'Protein bar', brand, category: 'packaged',
   calories: brand === 'Alpha' ? 350 : 420, protein: 20, carbs: 30, fat: 10,
@@ -10,11 +15,11 @@ const product = (id: string, brand: string) => ({
 
 describe('LS-FOOD B5: branded catalog identity', () => {
   it.each(['OFF products', 'USDA and OFF products'])('keeps distinct branded %s with the same display name selectable', async (path) => {
-    const service = new FoodService({ $queryRaw: jest.fn().mockResolvedValue([]) } as unknown as PrismaService);
-    const upstream = service as unknown as {
+    const service = new FoodService(stub<PrismaService>({ $queryRaw: jest.fn().mockResolvedValue([]) }));
+    const upstream = stub<{
       searchUSDA: () => Promise<unknown[]>;
       searchOpenFoodFacts: () => Promise<unknown[]>;
-    };
+    }>(service);
     const alpha = product(path === 'OFF products' ? 'off_111' : 'usda_111', 'Alpha');
     const beta = product('off_222', 'Beta');
     jest.spyOn(upstream, 'searchUSDA').mockResolvedValue(path === 'OFF products' ? [] : [alpha]);

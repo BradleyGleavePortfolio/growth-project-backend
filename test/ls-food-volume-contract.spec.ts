@@ -3,6 +3,11 @@ import { join } from 'node:path';
 import { FoodService } from '../src/food/food.service';
 import type { PrismaService } from '../src/prisma.service';
 
+// Typed test double without a banned cast (repo pattern, see food-custom-privacy.spec.ts).
+function stub<T>(value: unknown): T {
+  return value as T;
+}
+
 // The real seed and the public food-read mapper must agree about a measured cup.
 // This is not a demand for precision from a food with no known household measure.
 const seeds = JSON.parse(readFileSync(join(__dirname, '../prisma/data/seed-foods.json'), 'utf8')) as Array<Record<string, unknown>>;
@@ -21,7 +26,7 @@ describe('LS-FOOD B1: known seeded household measures', () => {
       nutrient_basis: 'PER_100G', brand_or_restaurant: seed?.brand ?? null,
     };
     const prisma = { foodItem: { findUnique: jest.fn().mockResolvedValue(row) } };
-    const service = new FoodService(prisma as unknown as PrismaService);
+    const service = new FoodService(stub<PrismaService>(prisma));
     const result = await service.getById('seed-food', 'viewer');
     expect(result?.supports_volume_units).toBe(true);
     // The picker uses cup_grams / 100 as its PER_100G multiplier.

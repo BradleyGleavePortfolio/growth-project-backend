@@ -1,14 +1,19 @@
 import { FoodService } from '../src/food/food.service';
 import type { PrismaService } from '../src/prisma.service';
 
+// Typed test double without a banned cast (repo pattern, see food-custom-privacy.spec.ts).
+function stub<T>(value: unknown): T {
+  return value as T;
+}
+
 describe('LS-FOOD B4: retry after a catalog outage', () => {
   afterEach(() => jest.restoreAllMocks());
 
   it('does not remember a transient upstream failure as a day-long successful empty search', async () => {
     const prisma = { $queryRaw: jest.fn().mockResolvedValue([]) };
-    const service = new FoodService(prisma as unknown as PrismaService);
+    const service = new FoodService(stub<PrismaService>(prisma));
     // Isolate the OFF recovery path, without setting or reading a USDA credential.
-    jest.spyOn(service as unknown as { searchUSDA: () => Promise<unknown[]> }, 'searchUSDA').mockResolvedValue([]);
+    jest.spyOn(stub<{ searchUSDA: () => Promise<unknown[]> }>(service), 'searchUSDA').mockResolvedValue([]);
     const request = jest.spyOn(global, 'fetch')
       .mockResolvedValueOnce({ ok: false, status: 503 } as Response)
       .mockResolvedValue({
