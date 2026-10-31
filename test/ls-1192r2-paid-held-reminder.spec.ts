@@ -10,7 +10,16 @@ import { PushDeliveryService } from '../src/notifications/push/push-delivery.ser
 import { pushOutboxWorld } from './utils/push-outbox-fake';
 import { makeTable, stub } from './utils/trial-fakes';
 
-afterEach(() => jest.restoreAllMocks());
+beforeEach(() => {
+  jest.useFakeTimers({
+    now: new Date('2026-10-06T06:00:00Z'),
+    doNotFake: ['nextTick', 'setImmediate', 'setTimeout', 'setInterval', 'queueMicrotask'],
+  });
+});
+afterEach(() => {
+  jest.useRealTimers();
+  jest.restoreAllMocks();
+});
 
 async function overnightReminder() {
   const clock = { at: new Date('2026-10-06T06:00:00Z') }; // 23:00 LA
@@ -102,9 +111,12 @@ it('LS-1192R2 B1: an overnight payment reminder is not sent after the invoice is
   // The actual resolution method used by invoice.paid/card recovery commits
   // before the morning worker. No simultaneous timing or second device.
   r.clock.at = new Date('2026-10-06T07:00:00Z');
+  jest.setSystemTime(r.clock.at);
   expect(await r.dunning.recordResolution('review-purchase')).toMatchObject({ status: 'resolved' });
   expect(r.states.rows[0].status).toBe('resolved');
+  expect(r.states.rows[0].resolved_at).toEqual(r.clock.at);
   r.clock.at = r.morning;
+  jest.setSystemTime(r.clock.at);
   await r.delivery.drain();
   expect(r.sent).not.toHaveBeenCalled();
 });
@@ -112,6 +124,7 @@ it('LS-1192R2 B1: an overnight payment reminder is not sent after the invoice is
 it('LS-1192R2 B1 control: an unpaid overnight reminder still sends once despite Mute all', async () => {
   const r = await overnightReminder();
   r.clock.at = r.morning;
+  jest.setSystemTime(r.clock.at);
   await r.delivery.drain();
   await r.delivery.drain();
   expect(r.sent).toHaveBeenCalledTimes(1);
