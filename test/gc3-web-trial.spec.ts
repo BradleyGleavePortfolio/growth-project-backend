@@ -12,7 +12,7 @@ import { LostWebhookReconcileService } from '../src/storefront/lost-webhook-reco
 import { readPayDone } from '../src/storefront/pay-done';
 import { BillingService } from '../src/billing/billing.service';
 import { renderPayDonePage } from '../src/storefront/pay-done.html';
-import { payPageTerms, PAY_PAGE_COPY } from '../src/storefront/pay-page.html';
+import { payPageTerms, PAY_PAGE_COPY, esc } from '../src/storefront/pay-page.html';
 import { makeTable, makeTrialNoticeTable } from './utils/trial-fakes';
 
 type Row = Record<string, any>;
@@ -813,6 +813,227 @@ describe('GC-3 — pay page and return page words', () => {
       expect(notices.rows).toHaveLength(1);
     } finally {
       jest.useRealTimers();
+    }
+  });
+});
+
+// TRIAL-WORDS-BE (owner #189-D1 op 1) — while a web trial starts, the return
+// page says a free trial is starting, never a payment: TW1 + its line while
+// it checks again, TW2 + its line when that is slow. A paid checkout keeps
+// main's words in both states. The trial is told from the server record (the
+// guest row whose stored intent is the trial's SetupIntent, checked with
+// Stripe), never from the query string. The owner's exact words are written
+// out here so the test pins them.
+describe('TRIAL-WORDS-BE — the return page while a web trial starts', () => {
+  const TW1 = 'Starting your free trial';
+  const TW1_LINE = 'This usually takes a few seconds. This page checks again by itself.';
+  const TW2 = 'Your free trial is still starting';
+  const TW2_LINE = (email: string) =>
+    `Nothing is charged today, and you don't need to start it again. When it's ready, we'll email ${email}.`;
+  // Main's payment words, word for word (pay-done.html.ts PAY_DONE_COPY at d571dd61).
+  const PAID_H = 'Confirming your payment';
+  const PAID_SLOW_H = 'Your payment is still being confirmed';
+  const PAID_SLOW = (email: string) => `You don't need to pay again. When it goes through, we'll email ${email}.`;
+  const TOKEN = 'tok_trial_page_012345';
+  const STORE = 'https://apps.example.com/tgp';
+  const PAYMENT_WORDS = [PAID_H, PAID_SLOW_H, "You don&#39;t need to pay again", 'When it goes through'];
+
+  let sent: Array<{ to: string; subject: string; html: string }>;
+  const realFetch = global.fetch;
+  beforeEach(() => {
+    sent = [];
+    global.fetch = cast<typeof fetch>(
+      jest.fn(async (_url: unknown, init?: { body?: string }) => {
+        sent.push(JSON.parse(init?.body ?? '{}'));
+        return { ok: true, status: 200, json: async () => ({}) } as Response;
+      }),
+    );
+  });
+  afterAll(() => {
+    global.fetch = realFetch;
+  });
+
+  // A web trial whose card is saved (Stripe: SetupIntent succeeded) and whose
+  // conversion has not run yet: the real guest row, the real Stripe double.
+  function trialWorld(over: Row = {}) {
+    const world = makeDb();
+    const gc = world.addCheckout(over);
+    const { service, stripe } = build(world);
+    const deps: any = { db: world.db, stripe, storefrontBase: 'https://app.example.com' };
+    const done = async (extra: Record<string, string> = {}) => {
+      const res = await readPayDone(deps, TOKEN, {
+        setup_intent: gc.stripe_payment_intent_id,
+        setup_intent_client_secret: `${gc.stripe_payment_intent_id}_secret_z`,
+        ...extra,
+      });
+      return { ...res, html: renderPayDonePage(cast(res.view), 'nonce-tw', STORE) };
+    };
+    return { world, gc, service, stripe, done };
+  }
+
+  // A paid (PaymentIntent) checkout still processing at Stripe.
+  function paidDeps(email = 'jane@example.com') {
+    const pi = 'pi_3PaidAAAAAAAAAAAA';
+    const secret = `${pi}_secret_good1234`;
+    const deps: any = {
+      storefrontBase: 'https://app.example.com',
+      db: {
+        guestCheckout: {
+          findUnique: jest.fn(async ({ where }: any) =>
+            where.stripe_payment_intent_id === pi
+              ? {
+                  guest_email: email,
+                  created_at: new Date(Date.now() - 60 * 1000),
+                  status: 'pending',
+                  expires_at: new Date(Date.now() + DAY),
+                  idempotency_key: 'idem-key-paid-1',
+                  stripe_payment_intent_id: pi,
+                  package_snapshot: { price_cents: 14900, trial_days: null },
+                  package: { share_token: TOKEN, name: 'Monthly Coaching', coach: { name: 'Alex' } },
+                }
+              : null,
+          ),
+        },
+        user: { findFirst: jest.fn(async () => null) },
+        chargeDispute: { findFirst: jest.fn(async () => null) },
+      },
+      stripe: {
+        retrievePaymentIntent: jest.fn(async () => ({ id: pi, client_secret: secret, status: 'processing', amount: 14900 })),
+        retrieveCharge: jest.fn(),
+        retrieveSetupIntent: jest.fn(async () => {
+          throw new Error('a paid checkout has no SetupIntent');
+        }),
+      },
+    };
+    const done = async (extra: Record<string, string> = {}) => {
+      const res = await readPayDone(deps, TOKEN, { payment_intent: pi, payment_intent_client_secret: secret, ...extra });
+      return { ...res, html: renderPayDonePage(cast(res.view), 'nonce-tw', STORE) };
+    };
+    return { deps, pi, secret, done };
+  }
+
+  it('TRIAL-WORDS-BE first test: a web trial, while it starts, shows "Starting your free trial" and never "Confirming your payment"', async () => {
+    const { done } = trialWorld();
+    const page = await done({ n: '0' });
+    expect(page.view.kind).toBe('confirming');
+    expect(page.html).toContain(`<h1 class="state">${TW1}</h1><p>${TW1_LINE}</p>`);
+    for (const w of PAYMENT_WORDS) expect(page.html).not.toContain(w);
+    // It still checks again by itself (the Refresh header URL).
+    expect(page.refresh).toBe(
+      `/p/${TOKEN}/done?setup_intent=seti_webtrial01&setup_intent_client_secret=seti_webtrial01_secret_z&n=1`,
+    );
+  });
+
+  it('the card still saving at Stripe (SetupIntent processing) is a trial starting too', async () => {
+    const { stripe, done } = trialWorld();
+    stripe.retrieveSetupIntent.mockImplementation(async (siId: string) => ({
+      id: siId, status: 'processing', client_secret: `${siId}_secret_z`,
+    }));
+    const page = await done();
+    expect(page.html).toContain(`<h1 class="state">${TW1}</h1>`);
+    for (const w of PAYMENT_WORDS) expect(page.html).not.toContain(w);
+  });
+
+  it('the slow state of a trial shows TW2 and TW2-line with the address escaped, and Check again', async () => {
+    const email = `o'neil+<b>&co@example.com`;
+    const { done } = trialWorld({ guest_email: email });
+    const page = await done({ n: '5' });
+    expect(page.refresh).toBeNull();
+    expect(page.html).toContain(`<h1 class="state">${TW2}</h1><p>${esc(TW2_LINE(email))}</p>`);
+    expect(page.html).toContain('o&#39;neil+&lt;b&gt;&amp;co@example.com');
+    expect(page.html).not.toContain('<b>&co');
+    for (const w of PAYMENT_WORDS) expect(page.html).not.toContain(w);
+    expect(page.html).toContain(
+      `<a class="link" href="/p/${TOKEN}/done?setup_intent=seti_webtrial01&amp;setup_intent_client_secret=seti_webtrial01_secret_z&amp;n=0">Check again</a>`,
+    );
+  });
+
+  it("the trial page's Check again works in both states: it checks the same SetupIntent again and shows the trial started once converted", async () => {
+    const { world, gc, service, done } = trialWorld();
+    const slow = await done({ n: '5' });
+    const href = /<a class="link" href="([^"]+)"/.exec(slow.html)?.[1]?.replace(/&amp;/g, '&');
+    expect(href).toBeDefined();
+    const q = Object.fromEntries(new URL(href!, 'https://app.example.com').searchParams);
+    // Check again, still not converted: back to TW1, checking again by itself.
+    const again = await done(q);
+    expect(again.html).toContain(`<h1 class="state">${TW1}</h1>`);
+    expect(again.refresh).toContain('n=1');
+    // Converted: Check again shows the trial started (main's trial view).
+    await service.handlePaymentSucceeded(gc.stripe_payment_intent_id);
+    expect(world.state.guestCheckout[0].status).toBe('converted');
+    const started = await done(q);
+    expect(started.html).toContain('Your free trial has started');
+    expect(started.html).not.toContain(TW2);
+  });
+
+  it('R2: the email TW2-line promises goes out when a slow trial finishes starting (the welcome email), to that address', async () => {
+    const { world, gc, service, done } = trialWorld();
+    const slow = await done({ n: '5' });
+    expect(slow.html).toContain(esc(TW2_LINE('jane@example.com')));
+    expect(sent).toHaveLength(0);
+    await service.handlePaymentSucceeded(gc.stripe_payment_intent_id);
+    expect(world.state.guestCheckout[0].status).toBe('converted');
+    // sendWelcomeEmail is fire-and-forget after the conversion commits.
+    await new Promise((r) => setImmediate(r));
+    const welcome = sent.filter((m) => m.to === 'jane@example.com' && m.subject !== GUEST_TRIAL_COPY.refusedSubject('Alex'));
+    expect(welcome).toHaveLength(1);
+    expect(welcome[0].subject).toBe('Confirm your email to start with Alex on TGP Fitness');
+    expect(welcome[0].html).toContain('Monthly Coaching');
+  });
+
+  it("a paid checkout's confirming and slow states keep main's words, word for word", async () => {
+    const email = `o'neil+<b>&co@example.com`;
+    const { pi, secret, done } = paidDeps(email);
+    const first = await done({ n: '0' });
+    expect(first.view.kind).toBe('confirming');
+    expect(first.html).toContain(
+      `<section id="confirming" aria-live="polite"><span class="wait" aria-hidden="true"></span><h1 class="state">${PAID_H}</h1><p>${TW1_LINE}</p></section>`,
+    );
+    expect(first.refresh).toBe(`/p/${TOKEN}/done?payment_intent=${pi}&payment_intent_client_secret=${secret}&n=1`);
+    const slow = await done({ n: '5' });
+    expect(slow.html).toContain(
+      `<section id="slow"><h1 class="state">${PAID_SLOW_H}</h1><p>${esc(PAID_SLOW(email))}</p><a class="link" href="/p/${TOKEN}/done?payment_intent=${pi}&amp;payment_intent_client_secret=${secret}&amp;n=0">Check again</a></section>`,
+    );
+    for (const page of [first, slow]) {
+      expect(page.html).not.toContain(TW1);
+      expect(page.html).not.toContain(TW2);
+      expect(page.html).not.toContain('Nothing is charged today');
+    }
+  });
+
+  it('a trial mark in the query string changes nothing: a paid checkout never shows the trial words', async () => {
+    const { pi, secret, done } = paidDeps();
+    const extras: Array<Record<string, string>> = [
+      { trial: '1' },
+      { trial: 'true', mode: 'setup', redirect_status: 'succeeded' },
+      { trial: '1', n: '5' },
+    ];
+    for (const extra of extras) {
+      const page = await done(extra);
+      expect(page.view.kind).toBe('confirming');
+      expect(page.html).not.toContain(TW1);
+      expect(page.html).not.toContain(TW2);
+      expect(page.html).toContain(extra.n === '5' ? PAID_SLOW_H : PAID_H);
+    }
+    // A SetupIntent id pasted onto a paid checkout's return finds no trial row: nothing is shown.
+    const { deps } = paidDeps();
+    const forged = await readPayDone(deps, TOKEN, {
+      payment_intent: pi,
+      payment_intent_client_secret: secret,
+      setup_intent: 'seti_forged0000001',
+      setup_intent_client_secret: 'seti_forged0000001_secret_z',
+    });
+    expect(forged.view.kind).toBe('unknown');
+  });
+
+  it("a refused trial still shows main's refused page, never TW1 or TW2", async () => {
+    const { done } = trialWorld({ status: 'conversion_failed_terminal', last_error: 'trial_already_used' });
+    for (const n of ['0', '5']) {
+      const page = await done({ n });
+      expect(page.view.kind).toBe('trialRefused');
+      expect(page.html).toContain(`<h1 class="state">${GUEST_TRIAL_COPY.refusedSubject('Alex')}</h1>`);
+      expect(page.html).not.toContain(TW1);
+      expect(page.html).not.toContain(TW2);
     }
   });
 });
