@@ -601,8 +601,9 @@ describe('CoachMoneyService.getAttention', () => {
     const failed = out.items.find((i) => i.kind === 'failed_payment')!;
     expect(failed.client).toEqual({ id: 'c9', name: 'Sam Lee' });
     expect(failed.failed_payment).toMatchObject({
-      attempt: 2,
-      max_attempts: 4,
+      // FR-1191R2 (LS-1191R2B B1): no bank try count is recorded: unknown form.
+      attempt: 0,
+      max_attempts: 0,
       // PF-5-BE (B8): next_attempt_at is the next reminder email, not a card try.
       next_retry_at: null,
       card_update_link_sent_at: '2026-10-01T01:00:00.000Z',
@@ -695,9 +696,12 @@ describe('PF-5-BE: Money tells card tries apart from reminders, and unpaid stays
     ...over,
   });
 
+  // FR-1191R2 (LS-1191R2B B1): Stripe's attempt_count and failure_count are
+  // not executed bank tries, and the reminder cadence is not a bank limit, so
+  // every row sends the unknown form and the phone shows no "Try n of m".
   it.each([
-    ['one bank try, reminder step 3 (step is not a try)', dunning(), 1, 4],
-    ["Stripe's invoice attempt count wins over the failures seen", dunning({ last_attempt_number: 3 }), 3, 4],
+    ['one failure, reminder step 3 (step is not a try)', dunning(), 0, 0],
+    ["Stripe's invoice attempt count is a schedule counter, not tries", dunning({ last_attempt_number: 3 }), 0, 0],
     ['no bank try known (a refund or dispute hold)', dunning({ failure_count: 0, last_failure_reason: 'charge_refunded' }), 0, 0],
     ['no dunning row', null, 0, 0],
   ])('%s', async (_label, d, attempt, max) => {
@@ -708,7 +712,7 @@ describe('PF-5-BE: Money tells card tries apart from reminders, and unpaid stays
     expect(fp).toMatchObject({ attempt, max_attempts: max, next_retry_at: null });
   });
 
-  it('the attention query reads bank tries, not the reminder deadline', async () => {
+  it('the attention query reads neither try counters nor the reminder deadline', async () => {
     const p = buildPrisma();
     await svc(p).getAttention(COACH);
     const sel = (
@@ -716,7 +720,8 @@ describe('PF-5-BE: Money tells card tries apart from reminders, and unpaid stays
         select: Record<string, { select?: Record<string, unknown> }>;
       }
     ).select;
-    expect(sel.dunning.select).toMatchObject({ failure_count: true, last_attempt_number: true });
+    expect(sel.dunning.select).not.toHaveProperty('failure_count');
+    expect(sel.dunning.select).not.toHaveProperty('last_attempt_number');
     expect(sel.dunning.select).not.toHaveProperty('next_attempt_at');
     expect(sel.dunning.select).not.toHaveProperty('step_index');
   });
@@ -1416,6 +1421,9 @@ describe('LO-1191 B2: Try n of m counts this cycle, not every failure in the pla
     ]);
     const out = await svc(p).getAttention(COACH);
     const fp = out.items.find((i) => i.kind === 'failed_payment')?.failed_payment;
-    expect(fp).toMatchObject({ attempt: 1, max_attempts: 4 });
+    // FR-1191R2: LS-1191R2B B1 showed Stripe's count is not bank tries, so the
+    // accepted forms are the unknown form or this invoice's own count; the
+    // lifetime count (4) must never show.
+    expect(fp!.max_attempts === 0 || (fp!.attempt === 1 && fp!.max_attempts >= 1)).toBe(true);
   });
 });

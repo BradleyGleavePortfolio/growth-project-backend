@@ -1,7 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
-import { DUNNING_V2_CADENCE_DAYS } from '../checkout/dunning-v2/dunning-v2.cadence';
 import { movedAwayClientIds } from '../checkout/moved-client-money';
 import { movedAwayDates } from '../checkout/plan-renewal/switch-tell';
 
@@ -212,9 +211,9 @@ export interface MoneyAttentionItem {
   failed_payment?: {
     purchase_id: string;
     package_name: string;
-    /** Bank tries so far (never reminder emails); 0 when none is known. */
+    /** Bank tries so far; 0 = not known (FR-1191R2: always 0, see getAttention). */
     attempt: number;
-    /** Stripe's tries in a cycle; 0 when no bank try is known (no "Try n of m"). */
+    /** The bank's try limit; 0 = not known, so the phone shows no "Try n of m". */
     max_attempts: number;
     /** The card's real next try when the server knows it, else null (PF-5-BE B8). */
     next_retry_at: string | null;
@@ -1774,8 +1773,6 @@ export class CoachMoneyService {
           dunning: {
             select: {
               status: true,
-              failure_count: true,
-              last_attempt_number: true,
               locked_out_at: true,
               last_failed_amount_cents: true,
               last_failure_at: true,
@@ -1830,21 +1827,18 @@ export class CoachMoneyService {
       ...failed.map((p) => p.client?.id),
       ...disputes.map((d) => d.purchase?.client?.id),
     ]);
-    const maxAttempts = DUNNING_V2_CADENCE_DAYS.length;
     const items: MoneyAttentionItem[] = [];
     for (const p of failed) {
       if (p.client && moved.has(p.client.id)) continue;
       const d = p.dunning;
-      // PF-5-BE (LS-PAYFAIL B8): bank tries only. last_attempt_number is
-      // Stripe's attempt count for the current invoice, failure_count the
-      // failed tries seen over the plan's life; the reminder step (step_index)
-      // is not a card try. FR-1191 (LS-1191 B2, LO-1191 B2): the current
-      // invoice's count wins, so a recovered earlier cycle never adds tries;
-      // failure_count only stands in when Stripe sent no count. No known try
-      // (a refund or dispute hold, or no dunning row) sends max_attempts 0, so
-      // the phone shows no "Try n of m".
-      const bankTries = d ? (d.last_attempt_number ?? d.failure_count) : 0;
-      const attempt = Math.min(maxAttempts, bankTries);
+      // FR-1191R2 (LS-1191R2B B1): no "Try n of m". The server has no record
+      // of the bank charges that really ran on this invoice, nor of Stripe's
+      // real retry limit. last_attempt_number is Stripe's invoice.attempt_count,
+      // a retry-schedule counter: a manual payment after a card update does not
+      // raise it, and skipped hard-decline slots do. failure_count counts
+      // failure webhooks; the reminder cadence is not a bank limit. So every
+      // row sends the unknown form (attempt 0, max_attempts 0), which the
+      // phone's reader shows with no try line.
       items.push({
         kind: 'failed_payment',
         id: `failed:${p.id}`,
@@ -1855,8 +1849,8 @@ export class CoachMoneyService {
         failed_payment: {
           purchase_id: p.id,
           package_name: p.package?.name ?? 'Package',
-          attempt,
-          max_attempts: bankTries > 0 ? maxAttempts : 0,
+          attempt: 0,
+          max_attempts: 0,
           // PF-5-BE (LS-PAYFAIL B8): the card's real next try. The server does
           // not store Stripe's next_payment_attempt; DunningState.next_attempt_at
           // is the next reminder email, never a card try. So: unknown, null.

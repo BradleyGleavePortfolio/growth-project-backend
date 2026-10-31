@@ -58,7 +58,12 @@ describe('LS-1191 B2: Money counts the current invoice, not past recovered failu
       expect(state.failure_count).toBe(pastFailures + 1);
       const money: CoachMoneyService = Reflect.construct(CoachMoneyService, [prisma]);
       const result = await money.getAttention('review-coach');
-      expect(result.items[0].failed_payment).toMatchObject({ attempt: 1, max_attempts: 4, next_retry_at: null });
+      const fp = result.items[0].failed_payment!;
+      expect(fp.next_retry_at).toBeNull();
+      // FR-1191R2: LS-1191R2B B1 showed Stripe's count is not bank tries, so the
+      // accepted forms are the unknown form or this invoice's own first try;
+      // a count that adds the recovered failures must never show.
+      expect(fp.max_attempts === 0 || (fp.attempt === 1 && fp.max_attempts >= 1)).toBe(true);
     },
   );
 });
