@@ -52,7 +52,10 @@ export interface CopyTokens {
   lockoutDate?: string;
   reason?: string;
   dunningDetailDeeplink?: string;
-  /** Stripe's charge attempt count on the open invoice (coach history). */
+  /**
+   * Charges that really ran on the open invoice. Never set (FR-1191R2): the
+   * server records none, so the line that names it is left out.
+   */
   attempts?: string;
 }
 

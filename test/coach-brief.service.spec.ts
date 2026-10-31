@@ -798,6 +798,13 @@ describe('CoachBriefService head-coach mode — business-only response (P1-3) + 
     // and dunning is the second. Assert both filter by client_user_id
     // and neither leaks coach_user_id (the head-coach revenue-leak
     // invariant from P1-7 must hold for both raw queries).
+    // FR-1191 (LS-1191 B4): the client scope stays, and the sale must also be
+    // the team's own (sold by the head or a seated sub-coach), so a client who
+    // moved onto the team brings no money from their former coach. A
+    // sub-coach's independent clients still never match the client scope.
+    expect(firstAggCall.where.purchase).toMatchObject({
+      coach_user_id: { in: expect.arrayContaining([coachId]) },
+    });
     const queryRawCalls = (prisma.$queryRaw as jest.Mock).mock.calls;
     expect(queryRawCalls.length).toBe(2);
     for (const call of queryRawCalls) {
@@ -805,8 +812,9 @@ describe('CoachBriefService head-coach mode — business-only response (P1-3) + 
       const queryRawText = Array.isArray(callArg?.strings)
         ? (callArg.strings as string[]).join('')
         : '';
-      expect(queryRawText).toMatch(/client_user_id/);
-      expect(queryRawText).not.toMatch(/coach_user_id/);
+      expect(queryRawText).toMatch(/cp\."client_user_id" = ANY/);
+      expect(queryRawText).toMatch(/AND cp\."coach_user_id" = ANY/);
+      expect(JSON.stringify(callArg?.values)).toContain(ownClientId);
     }
   });
 

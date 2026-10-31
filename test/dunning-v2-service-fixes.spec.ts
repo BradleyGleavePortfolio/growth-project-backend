@@ -389,7 +389,7 @@ describe('dunning v2 service fix round (B-D12-116)', () => {
       expect((await svc.handleLateReversal(input)).opened).toBe(true);
       expect(await svc.isDisputeCycleOpen('p1')).toBe(true);
     });
-    it('Operator B (amount) / Opus B-688-7: no renewal amount on a dispute; real attempts', async () => {
+    it('Operator B (amount) / Opus B-688-7 / FR-1191R2: no renewal amount on a dispute; no invented attempts', async () => {
       const fake = new FakePrisma();
       seed(fake, 'p1', 2, { last_failure_reason: 'charge_disputed', last_attempt_number: 2 });
       const svc = service(fake);
@@ -398,7 +398,9 @@ describe('dunning v2 service fix round (B-D12-116)', () => {
         (await stub(svc).buildDispatchContext({ dunningStateId: 'ds-p1', isLateReversalCycle }))
           .tokens;
       expect((await tokens(true)).amount).toBeUndefined();
-      expect(await tokens(false)).toMatchObject({ amount: '$150.00', attempts: '2' });
+      // FR-1191R2 (LS-1191R2B B1): Stripe's attempt_count is not the charges
+      // that really ran, so the coach email gets no attempts token.
+      expect(await tokens(false)).toMatchObject({ amount: '$150.00', attempts: undefined });
     });
   });
 });

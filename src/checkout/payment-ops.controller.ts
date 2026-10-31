@@ -41,6 +41,7 @@ import {
 } from './coach-payments.select';
 import { ADMIN_PURCHASE_OMIT } from './admin-purchase.select';
 import { keepMoneyRecordsOnly, salePause } from './moved-client-money';
+import { FAILED_PURCHASE_STATUSES } from '../coach-money/coach-money.service';
 import {
   CursorPageQueryDto,
   PAYMENT_OPS_DEFAULT_LIMIT,
@@ -951,7 +952,8 @@ export class CoachPaymentOpsController {
     const purchases = await this.prisma.clientPurchase.findMany({
       where: {
         coach_user_id: req.user.id,
-        OR: [{ status: 'past_due' }, { status: 'payment_failed' }],
+        // PF-5-BE (LS-PAYFAIL B9): the one failed-collection list, with 'unpaid'.
+        OR: FAILED_PURCHASE_STATUSES.map((status) => ({ status })),
       },
       select: { ...COACH_PURCHASE_SELECT, dunning: { select: COACH_DUNNING_SELECT } },
       orderBy: { updated_at: 'desc' },
