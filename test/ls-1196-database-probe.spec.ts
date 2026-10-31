@@ -21,7 +21,7 @@ import type { MuxService } from '../src/video/mux.service';
 import type { AuthedRequest } from '../src/auth/auth-request';
 import { Test } from '@nestjs/testing';
 import { ExecutionContext, ValidationPipe } from '@nestjs/common';
-import request from 'supertest';
+import { randomUUID } from 'node:crypto';
 import { WorkoutController } from '../src/workout/workout.controller';
 import { JwtAuthGuard } from '../src/auth/auth.guard';
 import { RolesGuard } from '../src/auth/roles.guard';
@@ -258,7 +258,7 @@ describe('LS-1196 actual migration and real database behavior', () => {
     expect((await controller.detail(row.id, request)).playbackUrl).toBe('review-signed-playback');
     await prisma.exerciseCatalogItem.update({ where: { id: row.id }, data: { mux_playback_policy: 'signed' } });
     const assignments = Array.from({ length: 101 }, (_, i) => ({
-      id: `page-assignment-${i}`, workout_plan_id: 'page-plan', client_id: 'member-a',
+      id: randomUUID(), workout_plan_id: 'page-plan', client_id: 'member-a',
       assigned_by_coach_id: 'coach-a', scheduled_for: new Date(),
     }));
     await prisma.clientWorkoutAssignment.createMany({ data: assignments });
@@ -293,19 +293,25 @@ describe('LS-1196 actual migration and real database behavior', () => {
       .compile();
     const app = module.createNestApplication();
     app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }));
-    await app.init();
+    await app.listen(0, '127.0.0.1');
     try {
       const body = {
         date: new Date().toISOString().slice(0, 10), workout_name: 'HTTP replay',
         workout_type: 'strength', duration_minutes: 20,
         exercises: [{ exercise_name: 'Bench', muscle_group: 'chest', sets_completed: 1, reps_per_set: [8], weight_per_set: [100] }],
       };
-      const post = (key?: string) => {
-        const req = request(app.getHttpServer()).post('/workouts');
-        return key === undefined ? req.send(body) : req.set('Idempotency-Key', key).send(body);
+      const post = async (key?: string) => {
+        const response = await fetch(`${await app.getUrl()}/workouts`, {
+          method: 'POST', headers: {
+            'Content-Type': 'application/json',
+            ...(key === undefined ? {} : { 'Idempotency-Key': key }),
+          }, body: JSON.stringify(body),
+        });
+        return { status: response.status, body: stub<{ id: string; exercises: unknown[] }>(await response.json()) };
       };
-      const first = await post('http-queue-key').expect(201);
-      const again = await post('http-queue-key').expect(201);
+      const first = await post('http-queue-key');
+      const again = await post('http-queue-key');
+      expect([first.status, again.status]).toEqual([201, 201]);
       expect(again.body).toEqual(first.body);
       expect(typeof again.body.id).toBe('string');
       expect(again.body.id.length).toBeGreaterThan(0);
@@ -318,10 +324,10 @@ describe('LS-1196 actual migration and real database behavior', () => {
       const timeline = await coach.getClientTimeline('coach-a', 'member-a', 90, 'coach');
       expect(timeline).toMatchObject({ workouts: [{ id: first.body.id }] });
       expect('workouts' in timeline && timeline.workouts).toHaveLength(1);
-      await post('short').expect(400);
+      expect((await post('short')).status).toBe(400);
       expect(await prisma.workoutSession.count()).toBe(1);
-      await post().expect(201);
-      await post().expect(201);
+      expect((await post()).status).toBe(201);
+      expect((await post()).status).toBe(201);
       expect(await prisma.workoutSession.count()).toBe(3);
     } finally {
       await app.close();
