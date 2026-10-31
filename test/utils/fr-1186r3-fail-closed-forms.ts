@@ -20,7 +20,7 @@ export const FAIL_CLOSED_FORMS: FailClosedForm[] = [
     id: 'an emitter loaded by a dynamic import and called in its callback',
     text: `export class Nightly {
   async notify(svc: unknown): Promise<void> {
-    await import('../notifications/emitters/coach-alert.emitter').then((m) => new m.CoachAlertEmitter(svc as never).emit(${ALERT}));
+    await import('../notifications/emitters/coach-alert.emitter').then((m) => new m.CoachAlertEmitter(svc).emit(${ALERT}));
   }
 }
 `,

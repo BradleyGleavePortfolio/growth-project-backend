@@ -738,10 +738,10 @@ export const go = (n: NotificationsService) => Reflect.get(n, 'send' + 'Push');
   },
   {
     id: 'unread-namespace-community',
-    from: 'FR-1186R3 (fail closed: a namespace import, a send through `any`)',
+    from: 'FR-1186R3 (fail closed: the community relay typed through a namespace import)',
     file: `${F}/unread-namespace-community.ts`,
     text: `import * as community from '../community/notifications/community-notifications.service';
-export const go = (c: community.CommunityNotificationsService, args: never) => (c as any).sendCommunityPush(args);
+export const go = (c: community.CommunityNotificationsService, args: never) => c.sendCommunityPush(args);
 `,
     expect: [{ fn: '<module>', via: 'unread', at: 'import * as community' }],
     finds: [{ at: 'import * as community', says: 'the scan reads no send of CommunityNotificationsService in this file' }],
