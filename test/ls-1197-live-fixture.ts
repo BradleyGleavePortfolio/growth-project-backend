@@ -20,7 +20,9 @@ export async function ls1197Database() {
     let ready = false;
     for (let attempt = 0; attempt < 100; attempt += 1) {
       try {
-        execFileSync('docker', ['exec', container, 'pg_isready', '-U', 'postgres'], { stdio: 'pipe' });
+        // The image starts a socket-only temporary server during init. Wait
+        // for the final TCP server, not that temporary bootstrap process.
+        execFileSync('docker', ['exec', container, 'pg_isready', '-h', '127.0.0.1', '-U', 'postgres'], { stdio: 'pipe' });
         ready = true;
         break;
       } catch {
@@ -30,7 +32,7 @@ export async function ls1197Database() {
     if (!ready) throw new Error('Disposable local database did not become ready');
     const port = execFileSync('docker', ['port', container, '5432/tcp'], { encoding: 'utf8' }).trim().split(':').pop();
     const url = `postgresql://postgres@127.0.0.1:${port}/postgres`;
-    execFileSync('docker', ['exec', '--interactive', container, 'psql', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1'], {
+    execFileSync('docker', ['exec', '--interactive', container, 'psql', '-h', '127.0.0.1', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1'], {
       input: readFileSync(resolve(__dirname, '../scripts/ci/supabase-shim.sql')),
       stdio: ['pipe', 'pipe', 'pipe'],
     });
