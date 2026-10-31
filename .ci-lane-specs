@@ -1,0 +1,7 @@
+test/community/images
+test/community/safety
+test/ai-egress
+test/privacy-openai-photo-check.spec.ts
+test/command-center-photo-safety-alert.spec.ts
+test/space-photo-safety-alerts.spec.ts
+test/roman-safety-coach-alerts.spec.ts
