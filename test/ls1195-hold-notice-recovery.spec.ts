@@ -27,20 +27,17 @@ describe('LS-1195 B1: recover an undelivered coach account-hold notice', () => {
     'retries a failed %s without duplicating the successful transport',
     async (failedTransport) => {
       const w = buildWorld({ saved: READY, stripeNow: RESTRICTED });
+      const coachAlert = jest.fn(async () => ({ inapp: 'sent', push: 'sent' }));
+      Reflect.set(w.hold, 'coachAlert', { emit: coachAlert });
       if (failedTransport === 'push') {
-        w.coachAlert.mockResolvedValueOnce({ inapp: 'sent', push: 'failed' });
+        coachAlert.mockResolvedValueOnce({ inapp: 'sent', push: 'failed' });
       } else {
-        w.email.mockResolvedValueOnce({
-          status: 'failed',
-          providerMessageId: null,
-          idempotencyKey: 'hold-delivery-probe',
-          error: 'provider_unavailable',
-        });
+        w.email.mockResolvedValueOnce({ status: 'failed' });
       }
 
       await w.fail();
       await flush();
-      expect(w.coachAlert).toHaveBeenCalledTimes(1);
+      expect(coachAlert).toHaveBeenCalledTimes(1);
       expect(w.email).toHaveBeenCalledTimes(1);
 
       // A successful sibling channel must remain once-per-day. A failed
@@ -51,11 +48,11 @@ describe('LS-1195 B1: recover an undelivered coach account-hold notice', () => {
       await flush();
 
       if (failedTransport === 'push') {
-        expect(w.coachAlert).toHaveBeenCalledTimes(2);
+        expect(coachAlert).toHaveBeenCalledTimes(2);
         expect(w.email).toHaveBeenCalledTimes(1);
       } else {
         expect(w.email).toHaveBeenCalledTimes(2);
-        expect(w.coachAlert).toHaveBeenCalledTimes(1);
+        expect(coachAlert).toHaveBeenCalledTimes(1);
       }
     },
   );
