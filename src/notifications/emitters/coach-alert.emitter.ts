@@ -135,7 +135,12 @@ export class CoachAlertEmitter {
                 dedupe_key: `coach_alert:${alertId}`,
               }
             : payload.money
-              ? { context: { ...MUTE_ALL_PASS, ...(payload.dunning ? { dunning: payload.dunning } : {}) } }
+              ? {
+                  context: { ...MUTE_ALL_PASS, ...(payload.dunning ? { dunning: payload.dunning } : {}) },
+                  // FR-1192R2: one that is dropped when its cycle ends never
+                  // folds another alert about the client into it.
+                  ...(payload.dunning ? { dedupe_key: `coach_alert:${alertId}` } : {}),
+                }
               : {}),
           ...(urgent ? { urgent: true } : {}),
         });

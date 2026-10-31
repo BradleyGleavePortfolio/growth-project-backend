@@ -183,6 +183,7 @@ function dunningRig(opts: { clientMuted?: boolean } = {}) {
     },
   };
   const { delivery, notifications } = wire(db, o);
+  const coachAlert = new CoachAlertEmitter(notifications);
   const dispatcher = new DunningV2Dispatcher(
     new DunningEscalationClassifier(),
     new DunningV2Renderer(),
@@ -194,7 +195,7 @@ function dunningRig(opts: { clientMuted?: boolean } = {}) {
     }),
     notifications,
     undefined,
-    new CoachAlertEmitter(notifications),
+    coachAlert,
   );
   const step = (stepIndex: number, channels: Array<'client_push' | 'coach_push'>) =>
     dispatcher.dispatchStepDetailed(
@@ -213,7 +214,7 @@ function dunningRig(opts: { clientMuted?: boolean } = {}) {
       undefined,
       { channels },
     );
-  return { ...o, delivery, state, step };
+  return { ...o, delivery, state, step, coachAlert };
 }
 
 const DAY_7 = 3; // DUNNING_V2_CADENCE_DAYS [0, 1, 3, 7]: the coach is told at Day 7
@@ -257,5 +258,27 @@ describe('FR-1192R2: the coach Day 7 payment alert held overnight is not sent on
     await r.delivery.drain();
     expect(r.send).toHaveBeenCalledTimes(1);
     expect(r.world.rows[0].status).toBe('sent');
+  });
+
+  it('another alert about the same client held that night is not lost with the ended payment alert', async () => {
+    const r = dunningRig();
+    await r.coachAlert.emit(
+      {
+        coachId: 'dun-coach',
+        alertId: 'risk-1',
+        alertType: 'risk_red_transition',
+        message: 'Avery missed three check-ins',
+        severity: 'warning',
+        clientUserId: 'dun-client',
+      },
+      { inapp: false, push: true },
+    );
+    await r.step(DAY_7, ['coach_push']);
+    r.state.status = 'resolved';
+    r.clock.at = MORNING;
+    await r.delivery.drain();
+    await r.delivery.drain();
+    expect(r.send).toHaveBeenCalledTimes(1);
+    expect(r.world.rows.filter((row) => row.status === 'sent')).toHaveLength(1);
   });
 });
