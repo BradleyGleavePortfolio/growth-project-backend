@@ -14,6 +14,11 @@ import type { PtmService } from '../src/ptm/ptm.service';
 import type { ClientAIContextService } from '../src/ai/client-ai-context.service';
 import { WorkoutService } from '../src/workout/workout.service';
 import type { CreateWorkoutDto } from '../src/workout/workout.dto';
+import { ExerciseCatalogService } from '../src/exercise-catalog/exercise-catalog.service';
+import { ExerciseCatalogController } from '../src/exercise-catalog/exercise-catalog.controller';
+import { WorkoutBuilderService } from '../src/workout-builder/workout-builder.service';
+import type { MuxService } from '../src/video/mux.service';
+import type { AuthedRequest } from '../src/auth/auth-request';
 
 function stub<T>(value: unknown): T { return value as T; }
 
@@ -53,14 +58,15 @@ beforeAll(async () => {
     s.split('\n').filter((line) => !line.trim().startsWith('--')).join('\n').trim(),
   );
   const cluster = statements.filter((s) =>
-    /^CREATE TYPE "(Intensity|MuscleGroup)"/.test(s) ||
-    /^CREATE TABLE "(WorkoutSession|ExerciseSet)"/.test(s),
+    /^CREATE TYPE "(Intensity|MuscleGroup|WorkoutPlanType|ExerciseVideoStatus)"/.test(s) ||
+    /^CREATE TABLE "(WorkoutSession|ExerciseSet|WorkoutPlan|WorkoutPlanExercise|ClientWorkoutAssignment|ClientWorkoutAssignmentSnapshot|ExerciseCatalogItem)"/.test(s),
   );
-  expect(cluster).toHaveLength(4);
+  expect(cluster).toHaveLength(11);
   baseSql = `CREATE TABLE "User" ("id" TEXT PRIMARY KEY);\n` +
     cluster.map((s) => s.replace(/^\s*"client_key" TEXT,?\s*$/m, '') + ';').join('\n') +
     `\nALTER TABLE "WorkoutSession" ADD FOREIGN KEY ("user_id") REFERENCES "User"("id");
-     ALTER TABLE "ExerciseSet" ADD FOREIGN KEY ("workout_id") REFERENCES "WorkoutSession"("id");`;
+     ALTER TABLE "ExerciseSet" ADD FOREIGN KEY ("workout_id") REFERENCES "WorkoutSession"("id");
+     CREATE UNIQUE INDEX "ClientWorkoutAssignmentSnapshot_assignment_id_key" ON "ClientWorkoutAssignmentSnapshot"("assignment_id");`;
   expect(baseSql).not.toMatch(/"client_key"/);
   prisma = new PrismaClient({
     datasources: { db: { url: `postgresql://${encodeURIComponent(username)}@localhost/${database}?host=/var/run/postgresql` } },
@@ -68,9 +74,11 @@ beforeAll(async () => {
   await prisma.$connect();
 }, 120000);
 
-beforeEach(() => {
+beforeEach(async () => {
+  await prisma.$disconnect();
   sql('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
   sql(baseSql);
+  await prisma.$connect();
 });
 
 afterAll(async () => {
@@ -171,4 +179,73 @@ describe('LS-1196 actual migration and real database behavior', () => {
     await service.createWorkout('member-a', body, 'different-queue-key');
     expect(await service.getWorkouts('member-a')).toHaveLength(4);
   }, 30000);
+
+  it('actual relation predicates honor all snapshot and legacy identities and refuse absent or foreign prescriptions', async () => {
+    const row = await prisma.exerciseCatalogItem.create({ data: {
+      id: 'review-catalog', slug: 'review-bench', source_ref: 'seed:review-bench',
+      name: 'Review Bench', category: 'push', primary_muscle: 'chest',
+      mux_playback_id: 'review-video', mux_playback_policy: 'signed', mux_asset_status: 'ready',
+    } });
+    const refs = [row.id, row.slug, row.source_ref!];
+    const mintPlaybackUrl = jest.fn(() => 'review-signed-playback');
+    const controller = new ExerciseCatalogController(new ExerciseCatalogService(
+      stub<PrismaService>(prisma), stub<MuxService>({ mintPlaybackUrl }),
+    ));
+    const request = stub<AuthedRequest>({ user: { id: 'member-a', role: 'student' } });
+    const scenarios = [
+      ...refs.flatMap((ref) => [
+        { label: `frozen ${ref} removed from current plan`, frozen: [ref], live: 'unassigned', archived: null, member: 'member-a', allowed: true },
+        { label: `legacy ${ref} live`, frozen: null, live: ref, archived: null, member: 'member-a', allowed: true },
+        { label: `foreign frozen ${ref}`, frozen: [ref], live: ref, archived: null, member: 'member-b', allowed: false },
+        { label: `legacy archived ${ref}`, frozen: null, live: ref, archived: new Date(), member: 'member-a', allowed: false },
+      ]),
+      { label: 'new live but not frozen', frozen: ['unassigned'], live: row.id, archived: null, member: 'member-a', allowed: false },
+      { label: 'archived but not frozen', frozen: ['unassigned'], live: row.id, archived: new Date(), member: 'member-a', allowed: false },
+      { label: 'empty snapshot never falls back to live', frozen: [], live: row.id, archived: null, member: 'member-a', allowed: false },
+    ];
+    const exercise = (ref: string) => ({
+      exercise_external_id: ref, order: 1, sets: 3, reps_or_duration_seconds: 8,
+    });
+    for (const scenario of scenarios) {
+      sql(`TRUNCATE "ClientWorkoutAssignmentSnapshot", "ClientWorkoutAssignment", "WorkoutPlanExercise", "WorkoutPlan";`);
+      const plan = await prisma.workoutPlan.create({ data: {
+        coach_id: 'coach-a', name: scenario.label, type: 'strength',
+      } });
+      await prisma.workoutPlanExercise.create({ data: {
+        workout_plan_id: plan.id, ...exercise(scenario.live), archived_at: scenario.archived,
+      } });
+      const assignment = await prisma.clientWorkoutAssignment.create({ data: {
+        workout_plan_id: plan.id, client_id: scenario.member, assigned_by_coach_id: 'coach-a', scheduled_for: new Date(),
+      } });
+      if (scenario.frozen !== null) {
+        await prisma.clientWorkoutAssignmentSnapshot.create({ data: {
+          assignment_id: assignment.id, plan_name: plan.name, plan_type: plan.type,
+          source_plan_id: plan.id, source_version: 1, exercises_json: scenario.frozen.map(exercise),
+        } });
+      }
+      const loaded = await prisma.clientWorkoutAssignment.findUniqueOrThrow({
+        where: { id: assignment.id },
+        include: { snapshot: true, workout_plan: { include: { exercises: { where: { archived_at: null } } } } },
+      });
+      const presented = WorkoutBuilderService.prototype['presentAssignment'](loaded);
+      expect(presented.exercises.map((e) => stub<{ exercise_external_id: string }>(e).exercise_external_id))
+        .toEqual(scenario.frozen ?? (scenario.archived ? [] : [scenario.live]));
+      for (const lookup of refs) {
+        mintPlaybackUrl.mockClear();
+        const response = await controller.detail(lookup, request);
+        expect({ label: scenario.label, lookup, allowed: response.playbackUrl !== null })
+          .toEqual({ label: scenario.label, lookup, allowed: scenario.allowed });
+        expect(mintPlaybackUrl).toHaveBeenCalledTimes(scenario.allowed ? 1 : 0);
+      }
+    }
+    sql(`TRUNCATE "ClientWorkoutAssignmentSnapshot", "ClientWorkoutAssignment";`);
+    expect((await controller.detail(row.id, request)).playbackUrl).toBeNull();
+    await expect(controller.detail('missing-catalog-row', request)).rejects.toMatchObject({ status: 404 });
+    expect((await controller.detail(row.id, stub<AuthedRequest>({ user: { id: 'staff', role: 'coach' } }))).playbackUrl)
+      .toBe('review-signed-playback');
+    await prisma.exerciseCatalogItem.update({ where: { id: row.id }, data: { mux_playback_policy: 'public' } });
+    expect((await controller.detail(row.id, request)).playbackUrl).toBe('review-signed-playback');
+    await prisma.exerciseCatalogItem.update({ where: { id: row.id }, data: { mux_playback_policy: 'signed', mux_asset_status: 'processing' } });
+    expect((await controller.detail(row.id, request)).playbackUrl).toBeNull();
+  }, 60000);
 });
