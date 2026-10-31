@@ -8,6 +8,7 @@ import { GuestCheckoutService, GUEST_TRIAL_COPY, isGuestTrialIntent } from '../s
 import { TrialUsageService } from '../src/packages/trials/trial-usage.service';
 import { TrialNoticeService } from '../src/packages/trials/trial-notice.service';
 import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
+import { ClientBillingService } from '../src/checkout/client-billing.service';
 import { LostWebhookReconcileService } from '../src/storefront/lost-webhook-reconcile.service';
 import { readPayDone } from '../src/storefront/pay-done';
 import { BillingService } from '../src/billing/billing.service';
@@ -476,6 +477,43 @@ describe('GC-3 — web page trials: card saved, nothing charged that day, one tr
       }
     },
   );
+
+  it('LS-1193-B3: the converted web-trial buyer can update the saved card before the first charge', async () => {
+    const world = makeDb();
+    const customers = makeTable(
+      [['id'], ['client_user_id'], ['stripe_customer_id']],
+      () => ({ id: 'customer-row' }),
+    );
+    world.db.connectCustomer = customers;
+    world.db.clientPurchase.findMany = async ({ where }: any) =>
+      world.state.clientPurchase.filter((row) => matches(row, where));
+    const { service, stripe } = build(world);
+    const gc = world.addCheckout();
+    await service.handlePaymentSucceeded(gc.stripe_payment_intent_id);
+    expect(world.state.guestCheckout[0].status).toBe('converted');
+    expect(world.state.clientPurchase[0].stripe_customer_id).toBe(gc.stripe_customer_id);
+    const clientId = world.state.clientPurchase[0].client_user_id;
+    stripe.createSetupIntent.mockResolvedValue({
+      id: 'seti_updatecard01', client_secret: 'seti_updatecard01_secret_x',
+    });
+    stripe.createEphemeralKey = jest.fn(async () => ({ secret: 'synthetic-ephemeral-key' }));
+    const billing = new ClientBillingService(world.db, stripe);
+    const oldPk = process.env.STRIPE_PUBLISHABLE_KEY;
+    const oldSk = process.env.STRIPE_SECRET_KEY;
+    process.env.STRIPE_PUBLISHABLE_KEY = 'pk_test_synthetic';
+    delete process.env.STRIPE_SECRET_KEY;
+    try {
+      await expect(billing.createCardSetup(clientId, 'update-card-after-web-trial')).resolves.toMatchObject({
+        customer_id: gc.stripe_customer_id,
+        setup_intent_id: 'seti_updatecard01',
+      });
+    } finally {
+      if (oldPk === undefined) delete process.env.STRIPE_PUBLISHABLE_KEY;
+      else process.env.STRIPE_PUBLISHABLE_KEY = oldPk;
+      if (oldSk === undefined) delete process.env.STRIPE_SECRET_KEY;
+      else process.env.STRIPE_SECRET_KEY = oldSk;
+    }
+  });
 
   it('a legacy purchase whose trial started (no ledger row) also refuses — the in-app eligibility read', async () => {
     const world = makeDb();
