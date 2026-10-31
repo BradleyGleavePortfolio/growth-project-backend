@@ -2295,7 +2295,7 @@ export class GuestCheckoutService {
       this.logger.error(`Trial-refused email not sent for ${checkout.id}: EMAIL_FROM_ADDRESS is not set to a valid sender address`);
       return;
     }
-    const coach = checkout.package.coach.name?.trim() || 'Your coach';
+    const coach = checkout.package.coach.name?.trim() || 'your coach';
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8000);
     try {
