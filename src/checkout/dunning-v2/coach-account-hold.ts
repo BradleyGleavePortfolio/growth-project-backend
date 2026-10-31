@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { isDunningV2Enabled } from './dunning-v2.feature';
 
 /**
@@ -39,6 +40,11 @@ type HoldDunning = { status: string; last_failure_reason: string | null } | null
 export function isHeldRenewal(dunning: HoldDunning): boolean {
   return dunning?.status === 'active' && isCoachAccountHoldReason(dunning.last_failure_reason);
 }
+
+/** FR-1195R2 (LS-1195R2 B2): leaves held renewals out in the query, so a list's take keeps its other rows. */
+export const NOT_HELD_RENEWAL: Prisma.ClientPurchaseWhereInput = {
+  NOT: { dunning: { status: 'active', last_failure_reason: COACH_ACCOUNT_HOLD_REASON } },
+};
 
 const CLIENT_FAILED_STATUSES = new Set(['past_due', 'unpaid']);
 

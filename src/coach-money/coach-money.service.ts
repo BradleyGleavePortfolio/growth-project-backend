@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
-import { isCoachAccountHoldReason } from '../checkout/dunning-v2/coach-account-hold';
+import { isCoachAccountHoldReason, NOT_HELD_RENEWAL } from '../checkout/dunning-v2/coach-account-hold';
 import { movedAwayClientIds } from '../checkout/moved-client-money';
 import { movedAwayDates } from '../checkout/plan-renewal/switch-tell';
 
@@ -1760,6 +1760,7 @@ export class CoachMoneyService {
           coach_user_id: coachId,
           source: null,
           status: { in: [...FAILED_PURCHASE_STATUSES] },
+          ...NOT_HELD_RENEWAL,
         },
         orderBy: { updated_at: 'desc' },
         take: 50,
