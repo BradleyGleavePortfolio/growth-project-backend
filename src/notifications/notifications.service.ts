@@ -64,6 +64,8 @@ export interface PushRoute {
   dedupeKey?: string;
   /** The other person the push is about: a block either way stops a waiting push. */
   otherUserId?: string;
+  /** FR-1192: the community it comes from: a ban there stops a waiting push. */
+  community?: SendPathContext['community'];
 }
 
 export interface PushPayload {
@@ -627,7 +629,7 @@ export class NotificationsService implements OnModuleInit {
       kind: NotificationKindValue;
       body: string;
       deep_link?: string;
-      context?: (PushContext & MuteAllPass & RenewalOffer & Pick<SendPathContext, 'otherUserId'>) | null;
+      context?: (PushContext & MuteAllPass & RenewalOffer & Pick<SendPathContext, 'otherUserId' | 'alsoUserId' | 'coachThread'>) | null;
       dedupe_key?: string | null;
       urgent?: boolean;
     },
@@ -851,7 +853,8 @@ export class NotificationsService implements OnModuleInit {
    * (a push inside 21:00-08:00 waits for 08:00, the workout reminder keeps its
    * own time), the recipient's switches read again when it goes (`route`:
    * the kind's rule, or Mute all alone; money and a stored Mute all pass go
-   * through Mute all), a block with `route.otherUserId` while it waited, the
+   * through Mute all), a block with `route.otherUserId` while it waited (or a
+   * ban in `route.community`, FR-1192), the
    * burst cap and the token. `route.dedupeKey` is the event's exactly-once
    * identity, so a replayed send never posts twice.
    *
@@ -919,6 +922,7 @@ export class NotificationsService implements OnModuleInit {
           ...(r.muteAllOnly ? { muteAllOnly: true as const } : {}),
           ...(r.passesMuteAll ? MUTE_ALL_PASS : {}),
           ...(r.otherUserId ? { otherUserId: r.otherUserId } : {}),
+          ...(r.community ? { community: r.community } : {}),
         },
         dedupeKey,
         collapseKey: dedupeKey,

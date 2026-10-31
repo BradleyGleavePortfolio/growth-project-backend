@@ -22,6 +22,7 @@ import { pushStillCurrent } from '../current-coach-inbox';
 import { planRenewalPushStillDue } from '../../checkout/plan-renewal/plan-renewal.state';
 import { asSpacePushContext, spacePushExpoFields } from '../../community/space-push/space-push-policy';
 import { spacePushDropReason } from '../../community/space-push/space-push-still-due';
+import { HeldPushSource, asHeldPushSource, heldPushDropReason } from './held-push-source';
 
 // Device delivery for inbox notifications (C-643-2), through a durable
 // outbox (B-NOTIF-5: B-648-1, B-648-6, C-648-4 / OR-113-5, C-648-5).
@@ -87,7 +88,8 @@ import { spacePushDropReason } from '../../community/space-push/space-push-still
 //     keeps its sender's own title, body and tap data (senderWords) and the
 //     sender's own switch rule (muteAllOnly: only Mute all stops it). A push
 //     that names another person (otherUserId) is not sent if either side
-//     blocked the other while it waited (KG-HELD-BLOCK-MESSAGE).
+//     blocked the other while it waited (KG-HELD-BLOCK-MESSAGE), nor
+//     (FR-1192) after a ban in its community or a mute of its thread.
 
 export const EXPO_PUSH_CLIENT = Symbol('EXPO_PUSH_CLIENT');
 export type { ExpoPushClient } from './expo-push-client';
@@ -122,13 +124,11 @@ export interface EnqueueResult {
  * What a sender stores with its push for the moment of sending (PF-3-BE), on
  * top of the lock-screen context.
  */
-export interface SendPathContext {
+export interface SendPathContext extends HeldPushSource {
   /** The lock screen shows the row's own title and body, and the tap data as given. */
   senderWords?: true;
   /** The sender's switch is Mute all alone (it has no per-kind switch). */
   muteAllOnly?: true;
-  /** The other person the push is about: a block either way stops it. */
-  otherUserId?: string;
 }
 
 export type OutboxContext = PushContext & SendPathContext;
@@ -214,7 +214,8 @@ function asContext(v: Prisma.JsonValue | null): OutboxContext | null {
     // PF-3-BE: the sender's own words, its switch rule and the other person.
     ...(o.senderWords === true ? { senderWords: true as const } : {}),
     ...(o.muteAllOnly === true ? { muteAllOnly: true as const } : {}),
-    ...(typeof o.otherUserId === 'string' && o.otherUserId ? { otherUserId: o.otherUserId } : {}),
+    // ...and (FR-1192) the people, community and thread it is about.
+    ...asHeldPushSource(o),
   };
 }
 
@@ -523,21 +524,6 @@ export class PushDeliveryService {
     return res.count === 1;
   }
 
-  /** A block either way between the recipient and the person the push is about. */
-  private async eitherSideBlocked(userId: string, otherUserId: string): Promise<boolean> {
-    if (userId === otherUserId) return false;
-    const hit = await this.prisma.userBlock.findFirst({
-      where: {
-        OR: [
-          { blocker_id: userId, blocked_id: otherUserId },
-          { blocker_id: otherUserId, blocked_id: userId },
-        ],
-      },
-      select: { id: true },
-    });
-    return !!hit;
-  }
-
   async sendOne(row: OutboxRow): Promise<SendOutcome> {
     const context = asContext(row.context);
     let handedOff = false;
@@ -572,8 +558,11 @@ export class PushDeliveryService {
       // KG-HELD-BLOCK-MESSAGE (PF-3-BE): a push about another person that
       // waited (quiet hours, burst cap, retry) is not sent once either side
       // has blocked the other (owner 10-22: a block hides all messaging).
-      if (context?.otherUserId && (await this.eitherSideBlocked(row.user_id, context.otherUserId))) {
-        this.logger.log(`push dropped: row=${row.id} kind=${row.kind} reason=blocked`);
+      // FR-1192: nor once the reader or that person is banned from the
+      // community it came from, nor once the reader muted its thread.
+      const held = context ? await heldPushDropReason(this.prisma, row.user_id, context, this.now()) : null;
+      if (held) {
+        this.logger.log(`push dropped: row=${row.id} kind=${row.kind} reason=${held}`);
         return await this.finish(row, 'dropped', 'obsolete');
       }
 

@@ -735,6 +735,10 @@ export class CommunityEventsService {
         targetType: 'event',
         targetId: event.id,
         deepLink: `tgp://community/events/${event.id}`,
+        // FR-1192 (R1): the creator block and the reader's access (a ban)
+        // checked above are checked again when a held reminder goes.
+        otherUserId: event.created_by_id,
+        workspaceId: event.workspace_id,
       });
     }
   }

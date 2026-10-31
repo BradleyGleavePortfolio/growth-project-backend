@@ -217,6 +217,7 @@ export class CommunityDmsService {
       targetId: created.id,
       deepLink: `tgp://community/dms/${dmKey}`,
       otherUserId: created.sender_id,
+      workspaceId,
     });
     return CommunityDmMessageResponseSchema.parse({
       message: this.messageView(created),

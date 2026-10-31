@@ -176,9 +176,16 @@ const COACH_THREAD_OPERATIONS: ReadonlyArray<readonly [method: string, path: str
  * payment reminders that tell them how to unlock never reach it, and sign-out
  * leaves the token on the account. Exact METHOD + normalized PATH; every other
  * `users/*` route stays locked. Sign-out itself is under `auth` (above).
+ *
+ * FR-1192 (F2, LS-1192 B2): and this phone's time zone (`PUT
+ * notifications/timezone`): it writes only the signed-in user's own zone, and
+ * only a valid IANA name (NotificationsService.setTimeZone). Refused, the
+ * worker keeps the old zone and a payment reminder held for quiet hours wakes
+ * the client at night. Every other `notifications/*` route stays locked.
  */
 const OWN_DEVICE_OPERATIONS: ReadonlyArray<readonly [method: string, path: string]> = [
   ['PATCH', 'users/me/push-token'], // UsersController.updatePushToken
+  ['PUT', 'notifications/timezone'], // NotificationsController.setTimeZone
 ] as const;
 
 /** True for the locked client's own-phone operations (OWN_DEVICE_OPERATIONS). */
