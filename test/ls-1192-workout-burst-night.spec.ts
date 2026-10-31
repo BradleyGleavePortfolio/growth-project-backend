@@ -1,4 +1,5 @@
 import { Expo } from 'expo-server-sdk';
+import { decideReminder } from '../src/engagement/workout-reminder.policy';
 import { NotificationKind } from '../src/notifications/notification-kind';
 import { NotificationsService } from '../src/notifications/notifications.service';
 import type { ExpoPushClient } from '../src/notifications/push/expo-push-client';
@@ -9,7 +10,7 @@ import { stub } from './utils/trial-fakes';
 const atLocal = (time: string) => new Date(`2026-10-07T${time}Z`);
 
 function rig() {
-  const clock = { at: atLocal('03:25:00') }; // 20:25 Los Angeles, previous calendar date
+  const clock = { at: atLocal('02:55:00') }; // 19:55 Los Angeles, previous calendar date
   const world = pushOutboxWorld({
     now: () => clock.at,
     tokens: { reader: 'review-device' },
@@ -54,6 +55,10 @@ function rig() {
     await delivery.drain();
   };
   const workout = async () => {
+    expect(decideReminder({
+      now: clock.at, timezone: 'America/Los_Angeles', preferredTime: 'evening',
+      firstSessionDate: null, planDates: new Set(['2026-10-06']),
+    })).toMatchObject({ send: true, slot: 'evening' });
     await notifications.pushToUser('reader', 'Review workout', 'Review evening reminder', {}, undefined, {
       kind: NotificationKind.WORKOUT_REMINDER, dedupeKey: 'review-workout-evening',
     });
@@ -67,39 +72,40 @@ describe('LS-1192 B3: workout own-time exception does not permit night delivery 
   });
   afterEach(() => { jest.useRealTimers(); jest.restoreAllMocks(); });
 
-  it('control: an eligible evening reminder without burst pressure sends at 20:30', async () => {
+  it('control: an eligible evening reminder without burst pressure sends at 20:00', async () => {
     const r = rig();
-    r.advance('03:30:00');
+    r.advance('03:00:00');
     await r.workout();
     await r.delivery.drain();
     expect(r.send).toHaveBeenCalledTimes(1);
     expect(r.world.rows[0].status).toBe('sent');
   });
 
-  it('B3: a 20:30 workout reminder delayed by normal Community bursts stays held at 21:00', async () => {
+  it('B3: an eligible 20:00 workout reminder delayed by normal Community bursts stays held at 21:00', async () => {
     const r = rig();
-    r.advance('03:25:00');
+    r.advance('02:55:00');
     await r.communityBurst('first');
     expect(r.send).toHaveBeenCalledTimes(8);
-    r.advance('03:30:00');
+    r.advance('03:00:00');
     await r.workout();
     await r.delivery.drain();
     const reminder = r.world.rows.find((row) => row.kind === NotificationKind.WORKOUT_REMINDER);
-    expect(reminder).toMatchObject({ status: 'pending', not_before: atLocal('03:40:00') });
-
-    r.advance('03:35:01');
-    await r.communityBurst('second');
-    expect(r.send).toHaveBeenCalledTimes(16);
-    r.advance('03:40:00');
-    await r.delivery.drain();
-    expect(reminder).toMatchObject({ status: 'pending', not_before: atLocal('03:50:00') });
-
-    r.advance('03:45:02');
-    await r.communityBurst('third');
-    expect(r.send).toHaveBeenCalledTimes(24);
-    r.advance('03:50:00');
-    await r.delivery.drain();
-    expect(reminder).toMatchObject({ status: 'pending', not_before: atLocal('04:00:00') });
+    expect(reminder).toMatchObject({ status: 'pending', not_before: atLocal('03:10:00') });
+    const deferrals = [
+      ['03:05:01', '03:10:00', '03:20:00'],
+      ['03:15:02', '03:20:00', '03:30:00'],
+      ['03:25:03', '03:30:00', '03:40:00'],
+      ['03:35:04', '03:40:00', '03:50:00'],
+      ['03:45:05', '03:50:00', '04:00:00'],
+    ];
+    for (const [index, [burstAt, drainAt, nextAt]] of deferrals.entries()) {
+      r.advance(burstAt);
+      await r.communityBurst(`phase-${index}`);
+      expect(r.send).toHaveBeenCalledTimes((index + 2) * 8);
+      r.advance(drainAt);
+      await r.delivery.drain();
+      expect(reminder).toMatchObject({ status: 'pending', not_before: atLocal(nextAt) });
+    }
     r.send.mockClear();
 
     r.advance('04:00:00'); // 21:00 Los Angeles: only the reminder is due; burst window is now clear.
