@@ -58,6 +58,13 @@ function rig() {
         id: 'review-target', workspace_id: WORKSPACE, cohort_id: COHORT,
         sender_id: AUTHOR, deleted_at: null, scope: 'cohort',
       })),
+      // FR-1192: fixture only. community_messages' key is (id, created_at), so
+      // the real lookup by id alone is findFirst (findUnique by id does not
+      // type-check: TS2322 in build-and-test run 41164376583). Same row.
+      findFirst: jest.fn(async () => ({
+        id: 'review-target', workspace_id: WORKSPACE, cohort_id: COHORT,
+        sender_id: AUTHOR, deleted_at: null, scope: 'cohort',
+      })),
     },
     communityPost: {
       findUnique: jest.fn(async () => ({
