@@ -38,8 +38,8 @@ function rig(source: Case, at = NOON) {
     now: () => clock.at,
     tokens: { client: 'client-device', coach: 'coach-device' },
     prefs: {
-      client: { timezone: 'America/Los_Angeles', timezone_updated_at: NOON },
-      coach: { timezone: 'America/Los_Angeles', timezone_updated_at: NOON },
+      client: { muted: !source.startsWith('workout'), timezone: 'America/Los_Angeles', timezone_updated_at: NOON },
+      coach: { muted: true, timezone: 'America/Los_Angeles', timezone_updated_at: NOON },
     },
   });
   // Failure injection is at the datastore boundary of each actual predicate.
@@ -53,7 +53,7 @@ function rig(source: Case, at = NOON) {
       findUnique: jest.fn(async ({ where }: { where: { id: string } }) => ({
         id: where.id,
         role: where.id === 'coach' ? 'coach' : 'student',
-        coach_id: 'coach',
+        coach_id: where.id === 'coach' ? null : 'coach',
         name: 'Morgan',
         deleted_at: null,
         deletion_scheduled_at: null,
@@ -61,7 +61,9 @@ function rig(source: Case, at = NOON) {
         expo_push_token: w.tokens[where.id],
       })),
       findFirst: jest.fn(async () => ({ id: 'client' })),
+      findMany: jest.fn(async () => [{ id: 'client' }]),
     },
+    coachingSession: { ...w.db.coachingSession, findMany: jest.fn(async () => []) },
     dunningState: {
       findUnique: jest.fn(async () => {
         if (source.includes('dunning')) await read();
@@ -154,15 +156,22 @@ function rig(source: Case, at = NOON) {
   const userId = source === 'coach dunning' ? 'coach' : 'client';
   const kind = workout ? 'workout_reminder'
     : source === 'coach dunning' ? 'coach_alert'
-      : source.includes('dunning') ? 'dunning_payment'
+      : source.includes('dunning') ? NotificationKind.DUNNING_BLOCKER
         : source.startsWith('trial') ? 'trial_ending' : NotificationKind.PLAN_RENEWAL;
   return {
     clock, state, w, db, read, send, delivery, makeDelivery, notifications,
-    queue: () => delivery.enqueue({
-      userId, kind, title: 'Notice', body: 'An existing reminder',
-      data: {}, context, timeZone: 'America/Los_Angeles',
-      dedupeKey: `independent:${source}`, collapseKey: `independent:${source}`,
-    }),
+    queue: () => source === 'coach dunning'
+      ? new CoachAlertEmitter(notifications).emit({
+          coachId: 'coach', clientUserId: 'client', alertId: 'day7-proof',
+          alertType: 'dunning_step7', severity: 'warning', money: true,
+          message: 'An existing reminder',
+          dunning: { stateId: 'state', cycleKey: String(ENTERED.getTime()) },
+        }, { inapp: false })
+      : delivery.enqueue({
+          userId, kind, title: 'Notice', body: 'An existing reminder',
+          data: {}, context, timeZone: 'America/Los_Angeles',
+          dedupeKey: `independent:${source}`, collapseKey: `independent:${source}`,
+        }),
   };
 }
 
@@ -216,7 +225,7 @@ describe('LS-1192R4 independent source recovery controls', () => {
     expect(r.send).toHaveBeenCalledTimes(1);
     expect(r.w.rows[0]).toMatchObject({ status: 'sent', attempts: 1 });
     const message = r.send.mock.calls[0][0][0];
-    expect(message).toMatchObject({ body: 'An existing reminder' });
+    expect(message).toMatchObject({ body: r.w.rows[0].body });
     if (source.startsWith('workout')) expect(message).toMatchObject({ channelId: 'default' });
   });
 
@@ -258,6 +267,7 @@ describe('LS-1192R4 independent source recovery controls', () => {
     expect(r.w.rows[0]).toMatchObject({ status: 'pending', attempts: 0 });
     // At noon a plain admitted push carries no held source and must not read one.
     r.clock.at = new Date(NOON.getTime() + 2 * 24 * 60 * 60_000);
+    r.w.prefs.client.muted = false;
     await r.notifications.pushToUser('client', 'Import complete', 'Your import is ready.',
       {}, undefined, { kind: 'import.complete', muteAllOnly: true, dedupeKey: 'ordinary-proof' });
     await r.delivery.drain();
@@ -266,4 +276,31 @@ describe('LS-1192R4 independent source recovery controls', () => {
     expect(r.send).toHaveBeenCalledTimes(2);
     expect(r.w.rows[0]).toMatchObject({ status: 'pending', attempts: 0 });
   });
+
+  it.each(Object.values(NotificationKind).filter((kind) => kind !== NotificationKind.PLAN_RENEWAL))(
+    '%s: without a held source there is no new source wait',
+    async (kind) => {
+      const r = rig('client dunning');
+      const id = `source-free:${kind}`;
+      r.w.tokens[id] = 'source-free-device';
+      r.db.user.findFirst.mockRejectedValue(new Error('source query must not run'));
+      r.db.clientWorkoutAssignment.findMany.mockRejectedValue(new Error('source query must not run'));
+      r.db.workoutSession.findFirst.mockRejectedValue(new Error('source query must not run'));
+      r.db.packageTrialNotice.findUnique.mockRejectedValue(new Error('source query must not run'));
+      await r.delivery.enqueue({
+        userId: id, kind, title: 'Ordinary notice', body: 'Existing copy', data: {},
+        context: { senderWords: true, muteAllOnly: true },
+        timeZone: 'America/Los_Angeles', dedupeKey: id, collapseKey: id,
+      });
+      await r.delivery.drain();
+      await r.delivery.drain();
+      expect(r.send).toHaveBeenCalledTimes(1);
+      expect(r.w.rows[0]).toMatchObject({ status: 'sent', attempts: 1 });
+      expect(r.read).not.toHaveBeenCalled();
+      expect(r.db.user.findFirst).not.toHaveBeenCalled();
+      expect(r.db.clientWorkoutAssignment.findMany).not.toHaveBeenCalled();
+      expect(r.db.workoutSession.findFirst).not.toHaveBeenCalled();
+      expect(r.db.packageTrialNotice.findUnique).not.toHaveBeenCalled();
+    },
+  );
 });
