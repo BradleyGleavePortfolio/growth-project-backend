@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { Prisma } from '@prisma/client';
 import { FoodService } from '../src/food/food.service';
 import type { PrismaService } from '../src/prisma.service';
 
@@ -78,5 +79,42 @@ describe('LS-1198 independent control: distinct branded catalog IDs remain selec
     const result = await service.search('protein bar', 50, 'viewer');
 
     expect(result.results.map((food) => food.id).sort()).toEqual(['off_111', 'off_222']);
+  });
+
+  it('keeps two custom branded food IDs with different macros, fresh and cached', async () => {
+    const rows: Array<Record<string, unknown>> = [];
+    jest.spyOn(global, 'fetch').mockResolvedValue(stub<Response>({
+      ok: true,
+      status: 200,
+      json: async () => ({ foods: [], products: [] }),
+    }));
+    const service = new FoodService(stub<PrismaService>({
+      foodItem: {
+        create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+          const row = { ...data, id: `00000000-0000-4000-8000-00000000000${rows.length + 1}` };
+          rows.push(row);
+          return row;
+        }),
+      },
+      $queryRaw: jest.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+        const sql = Prisma.sql(strings, ...values);
+        return sql.values.includes('viewer') ? rows : [];
+      }),
+    }));
+    const common = {
+      name: 'Protein bar', brand_or_restaurant: 'Acme',
+      serving_description: '1 bar', serving_size_grams: 50,
+      calories: 180, fat_g: 5,
+    };
+    const higherProtein = await service.create({ ...common, protein_g: 20, carbs_g: 15 }, 'viewer');
+    const higherCarb = await service.create({ ...common, protein_g: 10, carbs_g: 25 }, 'viewer');
+
+    const fresh = await service.search('protein bar', 50, 'viewer');
+    const cached = await service.search('protein bar', 50, 'viewer');
+    const expected = [higherProtein.id, higherCarb.id].sort();
+
+    expect(fresh.results.map((food) => food.id).sort()).toEqual(expected);
+    expect(cached.results.map((food) => food.id).sort()).toEqual(expected);
+    expect(fresh.results.map((food) => food.protein_g).sort((a, b) => a - b)).toEqual([10, 20]);
   });
 });
