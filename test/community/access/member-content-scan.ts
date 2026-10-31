@@ -878,10 +878,6 @@ function followHeldArguments(
   reach.add(ANY_MODEL);
   const targets = (model: string, key: string): string[] =>
     model === ANY_MODEL ? [...(anyRelations.get(key) ?? [])] : [models.get(model)?.relations.get(key)].filter((t): t is string => !!t);
-  // Prisma's scalar filter keys (StringFilter, IntFilter, DateTimeFilter, the list filters, Json filters).
-  const SCALAR_FILTER_KEYS = new Set(['equals', 'in', 'notIn', 'lt', 'lte', 'gt', 'gte', 'not', 'contains', 'startsWith',
-    'endsWith', 'mode', 'search', 'has', 'hasSome', 'hasEvery', 'isEmpty', 'path', 'string_contains', 'string_starts_with',
-    'string_ends_with', 'array_contains', 'array_starts_with', 'array_ends_with']);
   const isMember = (model: string) => Object.prototype.hasOwnProperty.call(MEMBER_CONTENT_MODELS, model);
 
   type Prop = { key?: string; value?: ts.Expression };
