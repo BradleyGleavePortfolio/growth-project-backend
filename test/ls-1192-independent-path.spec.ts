@@ -174,8 +174,8 @@ describe('LS-1192 independent transport and delivery contracts', () => {
       r.world.prefs.reader.muted = true;
       jest.spyOn(r.notifications, 'createNotification').mockResolvedValue(null);
       const emitter = new CoachAlertEmitter(r.notifications);
-      await emitter.emit('reader', {
-        alertId: `review:${alertType}`, alertType, severity: 'critical',
+      await emitter.emit({
+        coachId: 'reader', alertId: `review:${alertType}`, alertType, severity: 'critical',
         message: 'Review safety alert',
       }, { inapp: false, push: true });
       expect(r.world.rows).toHaveLength(1);
@@ -203,7 +203,7 @@ describe('LS-1192 independent transport and delivery contracts', () => {
     await r.delivery.drain();
     expect(r.send.mock.calls[0][0]).toEqual([expect.objectContaining({
       title: payload.message, body: payload.alertType,
-      data: { alertId: payload.alertId, alertType: payload.alertType, category: 'system' },
+      data: { alertId: payload.alertId, alertType: payload.alertType, category: 'SYSTEM' },
     })]);
     expect(r.direct).not.toHaveBeenCalled();
   });
