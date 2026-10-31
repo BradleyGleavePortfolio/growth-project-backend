@@ -42,9 +42,9 @@ describe('FR-1189R3 (LO-1189R3 C1): Photoshop 1059 resources that are not TIFFs 
       const start = Buffer.from(${JSON.stringify([...SOI, ...JFIF])});
       const scan = Buffer.from(${JSON.stringify(SCAN)});
       const photo = ${SHAPES[shape]};
-      const subarray = Uint8Array.prototype.subarray;
+      const subarray = Buffer.prototype.subarray;
       let views = 0;
-      Uint8Array.prototype.subarray = function (...args) { views += 1; return subarray.apply(this, args); };
+      Buffer.prototype.subarray = function (...args) { views += 1; return subarray.apply(this, args); };
       global.gc();
       const before = process.memoryUsage();
       const begin = Date.now();
