@@ -528,6 +528,20 @@ export const SENDERS: SenderRow[] = [
     driver: 'scoutImport',
     covered: 'scoutImport driver here; test/mute-all-ordinary-senders.spec.ts',
   },
+  {
+    // FR-1192R3: b#1192 moved pushToCoach off the Expo transport onto pushToUser, so it is a sender now.
+    file: 'src/notifications/notifications.service.ts',
+    fn: 'NotificationsService.pushToCoach',
+    via: ['pushToUser'],
+    kinds: ['coach_alert'],
+    sends: 'push (pushToUser)',
+    muteAll: { does: 'stops', why: 'route kind coach_alert, no Mute all pass: the outbox worker reads the switch and Mute all when it sends' },
+    quietHours: QH_OUTBOX,
+    mute: NO_MUTE,
+    blockBan: NO_ACTOR,
+    recipient: 'the coach the caller names (no caller on main, LO-1192R2 N1)',
+    covered: 'not driven here (no caller); src/notifications/notifications-category.spec.ts drives its tap data',
+  },
   // ── Community ─────────────────────────────────────────────────────────────────────────────────
   COMMUNITY_VIA_RELAY('CommunityChallengesService.updateProgress', 'src/community/challenges/community-challenges.service.ts', 'community_challenge_milestone', 'the participant who reached the milestone', { does: 'n/a', why: "the participant's own progress" }),
   COMMUNITY_VIA_RELAY('CommunityDmsService.send', 'src/community/dms/community-dms.service.ts', 'community_dm_received', 'the DM recipient', { does: 'stops', why: 'assertDmReadable refuses a blocked pair or a member who may not read the DM before the message is written' }),
