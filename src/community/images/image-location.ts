@@ -136,6 +136,16 @@ const EXIF_IN_BYTES = [Buffer.from('Exif\0\0II*\0', 'latin1'), Buffer.from('Exif
 const XMP_LOCATION_NAME = /latitude|longt?itude|lrftargetl(?:at|on)/i;
 /** XMP that says part of it sits in ExtendedXMP (not read, so refused); unchanged since FR-1164R. */
 const HAS_EXTENDED_XMP = /HasExtendedXMP/;
+/**
+ * FR-1189R3 (LS-1189R3 B1): the same names in UTF-16 or UTF-32 text, either byte order, matched in the bytes read as
+ * latin1 with no decoded copy: each letter is its byte then a zero (one UTF-16 unit, little endian, or big endian one
+ * byte on), with any zero units (U+0000, as UTF-32 pads each letter) between letters. A match at an even byte is the
+ * text read as UTF-16LE from offset 0 with its U+0000s taken out, at an odd byte from offset 1: FR-1189R2's verdicts.
+ */
+const wideNames = (names: string[], flags: string) =>
+  new RegExp(names.map((name) => `${[...name].join('\\0(?:\\0\\0)*')}\\0`).join('|'), flags);
+const WIDE_LOCATION_NAME = wideNames(['latitude', 'longitude', 'longtitude', 'lrftargetlat', 'lrftargetlon'], 'i');
+const WIDE_HAS_EXTENDED_XMP = wideNames(['HasExtendedXMP'], '');
 const EXTENDED_XMP = 'http://ns.adobe.com/xmp/extension/\0'; // an ExtendedXMP chunk's signature
 /** FR-1189 (LO-1189 B2): an MP4 / QuickTime position, a "\xA9xyz" atom's ISO 6709 text or Apple's location key. */
 const MP4_LOCATION = /\xa9xyz[\s\S]{0,8}[+-]\d|location\.ISO6709/;
@@ -339,20 +349,7 @@ function jumbfLocated(segments: Buffer[], budget: Budget): boolean {
 function bytesLocated(bytes: Uint8Array, budget: Budget): boolean {
   if (bytes.length === 0) return false;
   const b = asBuffer(bytes);
-  return exifInBytesLocated(b, budget) || photoshopExifLocated(b, budget) || textLocated(b.toString('latin1')) || utf16Located(b);
-}
-
-/**
- * FR-1189 (LO-1189 B2): XMP's location names (and the ExtendedXMP note) in UTF-16 text, little or big endian, at an even
- * or an odd offset: the bytes read as UTF-16LE from offset 0 and from offset 1 cover all four. FR-1189R2 (LO-1189R2 B1):
- * and UTF-32, either byte order: read that way each letter has a U+0000 after it, so the U+0000s are taken out first.
- */
-function utf16Located(b: Buffer): boolean {
-  if (b.length < 2 || !b.includes(0)) return false;
-  return [b, b.subarray(1)].some((from) => {
-    const text = from.toString('utf16le').replaceAll('\0', '');
-    return HAS_EXTENDED_XMP.test(text) || XMP_LOCATION_NAME.test(text);
-  });
+  return exifInBytesLocated(b, budget) || photoshopExifLocated(b, budget) || textLocated(b.toString('latin1'), true);
 }
 
 /** Each EXIF header in the bytes, read as EXIF from its TIFF header to the end of the bytes. */
@@ -379,8 +376,13 @@ function photoshopExifLocated(b: Buffer, budget: Budget): boolean {
       if (name >= b.length || sizeAt + 4 > b.length) return true;
       const start = sizeAt + 4;
       const end = start + b.readUInt32BE(sizeAt);
-      const tiff = b.subarray(start, start + 4);
-      if (header === PHOTOSHOP_EXIF[1] && tiff.length === 4 && !TIFF_HEADERS.some((t) => t.equals(tiff))) continue;
+      // FR-1189R3 (LO-1189R3 C1): a 1059 skipped is charged like a directory read, and compared in place, so a file of
+      // them is read in bounded work (past the budget the photo is located, as for EXIF).
+      const notTiff = start + 4 <= b.length && !TIFF_HEADERS.some((t) => b.compare(t, 0, 4, start, start + 4) === 0);
+      if (header === PHOTOSHOP_EXIF[1] && notTiff) {
+        if ((budget.entries -= 1) < 0) return true;
+        continue;
+      }
       if (end > b.length || exifLocated(b.subarray(start, end), budget)) return true;
     }
   }
@@ -396,7 +398,7 @@ function app1Located(payload: Uint8Array, budget: Budget): boolean {
     return exifLocated(tiff, budget) || bytesLocated(tiff.subarray(8), budget);
   }
   // A FLIR chunk alone can cut an embedded image's EXIF; its text is matched here, its bytes once joined (flirLocated).
-  if (startsWith(b, FLIR_HEADER)) return textLocated(b.toString('latin1')) || utf16Located(b);
+  if (startsWith(b, FLIR_HEADER)) return textLocated(b.toString('latin1'), true);
   // FR-1189 (LO-1189 B2): a Parrot thermal TIFF, read as EXIF as exiftool reads it, then its bytes.
   if (startsWith(b, PARROT_HEADER)) {
     const tiff = b.subarray(PARROT_HEADER.length);
@@ -406,9 +408,13 @@ function app1Located(payload: Uint8Array, budget: Budget): boolean {
   return bytesLocated(b, budget);
 }
 
-/** XMP's location names, a note that part of it sits in ExtendedXMP, an ExtendedXMP chunk's signature, an MP4 position (FR-1189). */
-function textLocated(text: string): boolean {
-  return text.includes(EXTENDED_XMP) || HAS_EXTENDED_XMP.test(text) || XMP_LOCATION_NAME.test(text) || MP4_LOCATION.test(text);
+/**
+ * XMP's location names, a note that part of it sits in ExtendedXMP, an ExtendedXMP chunk's signature, an MP4 position
+ * (FR-1189); with `wide`, the names and the note in UTF-16 or UTF-32 text too (FR-1189 LO-1189 B2, FR-1189R2 LO-1189R2 B1).
+ */
+function textLocated(text: string, wide = false): boolean {
+  const named = text.includes(EXTENDED_XMP) || HAS_EXTENDED_XMP.test(text) || XMP_LOCATION_NAME.test(text) || MP4_LOCATION.test(text);
+  return named || (wide && (WIDE_HAS_EXTENDED_XMP.test(text) || WIDE_LOCATION_NAME.test(text)));
 }
 
 /**

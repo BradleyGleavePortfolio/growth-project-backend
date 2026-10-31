@@ -564,4 +564,42 @@ describe('carriesLocation (PHOTO-GPS)', () => {
     expect(located(inSegments(app13(resource(0x0423, tiff('MM', 1))))([]))).toBe(true); // a 1059 TIFF with a GPS IFD
     expect(located(inSegments(app13(resource(0x0423, tiff('II')).slice(0, 14)))([]))).toBe(true); // header cut short
   });
+
+  it('FR-1189R3 (LS-1189R3 B1): names in UTF-16 or UTF-32 text are matched in the bytes with the verdicts of decoding them', () => {
+    // FR-1189R2's reader: the bytes as UTF-16LE from offset 0 and from offset 1, U+0000s taken out, then the names.
+    const decoded = (b: Buffer) =>
+      [b, b.subarray(1)].some((from) => {
+        const text = from.toString('utf16le').replaceAll('\0', '');
+        return /HasExtendedXMP/.test(text) || /latitude|longt?itude|lrftargetl(?:at|on)/i.test(text);
+      });
+    const narrow = (b: Buffer) => /HasExtendedXMP|latitude|longt?itude|lrftargetl(?:at|on)/i.test(b.toString('latin1'));
+    const names = ['latitude', 'LONGITUDE', 'GpsLongtitude', 'LRFTargetLat', 'lrftargetLON', 'HasExtendedXMP', 'hasextendedxmp'];
+    let seed = 1189;
+    const next = (n: number) => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed % n;
+    };
+    const units = [[0], [0, 0], [0, 0, 0], [1, 0], [0x78], [0xc0], [0x4c], [0x61]];
+    let found = 0;
+    for (let k = 0; k < 20_000; k += 1) {
+      const bytes: number[] = [];
+      for (let p = next(5); p >= 0; p -= 1) {
+        const name = names[next(names.length)];
+        const cut = next(3) === 0 ? next(name.length) : -1; // a letter changed or dropped
+        const be = next(2) === 1;
+        [...name].forEach((ch, at) => {
+          if (at === cut) bytes.push(...units[next(units.length)]);
+          else bytes.push(...(be ? [0, ch.charCodeAt(0)] : [ch.charCodeAt(0), 0]));
+          for (let z = next(4) === 0 ? next(3) : 0; z > 0; z -= 1) bytes.push(...units[next(4)]);
+        });
+        for (let z = next(4); z > 0; z -= 1) bytes.push(...units[next(units.length)]);
+      }
+      const tail = Buffer.from(bytes);
+      const expected = narrow(tail) || decoded(tail);
+      if (expected) found += 1;
+      expect([tail.toString('hex'), located(afterEoi([...tail])([]))]).toEqual([tail.toString('hex'), expected]);
+    }
+    expect(found).toBeGreaterThan(500); // both verdicts are well represented
+    expect(found).toBeLessThan(18_000);
+  });
 });
