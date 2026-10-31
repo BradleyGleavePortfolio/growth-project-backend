@@ -216,9 +216,14 @@ function identityOf(item: FoodResult): string {
 
 // USDA names the plain form of a food "..., raw" or "..., whole" ("Bananas, raw",
 // "Eggs, Grade A, Large, egg whole"); among equal matches it comes before a part
-// of the food ("egg yolk") or a prepared form.
-const PLAIN_FORM = new Set(['raw', 'whole']);
-const plainForm = (item: FoodResult) => (words(item.name).some((w) => PLAIN_FORM.has(w)) ? 1 : 0);
+// of the food ("egg yolk") or a prepared form. FR-1198 (LO-1198 C3): "whole"
+// counts only as its own comma part ("Milk, whole") or "egg whole", not inside
+// "whole grain" or "whole milk".
+const PLAIN_PARTS = new Set(['whole', 'egg whole']);
+const plainForm = (item: FoodResult) =>
+  words(item.name).includes('raw') || item.name.split(',').some((part) => PLAIN_PARTS.has(words(part).join(' ')))
+    ? 1
+    : 0;
 
 /**
  * De-duplicate by food identity (the first source listed wins), then rank.
