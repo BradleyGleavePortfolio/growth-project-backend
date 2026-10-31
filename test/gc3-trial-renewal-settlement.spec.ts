@@ -26,7 +26,9 @@ function webTrialPurchase(): ClientPurchase {
     amount_cents: 14_900,
     currency: 'usd',
     billing_type: 'recurring',
-    status: 'active',
+    // FR-1193 — the web conversion stores a trial as 'trialing' (a lost
+    // renewal webhook leaves it there for the sweep).
+    status: 'trialing',
     entitlement_active: true,
     source: null,
     stripe_payment_intent_id: 'seti_webtrial01',

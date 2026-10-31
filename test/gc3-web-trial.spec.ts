@@ -269,7 +269,8 @@ describe('GC-3 — web page trials: card saved, nothing charged that day, one tr
     expect(purchase).toMatchObject({
       coach_user_id: COACH,
       stripe_subscription_id: 'sub_webtrial01',
-      status: 'active',
+      // FR-1193 (LS-1193 B2) — stored like an app trial.
+      status: 'trialing',
       entitlement_active: true,
       trial_days: 7,
       card_on_file: true,
@@ -758,4 +759,60 @@ describe('GC-3 — pay page and return page words', () => {
     }
   });
 
+  // FR-1193 (LS-1193 B2) — a short web trial is already inside the notice
+  // window when it converts: the shared sweep reaches it at once, with no
+  // later subscription webhook.
+  it('FR-1193: a 3-day web trial gets its notice from the sweep right after conversion', async () => {
+    jest.useFakeTimers({
+      now: new Date('2026-10-30T17:00:00Z'),
+      doNotFake: ['setImmediate', 'nextTick', 'setTimeout', 'clearTimeout'],
+    });
+    try {
+      const world = makeDb();
+      world.pkg.trial_days = 3;
+      const gc = world.addCheckout({ package_snapshot: { price_cents: 14900, trial_days: 3 } });
+      const { service, stripe } = build(world);
+      stripe.retrieveSubscription.mockImplementation(async (subId: string) => ({
+        id: subId, status: 'trialing', trial_end: Math.floor((Date.now() + 3 * DAY) / 1000),
+      }));
+      await service.handlePaymentSucceeded(gc.stripe_payment_intent_id);
+      const [purchase] = world.state.clientPurchase;
+      expect(purchase).toMatchObject({ status: 'trialing', entitlement_active: true, card_on_file: true });
+
+      const purchases = makeTable([['id']], () => ({}));
+      purchases.rows.push(purchase);
+      world.db.clientPurchase.findMany = purchases.findMany;
+      world.db.clientPurchase.update = purchases.update;
+      world.db.clientPurchase.findUnique = async (args: any) => {
+        const row = await purchases.findUnique(args);
+        return row ? { ...row, package: world.pkg, coach: world.pkg.coach, client: { name: 'Jane', email: gc.guest_email } } : null;
+      };
+      const notices = makeTrialNoticeTable();
+      world.db.packageTrialNotice = notices;
+      world.db.connectCustomer = { findUnique: async () => null };
+      world.db.notificationPreferences = {
+        findUnique: async () => ({ timezone: 'America/Los_Angeles', timezone_updated_at: new Date() }),
+      };
+      world.db.coachPackage = { findUnique: async () => world.pkg };
+      const notifications = {
+        createNotification: jest.fn(async () => ({ id: 'notice-row' })),
+        getPreferences: jest.fn(async () => ({ muted: false })),
+        pushToUser: jest.fn(async () => ({ delivered: true, code: 'delivered' })),
+      };
+      const email = { send: jest.fn(async () => ({ status: 'sent' })) };
+      const noticeSvc = new TrialNoticeService(world.db, cast(notifications), cast(email));
+      await noticeSvc.sweep(new Date());
+      await noticeSvc.sweep(new Date());
+      expect({ push: notifications.pushToUser.mock.calls.length, email: email.send.mock.calls.length }).toEqual({ push: 1, email: 1 });
+      expect(notifications.pushToUser.mock.calls[0]).toEqual(expect.arrayContaining([
+        'Your free trial ends on Nov 2. Your card will be charged $149 then. Cancel anytime before.',
+      ]));
+      expect(email.send).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ amount_display: '$149', trial_end_date: 'Nov 2', will_charge: true }),
+      }));
+      expect(notices.rows).toHaveLength(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });

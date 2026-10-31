@@ -1845,7 +1845,11 @@ export class GuestCheckoutService {
             liveSubscriptionStatus === 'active' ||
             liveSubscriptionStatus === 'trialing'
           ) {
-            statusSnapshot = 'active';
+            // FR-1193 (LS-1193 B2) — a web trial is stored the way the app's
+            // trials are (the subscription webhook writes Stripe's status):
+            // 'trialing', so the trial view, the notice start/sweep paths and
+            // their still-due check reach it. Not a trial: 'active' as before.
+            statusSnapshot = trial && liveSubscriptionStatus === 'trialing' ? 'trialing' : 'active';
           } else if (liveSubscriptionStatus === 'past_due') {
             statusSnapshot = 'past_due';
           } else if (liveSubscriptionStatus === 'canceled') {
@@ -1868,7 +1872,8 @@ export class GuestCheckoutService {
             // entitlement on (the buyer paid; we don't want to gate them
             // out on a transient Stripe blip) and let the next webhook
             // refine. Subscription handler will fix status if needed.
-            statusSnapshot = 'active';
+            // FR-1193 — a web trial has charged nothing yet: still trialing.
+            statusSnapshot = trial ? 'trialing' : 'active';
           }
           try {
             purchaseRow = await tx.clientPurchase.create({
