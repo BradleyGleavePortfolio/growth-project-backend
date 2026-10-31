@@ -11,6 +11,7 @@ import {
   buildFallbackNarrative,
   withCoachAccountWaiting,
 } from '../src/coach/brief/coach-brief.service';
+import type { BriefContext, BriefContextHeadCoach } from '../src/coach/brief/coach-brief.types';
 import { coachAccountWaitingLine } from '../src/checkout/dunning-v2/coach-account-hold';
 import {
   asConfig,
@@ -32,11 +33,11 @@ const PF_W9 = coachAccountWaitingLine(1);
 
 type Live = { failing: number; waiting: number };
 
-function world(stored: { brief_date: string; context: Record<string, unknown>; mode?: string }, live: Live) {
-  const narrative = withCoachAccountWaiting(
-    buildFallbackNarrative(stored.context as never),
-    stored.context as { coach_account_waiting?: number },
-  );
+function world(
+  stored: { brief_date: string; context: BriefContext | BriefContextHeadCoach; mode?: string },
+  live: Live,
+) {
+  const narrative = withCoachAccountWaiting(buildFallbackNarrative(stored.context), stored.context);
   let row: Record<string, unknown> = {
     id: 'brief-1',
     coach_id: 'coach-1',
@@ -148,7 +149,7 @@ describe('FR-1195R2 F3: today\'s brief follows the hold both ways; earlier days 
   it("a head coach's brief is counted by the clients it was built from and the team's sellers", async () => {
     const live: Live = { failing: 0, waiting: 1 };
     const context = makeHeadCoachContext({ date: TODAY, dunning_in_progress: 0, dunning_amount_cents: 0, coach_account_waiting: 1 });
-    const w = world({ brief_date: TODAY, context: context as unknown as Record<string, unknown>, mode: 'head_coach' }, live);
+    const w = world({ brief_date: TODAY, context, mode: 'head_coach' }, live);
     w.prisma.teamSubCoachAssignment.findMany.mockResolvedValue([{ sub_coach_id: 'sub-1' }]);
 
     const out = await w.service.getOrGenerateTodaysBrief('coach-1');
