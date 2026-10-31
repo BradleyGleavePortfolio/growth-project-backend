@@ -1,0 +1,8 @@
+test/ls-1191-paid-filter.spec.ts
+test/ls-1191-bank-tries.spec.ts
+test/ls-1191-coach-client-unpaid.spec.ts
+test/ls-1191-head-sale-scope.spec.ts
+test/lo-1191-b1-unpaid-plan-not-ended.spec.ts
+test/coach-money.service.spec.ts
+test/ls-payfail-coach-brief-truth.spec.ts
+test/lo-payfail-coach-brief-paused-dunning.spec.ts
