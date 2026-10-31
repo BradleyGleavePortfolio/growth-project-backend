@@ -106,6 +106,8 @@ function world(opts: { muted?: boolean; token?: string | null } = {}) {
   };
   // PF-3-BE: the push outbox the pushes queue in (no zone known: no quiet hours).
   const outbox = pushOutboxWorld({ now: () => new Date() });
+  // The worker's token handoff reads the same token the user row holds.
+  if (opts.token !== null) outbox.tokens[CLIENT] = opts.token === undefined ? TOKEN : opts.token;
   const db = {
     ...outbox.db,
     ...tx,

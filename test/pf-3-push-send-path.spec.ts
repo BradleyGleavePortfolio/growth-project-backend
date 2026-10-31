@@ -202,7 +202,9 @@ describe('PF-3-BE: every direct sender waits for 08:00 in the recipient zone (KG
       if (/\.pushToUser\(/.test(src)) callers.add(rel);
       if (/sendPushNotificationsAsync|exp\.host\/--\/api\/v2\/push\/send'/.test(src)) expo.add(rel);
     }
-    expect([...callers].sort()).toEqual([...new Set(SENDERS.map((s) => s.file))].sort());
+    // The workout reminder keeps its own 07:00 (tested on its own below).
+    const ownTime = ['src/engagement/workout-reminder.service.ts'];
+    expect([...callers].sort()).toEqual([...new Set([...SENDERS.map((s) => s.file), ...ownTime])].sort());
     expect([...expo]).toEqual(['src/notifications/push/expo-push-client.ts']);
     // Every call site names its route (kind) and a replay key.
     for (const f of callers) {
@@ -333,6 +335,7 @@ describe('PF-3-BE: Mute all keeps passing safety and money as built', () => {
 describe('PF-3-BE: a held push re-checks blocks when it goes (KG-HELD-BLOCK-MESSAGE)', () => {
   it('a new-message push held overnight is not sent once the client blocks the sender', async () => {
     const r = rig(NIGHT, { [CLIENT]: inZone(LA) });
+    jest.spyOn(r.notifications, 'createNotification').mockResolvedValue(undefined as never); // inbox row: not under test
     const emitter = new MessageReceivedEmitter(r.notifications);
     await emitter.emit(CLIENT, { senderName: 'Morgan', threadId: CLIENT, senderId: COACH });
     expect(r.world.rows[0]).toMatchObject({
@@ -349,6 +352,7 @@ describe('PF-3-BE: a held push re-checks blocks when it goes (KG-HELD-BLOCK-MESS
 
   it('the same push goes when no block was made', async () => {
     const r = rig(NIGHT, { [CLIENT]: inZone(LA) });
+    jest.spyOn(r.notifications, 'createNotification').mockResolvedValue(undefined as never);
     await new MessageReceivedEmitter(r.notifications).emit(CLIENT, {
       senderName: 'Morgan',
       threadId: CLIENT,
