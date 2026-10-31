@@ -161,6 +161,8 @@ describe('CommunityMessagesService.send — group chat push (C-S-PUSH-4)', () =>
         deepLink: `tgp://community/cohorts/${COHORT}`,
         // PF-3-BE (KG-HELD-BLOCK-MESSAGE): the sender, so a held push re-checks blocks.
         otherUserId: SENDER,
+        // FR-1192 (F1): its community, so a held push re-checks a ban there.
+        workspaceId: WORKSPACE,
       });
       // Never the message text (lock-screen privacy).
       expect(JSON.stringify(input)).not.toContain('leg day');
