@@ -35,7 +35,10 @@ function world() {
     if (data.client_uuid && rows.some((r) => r.client_uuid === data.client_uuid)) {
       throw Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });
     }
-    const row = { quantity_multiplier: 1, client_uuid: null, ...data, id: `entry-${++seq}` } as Row;
+    const row: Row = {
+      quantity_multiplier: 1, ...data, id: `entry-${++seq}`,
+      client_uuid: typeof data.client_uuid === 'string' ? data.client_uuid : null, user_id: String(data.user_id),
+    };
     rows.push(row);
     return { ...row, food_item: food };
   };

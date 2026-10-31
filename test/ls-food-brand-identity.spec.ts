@@ -25,6 +25,7 @@ describe('LS-FOOD B5: branded catalog identity', () => {
     jest.spyOn(upstream, 'searchUSDA').mockResolvedValue(path === 'OFF products' ? [] : [alpha]);
     jest.spyOn(upstream, 'searchOpenFoodFacts').mockResolvedValue(path === 'OFF products' ? [alpha, beta] : [beta]);
     const result = await service.search('protein bar', 50, 'viewer');
-    expect(result.results.map((row) => row.brand)).toEqual(expect.arrayContaining(['Alpha', 'Beta']));
+    // The stubbed upstream rows carry their own `brand` field (not a FoodResult field).
+    expect(result.results.map((row) => stub<{ brand?: string }>(row).brand)).toEqual(expect.arrayContaining(['Alpha', 'Beta']));
   });
 });
