@@ -1157,6 +1157,13 @@ model RoutineExercise {
   default_rest_seconds Int            @default(90)
   video_url            String?
   order_index          Int
+  // EXID-BE (#189-D4 op 1): the library exercise this row came from, so Watch video opens its video.
+  // Null for an exercise of the client's own and for rows saved before it; a library item removed later
+  // leaves null. The server stores only ids of library rows that exist (WorkoutService).
+  catalog_exercise_id  String?
+  catalog_exercise     ExerciseCatalogItem? @relation(fields: [catalog_exercise_id], references: [id], onDelete: SetNull)
+
+  @@index([catalog_exercise_id])
 }
 
 model FastingWindow {
@@ -5948,6 +5955,9 @@ model ExerciseCatalogItem {
 
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
+
+  // EXID-BE: routine exercises picked from this library item (RoutineExercise.catalog_exercise_id).
+  routine_exercises RoutineExercise[]
 
   @@index([category])
   @@index([primary_muscle])
