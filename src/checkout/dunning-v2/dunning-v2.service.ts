@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma.service';
 import { StripeConnectApiService } from '../../connect/stripe-connect-api.service';
 import { NotificationKind } from '../../notifications/notification-kind';
 import { isDunningV2Enabled } from './dunning-v2.feature';
+import { DUNNING_V2_REVERSAL_REASON, dunningCycleKey, dunningCycleLive } from './dunning-cycle';
 import { DunningV2Telemetry } from './dunning-v2.telemetry';
 import {
   ChannelResult,
@@ -119,9 +120,8 @@ export const DUNNING_NOTICE_PENDING_GRACE_MS = 10 * 60_000;
  */
 export const DUNNING_NOTICE_CLAIM_MS = 10 * 60_000;
 
-export function dunningCycleKey(enteredAt: Date): string {
-  return String(enteredAt.getTime());
-}
+// FR-1192R2: the cycle rule lives in dunning-cycle.ts, so the push worker asks it too.
+export { DUNNING_V2_REVERSAL_REASON, dunningCycleKey };
 
 export function noticeDeliveryId(
   stateId: string,
@@ -307,7 +307,6 @@ export interface ClientDunningStatus {
 const PAID_STRIPE_STATUSES = new Set(['active', 'trialing']);
 
 /** `last_failure_reason` marker of a compressed late-reversal (dispute) cycle. */
-export const DUNNING_V2_REVERSAL_REASON = 'charge_disputed';
 export const FULL_REFUND_PAUSE_REASON = 'charge_refunded';
 const BILLING_PAUSE_REASONS = [DUNNING_V2_REVERSAL_REASON, FULL_REFUND_PAUSE_REASON];
 export function isBillingPauseReason(reason: string | null | undefined): boolean {
@@ -671,15 +670,7 @@ export class DunningV2Service {
   /** The cycle a delivery belongs to is still the live, unlocked one. */
   private async cycleStillLive(stateId: string, cycleKey: string): Promise<boolean> {
     const state = await this.prisma.dunningState.findUnique({ where: { id: stateId } });
-    return (
-      state != null &&
-      state.status === 'active' &&
-      // R-DISPUTE-PAUSE: a paused (locked) dispute cycle still sends its notices.
-      (state.locked_out_at == null || state.last_failure_reason === DUNNING_V2_REVERSAL_REASON) &&
-      state.client_canceled_at == null &&
-      state.entered_at != null &&
-      dunningCycleKey(state.entered_at) === cycleKey
-    );
+    return dunningCycleLive(state, cycleKey);
   }
 
   /** Write a receipt only while this worker still holds the claim. */
@@ -764,14 +755,7 @@ export class DunningV2Service {
       const state = await this.prisma.dunningState.findUnique({
         where: { id: first.dunning_state_id },
       });
-      const live =
-        state != null &&
-        state.status === 'active' &&
-        (state.locked_out_at == null || state.last_failure_reason === DUNNING_V2_REVERSAL_REASON) &&
-        state.client_canceled_at == null &&
-        state.entered_at != null &&
-        dunningCycleKey(state.entered_at) === first.cycle_key;
-      if (!live) {
+      if (!dunningCycleLive(state, first.cycle_key)) {
         await this.prisma.dunningNoticeDelivery.updateMany({
           where: {
             id: { in: rows.map((r) => r.id) },

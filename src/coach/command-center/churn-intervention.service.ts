@@ -769,13 +769,23 @@ export class ChurnInterventionService {
     ) {
       const copy = lockScreenCopy(NotificationKind.MESSAGE_RECEIVED, text);
       void this.notifications
-        .pushToUser(intervention.client_id, copy.title, copy.body, {
-          type: NUDGE_PUSH_KIND,
-          kind: NUDGE_PUSH_KIND,
-          actionScreen: NUDGE_TAP_SCREEN,
-          nudge_id: nudgeId,
-          notification_id: inboxNotificationId,
-        })
+        .pushToUser(
+          intervention.client_id,
+          copy.title,
+          copy.body,
+          {
+            type: NUDGE_PUSH_KIND,
+            kind: NUDGE_PUSH_KIND,
+            actionScreen: NUDGE_TAP_SCREEN,
+            nudge_id: nudgeId,
+            notification_id: inboxNotificationId,
+          },
+          undefined,
+          // PF-3-BE: the one send path: held to 08:00 in quiet hours, Mute
+          // all and a block with the coach read again when it goes, never
+          // posted twice for one nudge.
+          { kind: NUDGE_PUSH_KIND, muteAllOnly: true, dedupeKey: `coach_nudge:${nudgeId}`, otherUserId: coachId },
+        )
         .catch((err) => {
           this.logger.warn(
             `Push failed for nudge=${nudgeId}: ${err instanceof Error ? err.message : String(err)}`,

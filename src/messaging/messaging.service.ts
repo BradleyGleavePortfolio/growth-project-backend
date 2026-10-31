@@ -560,11 +560,15 @@ export class MessagingService {
     coachId: string,
     clientId: string,
   ): void {
-    const emit = () =>
+    const emit = (coachThread?: { coachId: string; clientId: string }) =>
       this.resolveSenderName(senderId).then((senderName) =>
         this.messageReceived.emit(recipientId, {
           senderName,
           threadId: clientId,
+          // PF-3-BE (KG-HELD-BLOCK-MESSAGE): a held push re-checks blocks.
+          senderId,
+          // FR-1192 (R1): ...and, where the mute was read here, the mute.
+          ...(coachThread ? { coachThread } : {}),
         }),
       );
     if (!isMessagingCoreV2Enabled()) {
@@ -572,7 +576,7 @@ export class MessagingService {
       return;
     }
     void this.isThreadMutedFor(recipientId, coachId, clientId).then((muted) =>
-      muted ? undefined : emit(),
+      muted ? undefined : emit({ coachId, clientId }),
     );
   }
 

@@ -135,6 +135,9 @@ describe('WorkoutReminderService', () => {
       REMINDER_TITLE,
       FIRST_DAY_BODY,
       expect.objectContaining({ kind: 'workout_reminder', local_date: C1, first_day: true }),
+      undefined,
+      // PF-3-BE: the one send path; the reminder keeps its own time.
+      expect.objectContaining({ kind: 'workout_reminder', dedupeKey: expect.stringMatching(/^workout_reminder:/) }),
     );
     expect(h.notifRows.rows).toHaveLength(1);
     expect(h.notifRows.rows[0]).toMatchObject({ kind: 'workout_reminder', channel: 'inapp' });
@@ -156,6 +159,8 @@ describe('WorkoutReminderService', () => {
       REMINDER_TITLE,
       FIRST_DAY_NO_PLAN_BODY,
       expect.objectContaining({ deep_link: 'tgp://workouts', local_date: C1, first_day: true }),
+      undefined,
+      expect.objectContaining({ kind: 'workout_reminder' }),
     );
     expect(h.notifRows.rows[0]).toMatchObject({
       body: FIRST_DAY_NO_PLAN_BODY,

@@ -454,7 +454,14 @@ export class BroadcastDispatcherService {
       // not muted; push_status above stays the truthful receipt.
       if (!threadMuted) {
         const senderName = await this.senderName(authorId);
-        await this.messageReceived.emit(client.id, { senderName, threadId: client.id });
+        // FR-1192 (R1, LS C2): the author, and the coach, whose blocks were
+        // checked above, are checked again when a held push goes.
+        await this.messageReceived.emit(client.id, {
+          senderName,
+          threadId: client.id,
+          senderId: authorId,
+          ...(b.coach_id !== authorId ? { alsoUserId: b.coach_id } : {}),
+        });
       }
       if (pushDecision === 'pending') {
         await this.prisma.coachBroadcastDelivery.updateMany({

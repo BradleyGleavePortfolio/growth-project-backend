@@ -306,11 +306,17 @@ export class WorkoutReminderService {
         });
         return 'ineligible';
       }
-      const push = await this.notifications.pushToUser(clientId, title, body, {
-        kind: NotificationKind.WORKOUT_REMINDER,
-        deep_link: deepLink,
-        ...payload,
-      });
+      // PF-3-BE: the one send path. The reminder keeps the time the client
+      // chose (quietHoursFor: own time), its switch is read again when it
+      // goes, and one claimed delivery is posted once (dedupe key).
+      const push = await this.notifications.pushToUser(
+        clientId,
+        title,
+        body,
+        { kind: NotificationKind.WORKOUT_REMINDER, deep_link: deepLink, ...payload },
+        undefined,
+        { kind: NotificationKind.WORKOUT_REMINDER, dedupeKey: `workout_reminder:${claim.deliveryId}` },
+      );
       delivered = push.delivered || delivered;
     }
     await this.prisma.workoutReminderDelivery.update({

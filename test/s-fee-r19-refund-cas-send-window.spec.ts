@@ -407,7 +407,9 @@ describe('Sol B-684-3: no provider call starts past the run deadline or the noti
     const started = Date.now();
     const clock = clockAt(started);
     await notice(c, started, { inapp_status: 'sent', email_status: 'disabled' });
-    const expoSend = jest.fn(async (..._a: unknown[]) => [{ status: 'ok', id: 'tk_1' }]);
+    // PF-3-BE: pushToUser hands the push to the one send path (the outbox's
+    // enqueue); "Expo is never called" is now "nothing is queued".
+    const expoSend = jest.fn(async (..._a: unknown[]) => ({ code: 'queued' }));
     let slow = true;
     const push: NotificationsService = Object.assign(
       Object.create(NotificationsService.prototype),
@@ -420,12 +422,7 @@ describe('Sol B-684-3: no provider call starts past the run deadline or the noti
             },
           },
         },
-        expo: {
-          chunkPushNotifications: (m: unknown[]) => [m],
-          sendPushNotificationsAsync: expoSend,
-          chunkPushNotificationReceiptIds: (ids: unknown[]) => [ids],
-          getPushNotificationReceiptsAsync: async () => ({}),
-        },
+        pushDelivery: { enqueue: expoSend },
         logger: { error: jest.fn(), warn: jest.fn() },
       },
     );
