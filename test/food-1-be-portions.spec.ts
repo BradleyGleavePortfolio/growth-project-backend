@@ -8,7 +8,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { FoodService, FoodResult } from '../src/food/food.service';
+import { FoodService, FoodResult, HUNDRED_GRAMS } from '../src/food/food.service';
 import { getGramsForVolume, volumeWeightsFor } from '../src/food/food-density';
 import type { PrismaService } from '../src/prisma.service';
 
@@ -63,17 +63,17 @@ describe('R1/R2: every food source offers only portions it can weigh', () => {
     {
       source: 'USDA Foundation, no package serving, real category',
       food: usda({ dataType: 'Foundation', foodCategory: 'Dairy and Egg Products' }),
-      serving: '100 g', grams: 100, cup: getGramsForVolume('Dairy and Egg Products', 'cup', 1), basic: true,
+      serving: HUNDRED_GRAMS, grams: 100, cup: getGramsForVolume('Dairy and Egg Products', 'cup', 1), basic: true,
     },
     {
       source: 'USDA Survey (FNDDS), no package serving, category without a density',
       food: usda({ dataType: 'Survey (FNDDS)', foodCategory: 'Burgers' }),
-      serving: '100 g', grams: 100, cup: undefined, basic: false,
+      serving: HUNDRED_GRAMS, grams: 100, cup: undefined, basic: false,
     },
     {
       source: 'USDA SR Legacy, no category at all',
       food: usda({ dataType: 'SR Legacy' }),
-      serving: '100 g', grams: 100, cup: undefined, basic: true,
+      serving: HUNDRED_GRAMS, grams: 100, cup: undefined, basic: true,
     },
     {
       source: 'USDA Branded, its own household measure',
@@ -136,7 +136,7 @@ describe('R1/R2: every food source offers only portions it can weigh', () => {
     fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(answer(detail));
     await svc.resolveOrImportId('usda_748967', 'viewer');
     expect(created[0]).toMatchObject({
-      category: 'generic', serving_description: '100 g', serving_size_grams: 100,
+      category: 'generic', serving_description: HUNDRED_GRAMS, serving_size_grams: 100,
       tags: ['usda:748967', 'category:Dairy and Egg Products', 'basic-food'],
     });
     const stored = await svc.getById('imported', 'viewer');
@@ -154,7 +154,7 @@ describe('R1/R2: every food source offers only portions it can weigh', () => {
       }),
     });
     const row = await svc.getById('old', 'viewer');
-    expect(row).toMatchObject({ serving_description: '100 g', serving_size_grams: 100, supports_volume_units: false });
+    expect(row).toMatchObject({ serving_description: HUNDRED_GRAMS, serving_size_grams: 100, supports_volume_units: false });
   });
 
   it("a custom food's own '1 serving' is its creator's words and stays", async () => {

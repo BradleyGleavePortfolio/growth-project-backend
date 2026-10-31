@@ -257,6 +257,8 @@ function rankFoodResults(items: FoodResult[], q: string, limit: number): FoodRes
 const SEARCH_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 // v2 (FOOD-1-BE): new order, portions and basic_food; v1 entries are ignored.
 const SEARCH_CACHE_KEY_PREFIX = 'food:search:v2:';
+// R2's label "100 g", with a no-break space so the number and unit stay on one line.
+export const HUNDRED_GRAMS = '100\u00a0g';
 
 /** Throws on an upstream answer we must not keep; a 404 is "nothing found", as before. */
 function upstreamFailed(response: Response, source: string): void {
@@ -545,7 +547,7 @@ export class FoodService implements OnModuleInit {
     // R2 (LO-FOOD B2): with no package serving the portion is 100 g, so it is
     // called "100 g", never "1 serving".
     const servingDesc = food.householdServingFullText ||
-      (food.servingSize ? `${food.servingSize}${food.servingSizeUnit || 'g'}` : '100 g');
+      (food.servingSize ? `${food.servingSize}${food.servingSizeUnit || 'g'}` : HUNDRED_GRAMS);
 
     // CANONICAL BASIS: USDA FDC's `foodNutrients[].value` is reported per 100g
     // for Foundation / SR Legacy / Branded entries. We keep that basis verbatim
@@ -873,7 +875,7 @@ export class FoodService implements OnModuleInit {
     // R2: a USDA import stored before FOOD-1-BE says "1 serving" for 100 g.
     const serving =
       item.serving_description === '1 serving' && grams === 100 && tags.some((t) => t.startsWith('usda:'))
-        ? '100 g'
+        ? HUNDRED_GRAMS
         : item.serving_description;
     // R1: the row's own household measure, else its real category (seeded and
     // USDA-imported rows keep it as a category:<name> tag), else none.
