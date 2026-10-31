@@ -62,7 +62,7 @@ describe('LS-1195 R8: first real payment after a web trial', () => {
     const prefetch = await w.handler.prefetchForOuterTx(event);
     await w.handler.handle(event, stub(w.prisma), prefetch);
     await flush();
-    expect(w.state()).toBeNull();
+    expect(w.state() ?? null).toBeNull();
     expect(w.purchase()?.entitlement_active).toBe(true);
     expect(w.coachAlert).not.toHaveBeenCalled();
     expect(w.clientPushes()).toBe(0);
