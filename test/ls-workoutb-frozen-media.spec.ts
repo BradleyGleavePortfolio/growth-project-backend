@@ -5,6 +5,11 @@ import type { PrismaService } from '../src/prisma.service';
 import type { MuxService } from '../src/video/mux.service';
 import { WorkoutBuilderService } from '../src/workout-builder/workout-builder.service';
 
+// R75: the repo's typed test double (as in test/gc2-pay-done.spec.ts), in place of inline casts.
+function stub<T>(value: unknown): T {
+  return value as T;
+}
+
 const row = {
   id: 'catalog-bench', slug: 'barbell-bench-press', source_ref: 'seed:push-001',
   name: 'Barbell Bench Press', category: 'push', primary_muscle: 'chest',
@@ -49,7 +54,7 @@ describe('LS-WORKOUTB signed media follows the prescription actually presented',
 
     const memberMatches = (where: AssignmentLookup['where']) =>
       where.client_id === undefined || where.client_id === member;
-    const prisma = {
+    const prisma = stub<PrismaService>({
       exerciseCatalogItem: { findFirst: jest.fn(async () => row) },
       clientWorkoutAssignment: {
         // setExercises soft-archives old rows, it does not delete them.
@@ -63,9 +68,9 @@ describe('LS-WORKOUTB signed media follows the prescription actually presented',
         findMany: jest.fn(async ({ where }: AssignmentLookup) =>
           memberMatches(where) ? [assignment] : []),
       },
-    } as unknown as PrismaService;
+    });
     const mintPlaybackUrl = jest.fn(() => playback);
-    const mux = { mintPlaybackUrl } as unknown as MuxService;
+    const mux = stub<MuxService>({ mintPlaybackUrl });
     const controller = new ExerciseCatalogController(new ExerciseCatalogService(prisma, mux));
     // Use the canonical catalog id throughout: this isolates snapshot version
     // authorization from the separate B2 external-reference identity failure.

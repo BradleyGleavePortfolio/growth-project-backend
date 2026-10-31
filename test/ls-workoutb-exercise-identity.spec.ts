@@ -4,6 +4,11 @@ import { ExerciseCatalogService } from '../src/exercise-catalog/exercise-catalog
 import type { PrismaService } from '../src/prisma.service';
 import type { MuxService } from '../src/video/mux.service';
 
+// R75: the repo's typed test double (as in test/gc2-pay-done.spec.ts), in place of inline casts.
+function stub<T>(value: unknown): T {
+  return value as T;
+}
+
 const row = {
   id: 'catalog-bench',
   slug: 'barbell-bench-press',
@@ -23,7 +28,7 @@ const playback = 'https://stream.example.invalid/fixture.m3u8';
 const request = { user: { id: 'member-one', role: 'student' } } as AuthedRequest;
 
 function controller(assignedRef: string, assignedMember = 'member-one') {
-  const prisma = {
+  const prisma = stub<PrismaService>({
     exerciseCatalogItem: {
       findFirst: jest.fn(async ({ where }: {
         where: { OR: Array<Partial<typeof row>> };
@@ -42,10 +47,10 @@ function controller(assignedRef: string, assignedMember = 'member-one') {
         ? { id: 'assignment-one' }
         : null),
     },
-  } as unknown as PrismaService;
-  const mux = {
+  });
+  const mux = stub<MuxService>({
     mintPlaybackUrl: jest.fn(() => playback),
-  } as unknown as MuxService;
+  });
   return new ExerciseCatalogController(new ExerciseCatalogService(prisma, mux));
 }
 

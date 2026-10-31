@@ -21,6 +21,11 @@ import { WorkoutService } from '../src/workout/workout.service';
 import type { AuthedRequest } from '../src/auth/auth-request';
 import type { CreateWorkoutDto } from '../src/workout/workout.dto';
 
+// R75: the repo's typed test double (as in test/gc2-pay-done.spec.ts), in place of inline casts.
+function stub<T>(value: unknown): T {
+  return value as T;
+}
+
 type Row = Record<string, unknown> & { id: string; user_id: string; client_key?: string | null };
 
 function fakeStore() {
@@ -66,9 +71,9 @@ function setup() {
   // entitlement / guard-chain suites, so they are left out of this unit.
   const controller = new WorkoutController(
     new WorkoutService(
-      store.prisma as unknown as PrismaService,
-      { emit } as unknown as PtmService,
-      { invalidateForUser } as unknown as ClientAIContextService,
+      stub<PrismaService>(store.prisma),
+      stub<PtmService>({ emit }),
+      stub<ClientAIContextService>({ invalidateForUser }),
     ),
   );
   // POST /workouts as the route sees it: (req, body, Idempotency-Key header).
