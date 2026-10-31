@@ -356,9 +356,9 @@ function noticeWorld(converted: Awaited<ReturnType<typeof convertWebTrial>>) {
             (p) =>
               p.status === w.status &&
               p.entitlement_active === w.entitlement_active &&
-              p.trial_ends_at instanceof Date &&
-              p.trial_ends_at > w.trial_ends_at.gt &&
-              p.trial_ends_at <= w.trial_ends_at.lte,
+              p.trial_ends_at != null &&
+              new Date(p.trial_ends_at).getTime() > new Date(w.trial_ends_at.gt).getTime() &&
+              new Date(p.trial_ends_at).getTime() <= new Date(w.trial_ends_at.lte).getTime(),
           )
           .map((p) => ({ ...p }));
       }),
