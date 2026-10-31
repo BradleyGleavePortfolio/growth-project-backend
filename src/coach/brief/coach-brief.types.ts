@@ -39,6 +39,8 @@ export interface BriefContext {
   revenue_today_cents: number;
   renewals_upcoming_7d: number;
   dunning_in_progress: number;
+  // PF-7-BE: renewals waiting on this coach's Stripe account (PF-W9); set only when > 0.
+  coach_account_waiting?: number;
 
   weight_logs_flagged: number;
 
@@ -90,6 +92,8 @@ export interface BriefContextHeadCoach {
 
   dunning_in_progress: number;
   dunning_amount_cents: number;
+  // PF-7-BE: renewals waiting on this coach's Stripe account (PF-W9); set only when > 0.
+  coach_account_waiting?: number;
 
   sub_coach_highlights: SubCoachHighlight[];
 }

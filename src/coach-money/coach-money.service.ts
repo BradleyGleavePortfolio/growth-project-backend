@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { DUNNING_V2_CADENCE_DAYS } from '../checkout/dunning-v2/dunning-v2.cadence';
+import { isCoachAccountHoldReason } from '../checkout/dunning-v2/coach-account-hold';
 import { movedAwayClientIds } from '../checkout/moved-client-money';
 import { movedAwayDates } from '../checkout/plan-renewal/switch-tell';
 
@@ -1805,6 +1806,9 @@ export class CoachMoneyService {
     for (const p of failed) {
       if (p.client && moved.has(p.client.id)) continue;
       const d = p.dunning;
+      // PF-7-BE (R7): a renewal waiting on the coach's own Stripe account is
+      // not the client's failed payment; the coach sees it only as PF-W9.
+      if (d?.status === 'active' && isCoachAccountHoldReason(d.last_failure_reason)) continue;
       const attempt = Math.min(
         maxAttempts,
         Math.max(1, d ? Math.max(d.failure_count, d.step_index + 1) : 1),
