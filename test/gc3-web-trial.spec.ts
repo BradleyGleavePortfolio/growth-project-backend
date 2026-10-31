@@ -50,7 +50,7 @@ function makeDb() {
     interval: 'month',
     interval_count: 1,
     trial_days: 7,
-    share_token: 'tok_trial_page_01',
+    share_token: 'tok_trial_page_012345',
     coach: { id: COACH, name: 'Alex' },
   };
   const withPkg = (r: Row | undefined) => (r ? { ...r, package: pkg } : null);
@@ -536,7 +536,7 @@ describe('GC-3 — pay page and return page words', () => {
             expires_at: new Date(Date.now() + DAY),
             idempotency_key: 'idem-key-trial-1',
             package_snapshot: { price_cents: 14900, trial_days: 7 },
-            package: { share_token: 'tok_trial_page_01', name: 'Monthly Coaching', coach: { name: 'Alex' } },
+            package: { share_token: 'tok_trial_page_012345', name: 'Monthly Coaching', coach: { name: 'Alex' } },
           })),
         },
         user: { findFirst: jest.fn(async () => null) },
@@ -551,7 +551,7 @@ describe('GC-3 — pay page and return page words', () => {
         })),
       },
     };
-    const res = await readPayDone(deps, 'tok_trial_page_01', {
+    const res = await readPayDone(deps, 'tok_trial_page_012345', {
       setup_intent: 'seti_webtrial01',
       setup_intent_client_secret: 'seti_webtrial01_secret_z',
     });
@@ -561,7 +561,7 @@ describe('GC-3 — pay page and return page words', () => {
     expect(html).toContain('Your free trial has started');
     expect(html).toContain('Nothing is charged today. Your first charge of $149.00 is on Nov 6.');
 
-    const wrong = await readPayDone(deps, 'tok_trial_page_01', {
+    const wrong = await readPayDone(deps, 'tok_trial_page_012345', {
       setup_intent: 'seti_webtrial01',
       setup_intent_client_secret: 'seti_other00001_secret_z',
     });
