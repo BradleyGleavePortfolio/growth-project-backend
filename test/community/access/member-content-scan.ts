@@ -17,7 +17,13 @@
  *             relation read (`findUnique(...).community_messages_sent()`); a relation filter (`{ rel: { some |
  *             none | every | is | isNot: ... } }` anywhere, `{ rel: { field: ... } }` in a `where`) and an order by
  *             a relation count (`{ rel: { _count: 'desc' } }`), each an EXISTS or a count over the table, are reads
- *             like an include (LO-1185R3 B1);
+ *             like an include (LO-1185R3 B1). FR-1185R4 (the class of LS-1185R5 B1 and LS-1185R4 B2): at every read
+ *             call on any model, its argument is followed back to where it is made (a constant or a `let` and its
+ *             later writes, a key set on it in a loop or a branch, Object.assign, a push, a spread, a helper's
+ *             return in any scanned file, a parameter at every call the scan sees) and walked model by model
+ *             through the schema (where, AND / OR / NOT, relation filters, select, include, orderBy, `_count`);
+ *             each relation into a member-content model is a read of the function that makes the call
+ *             (followHeldArguments);
  *   aliased   the delegate kept in a variable, passed along, destructured, or named in a string ('communityWin'
  *             handed to a generic reader);
  *   dynamic   FAIL CLOSED: a read the scan cannot tie to one model (a delegate picked by a runtime key: `x[model]`
@@ -25,7 +31,11 @@
  *             through Prisma.raw or a ${} after FROM/JOIN, also schema-qualified with or without quotes (`FROM
  *             public.${...}`, `FROM "public".${...}`); SQL built at runtime for $queryRawUnsafe or handed to
  *             Prisma.raw (LO-1185R3 C2); an include or select whose value or key the scan cannot follow, `{
- *             [relation]: true }` with a runtime key, `_count: true` (every relation of the model)). The site's model
+ *             [relation]: true }` with a runtime key, `_count: true` (every relation of the model)); and (FR-1185R4)
+ *             a where, select, include or count argument the follow-back cannot follow (a parameter of a callback
+ *             or of a function no scanned code calls, a package's call, a key it cannot name, `_count: true` held
+ *             anywhere, an object handed to a package's function that may add keys) on a model that can reach
+ *             members' content (modelsReachingMemberContent; on any other model it is quiet). The site's model
  *             is ANY_MODEL ('*'); the registry must list the reader with '*' and say what it reads;
  *   caller    a reference to a reader that leaves the rules to its caller, from another function: every repository
  *             reader (a *Repository class method that reads a model, passesRowsOn), every registry row that lists
@@ -43,7 +53,7 @@
  * Writes (create, update, upsert, delete) are not reads and are not listed. A write that returns rows is a
  * write here; the registry still lists the function when it also reads.
  *
- * Limits (each shown by a test in member-content-access.spec.ts, 'limit L1' to 'limit L10'):
+ * Limits (each shown by a test in member-content-access.spec.ts, 'limit L1' to 'limit L13'; L10 is closed):
  *   L1 the program loads no node_modules (noResolve: one program over src/ in about 10 s), so a value whose type
  *      comes from a package (`moduleRef.get(Repo)`) is unresolved, not `any`; a reader's name called on it is not
  *      seen (failing closed there flags Supabase storage `list`, a false read on every package call named like a
@@ -63,9 +73,14 @@
  *      client is not seen (`x.message` is every error's message); its read calls on any receiver are;
  *   L9 a key the checker cannot name on a value typed `any` (`anyValue[key](...)`) is not a caller site (every
  *      dynamic key on an untyped value would be); on a client, or with a read call after it, it fails closed;
- *   L10 a to-one relation filter written without `is` (`{ message: { read_at: null } }`) and held outside a
- *      `where` (a constant passed as the where later) is not seen; with some / none / every / is / isNot, or
- *      inside a `where`, it is.
+ *   L10 CLOSED in FR-1185R4: a to-one relation filter written without `is` and held outside a `where` (a
+ *      constant passed as the where later) is a read of the call that uses it (followHeldArguments);
+ *   L11 a key set on a held argument through a second name for it (`const alias = where; alias.rel = ...`) is not
+ *      seen (keys set on the variable itself, in a loop or a branch, and in a scanned helper it is handed to are);
+ *   L12 a parameter is followed to the calls of its function that the scan sees; a call through a reference to
+ *      the function handed elsewhere (`run(list)`) is not (a callback's own parameter fails closed);
+ *   L13 a read call on a delegate the scan cannot name (a parameter or a value typed any: `delegate.count(...)`)
+ *      is not walked (a member-content delegate itself is still an `aliased` or `prisma` site where it is named).
  *
  * Nothing here changes runtime code or the schema; both are only read.
  */
@@ -177,6 +192,44 @@ export function memberContentRelations(
     out.set(m[1], prev && !prev.split('|').includes(m[2]) ? `${prev}|${m[2]}` : m[2]);
   }
   return out;
+}
+
+/** One schema model: its client delegate and its relation fields (field -> the model it points at). */
+export interface SchemaModel {
+  delegate: string;
+  relations: Map<string, string>;
+}
+
+/** Every model of the schema with its relation fields (FR-1185R4: a held argument is walked model by model). */
+export function schemaModels(schemaPath = join(REPO_ROOT, 'prisma', 'schema.prisma')): Map<string, SchemaModel> {
+  const schema = readFileSync(schemaPath, 'utf8');
+  const blocks = [...schema.matchAll(/^model (\w+) \{([\s\S]*?)^\}/gm)];
+  const names = new Set(blocks.map((b) => b[1]));
+  const out = new Map<string, SchemaModel>();
+  for (const [, name, body] of blocks) {
+    const relations = new Map<string, string>();
+    for (const m of body.matchAll(/^[ \t]+(\w+)[ \t]+(\w+)(\[\]|\?)?([ \t]|$)/gm)) if (names.has(m[2])) relations.set(m[1], m[2]);
+    out.set(name, { delegate: name[0].toLowerCase() + name.slice(1), relations });
+  }
+  return out;
+}
+
+/**
+ * The models that can reach members' content: a member-content model, or one with a relation to a model that
+ * can (a where, select, include or count on it can name a member-content relation at some depth).
+ */
+export function modelsReachingMemberContent(models = schemaModels()): Set<string> {
+  const reach = new Set(Object.keys(MEMBER_CONTENT_MODELS).filter((m) => models.has(m)));
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const [name, m] of models) {
+      if (!reach.has(name) && [...m.relations.values()].some((t) => reach.has(t))) {
+        reach.add(name);
+        grew = true;
+      }
+    }
+  }
+  return reach;
 }
 
 /** A SQL text reads `table`: FROM / JOIN it (optionally schema-qualified and quoted), also later in a FROM list. */
@@ -635,6 +688,8 @@ export function scanMemberContentReads(srcRoot = join(REPO_ROOT, 'src'), options
     visit(sf);
   }
 
+  followHeldArguments(parsed, checker, sites, siteMembers, looksLikeClient);
+
   // Callers (LO-1185 B3; LS-1185R2 B1; LO-1185R2 B2, C1, C2). A reader that passes its rows on (passesRowsOn, or a
   // registry row with callers) leaves the rules to its caller, so every reference to it from another function is a
   // read site of that function. A function that passes those rows on in turn joins the set, until nothing changes.
@@ -741,7 +796,9 @@ export function scanMemberContentReads(srcRoot = join(REPO_ROOT, 'src'), options
       // on a value whose type can hold a passing reader, fails closed: a member that is one (a class member), or a
       // member of that name that one fits (an interface, type-literal, abstract or class member; the same rule as a
       // named reference below).
-      const t = receiverType(ref);
+      // LS-1185R4 B1: `this.repo?.[key]` on a `Repo | undefined` or `Repo | null`: the members of the value itself
+      // (optional chaining changes whether it runs, not whose rows it reads).
+      const t = checker.getNonNullableType(receiverType(ref));
       const holds = checker.getApparentType(t).getProperties().some((p) =>
         (p.declarations ?? []).some((d) => through.has(declReader(d) ?? '')) || (names.has(p.name) && fitting(t, p.name).length > 0));
       return holds ? ['?'] : [];
@@ -780,4 +837,533 @@ export function scanMemberContentReads(srcRoot = join(REPO_ROOT, 'src'), options
     }
   }
   return sites;
+}
+
+/**
+ * FR-1185R4 (owner #189-D3 op 1; LS-1185R5 B1, LS-1185R4 B2): at every Prisma read call on any model, the scan
+ * follows the argument back to where it is made and walks it model by model, through the schema's relations:
+ * a where (AND / OR / NOT, a relation filter with some / none / every / is / isNot or a to-one filter without
+ * them), a select or an include (a relation, its own select / include / where / orderBy, `_count`), an orderBy
+ * and a count argument. A value is followed through a constant or a `let` (its initializer and every later
+ * assignment), a key set on it (`where.x = ...`, `where[KEY] = ...`, in a loop or a branch), Object.assign into it,
+ * an array push, a spread, `?:` / `??` / `||` / `&&`, an element of an object or array, `.map` / `.filter` /
+ * `.concat`, the return of a function or method (in any scanned file), a destructured or plain parameter (every
+ * call of its function in the scanned files), and an import. A relation into a member-content model is a
+ * `relation` read of the call's reader. FAIL CLOSED (a `dynamic` read, model '*'): a value it cannot follow (a
+ * parameter of a callback or of a function no scanned code calls, a call it cannot see into, a key it cannot
+ * name, `_count: true` or a count it cannot follow) where the model it applies to can reach members' content
+ * (modelsReachingMemberContent); on any other model it is quiet.
+ */
+function followHeldArguments(
+  parsed: Parsed[],
+  checker: ts.TypeChecker,
+  sites: ReadSite[],
+  siteMembers: Array<ts.ClassElement | undefined>,
+  looksLikeClient: (text: string) => boolean,
+): void {
+  const models = schemaModels();
+  const reach = modelsReachingMemberContent(models);
+  const byDelegate = new Map([...models].map(([name, m]) => [m.delegate, name]));
+  const isMember = (model: string) => Object.prototype.hasOwnProperty.call(MEMBER_CONTENT_MODELS, model);
+
+  type Prop = { key?: string; value?: ts.Expression };
+  /** What a value can be: objects (each a list of keys and values), and whether a part of it cannot be followed. */
+  interface Shape {
+    objs: Prop[][];
+    unknown: boolean;
+    /** A value that is no object and not false: `true`, a boolean, a string (an include or `_count` of everything). */
+    truthy: boolean;
+  }
+  const EMPTY = (): Shape => ({ objs: [], unknown: false, truthy: false });
+  const UNKNOWN = (): Shape => ({ objs: [], unknown: true, truthy: false });
+  const join = (a: Shape, b: Shape): Shape => ({ objs: [...a.objs, ...b.objs], unknown: a.unknown || b.unknown, truthy: a.truthy || b.truthy });
+  const keyOf = (e: ts.Expression): string | undefined => {
+    const k = unwrap(e);
+    if (ts.isStringLiteral(k) || ts.isNoSubstitutionTemplateLiteral(k)) return k.text;
+    const t = checker.getTypeAtLocation(k);
+    return t.isStringLiteral() ? t.value : undefined;
+  };
+  const propName = (n: ts.PropertyName): string | undefined =>
+    ts.isComputedPropertyName(n) ? keyOf(n.expression) : nameOf(n) ?? (ts.isNumericLiteral(n) ? n.text : undefined);
+  const symbolOf = (n: ts.Node): ts.Symbol | undefined => {
+    let s = n.parent && ts.isShorthandPropertyAssignment(n.parent) && n.parent.name === n
+      ? checker.getShorthandAssignmentValueSymbol(n.parent)
+      : checker.getSymbolAtLocation(n);
+    if (s && s.flags & ts.SymbolFlags.Alias) s = checker.getAliasedSymbol(s);
+    return s;
+  };
+
+  // Calls of each function or method in the scanned files (for a parameter), built once on first use.
+  let calls: Map<ts.Node, ts.CallLikeExpression[]> | undefined;
+  const fnOf = (d: ts.Node | undefined): ts.Node | undefined => {
+    if (d && ts.isVariableDeclaration(d) && d.initializer) return unwrap(d.initializer);
+    if (d && ts.isPropertyAssignment(d)) return unwrap(d.initializer);
+    if (d && ts.isPropertyDeclaration(d) && d.initializer) return unwrap(d.initializer);
+    return d;
+  };
+  const callsOf = (fn: ts.Node): ts.CallLikeExpression[] => {
+    if (!calls) {
+      calls = new Map();
+      const index = calls;
+      for (const { sf } of parsed) {
+        const look = (n: ts.Node): void => {
+          if ((ts.isCallExpression(n) || ts.isNewExpression(n)) && n.arguments && n.arguments.length > 0) {
+            let callee = unwrap(n.expression);
+            if (ts.isPropertyAccessExpression(callee) && ['call', 'apply', 'bind'].includes(callee.name.text)) callee = unwrap(callee.expression);
+            const name = ts.isPropertyAccessExpression(callee) ? callee.name : ts.isElementAccessExpression(callee) ? callee.argumentExpression : callee;
+            const sym = symbolOf(name);
+            for (const d of sym?.declarations ?? []) {
+              const f = ts.isNewExpression(n) && ts.isClassDeclaration(d)
+                ? d.members.find((m) => ts.isConstructorDeclaration(m))
+                : fnOf(d);
+              if (f) index.set(f, [...(index.get(f) ?? []), n]);
+            }
+          }
+          ts.forEachChild(n, look);
+        };
+        look(sf);
+      }
+    }
+    return calls.get(fn) ?? [];
+  };
+
+  const visiting = new Set<ts.Node>();
+  /** The changes made to a variable after its initializer, within its scope: alternatives and keys set on it. */
+  const writesTo = (sym: ts.Symbol, scope: ts.Node, depth: number): Shape => {
+    let out = EMPTY();
+    const look = (n: ts.Node): void => {
+      if (ts.isIdentifier(n) && n.text === sym.name && symbolOf(n) === sym) {
+        const p = n.parent;
+        const assigned = (e: ts.Node) => ts.isBinaryExpression(e.parent) && e.parent.left === e &&
+          e.parent.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && e.parent.operatorToken.kind <= ts.SyntaxKind.LastAssignment;
+        if (assigned(n)) out = join(out, shapeOf((p as ts.BinaryExpression).right, depth + 1));
+        // where.x = v, where[KEY] = v, where[key] = v (a key it cannot name), also in a loop or a branch
+        if ((ts.isPropertyAccessExpression(p) || ts.isElementAccessExpression(p)) && p.expression === n) {
+          const key = ts.isPropertyAccessExpression(p) ? p.name.text : keyOf(p.argumentExpression);
+          if (assigned(p)) out = join(out, { objs: [[{ key, value: (p.parent as ts.BinaryExpression).right }]], unknown: false, truthy: false });
+          // where.AND.push(x), where.x.y = v: a change below a key of it
+          const pp = p.parent;
+          if (ts.isPropertyAccessExpression(pp) && pp.expression === p && ts.isCallExpression(pp.parent) && pp.parent.expression === pp &&
+            ['push', 'unshift'].includes(pp.name.text)) {
+            for (const a of pp.parent.arguments) out = join(out, { objs: [[{ key, value: ts.isSpreadElement(a) ? a.expression : a }]], unknown: false, truthy: false });
+          } else if ((ts.isPropertyAccessExpression(pp) || ts.isElementAccessExpression(pp)) && pp.expression === p && assigned(pp)) {
+            out = { ...out, unknown: true };
+          }
+          // arr.push(x): another element
+          if (ts.isPropertyAccessExpression(p) && ['push', 'unshift'].includes(p.name.text) && ts.isCallExpression(p.parent) && p.parent.expression === p) {
+            for (const a of p.parent.arguments) out = join(out, shapeOf(ts.isSpreadElement(a) ? a.expression : a, depth + 1));
+          }
+        }
+        // Object.assign(where, other)
+        if (ts.isCallExpression(p) && p.arguments[0] === n && /(^|\.)assign$/.test(p.expression.getText())) {
+          for (const a of p.arguments.slice(1)) out = join(out, shapeOf(a, depth + 1));
+        } else if ((ts.isCallExpression(p) || ts.isNewExpression(p)) && p.arguments?.includes(n as ts.Expression)) {
+          // handed to a function that may add keys to it (`addFilters(where)`): what that function writes to its
+          // parameter; a function the scan cannot see into (a package's) fails closed, one without a body (a
+          // built-in such as JSON.stringify) writes nothing
+          out = join(out, handedTo(p, p.arguments.indexOf(n as ts.Expression), depth));
+        }
+      }
+      ts.forEachChild(n, look);
+    };
+    look(scope);
+    return out;
+  };
+  /** What a called function writes to the parameter at `index` (keys set on it there). */
+  const handedTo = (call: ts.CallExpression | ts.NewExpression, index: number, depth: number): Shape => {
+    const callee = unwrap(call.expression);
+    if (ts.isPropertyAccessExpression(callee) && READ_METHODS.has(callee.name.text)) return EMPTY(); // the read itself
+    if (ts.isPropertyAccessExpression(callee) && WRITE_METHODS.has(callee.name.text)) return EMPTY();
+    const sym = symbolOf(ts.isPropertyAccessExpression(callee) ? callee.name : ts.isElementAccessExpression(callee) ? callee.argumentExpression : callee);
+    const decls = sym?.declarations ?? [];
+    if (decls.length === 0) return UNKNOWN();
+    let out = EMPTY();
+    for (const d of decls) {
+      const fn = fnOf(d);
+      if (!fn || !ts.isFunctionLike(fn)) return UNKNOWN();
+      if (!('body' in fn) || !fn.body) continue; // a declaration only (a built-in): writes nothing
+      const param = fn.parameters[index];
+      if (!param) continue;
+      if (!ts.isIdentifier(param.name)) return UNKNOWN();
+      const psym = checker.getSymbolAtLocation(param.name);
+      if (!psym || visiting.has(param)) continue;
+      visiting.add(param);
+      try {
+        out = join(out, writesTo(psym, fn.body, depth + 1));
+      } finally {
+        visiting.delete(param);
+      }
+    }
+    return out;
+  };
+  /** The values a symbol holds: its initializer, later writes, a parameter's arguments, a property's value. */
+  const valueOf = (sym: ts.Symbol | undefined, depth: number): Shape => {
+    const d = sym?.valueDeclaration ?? sym?.declarations?.[0];
+    if (!sym || !d) return UNKNOWN();
+    if (visiting.has(d)) {
+      cuts++;
+      return EMPTY(); // a cycle adds nothing new
+    }
+    visiting.add(d);
+    try {
+      if (ts.isVariableDeclaration(d) && ts.isIdentifier(d.name)) {
+        const scope = ts.findAncestor(d.parent, (n) => ts.isFunctionLike(n) || ts.isSourceFile(n)) ?? d.getSourceFile();
+        const init = d.initializer ? shapeOf(d.initializer, depth + 1) : EMPTY();
+        // for (const where of list): an element of the list
+        const loop = d.parent.parent;
+        const each = !d.initializer && (ts.isForOfStatement(loop) || ts.isForInStatement(loop)) && loop.initializer === d.parent
+          ? (ts.isForOfStatement(loop) ? shapeOf(loop.expression, depth + 1) : EMPTY())
+          : EMPTY();
+        return join(join(init, each), writesTo(sym, scope, depth));
+      }
+      if (ts.isParameter(d)) return join(argumentsOf(d, depth), writesTo(sym, d.parent, depth));
+      if (ts.isBindingElement(d)) return bindingValue(d, depth);
+      if ((ts.isPropertyAssignment(d) || ts.isPropertyDeclaration(d)) && d.initializer) return shapeOf(d.initializer, depth + 1);
+      if (ts.isShorthandPropertyAssignment(d)) return valueOf(checker.getShorthandAssignmentValueSymbol(d), depth + 1);
+      if (ts.isEnumMember(d) || ts.isGetAccessorDeclaration(d) && !d.body) return EMPTY();
+      if (ts.isGetAccessorDeclaration(d) && d.body) return returnsOf(d, depth);
+      return UNKNOWN();
+    } finally {
+      visiting.delete(d);
+    }
+  };
+  /** A parameter's values: the matching argument at every call of its function in the scanned files. */
+  const argumentsOf = (p: ts.ParameterDeclaration, depth: number): Shape => {
+    const fn = p.parent;
+    const index = fn.parameters.indexOf(p);
+    let out = p.initializer ? shapeOf(p.initializer, depth + 1) : EMPTY();
+    if (p.dotDotDotToken) return UNKNOWN();
+    // A callback (an argument, `$transaction(async (tx) => ...)`) is called by code the scan does not see.
+    const found = callsOf(fn);
+    if (found.length === 0) return UNKNOWN();
+    for (const c of found) {
+      const args = c.arguments ?? ts.factory.createNodeArray();
+      if (args.slice(0, index + 1).some((a) => ts.isSpreadElement(a))) return UNKNOWN();
+      const a = args[index];
+      if (a) out = join(out, shapeOf(a, depth + 1));
+    }
+    return out;
+  };
+  /** `const { where } = args`, `({ where }: Args) => ...`: the key of the destructured value. */
+  const bindingValue = (b: ts.BindingElement, depth: number): Shape => {
+    const pattern = b.parent;
+    if (ts.isArrayBindingPattern(pattern)) {
+      // const [scope, other] = await Promise.all([...]): any element of the source
+      if (b.dotDotDotToken) return UNKNOWN();
+      const holder = pattern.parent;
+      const index = pattern.elements.indexOf(b);
+      if (ts.isVariableDeclaration(holder) && holder.initializer) {
+        // the element at its place in an array literal (also awaited, or in Promise.all), else any element
+        let src = unwrap(holder.initializer);
+        if (ts.isAwaitExpression(src)) src = unwrap(src.expression);
+        if (ts.isCallExpression(src) && /^Promise\.(all|allSettled)$/.test(src.expression.getText()) && src.arguments[0]) src = unwrap(src.arguments[0]);
+        if (ts.isArrayLiteralExpression(src) && !src.elements.slice(0, index + 1).some((e) => ts.isSpreadElement(e))) {
+          const e = src.elements[index];
+          return e ? shapeOf(e, depth + 1) : EMPTY();
+        }
+        return shapeOf(holder.initializer, depth + 1);
+      }
+      if (ts.isParameter(holder)) return argumentsOf(holder, depth + 1);
+      return UNKNOWN();
+    }
+    if (!ts.isObjectBindingPattern(pattern)) return UNKNOWN();
+    const key = b.propertyName ? propName(b.propertyName) : nameOf(b.name);
+    if (b.dotDotDotToken || key === undefined) return UNKNOWN();
+    const holder = pattern.parent;
+    let source: Shape;
+    if (ts.isVariableDeclaration(holder) && holder.initializer) source = shapeOf(holder.initializer, depth + 1);
+    else if (ts.isParameter(holder)) source = argumentsOf(holder, depth + 1);
+    else if (ts.isBindingElement(holder)) source = bindingValue(holder, depth + 1);
+    else return UNKNOWN();
+    let out = b.initializer ? shapeOf(b.initializer, depth + 1) : EMPTY();
+    out = { ...out, unknown: out.unknown || source.unknown };
+    for (const obj of source.objs) {
+      for (const prop of obj) {
+        if (prop.key === undefined) out = { ...out, unknown: true };
+        else if (prop.key === key) out = join(out, prop.value ? shapeOf(prop.value, depth + 1) : UNKNOWN());
+      }
+    }
+    return out;
+  };
+  /** What a function or method returns (every return, or an arrow's expression body). */
+  const returnsOf = (fn: ts.Node, depth: number): Shape => {
+    if (!(ts.isFunctionLike(fn)) || !('body' in fn) || !fn.body) return UNKNOWN();
+    const body = fn.body as ts.Node;
+    if (!ts.isBlock(body)) return shapeOf(body as ts.Expression, depth + 1);
+    let out = EMPTY();
+    const look = (n: ts.Node): void => {
+      if (ts.isReturnStatement(n)) out = join(out, n.expression ? shapeOf(n.expression, depth + 1) : EMPTY());
+      if (!ts.isFunctionLike(n)) ts.forEachChild(n, look);
+    };
+    ts.forEachChild(body, look);
+    return out;
+  };
+  // Each value is followed once: a result that a cycle did not cut short is kept for every later read.
+  const known = new Map<ts.Node, Shape>();
+  let cuts = 0;
+  const shapeOf = (expr: ts.Expression, depth: number): Shape => {
+    const hit = known.get(expr);
+    if (hit) return hit;
+    const before = cuts;
+    const out = followValue(expr, depth);
+    if (cuts === before) known.set(expr, out);
+    return out;
+  };
+  const followValue = (expr: ts.Expression, depth: number): Shape => {
+    const v = unwrap(expr);
+    if (depth > 24) {
+      cuts++;
+      return UNKNOWN();
+    }
+    if (v.kind === ts.SyntaxKind.FalseKeyword || v.kind === ts.SyntaxKind.NullKeyword ||
+      (ts.isIdentifier(v) && v.text === 'undefined') || ts.isVoidExpression(v)) return EMPTY();
+    if (v.kind === ts.SyntaxKind.TrueKeyword || ts.isStringLiteral(v) || ts.isNumericLiteral(v) ||
+      ts.isNoSubstitutionTemplateLiteral(v) || ts.isTemplateExpression(v)) return { ...EMPTY(), truthy: true };
+    if (ts.isObjectLiteralExpression(v)) {
+      const obj: Prop[] = [];
+      let out = EMPTY();
+      for (const p of v.properties) {
+        if (ts.isSpreadAssignment(p)) {
+          const s = shapeOf(p.expression, depth + 1);
+          for (const o of s.objs) obj.push(...o);
+          out = { ...out, unknown: out.unknown || s.unknown };
+        } else if (ts.isPropertyAssignment(p)) obj.push({ key: propName(p.name), value: p.initializer });
+        else if (ts.isShorthandPropertyAssignment(p)) obj.push({ key: p.name.text, value: p.name });
+        else obj.push({ key: p.name ? propName(p.name) : undefined }); // a method or accessor: a value it does not follow
+      }
+      return { ...out, objs: [obj] };
+    }
+    if (ts.isArrayLiteralExpression(v)) {
+      let out = EMPTY();
+      for (const e of v.elements) out = join(out, shapeOf(ts.isSpreadElement(e) ? e.expression : e, depth + 1));
+      return { ...out, truthy: false };
+    }
+    if (ts.isConditionalExpression(v)) return join(shapeOf(v.whenTrue, depth + 1), shapeOf(v.whenFalse, depth + 1));
+    if (ts.isBinaryExpression(v) && [ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.BarBarToken,
+      ts.SyntaxKind.AmpersandAmpersandToken].includes(v.operatorToken.kind)) {
+      // `cond && { ... }` is the right side or a falsy left one (no object, no key: nothing to spread or read)
+      if (v.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) return shapeOf(v.right, depth + 1);
+      return join(shapeOf(v.left, depth + 1), shapeOf(v.right, depth + 1));
+    }
+    if (ts.isBinaryExpression(v) && v.operatorToken.kind === ts.SyntaxKind.CommaToken) return shapeOf(v.right, depth + 1);
+    if (ts.isBinaryExpression(v) || ts.isPrefixUnaryExpression(v) || ts.isTypeOfExpression(v)) return { ...EMPTY(), truthy: true };
+    if (ts.isIdentifier(v) || ts.isPropertyAccessExpression(v)) {
+      const sym = symbolOf(ts.isIdentifier(v) ? v : v.name);
+      if (sym) return valueOf(sym, depth + 1);
+      // `holder.key` on a value the checker cannot type: the key of what it holds
+      if (ts.isPropertyAccessExpression(v)) return pick(shapeOf(v.expression, depth + 1), v.name.text, depth);
+      return plainOr(v);
+    }
+    if (ts.isElementAccessExpression(v)) {
+      const key = keyOf(v.argumentExpression);
+      const sym = key !== undefined ? checker.getSymbolAtLocation(v) : undefined;
+      if (sym) return valueOf(sym, depth + 1);
+      // WHERES[kind], LIST[i]: any element of what it holds
+      return pick(shapeOf(v.expression, depth + 1), key, depth);
+    }
+    if (ts.isCallExpression(v)) {
+      const callee = unwrap(v.expression);
+      if (ts.isPropertyAccessExpression(callee)) {
+        const m = callee.name.text;
+        // Object.assign({}, a, b) and structuredClone(x) keep their parts
+        if (m === 'assign' && /^Object$/.test(callee.expression.getText())) {
+          let out = EMPTY();
+          for (const a of v.arguments) out = join(out, shapeOf(a, depth + 1));
+          return out;
+        }
+        // list.map((x) => ({ ... })), list.flatMap(...): what the callback returns; filter / slice / concat keep it
+        if (['map', 'flatMap'].includes(m) && v.arguments[0] && (ts.isArrowFunction(unwrap(v.arguments[0])) ||
+          ts.isFunctionExpression(unwrap(v.arguments[0])))) return returnsOf(unwrap(v.arguments[0]), depth);
+        if (['filter', 'slice', 'concat', 'reverse', 'sort'].includes(m)) {
+          let out = shapeOf(callee.expression, depth + 1);
+          if (m === 'concat') for (const a of v.arguments) out = join(out, shapeOf(a, depth + 1));
+          return out;
+        }
+      }
+      // Promise.all([a, b]), Promise.resolve(x): what each part holds (an array binding takes any of them)
+      if (ts.isPropertyAccessExpression(callee) && callee.expression.getText() === 'Promise' &&
+        ['all', 'allSettled', 'resolve'].includes(callee.name.text) && v.arguments[0]) return shapeOf(v.arguments[0], depth + 1);
+      if (ts.isIdentifier(callee) && callee.text === 'structuredClone' && v.arguments[0]) return shapeOf(v.arguments[0], depth + 1);
+      const sym = symbolOf(ts.isPropertyAccessExpression(callee) ? callee.name : callee);
+      const fn = fnOf(sym?.valueDeclaration);
+      if (fn && ts.isFunctionLike(fn) && 'body' in fn && fn.body) {
+        if (visiting.has(fn)) {
+          cuts++;
+          return EMPTY();
+        }
+        visiting.add(fn);
+        try {
+          return returnsOf(fn, depth);
+        } finally {
+          visiting.delete(fn);
+        }
+      }
+      return plainOr(v);
+    }
+    if (ts.isAwaitExpression(v)) return shapeOf(v.expression, depth + 1);
+    return plainOr(v);
+  };
+  /** A value the scan does not follow: quiet when its type is plain (true, a string, a number, nothing). */
+  const plainOr = (v: ts.Expression): Shape => {
+    const t = checker.getTypeAtLocation(v);
+    if (t.flags & PLAIN) return { ...EMPTY(), truthy: !(t.flags & (ts.TypeFlags.Null | ts.TypeFlags.Undefined | ts.TypeFlags.Void)) };
+    if (t.isUnion() && t.types.every((x) => x.flags & PLAIN)) return { ...EMPTY(), truthy: true };
+    // a list of plain values (`string[]`): no key, no relation
+    const element = checker.isArrayType(t) ? checker.getTypeArguments(t as ts.TypeReference)[0] : undefined;
+    if (element && (element.flags & PLAIN || (element.isUnion() && element.types.every((x) => x.flags & PLAIN)))) return EMPTY();
+    return UNKNOWN();
+  };
+  /** The value under `key` (any key when undefined) of what a shape holds. */
+  const pick = (s: Shape, key: string | undefined, depth: number): Shape => {
+    let out: Shape = { ...EMPTY(), unknown: s.unknown };
+    for (const obj of s.objs) {
+      for (const prop of obj) {
+        if (key === undefined || prop.key === undefined || prop.key === key) out = join(out, prop.value ? shapeOf(prop.value, depth + 1) : UNKNOWN());
+      }
+    }
+    return out;
+  };
+
+  for (const { file, sf } of parsed) {
+    const found = new Set<string>();
+    const add = (call: ts.Node, model: string, via: ReadSite['via']) => {
+      const line = sf.getLineAndCharacterOfPosition(call.getStart(sf)).line + 1;
+      const reader = readerOf(call);
+      const key = `${line}:${reader}:${model}:${via}`;
+      if (found.has(key)) return;
+      found.add(key);
+      sites.push({ file, line, reader, model, via });
+      siteMembers.push(memberOf(call));
+    };
+    const walkers = (call: ts.Node) => {
+      const seen = new Set<string>();
+      const once = (model: string, node: ts.Node) => {
+        const k = `${model}:${node.pos}:${node.end}:${node.getSourceFile().fileName}`;
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      };
+      const dynamic = (model: string) => {
+        if (reach.has(model)) add(call, ANY_MODEL, 'dynamic');
+      };
+      const relation = (target: string) => {
+        if (isMember(target)) add(call, target, 'relation');
+      };
+      const each = (model: string, s: Shape, walk: (model: string, key: string, value: ts.Expression | undefined) => void) => {
+        if (s.unknown) dynamic(model);
+        for (const obj of s.objs) {
+          for (const p of obj) {
+            if (p.key === undefined) dynamic(model);
+            else walk(model, p.key, p.value);
+          }
+        }
+      };
+      const valueShape = (value: ts.Expression | undefined): Shape => (value ? shapeOf(value, 0) : UNKNOWN());
+      /** A where on `model`. */
+      const where = (model: string, value: ts.Expression | undefined): void => {
+        if (value && !once(`w:${model}`, value)) return;
+        each(model, valueShape(value), whereKey);
+      };
+      const whereKey = (model: string, key: string, value: ts.Expression | undefined): void => {
+        if (key === 'AND' || key === 'OR' || key === 'NOT') return where(model, value);
+        const target = models.get(model)?.relations.get(key);
+        if (!target) return; // a scalar field: its value names no relation
+        relation(target);
+        // { some | none | every | is | isNot: where } or a to-one where without them
+        each(target, valueShape(value), (t, k, v) => {
+          if (['some', 'none', 'every', 'is', 'isNot'].includes(k)) where(t, v);
+          else whereKey(t, k, v);
+        });
+      };
+      /** A select or include on `model`. */
+      const select = (model: string, value: ts.Expression | undefined): void => {
+        if (value && !once(`s:${model}`, value)) return;
+        each(model, valueShape(value), (m, key, v) => {
+          if (key === '_count') return count(m, v);
+          const target = models.get(m)?.relations.get(key);
+          if (!target) return;
+          const s = valueShape(v);
+          if (s.objs.length === 0 && !s.unknown && !s.truthy) return; // false or nothing
+          relation(target);
+          if (s.unknown) dynamic(target);
+          for (const obj of s.objs) args(target, obj);
+        });
+      };
+      /** `_count` in a select or include: true counts every relation; `{ select: { rel: true | { where } } }`. */
+      const count = (model: string, value: ts.Expression | undefined): void => {
+        const s = valueShape(value);
+        if (s.truthy) dynamic(model);
+        if (s.unknown) dynamic(model);
+        for (const obj of s.objs) {
+          for (const p of obj) {
+            if (p.key === undefined) dynamic(model);
+            else if (p.key === 'select') {
+              each(model, valueShape(p.value), (m, rel, v) => {
+                const target = models.get(m)?.relations.get(rel);
+                if (!target) return;
+                const r = valueShape(v);
+                if (r.objs.length === 0 && !r.unknown && !r.truthy) return;
+                relation(target);
+                if (r.unknown) dynamic(target);
+                for (const o of r.objs) for (const q of o) if (q.key === 'where') where(target, q.value);
+              });
+            }
+          }
+        }
+      };
+      /** An orderBy on `model`: a relation key orders by the related rows (a join, or a count of them). */
+      const orderBy = (model: string, value: ts.Expression | undefined): void => {
+        if (value && !once(`o:${model}`, value)) return;
+        each(model, valueShape(value), (m, key, v) => {
+          const target = models.get(m)?.relations.get(key);
+          if (!target) return;
+          relation(target);
+          orderBy(target, v);
+        });
+      };
+      /** The keys of a Prisma argument object (or a relation's include value) on `model`. */
+      const args = (model: string, obj: Prop[]): void => {
+        for (const p of obj) {
+          if (p.key === undefined) dynamic(model);
+          else if (p.key === 'where' || p.key === 'having') where(model, p.value);
+          else if (p.key === 'select' || p.key === 'include') select(model, p.value);
+          else if (p.key === 'orderBy') orderBy(model, p.value);
+          else if (p.key === '_count') {
+            // a count's own `_count` counts this model's rows (and its `select` names fields), not relations
+          }
+        }
+      };
+      return { top: (model: string, arg: ts.Expression | undefined) => {
+        if (!arg) return;
+        const s = shapeOf(arg, 0);
+        if (s.unknown) dynamic(model);
+        for (const obj of s.objs) args(model, obj);
+      } };
+    };
+    /** The model of a delegate expression: `x.user`, `x['user']`, or a constant that holds one. */
+    const delegateModel = (e: ts.Expression, depth = 0): string | undefined => {
+      const d = unwrap(e);
+      if (ts.isPropertyAccessExpression(d) && byDelegate.has(d.name.text)) {
+        if (d.name.text === 'message' && !looksLikeClient(unwrap(d.expression).getText(sf))) return undefined;
+        return byDelegate.get(d.name.text);
+      }
+      if (ts.isElementAccessExpression(d)) {
+        const k = keyOf(d.argumentExpression);
+        return k !== undefined ? byDelegate.get(k) : undefined;
+      }
+      if (ts.isIdentifier(d) && depth < 4) {
+        const decl = symbolOf(d)?.valueDeclaration;
+        if (decl && ts.isVariableDeclaration(decl) && decl.initializer && ts.isIdentifier(decl.name)) return delegateModel(decl.initializer, depth + 1);
+      }
+      return undefined;
+    };
+    const visit = (node: ts.Node): void => {
+      if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && READ_METHODS.has(node.expression.name.text)) {
+        const model = delegateModel(node.expression.expression);
+        if (model) walkers(node).top(model, node.arguments[0]);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sf);
+  }
 }

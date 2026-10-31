@@ -299,7 +299,8 @@ describe('KT-2 architecture: every read of a member-content table under src/ is 
     expect(callerSites({ 'caller.ts': source }, options)).toEqual([...expected].sort());
   });
 
-  // The scan limits (member-content-scan.ts header, L1 to L10): each test shows what the scan still cannot see, so
+  // The scan limits (member-content-scan.ts header, L1 to L13; L10 closed in FR-1185R4): each test shows what the
+  // scan still cannot see, so
   // closing a limit turns its test red and the header must change with it.
   it('limit L1: a reader called on a value typed by a package (unresolved, not any) is not seen', () => {
     const source = `${IMPORT}\nimport { ModuleRef } from '@nestjs/core';\nexport class S {\n  constructor(private readonly refs: ModuleRef) {}\n` +
@@ -356,7 +357,8 @@ describe('KT-2 architecture: every read of a member-content table under src/ is 
   it('limit L9: a key the checker cannot name on a value typed any is not a caller site', () => {
     expect(callerSites({ 'caller.ts': `export function latest(repo: any, k: string, c: string) { return repo[k](${ARGS}); }\n` })).toEqual([]);
   });
-  it('limit L10: a to-one relation filter without is, held outside a where, is not seen', () => {
+  // L10 is closed (FR-1185R4): the read call follows its where back to the constant, so the filter is a read there.
+  it('closed L10 (FR-1185R4): a to-one relation filter without is, held outside a where, is a read of the call that uses it', () => {
     const root = mkdtempSync(join(tmpdir(), 'kt2-limit-'));
     try {
       writeFileSync(join(root, 'probe.ts'), [
@@ -365,10 +367,45 @@ describe('KT-2 architecture: every read of a member-content table under src/ is 
         "const unreadIs = { message: { is: { read_at: null } } };",
         'export const g = (prisma: any) => prisma.coachBroadcastDelivery.count({ where: unreadIs });',
       ].join('\n'));
-      expect(scanMemberContentReads(root).filter((s) => s.model === 'CoachMessage').map((s) => s.line)).toEqual([3]);
+      const sites = scanMemberContentReads(root).filter((s) => s.model === 'CoachMessage');
+      expect(sites.filter((s) => s.reader === 'f').map((s) => s.line)).toEqual([2]);
+      expect(sites.filter((s) => s.reader === 'g').map((s) => s.line)).toEqual([4]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+  // L11 to L13 (FR-1185R4): what the follow-back of a held argument does not see; each is quiet, not '*'.
+  const heldArgSites = (source: string) => {
+    const root = mkdtempSync(join(tmpdir(), 'kt2-limit-'));
+    try {
+      writeFileSync(join(root, 'probe.ts'), `const authored = { some: { body: { contains: 'q' } } };\n${source}\n`);
+      return scanMemberContentReads(root).map((s) => `${s.reader} ${s.model}`);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  };
+  it('limit L11: a key set through a second name for a held where (an alias of it) is not seen', () => {
+    expect(heldArgSites([
+      'export const f = (prisma: any) => {',
+      '  const where: Record<string, unknown> = {};',
+      '  const alias = where;',
+      '  alias.community_posts_authored = authored;',
+      '  return prisma.user.findMany({ where });',
+      '};',
+    ].join('\n'))).toEqual([]);
+  });
+  it('limit L12: a parameter is followed to the calls the scan sees; a call through a reference handed elsewhere is not', () => {
+    expect(heldArgSites([
+      'function list(prisma: any, where: object) { return prisma.user.findMany({ where }); }',
+      "export const f = (prisma: any) => list(prisma, { role: 'student' });",
+      'export const g = (run: (fn: typeof list) => unknown) => run(list);',
+    ].join('\n'))).toEqual([]);
+  });
+  it('limit L13: a read on a delegate the scan cannot name (a parameter typed any) is not walked', () => {
+    expect(heldArgSites([
+      'function count(delegate: any, where: object) { return delegate.count({ where }); }',
+      'export const f = (prisma: any) => count(prisma.user, { community_posts_authored: authored });',
+    ].join('\n'))).toEqual([]);
   });
   it('limit L5: SQL split across a string concatenation outside an Unsafe call is matched piece by piece', () => {
     const root = mkdtempSync(join(tmpdir(), 'kt2-limit-'));
