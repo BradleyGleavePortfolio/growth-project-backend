@@ -2105,9 +2105,12 @@ export class CoachBriefService {
         // sharing switch is written again under the current switches.
         // B-939-1: so is a brief built from a client who has since moved away,
         // or one stored before briefs recorded whose data they hold.
+        // FR-1195R2 (ruling R10): so is today's, written before one of the
+        // coach's renewals entered or left the hold.
         if (
           writtenBefore(existing, await this.lastSharingWithdrawal(coachId)) ||
-          (await this.briefsWithMovedClients(coachId, [existing])).size > 0
+          (await this.briefsWithMovedClients(coachId, [existing])).size > 0 ||
+          (await this.holdChangedSince(coachId, timezone, existing))
         ) {
           return this.generateBrief(coachId, timezone, briefDate, { force: true });
         }
@@ -2403,6 +2406,33 @@ export class CoachBriefService {
       select: { revoked_at: true },
     });
     return row?.revoked_at ?? null;
+  }
+
+  /**
+   * FR-1195R2 (LS-1195R2 B3, ruling R10): true when today's stored brief holds
+   * another count of renewals waiting on the coach's account (PF-W9) than now,
+   * counted the way the brief counts it (a head coach's by the clients it was
+   * built from). Briefs of earlier days stay as written.
+   */
+  private async holdChangedSince(coachId: string, timezone: string, brief: CoachBrief): Promise<boolean> {
+    if (brief.brief_date !== bucketDateLocal(new Date(), timezone)) return false;
+    const ctx = brief.brief_context;
+    const saved: Prisma.JsonObject = ctx && typeof ctx === 'object' && !Array.isArray(ctx) ? ctx : {};
+    const stored = Number(saved.coach_account_waiting ?? 0);
+    let scope = Prisma.sql`cp."coach_user_id" = ${coachId}`;
+    if (brief.brief_mode === 'head_coach') {
+      const list = saved[BRIEF_SCOPE_KEY];
+      const ids = Array.isArray(list) ? list.filter((id): id is string => typeof id === 'string') : [];
+      if (ids.length === 0) return stored !== 0;
+      const subs = await this.prisma.teamSubCoachAssignment.findMany({
+        where: { head_coach_id: coachId, archived_at: null },
+        select: { sub_coach_id: true },
+      });
+      const sellers = [coachId, ...subs.map((s) => s.sub_coach_id)];
+      scope = Prisma.sql`cp."client_user_id" = ANY(${ids}::text[]) AND cp."coach_user_id" = ANY(${sellers}::text[])`;
+    }
+    const rows = await this.prisma.$queryRaw<DunningBriefRow[]>(dunningBriefSql(scope));
+    return Number(rows[0]?.waiting ?? 0) !== stored;
   }
 
   /**
