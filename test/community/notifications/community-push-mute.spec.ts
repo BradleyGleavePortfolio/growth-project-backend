@@ -110,6 +110,11 @@ describe('B-S-PUSH-1 community push and "Mute all notifications"', () => {
       category: NotificationCategory.CLIENT_BOT,
       target_type: 'post',
       target_id: POST,
+    }, undefined, {
+      // PF-3-BE: the one send path; Mute all is read again when it goes.
+      kind: NotificationKind.COMMUNITY_POST_REPLIED,
+      muteAllOnly: true,
+      dedupeKey: expect.any(String),
     });
   });
 
