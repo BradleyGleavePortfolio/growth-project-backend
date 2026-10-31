@@ -374,18 +374,18 @@ describe('GC-1 pay page GET /p/:token', () => {
 
   // GC-3 (#GC-TRIAL op 1): a trial package saves the card — Elements in setup
   // mode with no amount, stripe.confirmSetup on the SetupIntent's secret.
-  it('GC-3: a trial package mounts Elements in setup mode and confirms a SetupIntent; a paid one still confirms a payment', async () => {
+  it.each(['card', 'wallet'] as const)('GC-3 %s: a trial package mounts Elements in setup mode and confirms a SetupIntent; a paid one still confirms a payment', async (via) => {
     rows[A] = pkg(A, { trial_days: 7 });
     const trial = await bootPage({ account: 'new', checkout: ['pay'], confirm: [true] });
     await trial.tap.email();
-    await trial.tap.card();
+    await trial.tap[via]();
     expect(trial.elementsOpts[0]).toMatchObject({ mode: 'setup', currency: 'usd' });
     expect(trial.elementsOpts[0]).not.toHaveProperty('amount');
     expect(trial.confirmed).toEqual(['setup']);
     rows[A] = pkg(A, {});
     const paid = await bootPage({ account: 'new', checkout: ['pay'], confirm: [true] });
     await paid.tap.email();
-    await paid.tap.card();
+    await paid.tap[via]();
     expect(paid.elementsOpts[0]).toMatchObject({ mode: 'subscription', amount: 14900 });
     expect(paid.confirmed).toEqual(['payment']);
   });
