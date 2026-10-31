@@ -280,8 +280,8 @@ describe('PF-7-BE: a renewal waiting on the coach Stripe account', () => {
       expect(status.state).toBe('past_due');
       expect(status.failed_at).toBe(retryAt.toISOString());
       expect(status.lockout_at).toBe(new Date(retryAt.getTime() + 10 * DAY).toISOString());
-      expect(formatLockoutDate(new Date(retryAt.getTime() + 10 * DAY), 'America/Los_Angeles')).toBe('October 19');
-      expect(formatLockoutDate(new Date(retryAt.getTime() + 10 * DAY), 'Asia/Tokyo')).toBe('October 20');
+      expect(formatLockoutDate(new Date(retryAt.getTime() + 10 * DAY), 'America/Los_Angeles')).toBe('Monday, October 19');
+      expect(formatLockoutDate(new Date(retryAt.getTime() + 10 * DAY), 'Asia/Tokyo')).toBe('Tuesday, October 20');
       expect(w.clientPushes()).toBe(1);
       // Stripe's own invoice.payment_failed for that try claims nothing twice.
       await w.fail('sub_dv2_client', 2);

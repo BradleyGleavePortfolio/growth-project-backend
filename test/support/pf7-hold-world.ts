@@ -115,7 +115,16 @@ export function buildWorld(opts: { saved?: StripeAccountState; stripeNow?: Strip
     })),
     retrieveAccount: jest.fn(async (id: string) => {
       if (account.value.unreachable) throw new Error('stripe unreachable');
-      return { id, country: 'US', default_currency: 'usd', requirements: null, ...account.value };
+      const a = account.value;
+      return {
+        id,
+        country: 'US',
+        default_currency: 'usd',
+        charges_enabled: a.charges_enabled,
+        payouts_enabled: a.payouts_enabled,
+        details_submitted: a.details_submitted,
+        requirements: a.disabled_reason ? { disabled_reason: a.disabled_reason } : null,
+      };
     }),
   };
   const push = jest.fn(async () => true);
