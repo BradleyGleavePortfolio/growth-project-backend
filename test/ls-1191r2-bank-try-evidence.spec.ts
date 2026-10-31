@@ -13,6 +13,7 @@ describe('LS-1191R2 B1: bank try evidence is not a reminder budget', () => {
     { label: 'fifth executed try under an eight-try policy', providerCount: 5, executedCount: 5, reason: 'insufficient_funds' },
     { label: 'final scheduled hard-decline slot after one executed charge', providerCount: 4, executedCount: 1, reason: 'lost_card' },
     { label: 'replacement card failure after two skipped slots and two executed charges', providerCount: 4, executedCount: 2, reason: 'insufficient_funds' },
+    { label: 'approved on-session card-update charge after the first invoice failure', providerCount: 1, executedCount: 2, reason: 'insufficient_funds' },
   ])('LS-1191R2 B1: $label is not shown as an invented bank try fraction', async ({ providerCount, executedCount, reason }) => {
     let state: Record<string, unknown> = {
       id: 'review-cycle', purchase_id: 'review-purchase', status: 'active',
