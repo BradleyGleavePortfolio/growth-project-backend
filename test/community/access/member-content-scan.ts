@@ -53,7 +53,7 @@
  * Writes (create, update, upsert, delete) are not reads and are not listed. A write that returns rows is a
  * write here; the registry still lists the function when it also reads.
  *
- * Limits (each shown by a test in member-content-access.spec.ts, 'limit L1' to 'limit L13'; L10 is closed):
+ * Limits (each shown by a test in member-content-access.spec.ts, 'limit L1' to 'limit L9'; L10 is closed):
  *   L1 the program loads no node_modules (noResolve: one program over src/ in about 10 s), so a value whose type
  *      comes from a package (`moduleRef.get(Repo)`) is unresolved, not `any`; a reader's name called on it is not
  *      seen (failing closed there flags Supabase storage `list`, a false read on every package call named like a
@@ -75,12 +75,9 @@
  *      dynamic key on an untyped value would be); on a client, or with a read call after it, it fails closed;
  *   L10 CLOSED in FR-1185R4: a to-one relation filter written without `is` and held outside a `where` (a
  *      constant passed as the where later) is a read of the call that uses it (followHeldArguments);
- *   L11 a key set on a held argument through a second name for it (`const alias = where; alias.rel = ...`) is not
- *      seen (keys set on the variable itself, in a loop or a branch, and in a scanned helper it is handed to are);
- *   L12 a parameter is followed to the calls of its function that the scan sees; a call through a reference to
- *      the function handed elsewhere (`run(list)`) is not (a callback's own parameter fails closed);
- *   L13 a read call on a delegate the scan cannot name (a parameter or a value typed any: `delegate.count(...)`)
- *      is not walked (a member-content delegate itself is still an `aliased` or `prisma` site where it is named).
+ *   (FR-1185R4 also closes three forms its follow-back first missed, each shown by a 'closed (FR-1185R4)' test:
+ *   a key set through an alias of a held where; a function handed on as a reference, whose parameters fail
+ *   closed; a read on a delegate it cannot name, walked on every model.)
  *
  * Nothing here changes runtime code or the schema; both are only read.
  */
@@ -848,7 +845,9 @@ export function scanMemberContentReads(srcRoot = join(REPO_ROOT, 'src'), options
  * assignment), a key set on it (`where.x = ...`, `where[KEY] = ...`, in a loop or a branch), Object.assign into it,
  * an array push, a spread, `?:` / `??` / `||` / `&&`, an element of an object or array, `.map` / `.filter` /
  * `.concat`, the return of a function or method (in any scanned file), a destructured or plain parameter (every
- * call of its function in the scanned files), and an import. A relation into a member-content model is a
+ * call of its function in the scanned files; a function also handed on as a reference fails closed), an alias
+ * (`const alias = where`), and an import; a read on a delegate it cannot name is walked on ANY_MODEL (a key is a
+ * relation when it is one on any model). A relation into a member-content model is a
  * `relation` read of the call's reader. FAIL CLOSED (a `dynamic` read, model '*'): a value it cannot follow (a
  * parameter of a callback or of a function no scanned code calls, a call it cannot see into, a key it cannot
  * name, `_count: true` or a count it cannot follow) where the model it applies to can reach members' content
@@ -864,6 +863,15 @@ function followHeldArguments(
   const models = schemaModels();
   const reach = modelsReachingMemberContent(models);
   const byDelegate = new Map([...models].map(([name, m]) => [m.delegate, name]));
+  // A read on a delegate the scan cannot name (a parameter, a value typed any) is walked on ANY_MODEL: a key is a
+  // relation when it is one on any model (each model it can point at), and the model can reach members' content.
+  const anyRelations = new Map<string, Set<string>>();
+  for (const m of models.values()) {
+    for (const [field, target] of m.relations) anyRelations.set(field, new Set([...(anyRelations.get(field) ?? []), target]));
+  }
+  reach.add(ANY_MODEL);
+  const targets = (model: string, key: string): string[] =>
+    model === ANY_MODEL ? [...(anyRelations.get(key) ?? [])] : [models.get(model)?.relations.get(key)].filter((t): t is string => !!t);
   const isMember = (model: string) => Object.prototype.hasOwnProperty.call(MEMBER_CONTENT_MODELS, model);
 
   type Prop = { key?: string; value?: ts.Expression };
@@ -894,14 +902,14 @@ function followHeldArguments(
   };
 
   // Calls of each function or method in the scanned files (for a parameter), built once on first use.
-  let calls: Map<ts.Node, ts.CallLikeExpression[]> | undefined;
+  let calls: Map<ts.Node, Array<ts.CallExpression | ts.NewExpression>> | undefined;
   const fnOf = (d: ts.Node | undefined): ts.Node | undefined => {
     if (d && ts.isVariableDeclaration(d) && d.initializer) return unwrap(d.initializer);
     if (d && ts.isPropertyAssignment(d)) return unwrap(d.initializer);
     if (d && ts.isPropertyDeclaration(d) && d.initializer) return unwrap(d.initializer);
     return d;
   };
-  const callsOf = (fn: ts.Node): ts.CallLikeExpression[] => {
+  const callsOf = (fn: ts.Node): Array<ts.CallExpression | ts.NewExpression> => {
     if (!calls) {
       calls = new Map();
       const index = calls;
@@ -927,6 +935,39 @@ function followHeldArguments(
     return calls.get(fn) ?? [];
   };
 
+  // A function referenced other than by a call (`run(list)`, `const f = list`, `.bind`) can be called by
+  // code the scan does not follow, so its parameters fail closed. Identifiers by name, built once on first use.
+  let byName: Map<string, ts.Identifier[]> | undefined;
+  const handedOn = (fn: ts.SignatureDeclaration): boolean => {
+    const decl = fn.parent && (ts.isVariableDeclaration(fn.parent) || ts.isPropertyAssignment(fn.parent) || ts.isPropertyDeclaration(fn.parent))
+      ? fn.parent : fn;
+    const name = (decl as ts.NamedDeclaration).name;
+    if (!name || !ts.isIdentifier(name)) return false; // an unnamed function is a callback: callsOf finds no call
+    if (!byName) {
+      byName = new Map();
+      const index = byName;
+      for (const { sf } of parsed) {
+        const look = (n: ts.Node): void => {
+          if (ts.isIdentifier(n)) index.set(n.text, [...(index.get(n.text) ?? []), n]);
+          ts.forEachChild(n, look);
+        };
+        look(sf);
+      }
+    }
+    const own = symbolOf(name);
+    for (const id of byName.get(name.text) ?? []) {
+      if (id === name) continue;
+      const p = id.parent;
+      const callee = (e: ts.Node) => (ts.isCallExpression(e.parent) || ts.isNewExpression(e.parent)) && e.parent.expression === e;
+      if (callee(id) || (ts.isPropertyAccessExpression(p) && p.name === id && callee(p))) continue;
+      if (ts.isPropertyAccessExpression(p) && p.name === id && ts.isPropertyAccessExpression(p.parent) &&
+        ['call', 'apply'].includes(p.parent.name.text) && callee(p.parent)) continue;
+      if (ts.isImportSpecifier(p) || ts.isExportSpecifier(p) || ts.isImportClause(p) || ts.isTypeQueryNode(p) ||
+        ts.isQualifiedName(p) || ts.isTypeReferenceNode(p)) continue;
+      if (own && symbolOf(id) === own) return true;
+    }
+    return false;
+  };
   const visiting = new Set<ts.Node>();
   /** The changes made to a variable after its initializer, within its scope: alternatives and keys set on it. */
   const writesTo = (sym: ts.Symbol, scope: ts.Node, depth: number): Shape => {
@@ -952,6 +993,19 @@ function followHeldArguments(
           // arr.push(x): another element
           if (ts.isPropertyAccessExpression(p) && ['push', 'unshift'].includes(p.name.text) && ts.isCallExpression(p.parent) && p.parent.expression === p) {
             for (const a of p.parent.arguments) out = join(out, shapeOf(ts.isSpreadElement(a) ? a.expression : a, depth + 1));
+          }
+        }
+        // const alias = where; alias = where: keys set through the second name are keys of this value
+        const alias = ts.isVariableDeclaration(p) && p.initializer === n && ts.isIdentifier(p.name) ? p.name
+          : ts.isBinaryExpression(p) && p.right === n && p.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isIdentifier(p.left) ? p.left
+            : undefined;
+        const aliasSym = alias ? checker.getSymbolAtLocation(alias) : undefined;
+        if (alias && aliasSym && aliasSym !== sym && !visiting.has(alias)) {
+          visiting.add(alias);
+          try {
+            out = join(out, writesTo(aliasSym, ts.findAncestor(alias, (x) => ts.isFunctionLike(x) || ts.isSourceFile(x)) ?? scope, depth + 1));
+          } finally {
+            visiting.delete(alias);
           }
         }
         // Object.assign(where, other)
@@ -1035,7 +1089,7 @@ function followHeldArguments(
     if (p.dotDotDotToken) return UNKNOWN();
     // A callback (an argument, `$transaction(async (tx) => ...)`) is called by code the scan does not see.
     const found = callsOf(fn);
-    if (found.length === 0) return UNKNOWN();
+    if (found.length === 0 || handedOn(fn)) return UNKNOWN();
     for (const c of found) {
       const args = c.arguments ?? ts.factory.createNodeArray();
       if (args.slice(0, index + 1).some((a) => ts.isSpreadElement(a))) return UNKNOWN();
@@ -1148,6 +1202,9 @@ function followHeldArguments(
     if (ts.isBinaryExpression(v) && v.operatorToken.kind === ts.SyntaxKind.CommaToken) return shapeOf(v.right, depth + 1);
     if (ts.isBinaryExpression(v) || ts.isPrefixUnaryExpression(v) || ts.isTypeOfExpression(v)) return { ...EMPTY(), truthy: true };
     if (ts.isIdentifier(v) || ts.isPropertyAccessExpression(v)) {
+      // a value typed plain (a string, a number, a boolean, nothing) holds no key and no relation
+      const plain = checker.getTypeAtLocation(v);
+      if (plain.flags & PLAIN || (plain.isUnion() && plain.types.every((x) => x.flags & PLAIN))) return plainOr(v);
       const sym = symbolOf(ts.isIdentifier(v) ? v : v.name);
       if (sym) return valueOf(sym, depth + 1);
       // `holder.key` on a value the checker cannot type: the key of what it holds
@@ -1266,27 +1323,28 @@ function followHeldArguments(
       };
       const whereKey = (model: string, key: string, value: ts.Expression | undefined): void => {
         if (key === 'AND' || key === 'OR' || key === 'NOT') return where(model, value);
-        const target = models.get(model)?.relations.get(key);
-        if (!target) return; // a scalar field: its value names no relation
-        relation(target);
-        // { some | none | every | is | isNot: where } or a to-one where without them
-        each(target, valueShape(value), (t, k, v) => {
-          if (['some', 'none', 'every', 'is', 'isNot'].includes(k)) where(t, v);
-          else whereKey(t, k, v);
-        });
+        // a scalar field (no target): its value names no relation
+        for (const target of targets(model, key)) {
+          relation(target);
+          // { some | none | every | is | isNot: where } or a to-one where without them
+          each(target, valueShape(value), (t, k, v) => {
+            if (['some', 'none', 'every', 'is', 'isNot'].includes(k)) where(t, v);
+            else whereKey(t, k, v);
+          });
+        }
       };
       /** A select or include on `model`. */
       const select = (model: string, value: ts.Expression | undefined): void => {
         if (value && !once(`s:${model}`, value)) return;
         each(model, valueShape(value), (m, key, v) => {
           if (key === '_count') return count(m, v);
-          const target = models.get(m)?.relations.get(key);
-          if (!target) return;
           const s = valueShape(v);
           if (s.objs.length === 0 && !s.unknown && !s.truthy) return; // false or nothing
-          relation(target);
-          if (s.unknown) dynamic(target);
-          for (const obj of s.objs) args(target, obj);
+          for (const target of targets(m, key)) {
+            relation(target);
+            if (s.unknown) dynamic(target);
+            for (const obj of s.objs) args(target, obj);
+          }
         });
       };
       /** `_count` in a select or include: true counts every relation; `{ select: { rel: true | { where } } }`. */
@@ -1299,13 +1357,13 @@ function followHeldArguments(
             if (p.key === undefined) dynamic(model);
             else if (p.key === 'select') {
               each(model, valueShape(p.value), (m, rel, v) => {
-                const target = models.get(m)?.relations.get(rel);
-                if (!target) return;
                 const r = valueShape(v);
                 if (r.objs.length === 0 && !r.unknown && !r.truthy) return;
-                relation(target);
-                if (r.unknown) dynamic(target);
-                for (const o of r.objs) for (const q of o) if (q.key === 'where') where(target, q.value);
+                for (const target of targets(m, rel)) {
+                  relation(target);
+                  if (r.unknown) dynamic(target);
+                  for (const o of r.objs) for (const q of o) if (q.key === 'where') where(target, q.value);
+                }
               });
             }
           }
@@ -1315,10 +1373,10 @@ function followHeldArguments(
       const orderBy = (model: string, value: ts.Expression | undefined): void => {
         if (value && !once(`o:${model}`, value)) return;
         each(model, valueShape(value), (m, key, v) => {
-          const target = models.get(m)?.relations.get(key);
-          if (!target) return;
-          relation(target);
-          orderBy(target, v);
+          for (const target of targets(m, key)) {
+            relation(target);
+            orderBy(target, v);
+          }
         });
       };
       /** The keys of a Prisma argument object (or a relation's include value) on `model`. */
@@ -1359,7 +1417,10 @@ function followHeldArguments(
     };
     const visit = (node: ts.Node): void => {
       if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && READ_METHODS.has(node.expression.name.text)) {
-        const model = delegateModel(node.expression.expression);
+        // A read on a delegate it cannot name is walked on ANY_MODEL (fails closed where it cannot follow)
+        // (a method of the scanned code with a body, `this.aggregate(...)`, is no delegate)
+        const own = (symbolOf(node.expression.name)?.declarations ?? []).some((d) => ts.isFunctionLike(d) && 'body' in d && !!d.body);
+        const model = delegateModel(node.expression.expression) ?? (own ? undefined : ANY_MODEL);
         if (model) walkers(node).top(model, node.arguments[0]);
       }
       ts.forEachChild(node, visit);

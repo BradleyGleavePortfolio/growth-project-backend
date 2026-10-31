@@ -299,7 +299,7 @@ describe('KT-2 architecture: every read of a member-content table under src/ is 
     expect(callerSites({ 'caller.ts': source }, options)).toEqual([...expected].sort());
   });
 
-  // The scan limits (member-content-scan.ts header, L1 to L13; L10 closed in FR-1185R4): each test shows what the
+  // The scan limits (member-content-scan.ts header, L1 to L9; L10 closed in FR-1185R4): each test shows what the
   // scan still cannot see, so
   // closing a limit turns its test red and the header must change with it.
   it('limit L1: a reader called on a value typed by a package (unresolved, not any) is not seen', () => {
@@ -374,7 +374,8 @@ describe('KT-2 architecture: every read of a member-content table under src/ is 
       rmSync(root, { recursive: true, force: true });
     }
   });
-  // L11 to L13 (FR-1185R4): what the follow-back of a held argument does not see; each is quiet, not '*'.
+  // FR-1185R4: three forms the follow-back first missed are closed: an alias of a held
+  // where, a function handed on as a reference (its parameter fails closed), a read on a delegate it cannot name.
   const heldArgSites = (source: string) => {
     const root = mkdtempSync(join(tmpdir(), 'kt2-limit-'));
     try {
@@ -384,7 +385,7 @@ describe('KT-2 architecture: every read of a member-content table under src/ is 
       rmSync(root, { recursive: true, force: true });
     }
   };
-  it('limit L11: a key set through a second name for a held where (an alias of it) is not seen', () => {
+  it('closed (FR-1185R4): a key set through a second name for a held where (an alias of it) is a read', () => {
     expect(heldArgSites([
       'export const f = (prisma: any) => {',
       '  const where: Record<string, unknown> = {};',
@@ -392,20 +393,20 @@ describe('KT-2 architecture: every read of a member-content table under src/ is 
       '  alias.community_posts_authored = authored;',
       '  return prisma.user.findMany({ where });',
       '};',
-    ].join('\n'))).toEqual([]);
+    ].join('\n'))).toContain('f CommunityPost');
   });
-  it('limit L12: a parameter is followed to the calls the scan sees; a call through a reference handed elsewhere is not', () => {
+  it('closed (FR-1185R4): a function handed on as a reference can be called by code the scan does not see: its where fails closed', () => {
     expect(heldArgSites([
       'function list(prisma: any, where: object) { return prisma.user.findMany({ where }); }',
       "export const f = (prisma: any) => list(prisma, { role: 'student' });",
       'export const g = (run: (fn: typeof list) => unknown) => run(list);',
-    ].join('\n'))).toEqual([]);
+    ].join('\n'))).toContain('list *');
   });
-  it('limit L13: a read on a delegate the scan cannot name (a parameter typed any) is not walked', () => {
+  it('closed (FR-1185R4): a read on a delegate the scan cannot name (a parameter typed any) is walked on every model', () => {
     expect(heldArgSites([
       'function count(delegate: any, where: object) { return delegate.count({ where }); }',
       'export const f = (prisma: any) => count(prisma.user, { community_posts_authored: authored });',
-    ].join('\n'))).toEqual([]);
+    ].join('\n'))).toContain('count CommunityPost');
   });
   it('limit L5: SQL split across a string concatenation outside an Unsafe call is matched piece by piece', () => {
     const root = mkdtempSync(join(tmpdir(), 'kt2-limit-'));
