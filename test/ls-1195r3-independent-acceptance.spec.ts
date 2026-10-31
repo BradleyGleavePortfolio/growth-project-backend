@@ -3,6 +3,7 @@ import {
   clientPlanStatus,
 } from '../src/checkout/dunning-v2/coach-account-hold';
 import { HOUR, READY, RESTRICTED, T0, at, buildWorld, flush } from './support/pf7-hold-world';
+import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
 
 describe('LS-1195R3 independent whole-PR acceptance', () => {
   const saved = {
@@ -117,4 +118,43 @@ describe('LS-1195R3 independent whole-PR acceptance', () => {
       )).toBe(status);
     },
   );
+});
+
+describe('LS-1195R3 invoice collection boundary', () => {
+  const priorKey = process.env['STRIPE_SECRET_KEY'];
+  beforeEach(() => {
+    process.env['STRIPE_SECRET_KEY'] = 'sk_test_ls1195r3_boundary_only';
+  });
+  afterEach(() => {
+    if (priorKey === undefined) delete process.env['STRIPE_SECRET_KEY'];
+    else process.env['STRIPE_SECRET_KEY'] = priorKey;
+  });
+
+  it('collects a second page using the last real invoice identity before any pay call', async () => {
+    const api = new StripeConnectApiService();
+    const urls: URL[] = [];
+    const first = Array.from({ length: 100 }, (_, i) => ({ id: `in_page_${i}`, status: 'open' }));
+    Reflect.set(api, 'fetchImpl', async (url: string) => {
+      urls.push(new URL(url));
+      return new Response(JSON.stringify(urls.length === 1
+        ? { data: first, has_more: true }
+        : { data: [{ id: 'in_oldest_101', status: 'open' }], has_more: false }), { status: 200 });
+    });
+    const all = await api.listOpenInvoices('sub_page_boundary');
+    expect(all).toHaveLength(101);
+    expect(all[100].id).toBe('in_oldest_101');
+    expect(urls[1].searchParams.get('starting_after')).toBe('in_page_99');
+    expect(urls.every((url) => url.searchParams.get('subscription') === 'sub_page_boundary')).toBe(true);
+    expect(urls.every((url) => url.searchParams.get('status') === 'open')).toBe(true);
+  });
+
+  it('a malformed continuation fails closed instead of returning only the first invoices', async () => {
+    const api = new StripeConnectApiService();
+    Reflect.set(api, 'fetchImpl', async () => new Response(
+      JSON.stringify({ data: [], has_more: true }), { status: 200 },
+    ));
+    await expect(api.listOpenInvoices('sub_bad_page')).rejects.toMatchObject({
+      stripeCode: 'invoice_list_malformed',
+    });
+  });
 });
