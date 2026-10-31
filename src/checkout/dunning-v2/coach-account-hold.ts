@@ -28,6 +28,64 @@ export function isCoachAccountHoldReason(reason: string | null | undefined): boo
   return reason === COACH_ACCOUNT_HOLD_REASON;
 }
 
+/** The purchase's DunningState fields the client plan reads need (one relation level). */
+export const CLIENT_PLAN_DUNNING = {
+  select: { status: true, last_failure_reason: true },
+} as const;
+
+type HoldDunning = { status: string; last_failure_reason: string | null } | null | undefined;
+
+/** An open dunning row whose renewal waits on the coach's account (the hold). */
+export function isHeldRenewal(dunning: HoldDunning): boolean {
+  return dunning?.status === 'active' && isCoachAccountHoldReason(dunning.last_failure_reason);
+}
+
+const CLIENT_FAILED_STATUSES = new Set(['past_due', 'unpaid']);
+
+/**
+ * FR-1195 (LO-1195 B1, R1): a renewal waiting on the coach's account is not
+ * a failed payment to the client. Both client plan reads (GET
+ * /v1/checkout/purchases and the plan views) show it as active with no
+ * payment error, so the phone shows no card reminder; the coach's views
+ * read the row itself and keep showing the hold.
+ */
+export function clientPlanStatus(status: string, dunning: HoldDunning): string {
+  return isHeldRenewal(dunning) && CLIENT_FAILED_STATUSES.has(status) ? 'active' : status;
+}
+
+/** The channels of one coach hold notice (R4): the in-app row, the push, the email. */
+export type HoldNoticeChannel = 'inapp' | 'push' | 'email';
+export const HOLD_NOTICE_CHANNELS: readonly HoldNoticeChannel[] = ['inapp', 'push', 'email'];
+
+/**
+ * FR-1195 (LS-1195 B1): the coach's notice row cursor, `day|owed|sends`: the
+ * coach-local day the notice is for, the channels still owed (a failed send
+ * is owed, a delivered or skipped one is not) and how many sends ran (a
+ * resend's email key). An empty or unknown cursor is no notice.
+ */
+export interface HoldNoticeCursor {
+  day: string;
+  owed: HoldNoticeChannel[];
+  sends: number;
+}
+
+export function parseHoldNoticeCursor(raw: string | null | undefined): HoldNoticeCursor | null {
+  if (!raw) return null;
+  const [day, owed = '', sends = '0'] = raw.split('|');
+  if (!day) return null;
+  const known = new Set<string>(HOLD_NOTICE_CHANNELS);
+  const n = Number.parseInt(sends, 10);
+  return {
+    day,
+    owed: owed.split(',').filter((c): c is HoldNoticeChannel => known.has(c)),
+    sends: Number.isFinite(n) && n > 0 ? n : 0,
+  };
+}
+
+export function holdNoticeCursor(c: HoldNoticeCursor): string {
+  return `${c.day}|${c.owed.join(',')}|${c.sends}`;
+}
+
 /** PF-W8, owner-approved; only the count changes. */
 export function coachAccountHoldNotice(count: number): string {
   const n = Math.max(1, Math.floor(count));

@@ -504,6 +504,11 @@ export interface CheckoutWebhookPrefetch {
   // can take payments; false = can't; null = no fresh answer (waits);
   // undefined = not read (hold switch off).
   coachAccountReady?: boolean | null;
+  // FR-1195 (LS-1195 B2): invoice.paid on a held renewal — the purchase's
+  // other renewal invoices still unpaid, read before the outer tx. null = no
+  // fresh answer (the delivery fails and Stripe sends it again); undefined =
+  // the renewal is not held (or not read).
+  heldInvoicesUnpaid?: string[] | null;
   // The renewed Stripe subscription for an invoice.paid/payment_succeeded
   // event, resolved out-of-tx. null when not applicable or the lookup failed
   // (the handler then falls back to its own out-of-tx retrieve only when no
@@ -890,7 +895,7 @@ export class CheckoutWebhookHandlerService {
     ) {
       return {};
     }
-    const inv = event.data.object as { subscription?: string | null };
+    const inv = event.data.object as { id?: string; subscription?: string | null };
     if (!inv?.subscription) return {};
     // Only pre-resolve when this invoice maps to a package purchase we own;
     // otherwise the SaaS-coach-subscription path (BillingService) handles it
@@ -900,16 +905,23 @@ export class CheckoutWebhookHandlerService {
     });
     if (!purchase) return {};
     const invoiceRevision = lifecycleRevision(purchase);
+    // FR-1195 (LS-1195 B2): never throws; undefined unless the renewal is held.
+    const heldInvoicesUnpaid = await this.coachHold?.unpaidHeldInvoices(
+      purchase.id,
+      inv.subscription,
+      inv.id,
+    );
+    const held = heldInvoicesUnpaid === undefined ? {} : { heldInvoicesUnpaid };
     try {
       const invoiceSubscription = await this.stripeConnect.retrieveSubscription(
         inv.subscription,
       );
-      return { invoiceSubscription, invoiceRevision };
+      return { invoiceSubscription, invoiceRevision, ...held };
     } catch (err) {
       this.logger.warn(
         `prefetchForOuterTx: retrieveSubscription failed for sub=${inv.subscription} error=${errorLabel(err)}`,
       );
-      return { invoiceSubscription: null };
+      return { invoiceSubscription: null, ...held };
     }
   }
 
@@ -2742,7 +2754,11 @@ export class CheckoutWebhookHandlerService {
       invoice_charge_id: inv.charge ?? null,
     });
     // Phase 5 — clear any active dunning window (v1 + v2).
-    await this.resolveDunningOnPaid(updated.id, tx);
+    await this.resolveDunningOnPaid(updated.id, tx, {
+      purchase: updated,
+      invoiceId: inv.id ?? null,
+      unpaid: prefetched?.heldInvoicesUnpaid,
+    });
     return {
       claimed: true,
       purchase_id: purchase.id,
@@ -2780,7 +2796,34 @@ export class CheckoutWebhookHandlerService {
     return state?.status === 'active' && state.client_canceled_at != null;
   }
 
-  private async resolveDunningOnPaid(purchaseId: string, tx?: WebhookTx): Promise<void> {
+  private async resolveDunningOnPaid(
+    purchaseId: string,
+    tx?: WebhookTx,
+    paid?: {
+      purchase: { id: string; stripe_subscription_id: string | null };
+      invoiceId: string | null;
+      unpaid: string[] | null | undefined;
+    },
+  ): Promise<void> {
+    // FR-1195 (LS-1195 B2): a renewal waiting on the coach's account leaves
+    // the hold only when none of its renewal invoices is left unpaid; the
+    // sweep pays the rest. An unknown answer never ends it: the delivery
+    // fails and Stripe redelivers it.
+    if (this.coachHold && paid) {
+      const verdict = await this.coachHold.onRenewalPaid(
+        paid.purchase,
+        paid.invoiceId,
+        paid.unpaid,
+        tx,
+      );
+      if (verdict === 'unknown') throw new DunningWebhookRetryError('COACH_HOLD_CHECK_FAILED');
+      if (verdict === 'keep') {
+        this.logger.log(
+          JSON.stringify({ event: 'checkout_webhook.coach_hold_kept_on_paid', purchase_id: purchaseId }),
+        );
+        return;
+      }
+    }
     // S-DUNNING-R3 (B-628-8): a renewal payment does not settle a disputed
     // payment; the dispute cycle stays open until the dispute closes.
     if (this.dunningV2) {
