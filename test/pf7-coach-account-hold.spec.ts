@@ -429,7 +429,7 @@ describe('PF-7-BE: a renewal waiting on the coach Stripe account', () => {
   });
 
   describe('brief and Money (R7)', () => {
-    const solo = {
+    const solo: BriefContext = stub({
       brief_mode: 'solo',
       coach_first_name: 'Morgan',
       coach_name: 'Morgan Coach',
@@ -446,7 +446,7 @@ describe('PF-7-BE: a renewal waiting on the coach Stripe account', () => {
       unread_client_messages: 0,
       clients_missing_checkin_2d: 0,
       new_clients_last_24h: 0,
-    } as unknown as BriefContext;
+    });
 
     it('PF-W9 is in the brief while renewals wait, with the count; never otherwise', () => {
       expect(coachAccountWaitingLine(2)).toBe(PF_W9_TWO);
@@ -458,7 +458,7 @@ describe('PF-7-BE: a renewal waiting on the coach Stripe account', () => {
       const withWait = buildFallbackNarrative({ ...solo, coach_account_waiting: 2 });
       expect(withWait).toContain(PF_W9_TWO);
       expect(withWait).not.toMatch(/failed|payment retr/i);
-      const head = {
+      const head: BriefContextHeadCoach = stub({
         brief_mode: 'head_coach',
         coach_first_name: 'Morgan',
         coach_name: 'Morgan Coach',
@@ -474,7 +474,7 @@ describe('PF-7-BE: a renewal waiting on the coach Stripe account', () => {
         dunning_amount_cents: 0,
         sub_coach_highlights: [],
         coach_account_waiting: 1,
-      } as unknown as BriefContextHeadCoach;
+      });
       expect(buildFallbackNarrative(head)).toContain(coachAccountWaitingLine(1));
     });
 
