@@ -1,0 +1,4 @@
+.
+--forceExit
+--runInBand=false
+--maxWorkers=2
