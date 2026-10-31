@@ -214,11 +214,17 @@ function identityOf(item: FoodResult): string {
   return [norm(item.name), norm(item.brand_or_restaurant), Math.round(Number(item.calories)), source].join('|');
 }
 
+// USDA names the plain form of a food "..., raw" or "..., whole" ("Bananas, raw",
+// "Eggs, Grade A, Large, egg whole"); among equal matches it comes before a part
+// of the food ("egg yolk") or a prepared form.
+const PLAIN_FORM = new Set(['raw', 'whole']);
+const plainForm = (item: FoodResult) => (words(item.name).some((w) => PLAIN_FORM.has(w)) ? 1 : 0);
+
 /**
  * De-duplicate by food identity (the first source listed wins), then rank.
  * R3 (LO-FOOD B1): a whole-word match of a basic food comes first, then a
  * whole-word match of any other unbranded food, then the rest by match
- * quality; shorter names and then A-Z break ties.
+ * quality; the plain form, shorter names and then A-Z break ties.
  */
 function rankFoodResults(items: FoodResult[], q: string, limit: number): FoodResult[] {
   const byIdentity = new Map<string, FoodResult>();
@@ -238,6 +244,7 @@ function rankFoodResults(items: FoodResult[], q: string, limit: number): FoodRes
     (a, b) =>
       b.group - a.group ||
       b.score - a.score ||
+      plainForm(b.item) - plainForm(a.item) ||
       a.item.name.length - b.item.name.length ||
       a.item.name.localeCompare(b.item.name),
   );

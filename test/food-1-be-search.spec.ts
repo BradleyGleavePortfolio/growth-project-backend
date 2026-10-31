@@ -10,6 +10,8 @@
  *  R5 — one food per identity (name + brand + calories + barcode / USDA id),
  *       so same-name foods of other brands, barcodes or calories stay.
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { Prisma } from '@prisma/client';
 import { FoodService, FoodResult } from '../src/food/food.service';
 import type { PrismaService } from '../src/prisma.service';
@@ -127,6 +129,18 @@ describe('R3: the plain food first on a plain query', () => {
     upstreams([branded('EGGS', 'Mars'), survey('Egg, whole, fried'), basic('Eggs, Grade A, Large, egg whole')], []);
     const order = names((await setup().search('eggs', 50, 'viewer')).results);
     expect(order).toEqual(['Eggs, Grade A, Large, egg whole', 'Egg, whole, fried', 'EGGS']);
+  });
+
+  it("the audit's real USDA answer for eggs: the whole hen egg first, every brand after the plain eggs", async () => {
+    const real: Row[] = JSON.parse(readFileSync(join(__dirname, 'fixtures', 'lo-food-usda-eggs.json'), 'utf8'));
+    upstreams(real, []);
+    const { results } = await setup().search('eggs', 50, 'viewer');
+    expect(names(results).slice(0, 3)).toEqual([
+      'Eggs, Grade A, Large, egg whole', 'Eggs, Grade A, Large, egg yolk', 'Eggs, Grade A, Large, egg white',
+    ]);
+    expect(results.slice(0, 3).every((r) => r.basic_food)).toBe(true);
+    const plain = results.map((r, i) => (!isBrand(r) && hasEveryWord(r.name, 'eggs') ? i : -1)).filter((i) => i >= 0);
+    expect(Math.max(...plain)).toBeLessThan(results.findIndex(isBrand));
   });
 
   it('a partial match ("Eggplant") of a basic food ranks below the whole-word branded item', async () => {
