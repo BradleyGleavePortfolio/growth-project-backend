@@ -427,6 +427,7 @@ function webTrialSub(purchase: Row, over: Record<string, unknown> = {}) {
     metadata: { tgp_package_id: PKG, tgp_coach_user_id: COACH },
     ...over,
   };
+}
 
 // Sweeps run at fixed instants relative to the stored trial end.
 async function sweepAt(w: ReturnType<typeof noticeWorld>, at: Date) {
