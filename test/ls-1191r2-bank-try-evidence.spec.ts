@@ -9,9 +9,10 @@ import { CoachMoneyService } from '../src/coach-money/coach-money.service';
 // This exercises the real DunningState writer, then the Money projection.
 describe('LS-1191R2 B1: bank try evidence is not a reminder budget', () => {
   it.each([
-    { label: 'hard-decline schedule count 3 after one executed charge', providerCount: 3, executedCount: 1 },
-    { label: 'fifth executed try under an eight-try policy', providerCount: 5, executedCount: 5 },
-  ])('LS-1191R2 B1: $label is not shown as an invented bank try fraction', async ({ providerCount, executedCount }) => {
+    { label: 'hard-decline schedule count 3 after one executed charge', providerCount: 3, executedCount: 1, reason: 'lost_card' },
+    { label: 'fifth executed try under an eight-try policy', providerCount: 5, executedCount: 5, reason: 'insufficient_funds' },
+    { label: 'final scheduled hard-decline slot after one executed charge', providerCount: 4, executedCount: 1, reason: 'lost_card' },
+  ])('LS-1191R2 B1: $label is not shown as an invented bank try fraction', async ({ providerCount, executedCount, reason }) => {
     let state: Record<string, unknown> = {
       id: 'review-cycle', purchase_id: 'review-purchase', status: 'active',
       failure_count: 1, last_attempt_number: 1, step_index: 0,
@@ -45,9 +46,10 @@ describe('LS-1191R2 B1: bank try evidence is not a reminder budget', () => {
     await dunning.recordFailure({
       purchase: { id: 'review-purchase', client_user_id: 'review-client' } as ClientPurchase,
       stripe_invoice_id: null, amount_due_cents: 14900,
-      attempt_number: providerCount, reason: 'Your card was declined.',
+      attempt_number: providerCount, reason,
     });
     expect(state.last_attempt_number).toBe(providerCount);
+    expect(state.last_failure_reason).toBe(reason);
     const money: CoachMoneyService = Reflect.construct(CoachMoneyService, [prisma]);
     const out = await money.getAttention('review-coach');
     const fp = out.items[0].failed_payment!;
