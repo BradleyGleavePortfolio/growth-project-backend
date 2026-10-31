@@ -150,7 +150,7 @@ describe('FR-1192R2: a trial-ending push held overnight goes only while that tri
     await r.delivery.drain();
     expect(r.send).toHaveBeenCalledTimes(1);
     expect(r.world.rows[0].status).toBe('sent');
-    const [[messages]] = r.send.mock.calls as unknown as Array<[Array<{ body: string }>]>;
+    const messages = r.send.mock.calls[0][0] as Array<{ body: string }>;
     expect(messages[0].body).toContain('will be charged $49');
   });
 });
