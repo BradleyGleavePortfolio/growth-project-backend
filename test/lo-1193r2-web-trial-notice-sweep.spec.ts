@@ -494,3 +494,22 @@ describe('LO-1193R2 S4 — a 7-day web trial gets its notice from the sweep alon
     },
   );
 });
+
+describe('LO-1193R2 — web trial then app: the app offers no second trial with this coach', () => {
+  it('LO-1193R2: after a web trial converts, the in-app offer for the same coach reads already_used (another coach still offered)', async () => {
+    const converted = await convertWebTrial(7);
+    const usage = makeTrialUsageTable();
+    for (const r of converted.ledger) usage.rows.push(cast({ ...r }));
+    expect(usage.rows).toHaveLength(1);
+    expect(usage.rows[0]).toMatchObject({ coach_user_id: COACH, status: 'started' });
+    const svc = new TrialUsageService(
+      stub<ConstructorParameters<typeof TrialUsageService>[0]>({ packageTrialUsage: usage }),
+    );
+    const offers = await svc.offersForClient(converted.purchase.client_user_id, [
+      { id: PKG, coach_id: COACH, trial_days: 7 },
+      { id: 'pkg-other-coach', coach_id: 'coach-other', trial_days: 7 },
+    ]);
+    expect(offers.get(PKG)).toEqual({ trial_days: 7, available: false, reason: 'already_used' });
+    expect(offers.get('pkg-other-coach')?.reason).not.toBe('already_used');
+  });
+});
