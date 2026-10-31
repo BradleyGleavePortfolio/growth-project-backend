@@ -1087,9 +1087,13 @@ model WorkoutSession {
   exercises        ExerciseSet[]
   comments         WorkoutComment[]
   created_at       DateTime      @default(now())
+  // WK-1-BE: the phone's Idempotency-Key on POST /workouts; a resend with the same key returns this row.
+  client_key       String?
 
   // Hot path: coach alerts, community leaderboard, workout history all filter by (user_id, date).
   @@index([user_id, date])
+  // 20270502010500_workout_session_client_key: one workout per user per key (NULLs never collide).
+  @@unique([user_id, client_key])
 }
 
 // TRAIN-BE2: a coach's comment on a client's logged workout, one per coach per workout. Row rules:
@@ -1243,8 +1247,11 @@ model NotificationPreferences {
   // time on plan days). Default ON; Settings > Notifications toggles both.
   workout_reminder_push    Boolean @default(true)
   workout_reminder_inapp   Boolean @default(true)
-  // RENEWAL-BE: "plan renewal reminders" (default ON). Off stops the renewal app notifications.
+  // RENEWAL-BE: "plan renewal reminders" (default ON). Since STORE-B2 it governs only the Day 0 notice.
   plan_renewal_push        Boolean @default(true)
+  // STORE-B2 (App Store 4.5.4): when the person said yes in the app to plan renewal offers (Day 1 and Day 7).
+  // NULL = no (every account until it says yes); turning the switch off clears it. Day 0 keeps plan_renewal_push.
+  plan_renewal_offers_opt_in_at DateTime?
   // PR-15A — COACH_NEW_PURCHASE (selling coach learns of a new buyer at
   // entitlement). Default ON for push + in-app per decision #9 mirror —
   // a coach who is SELLING packages wants to know. email default OFF

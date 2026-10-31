@@ -62,7 +62,12 @@ const PLAN_SELECT = {
 } as const satisfies Prisma.ClientPurchaseSelect;
 type PlanRow = Prisma.ClientPurchaseGetPayload<{ select: typeof PLAN_SELECT }>;
 
-const LIVE_STATUSES = new Set(['active', 'trialing', 'past_due']);
+// FR-1191 (LS-1191 B3, LO-1191 B1): unpaid is a renewal whose bank tries ran
+// out while the subscription stays open (the client keeps getting reminders
+// until they renew or drop off), so it is a live plan with a failed payment,
+// never an ended one. Same set as client-billing's DELINQUENT_STATUSES.
+const FAILED_RENEWAL_STATUSES = new Set(['past_due', 'unpaid']);
+const LIVE_STATUSES = new Set(['active', 'trialing', ...FAILED_RENEWAL_STATUSES]);
 const IN_FLIGHT_REFUND = new Set(['pending', 'requires_action']);
 const PLAN_LIMIT = 50;
 
@@ -315,7 +320,7 @@ export class CoachClientPaymentsService {
         ),
       );
     }
-    if (plan.status === 'past_due' && action === 'pause') {
+    if (FAILED_RENEWAL_STATUSES.has(plan.status) && action === 'pause') {
       return new ConflictException(
         coded(
           'PLAN_PAYMENT_FAILED',

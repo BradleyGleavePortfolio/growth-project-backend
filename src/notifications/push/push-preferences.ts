@@ -106,6 +106,26 @@ export function notificationPrefsPrefix(kind: string): string {
 export const MUTE_ALL_PASS = { passesMuteAll: true } as const;
 export type MuteAllPass = { passesMuteAll?: true };
 
+/**
+ * STORE-B2 (App Store 4.5.4): the context of a plan renewal OFFER push (Day 1 and Day 7, plan-renewal.service.ts).
+ * An offer is promotional: it goes only to a person who said yes in the app (NotificationPreferences
+ * .plan_renewal_offers_opt_in_at set; empty, or no preferences row, is no) and Mute all stops it, although
+ * plan_renewal is a money kind. The Day 0 notice (no context) keeps its rule. Stored with the outbox row, so
+ * the enqueue gate and both send-time re-checks read it.
+ */
+export const RENEWAL_OFFER = { renewalOffer: true } as const;
+export type RenewalOffer = { renewalOffer?: true };
+
+function isRenewalOffer(context: unknown): boolean {
+  return (context as { renewalOffer?: unknown } | null | undefined)?.renewalOffer === true;
+}
+
+/** STORE-B2: the person's in-app yes to renewal offers (a stored time; anything else is no). */
+export function renewalOffersConsented(prefs: Record<string, unknown> | null | undefined): boolean {
+  const at = prefs?.plan_renewal_offers_opt_in_at;
+  return at instanceof Date || (typeof at === 'string' && at !== '');
+}
+
 /** Owner #168-18 (a Roman safety alert, any SAFETY_ALERT_PUSH_BODY type) and owner #171-3 (MUTE_ALL_PASS). */
 function contextPassesMuteAll(context: unknown): boolean {
   const c = (context ?? {}) as { passesMuteAll?: unknown; safetyAlert?: unknown };
@@ -119,6 +139,7 @@ function contextPassesMuteAll(context: unknown): boolean {
  * this kind on this channel. Never an in-app row, never a money kind
  * (MONEY_NOTIFICATION_KINDS) on any channel, never a push whose context is a
  * safety alert or carries MUTE_ALL_PASS; every other push and email, yes.
+ * STORE-B2: a renewal offer (RENEWAL_OFFER) is not a money pass: Mute all stops it.
  */
 export function muteAllStops(
   prefs: Record<string, unknown> | null | undefined,
@@ -126,7 +147,8 @@ export function muteAllStops(
   channel: 'push' | 'email' | 'inapp',
   context?: unknown,
 ): boolean {
-  if (prefs?.muted !== true || channel === 'inapp' || MONEY_NOTIFICATION_KINDS.has(kind)) return false;
+  if (prefs?.muted !== true || channel === 'inapp') return false;
+  if (MONEY_NOTIFICATION_KINDS.has(kind) && !isRenewalOffer(context)) return false;
   return !contextPassesMuteAll(context);
 }
 
@@ -136,12 +158,15 @@ export function muteAllStops(
  * (allowed); `muted` blocks every push but a money or safety one (muteAllStops,
  * with the push's stored context); `<prefix>_push === false` blocks the kind.
  * A kind without a column (first payment) is never blocked by it.
+ * STORE-B2: a renewal offer needs the person's yes (renewalOffersConsented) and
+ * is stopped by Mute all; plan_renewal_push governs only the Day 0 notice.
  */
 export function pushAllowedByPreferences(
   prefs: Record<string, unknown> | null | undefined,
   kind: string,
   context?: unknown,
 ): boolean {
+  if (isRenewalOffer(context)) return renewalOffersConsented(prefs) && !muteAllStops(prefs, kind, 'push', context);
   if (!prefs) return true;
   if (muteAllStops(prefs, kind, 'push', context)) return false;
   return prefs[`${notificationPrefsPrefix(kind)}_push`] !== false;

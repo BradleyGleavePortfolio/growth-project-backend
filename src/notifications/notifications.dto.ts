@@ -285,6 +285,12 @@ export class UpdateNotificationPreferencesDto {
   @IsOptional()
   @IsBoolean()
   plan_renewal_push?: boolean;
+
+  // STORE-B2 (App Store 4.5.4): the person's yes (true) or no (false) to plan renewal offers (Day 1 and Day 7).
+  // Stored as NotificationPreferences.plan_renewal_offers_opt_in_at: the time of the yes, cleared by a no.
+  @IsOptional()
+  @IsBoolean()
+  plan_renewal_offers?: boolean;
 }
 
 // ── Notification center query params ────────────────────────────────────────

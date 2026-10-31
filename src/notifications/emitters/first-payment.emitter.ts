@@ -32,10 +32,11 @@ export type FirstPaymentNotificationPayload = z.infer<typeof firstPaymentPayload
 /**
  * FirstPaymentEmitter — thin wrapper around NotificationsService that knows the
  * FIRST_PAYMENT schema. It validates the payload (Zod) and dispatches the
- * coach-targeted notification on the in-app + push channels, exactly like the
- * other coach emitters (CoachAlertEmitter / CheckinSubmittedEmitter). No new
- * transport: it reuses the existing NotificationsService.createNotification
- * broadcast path.
+ * coach-targeted notification: the in-app row, its hidden push twin row and
+ * the phone push itself (NotificationsService.sendPush, like the other coach
+ * emitters, e.g. CheckinSubmittedEmitter). FIRST_PAYMENT is a money kind, so
+ * the push also reaches a coach who chose Mute all; the lock screen gets the
+ * quiet copy from lock-screen-copy.ts, never this body.
  *
  * Exactly-once is NOT this emitter's responsibility — that is enforced upstream
  * by the CoachFirstPaymentNotification(coachId @unique) row, which only lets
@@ -55,9 +56,9 @@ export class FirstPaymentEmitter {
    *                 the persisted ClientPurchase row, never the webhook body).
    * @param payload  validated { amount, currency, clientId }.
    * @param tx       R81 (PR-395 follow-up, F1/F2) — the AMBIENT purchase
-   *                 transaction. Threaded into both createNotification calls so
-   *                 the inapp + push rows are written via `tx.notification.create`
-   *                 and commit-or-roll-back WITH the CoachFirstPaymentNotification
+   *                 transaction. Threaded into both createNotification calls and
+   *                 sendPush, so the inapp + push rows and the queued push
+   *                 commit-or-roll-back WITH the CoachFirstPaymentNotification
    *                 ledger row and the ClientPurchase. Without this the rows
    *                 escaped to NotificationsService's autocommitting client and
    *                 could survive an outer rollback (re-firing on Stripe retry)
@@ -106,6 +107,21 @@ export class FirstPaymentEmitter {
         channel: 'push',
         // B-648-7: the inapp row above is the inbox item; this twin is hidden.
         push_twin: true,
+      },
+      tx,
+    );
+
+    // OB1 (b#1154 AUDIT 6388619778): the twin row alone never reaches the
+    // phone; queue the push itself. The dedupe key keeps it to one push per
+    // coach even if this ever runs twice (the first guard is the
+    // CoachFirstPaymentNotification ledger: a webhook retry never gets here).
+    await this.notifications.sendPush(
+      {
+        user_id: coachId,
+        kind: NotificationKind.FIRST_PAYMENT,
+        body,
+        deep_link: deepLink,
+        dedupe_key: `first_payment:${coachId}`,
       },
       tx,
     );

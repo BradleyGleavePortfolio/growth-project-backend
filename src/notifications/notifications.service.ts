@@ -29,12 +29,14 @@ import { VoicePolicyService } from '../roman/voice/voice-policy.service';
 import { EnqueueResult, PushDeliveryService } from './push/push-delivery.service';
 import { PushContext, lockScreenCopy, safetyAlertTap } from './push/lock-screen-copy';
 import { currentCoachInbox } from './current-coach-inbox';
+import { InboxBlockRule } from './inbox-block-rule';
 import { resolveRecipientTimeZone } from './recipient-timezone';
 import {
   MuteAllPass,
   muteAllStops,
   notificationPrefsPrefix,
   pushAllowedByPreferences,
+  RenewalOffer,
 } from './push/push-preferences';
 import { RomanCopyPayload } from '../roman/voice/voice-policy.constants';
 import { describeFailure } from '../observability/log-pii';
@@ -129,18 +131,32 @@ export class NotificationsService implements OnModuleInit {
     // C-643-2: device delivery for inbox notifications. @Optional so thin
     // unit tests without DI keep working (sendPush is then a no-op).
     @Optional() private pushDelivery?: PushDeliveryService,
+    // B-LONOTIFY3-1: a block hides the rows that name the other person
+    // (inbox-block-rule.ts). @Optional for the same thin unit tests; a
+    // production boot without it fails (onModuleInit).
+    @Optional() private inboxBlocks?: InboxBlockRule,
   ) {}
 
   /**
    * C-648-2: NotificationsModule provides PushDeliveryService. If that wiring
    * is ever lost, every device push would silently stop, so a production
    * boot fails here instead. (Thin unit tests construct the service without
-   * DI and never run this hook.)
+   * DI and never run this hook.) B-LONOTIFY3-1: the same for the inbox's
+   * block rule, without which a blocked person's rows would stay listed.
    */
   onModuleInit(): void {
-    if (this.pushDelivery) return;
-    const notWired =
-      'NotificationsService started without PushDeliveryService: no inbox notification would reach a device.';
+    this.requireWired(
+      this.pushDelivery,
+      'NotificationsService started without PushDeliveryService: no inbox notification would reach a device.',
+    );
+    this.requireWired(
+      this.inboxBlocks,
+      "NotificationsService started without InboxBlockRule: a blocked person's notifications would stay in the inbox.",
+    );
+  }
+
+  private requireWired(dependency: unknown, notWired: string): void {
+    if (dependency) return;
     if (process.env.NODE_ENV === 'production') throw new Error(notWired);
     this.logger.error(notWired);
   }
@@ -210,6 +226,7 @@ export class NotificationsService implements OnModuleInit {
         workout_reminder_push: true,
         workout_reminder_inapp: true,
         plan_renewal_push: true, // RENEWAL-BE (schema default)
+        plan_renewal_offers_opt_in_at: null, // STORE-B2: no yes to renewal offers yet
         // PR-15A — COACH_NEW_PURCHASE defaults match the migration:
         // selling coach gets push + in-app on every new entitlement,
         // email off (no transactional channel today).
@@ -337,6 +354,13 @@ export class NotificationsService implements OnModuleInit {
     const existing = await this.prisma.notificationPreferences.findUnique({
       where: { user_id: userId },
     });
+    // STORE-B2 (App Store 4.5.4): the in-app yes to renewal offers is the time the person turned the switch on
+    // (kept when it is already on); turning it off clears it. Absent from the PATCH, it is left as it is.
+    if (data.plan_renewal_offers !== undefined) {
+      (definedFields as Record<string, unknown>).plan_renewal_offers_opt_in_at = data.plan_renewal_offers
+        ? (existing?.plan_renewal_offers_opt_in_at ?? new Date())
+        : null;
+    }
 
     const result = existing
       ? await this.prisma.notificationPreferences.update({
@@ -585,7 +609,7 @@ export class NotificationsService implements OnModuleInit {
       kind: NotificationKindValue;
       body: string;
       deep_link?: string;
-      context?: (PushContext & MuteAllPass) | null;
+      context?: (PushContext & MuteAllPass & RenewalOffer) | null;
       dedupe_key?: string | null;
       urgent?: boolean;
     },
@@ -751,9 +775,21 @@ export class NotificationsService implements OnModuleInit {
     });
   }
 
-  /** The user's inbox: a moved client's rows leave the coach they left (current-coach-inbox.ts). */
-  private inboxWhere(userId: string): Promise<Prisma.NotificationWhereInput> {
-    return currentCoachInbox(this.prisma, userId);
+  /**
+   * The user's inbox: a moved client's rows leave the coach they left
+   * (current-coach-inbox.ts), and while two people are in a block the rows
+   * that name the other one are left out (inbox-block-rule.ts), added under
+   * AND next to any AND the move rule has. Callers add plain keys (id,
+   * read_at, created_at, inbox_hidden), never AND.
+   */
+  private async inboxWhere(userId: string): Promise<Prisma.NotificationWhereInput> {
+    const [inbox, blocked] = await Promise.all([
+      currentCoachInbox(this.prisma, userId),
+      this.inboxBlocks ? this.inboxBlocks.where(userId) : [],
+    ]);
+    if (blocked.length === 0) return inbox;
+    const and = inbox.AND === undefined ? [] : Array.isArray(inbox.AND) ? inbox.AND : [inbox.AND];
+    return { ...inbox, AND: [...and, ...blocked] };
   }
 
   // ── Push delivery (Phase 6B baseline, extended Phase 9) ──────────────────

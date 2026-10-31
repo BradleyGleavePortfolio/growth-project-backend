@@ -14,6 +14,7 @@ import { PrismaService } from '../prisma.service';
 import { PackagesService } from './packages.service';
 import type { PushAudience, PushMode } from './package-contents.dto';
 import { REFUND_STOPS, SHIPPED_STATUSES } from './drop-status';
+import { isLiveAccess } from '../checkout/dunning-v2/dunning-grace';
 
 // PR-17 B2 — package PUSH / BACKFILL service (decision-set in
 // PR17_EXPANSION_PLAN.md §2.2). Pushes ONE authored CoachPackageContent
@@ -401,6 +402,9 @@ export class PackagePushService {
       for (const drop of dueNow) {
         const purchase = purchaseById.get(drop.client_purchase_id);
         if (!purchase) continue;
+        // FR-1190 (LS-1190 B2): only a live purchase is delivered inline. Any other drop stays
+        // pending; the dispatcher delivers it once the plan is live again (dueWhere, same rule).
+        if (!isLiveAccess(purchase, now)) continue;
         if (!this.resolvers) {
           throw new Error(
             `PackagePush: AssignableAssetResolverRegistry not wired; cannot materialise drop=${drop.id} type=${drop.asset_type}`,
@@ -605,7 +609,12 @@ export class PackagePushService {
     } else if (audience === 'cohort') {
       where.id = { in: cohortPurchaseIds ?? [] };
     }
-    return this.prisma.clientPurchase.findMany({ where });
+    // FR-1190 (LS-1190 B2): the purchase's own cycle rides along, so the inline step can hold a
+    // plan that is not live (a resync can restore entitlement_active on a locked plan).
+    return this.prisma.clientPurchase.findMany({
+      where,
+      include: { dunning: { select: { status: true, locked_out_at: true } } },
+    });
   }
 
   private buildSeedRow(

@@ -11,8 +11,9 @@ import { PrismaService } from '../prisma.service';
 import { ConnectService } from '../connect/connect.service';
 import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
 import { SHARE_TOKEN_REGEX } from '../share-link/share-link.service';
+import { COACHING_COACH } from '../packages/coach-selling';
 import { chargeQuote, isRecurringPackage } from '../checkout/checkout.service';
-import { planPriceFor } from '../checkout/subscription-plan';
+import { packageTrialDays, planPriceFor } from '../checkout/subscription-plan';
 import type {
   BillingCycle,
   PublicPackageData,
@@ -107,8 +108,10 @@ export class StorefrontService {
       });
     }
 
+    // STORE-1TO1: the web shows a package only while its coach can coach one to one (the same
+    // seller rule as the app, coach-selling.ts).
     const pkg = await this.prisma.coachPackage.findUnique({
-      where: { share_token: token },
+      where: { share_token: token, coach: COACHING_COACH },
       include: {
         coach: {
           include: {
@@ -200,10 +203,13 @@ export class StorefrontService {
       pkg.interval_count,
     );
 
-    // GC-1 — what checkout charges, from the checkout's own rule. No trial
-    // on the web yet (#GC-TRIAL interim): the guest checkout charges today.
-    const quote = chargeQuote(pkg, 0);
-    const plan = isRecurringPackage(pkg) ? planPriceFor(pkg, 0) : null;
+    // GC-1 — what checkout charges, from the checkout's own rule. GC-3
+    // (#GC-TRIAL op 1): a pure recurring package's trial runs on the web too
+    // (packageTrialDays: combo packages never have one), so the quote is the
+    // in-app one: nothing due today, first charge at the trial's end.
+    const trialDays = packageTrialDays(pkg);
+    const quote = chargeQuote(pkg, trialDays);
+    const plan = isRecurringPackage(pkg) ? planPriceFor(pkg, trialDays) : null;
 
     const data: PublicPackageData = {
       package_id: pkg.id,
@@ -212,10 +218,8 @@ export class StorefrontService {
       price_cents: pkg.amount_cents,
       currency: pkg.currency,
       billing_cycle: billingCycle,
-      // Stripe trial_period_days lives on the Price object — Phase 1 of the
-      // storefront does not surface trials, so we serve null. Adding this
-      // later is a value-only change.
-      trial_days: null,
+      // GC-3 — the trial the guest checkout starts (null = none).
+      trial_days: trialDays > 0 ? trialDays : null,
       // CoachPackage has no `features` JSON column yet (deferred to Phase 2,
       // see spec §20). Return an empty array so the storefront can render
       // a deterministic empty state without an extra null check.

@@ -306,28 +306,28 @@ export const ENV_RULES: EnvRule[] = [
   {
     name: 'POSTHOG_PERSONAL_API_KEY',
     tier: 'optional',
-    default: 'unset → account deletion records posthog not_configured and skips PostHog',
+    default: 'unset → account deletion holds posthog erasure pending (not_configured, retried nightly) while PostHog is in use, or records not_applicable when it is not',
     reason:
       'PostHog personal API key (phx_…, scope person:write; the project key POSTHOG_KEY cannot delete). Account deletion uses it with POSTHOG_PROJECT_ID to delete the person and their events (account-deletion.vendors.ts).',
   },
   {
     name: 'POSTHOG_PROJECT_ID',
     tier: 'optional',
-    default: 'unset → account deletion records posthog not_configured and skips PostHog',
+    default: 'unset → account deletion holds posthog erasure pending (not_configured, retried nightly) while PostHog is in use, or records not_applicable when it is not',
     reason:
       'Numeric id of the PostHog project the app and server send events to. Not secret. Used with POSTHOG_PERSONAL_API_KEY by account deletion.',
   },
   {
     name: 'CRISP_WEBSITE_ID',
     tier: 'optional',
-    default: 'unset → account deletion records crisp not_configured and skips Crisp',
+    default: 'unset → account deletion holds crisp erasure pending (not_configured, retried nightly) while Crisp is in use, or records not_applicable when it is not',
     reason:
       'Crisp website (workspace) id, the same value as the app\'s EXPO_PUBLIC_CRISP_WEBSITE_ID. Not secret. Used with CRISP_API_TOKEN by account deletion to remove the person\'s support conversations and profile.',
   },
   {
     name: 'CRISP_API_TOKEN',
     tier: 'optional',
-    default: 'unset → account deletion records crisp not_configured and skips Crisp',
+    default: 'unset → account deletion holds crisp erasure pending (not_configured, retried nightly) while Crisp is in use, or records not_applicable when it is not',
     reason:
       'Crisp website token as "<identifier>:<key>" (Crisp: Settings > Workspace Settings > Advanced configuration > API Token). Secret. Account deletion only.',
   },
@@ -1449,7 +1449,7 @@ export const ENV_RULES: EnvRule[] = [
     name: 'CONSULT_CONSENT_COPY_VERSIONS',
     tier: 'optional',
     default:
-      "consult-consent-v3,consult-consent-v4,consult-consent-v5,consult-consent-v6,consult-consent-v5-coach-free,consult-consent-v6-coach-free,consult-consent-v7,consult-consent-v8,consult-consent-v8-coach-free,consult-consent-v9-coach-free,consult-consent-v7-coach-free,consult-consent-v9,consult-consent-v10,consult-consent-v10-coach-free,consult-consent-v11-coach-free,consult-consent-v11,consult-consent-v12,consult-consent-v13,consult-consent-v14,consult-consent-v12-coach-free,consult-consent-v13-coach-free,consult-consent-v14-coach-free,consult-consent-v15-coach-free,consult-consent-v15,consult-consent-v16,consult-consent-v16-coach-free,consult-consent-v17-coach-free,consult-consent-v17,consult-consent-v18 (unset, empty, or no known name -> all twenty-nine)",
+      "consult-consent-v3,consult-consent-v4,consult-consent-v5,consult-consent-v6,consult-consent-v5-coach-free,consult-consent-v6-coach-free,consult-consent-v7,consult-consent-v8,consult-consent-v8-coach-free,consult-consent-v9-coach-free,consult-consent-v7-coach-free,consult-consent-v9,consult-consent-v10,consult-consent-v10-coach-free,consult-consent-v11-coach-free,consult-consent-v11,consult-consent-v12,consult-consent-v13,consult-consent-v14,consult-consent-v12-coach-free,consult-consent-v13-coach-free,consult-consent-v14-coach-free,consult-consent-v15-coach-free,consult-consent-v15,consult-consent-v16,consult-consent-v16-coach-free,consult-consent-v17-coach-free,consult-consent-v17,consult-consent-v18,consult-consent-v19,consult-consent-v18-coach-free (unset, empty, or no known name -> all thirty-one)",
     reason:
       "Comma-separated onboarding P0 (consent box 1) copy versions the intake accepts (#607). A P0 counts only when its copy_version is listed AND its text_sha256 equals that version's pinned full-screen digest (src/onboarding/consult-consent-copy.ts), so only versions whose exact text the server knows can be listed; unknown names are ignored (logged once as a warning by the onboarding module). Leave unset at launch.",
   },

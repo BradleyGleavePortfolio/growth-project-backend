@@ -1,9 +1,10 @@
 /**
  * Account deletion reaches the vendors (account-deletion.vendors.ts): each
- * vendor is asked once with the right id, an unset key records
- * not_configured and calls nothing, a failure is recorded and only that
- * vendor (with only what it needs) is left to retry, and a repeat finds
- * nothing (not_found). The orchestration around it (after commit, retried by
+ * vendor is asked once with the right id; a vendor in use without its erasure
+ * keys records not_configured, calls nothing and stays pending with only its
+ * retry references (STORE-B3), while a vendor this deployment never used is
+ * not_applicable; a failure is recorded and only that vendor (with only what
+ * it needs) is left to retry, and a repeat finds nothing (not_found). The orchestration around it (after commit, retried by
  * the nightly cron without re-running the deletion) is in lifecycle-races.
  */
 import type { Prisma } from '@prisma/client';
@@ -11,6 +12,7 @@ import {
   AccountDeletionVendorsService,
   VENDORS,
   VendorWork,
+  heldVendors,
 } from '../../src/account-deletion/account-deletion.vendors';
 import {
   StripeConnectApiError,
@@ -71,9 +73,12 @@ const calls = () =>
     init,
   }));
 
+/** Every setting that shows a vendor in use or lets it erase. */
+const VENDOR_ENV = [...Object.keys(KEYS), 'POSTHOG_KEY', 'POSTHOG_HOST'];
+
 beforeEach(() => {
+  for (const name of VENDOR_ENV) delete process.env[name];
   Object.assign(process.env, KEYS);
-  delete process.env.POSTHOG_HOST;
   fetchMock = jest.spyOn(global, 'fetch');
   answer();
 });
@@ -123,21 +128,171 @@ describe('AccountDeletionVendorsService.erase', () => {
     expect(stripe.deleteCustomer.mock.calls).toEqual([['cus_a'], ['cus_b']]);
   });
 
-  it('an unset key records not_configured and calls nothing', async () => {
+  it('STORE-B3: a vendor in use without its erasure keys stays pending, and the retry erases that same identity once configured', async () => {
+    // Collection on (PostHog ingest key, Crisp website id), erasure keys
+    // absent, Stripe customers on file but Stripe unconfigured.
     for (const name of Object.keys(KEYS)) delete process.env[name];
-    const { service, stripe } = setup(false);
+    process.env.POSTHOG_KEY = 'phc_ingest';
+    process.env.CRISP_WEBSITE_ID = 'site-1';
+    const { service, stripe, logger } = setup(false);
 
-    const { outcomes, left } = await service.erase(UID, WORK);
+    const first = await service.erase(UID, WORK);
 
-    expect(outcomes).toMatchObject({
+    expect(first.outcomes).toEqual({
       posthog: 'not_configured',
       crisp: 'not_configured',
       stripe: 'not_configured',
+      resend: 'not_applicable',
+      sentry: 'not_applicable',
+    });
+    // Kept: only what each held vendor needs to find the person.
+    expect(first.left).toEqual({
+      vendors: ['posthog', 'crisp', 'stripe'],
+      email: EMAIL,
+      stripe_customer_ids: ['cus_a', 'cus_b'],
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(stripe.deleteCustomer).not.toHaveBeenCalled();
+    // The operator sees the held work; the line carries no personal data.
+    const warned = JSON.stringify(logger.warn.mock.calls);
+    expect(warned).toContain('vendor erasure held for posthog, crisp, stripe');
+    expect(warned).not.toContain(EMAIL);
+    expect(warned).not.toContain(UID);
+    expect(warned).not.toContain('cus_a');
+
+    // The keys are configured; the next retry erases the same identity.
+    Object.assign(process.env, KEYS);
+    stripe.isConfigured.mockReturnValue(true);
+    const retry = await service.erase(UID, first.left!);
+
+    expect(retry).toEqual({
+      outcomes: { posthog: 'done', crisp: 'done', stripe: 'done' },
+      left: null,
+    });
+    const [posthog] = calls();
+    expect(posthog.key).toBe('POST https://us.posthog.com/api/projects/42/persons/bulk_delete/');
+    expect(JSON.parse(String(posthog.init?.body)).distinct_ids).toEqual([UID]);
+    expect(calls().map((c) => c.key)).toContain(
+      `DELETE https://api.crisp.chat/v1/website/site-1/people/profile/${encodeURIComponent(EMAIL)}`,
+    );
+    expect(stripe.deleteCustomer.mock.calls).toEqual([['cus_a'], ['cus_b']]);
+  });
+
+  it('STORE-B3: half a key pair still holds the vendor (the project id alone, the token alone)', async () => {
+    for (const name of Object.keys(KEYS)) delete process.env[name];
+    process.env.POSTHOG_PROJECT_ID = '42';
+    process.env.CRISP_API_TOKEN = 'ident:secret';
+    const { service } = setup();
+
+    const { outcomes, left } = await service.erase(UID, { ...WORK, vendors: ['posthog', 'crisp'] });
+
+    expect(outcomes).toEqual({ posthog: 'not_configured', crisp: 'not_configured' });
+    expect(left).toEqual({ vendors: ['posthog', 'crisp'], email: EMAIL, stripe_customer_ids: [] });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('STORE-B3: on the first attempt a vendor with no setting at all completes as not applicable', async () => {
+    // No PostHog or Crisp setting at all outside production and staging, and no Stripe customer.
+    for (const name of Object.keys(KEYS)) delete process.env[name];
+    const { service, stripe, logger } = setup(false);
+
+    const { outcomes, left } = await service.erase(
+      UID,
+      { ...WORK, stripe_customer_ids: [] },
+      { firstAttempt: true },
+    );
+
+    expect(outcomes).toEqual({
+      posthog: 'not_applicable',
+      crisp: 'not_applicable',
+      stripe: 'not_found',
+      resend: 'not_applicable',
+      sentry: 'not_applicable',
     });
     expect(left).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
     expect(stripe.deleteCustomer).not.toHaveBeenCalled();
+    expect(logger.warn).not.toHaveBeenCalled();
   });
+
+  it('LS-1182-B1: missing keys on a retry of pending work never complete it, even with no setting at all', async () => {
+    for (const name of VENDOR_ENV) delete process.env[name];
+    const { service, logger } = setup();
+    const work: VendorWork = { vendors: ['posthog', 'crisp'], email: EMAIL, stripe_customer_ids: [] };
+
+    const { outcomes, left } = await service.erase(UID, work);
+
+    expect(outcomes).toEqual({ posthog: 'not_configured', crisp: 'not_configured' });
+    expect(left).toEqual(work);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(JSON.stringify(logger.warn.mock.calls)).toContain('vendor erasure held for posthog, crisp');
+  });
+
+  it.each(['production', 'staging'])(
+    'STORE-B3: in %s PostHog and Crisp count as in use (the app ships with both), so missing keys hold them, even on the first attempt',
+    async (environment) => {
+      for (const name of VENDOR_ENV) delete process.env[name];
+      process.env.NODE_ENV = environment;
+      const { service } = setup();
+
+      expect(heldVendors()).toEqual(['posthog', 'crisp']);
+      const { outcomes, left } = await service.erase(
+        UID,
+        { ...WORK, vendors: ['posthog', 'crisp'] },
+        { firstAttempt: true },
+      );
+
+      expect(outcomes).toEqual({ posthog: 'not_configured', crisp: 'not_configured' });
+      expect(left).toEqual({ vendors: ['posthog', 'crisp'], email: EMAIL, stripe_customer_ids: [] });
+    },
+  );
+
+  it.each(['staging', 'production'])(
+    'LS-1182-B1: %s keeps known pending vendor work after all backend keys are removed',
+    async (environment) => {
+      process.env.NODE_ENV = environment;
+      const { service } = setup();
+      answer({
+        'POST /api/projects/42/persons/bulk_delete/': () => json(503, {}),
+        [`GET /v1/website/site-1/people/conversations/${encodeURIComponent(EMAIL)}/list/1`]:
+          () => json(503, {}),
+      });
+      const work: VendorWork = {
+        vendors: ['posthog', 'crisp'],
+        email: EMAIL,
+        stripe_customer_ids: [],
+      };
+
+      // This is existing retry work, not evidence that the vendors were unused.
+      const first = await service.erase(UID, work);
+      expect(first.outcomes).toEqual({ posthog: 'failed', crisp: 'failed' });
+      expect(first.left).toEqual(work);
+
+      // Revoked or unavailable backend keys do not remove either vendor's copy.
+      for (const name of VENDOR_ENV) delete process.env[name];
+      fetchMock.mockClear();
+      const retry = await service.erase(UID, first.left!);
+
+      expect(retry.outcomes).toEqual({
+        posthog: 'not_configured',
+        crisp: 'not_configured',
+      });
+      expect(retry.left).toEqual(work);
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      Object.assign(process.env, KEYS);
+      answer();
+      const restored = await service.erase(UID, retry.left!);
+      expect(restored).toEqual({
+        outcomes: { posthog: 'done', crisp: 'done' },
+        left: null,
+      });
+      expect(JSON.parse(String(calls()[0].init?.body)).distinct_ids).toEqual([UID]);
+      expect(calls().map((call) => call.key)).toContain(
+        `DELETE https://api.crisp.chat/v1/website/site-1/people/profile/${encodeURIComponent(EMAIL)}`,
+      );
+    },
+  );
 
   it('records a failure and leaves only that vendor, with only what it needs, to retry', async () => {
     const { service, stripe, logger } = setup();
@@ -214,6 +369,35 @@ describe('AccountDeletionVendorsService.erase', () => {
       stripe: 'not_found',
     });
     expect(left).toBeNull();
+  });
+});
+
+describe('STORE-B3: startup readiness warning', () => {
+  it('warns, never throws, naming the missing keys and never a value', () => {
+    for (const name of Object.keys(KEYS)) delete process.env[name];
+    process.env.POSTHOG_KEY = 'phc_ingest';
+    process.env.CRISP_WEBSITE_ID = 'site-1';
+    const { service, logger } = setup();
+
+    expect(heldVendors()).toEqual(['posthog', 'crisp']);
+    expect(() => service.onModuleInit()).not.toThrow();
+
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    const line = String(logger.warn.mock.calls[0][0]);
+    expect(line).toContain('posthog (POSTHOG_PERSONAL_API_KEY, POSTHOG_PROJECT_ID)');
+    expect(line).toContain('crisp (CRISP_API_TOKEN)');
+    expect(line).not.toContain('phc_ingest');
+    expect(line).not.toContain('site-1');
+  });
+
+  it('is silent when every vendor in use can erase, or none is in use', () => {
+    const { service, logger } = setup();
+    expect(heldVendors()).toEqual([]);
+    service.onModuleInit();
+    for (const name of Object.keys(KEYS)) delete process.env[name];
+    expect(heldVendors()).toEqual([]);
+    service.onModuleInit();
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 });
 
