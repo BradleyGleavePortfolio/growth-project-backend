@@ -3,6 +3,7 @@ import { join, relative } from 'path';
 import ts from 'typescript';
 import { Expo } from 'expo-server-sdk';
 import { isOwnDeviceOperationWhileLocked } from '../src/checkout/dunning-v2/dunning-lockout.guard';
+import { CoachAlertEmitter } from '../src/notifications/emitters/coach-alert.emitter';
 import { NotificationsService } from '../src/notifications/notifications.service';
 import { NotificationKind } from '../src/notifications/notification-kind';
 import type { ExpoPushClient } from '../src/notifications/push/expo-push-client';
@@ -119,11 +120,15 @@ describe('LS-1192 independent transport and delivery contracts', () => {
     r.db.user.findUnique.mockImplementation(async () => stub<Awaited<ReturnType<typeof r.db.user.findUnique>>>({
       expo_push_token: r.world.tokens.reader, coach_id: 'review-coach',
     }));
-    r.db.coachProfile.findUnique.mockImplementation(async () => stub<Awaited<ReturnType<typeof r.db.coachProfile.findUnique>>>({
-      timezone: 'America/Los_Angeles',
-    }));
+    Object.assign(r.db.coachProfile, {
+      findUnique: jest.fn(async ({ where }: { where: { user_id: string } }) =>
+        where.user_id === 'review-coach' ? { timezone: 'America/Los_Angeles' } : null),
+    });
     await r.notifications.pushToUser('reader', 'Review', 'Review');
     expect(r.world.rows[0].not_before).toEqual(new Date('2026-10-07T15:00:00Z'));
+    expect(r.db.coachProfile.findUnique).toHaveBeenCalledWith(expect.objectContaining({
+      where: { user_id: 'review-coach' },
+    }));
   });
 
   it('a recipient with no zone anywhere uses the existing no-zone immediate policy', async () => {
@@ -160,5 +165,57 @@ describe('LS-1192 independent transport and delivery contracts', () => {
         });
       }
     }
+  });
+
+  it.each(['roman_crisis_reply', 'roman_urgent_reply', 'community_photo_safety'])(
+    'the active %s emitter bypasses Mute all and quiet hours for a critical alert',
+    async (alertType) => {
+      const r = rig();
+      r.world.prefs.reader.muted = true;
+      jest.spyOn(r.notifications, 'createNotification').mockResolvedValue(null);
+      const emitter = new CoachAlertEmitter(r.notifications);
+      await emitter.emit('reader', {
+        alertId: `review:${alertType}`, alertType, severity: 'critical',
+        message: 'Review safety alert',
+      }, { inapp: false, push: true });
+      expect(r.world.rows).toHaveLength(1);
+      expect(r.world.rows[0]).toMatchObject({ urgent: true, not_before: r.clock.at });
+      await r.delivery.drain();
+      expect(r.send).toHaveBeenCalledTimes(1);
+      expect(r.direct).not.toHaveBeenCalled();
+    },
+  );
+
+  it('pushToCoach itself queues ordinary helper calls until 08:00 and dedupes the same alert', async () => {
+    const r = rig();
+    const payload = {
+      alertId: 'review-helper', alertType: 'review_general', severity: 'info',
+      message: 'Review helper message',
+    };
+    expect(await r.notifications.pushToCoach('reader', payload)).toBe(true);
+    expect(await r.notifications.pushToCoach('reader', payload)).toBe(true);
+    expect(r.world.rows).toHaveLength(1);
+    expect(r.world.rows[0].not_before).toEqual(new Date('2026-10-07T15:00:00Z'));
+    await r.delivery.drain();
+    expect(r.send).not.toHaveBeenCalled();
+    r.clock.at = new Date('2026-10-07T15:00:00Z');
+    jest.setSystemTime(r.clock.at);
+    await r.delivery.drain();
+    expect(r.send.mock.calls[0][0]).toEqual([expect.objectContaining({
+      title: payload.message, body: payload.alertType,
+      data: { alertId: payload.alertId, alertType: payload.alertType, category: 'system' },
+    })]);
+    expect(r.direct).not.toHaveBeenCalled();
+  });
+
+  it('the workout reminder keeps the approved 07:00 own-time delivery', async () => {
+    const r = rig('2026-10-07T14:00:00Z');
+    jest.setSystemTime(r.clock.at);
+    await r.notifications.pushToUser('reader', 'Review', 'Review', {}, undefined, {
+      kind: NotificationKind.WORKOUT_REMINDER, dedupeKey: 'review-own-time',
+    });
+    expect(r.world.rows[0].not_before).toEqual(r.clock.at);
+    await r.delivery.drain();
+    expect(r.send).toHaveBeenCalledTimes(1);
   });
 });
