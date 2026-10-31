@@ -62,8 +62,9 @@ describe('R1/R2: every food source offers only portions it can weigh', () => {
   it.each([
     {
       source: 'USDA Foundation, no package serving, real category',
-      food: usda({ dataType: 'Foundation', foodCategory: 'Dairy and Egg Products' }),
-      serving: HUNDRED_GRAMS, grams: 100, cup: getGramsForVolume('Dairy and Egg Products', 'cup', 1), basic: true,
+      // FR-1198: a category that is one density (LO-1198 B2 dropped the mixed ones).
+      food: usda({ dataType: 'Foundation', foodCategory: 'Fats and Oils' }),
+      serving: HUNDRED_GRAMS, grams: 100, cup: getGramsForVolume('Fats and Oils', 'cup', 1), basic: true,
     },
     {
       source: 'USDA Survey (FNDDS), no package serving, category without a density',
@@ -204,7 +205,8 @@ describe('volumeWeightsFor: the food own measure, the table, or nothing', () => 
     ['40 g (0.5 cup)', null, null, 80],
     ['1 cup (1g)', 1, null, null], // an implausible measure fails soft
     ['100g', 100, 'generic', null], // the catch-all is not a density
-    ['1 large (50g)', 50, 'Dairy and Egg Products', getGramsForVolume('Dairy and Egg Products', 'cup', 1)],
+    ['100g', 100, 'Fats and Oils', getGramsForVolume('Fats and Oils', 'cup', 1)],
+    ['1 large (50g)', 50, 'Dairy and Egg Products', null], // FR-1198: a mixed family is not a density
     ['', 100, null, null],
   ])('%s (%s g, category %s) -> cup %s g', (measure, grams, category, cup) => {
     expect(volumeWeightsFor(measure, grams, category)?.cup_grams ?? null).toBe(cup);

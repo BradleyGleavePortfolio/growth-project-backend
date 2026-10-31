@@ -135,8 +135,8 @@ const CATEGORY_TAG = 'category:';
  * R1 (no guessed portions): volume chips only with a weight from the food's
  * own household measure or the density table for its real category.
  */
-function portionFields(measure: string, grams: number, category: string | null) {
-  const w = volumeWeightsFor(measure, grams, category);
+function portionFields(measure: string, grams: number, category: string | null, name: string | null) {
+  const w = volumeWeightsFor(measure, grams, category, name);
   return {
     supports_volume_units: w !== null,
     cup_grams: w?.cup_grams,
@@ -578,7 +578,7 @@ export class FoodService implements OnModuleInit {
       nutrient_basis: 'PER_100G',
       // R1: its own household measure ("1/2 cup" of servingSize g), else its
       // USDA category's density, else no volume.
-      ...portionFields(servingDesc, food.servingSize || 100, category),
+      ...portionFields(servingDesc, food.servingSize || 100, category, food.description),
       basic_food: food.dataType === 'Foundation' || food.dataType === 'SR Legacy',
     };
   }
@@ -651,7 +651,7 @@ export class FoodService implements OnModuleInit {
       nutrient_basis: 'PER_100G',
       // R1 (LO-FOOD B3): a product row has no household measure or category
       // density here, so no cup / tbsp / tsp — grams and ounces only.
-      ...portionFields('100g', 100, null),
+      ...portionFields('100g', 100, null, null),
       basic_food: false,
     };
   }
@@ -900,7 +900,7 @@ export class FoodService implements OnModuleInit {
       // Default for legacy rows / raw query paths that don't select the column:
       // PER_100G matches the assumption the rest of the system already makes.
       nutrient_basis: item.nutrient_basis ?? 'PER_100G',
-      ...portionFields(item.serving_description, grams, category),
+      ...portionFields(item.serving_description, grams, category, item.name),
       basic_food: tags.includes(SEED_TAG) || tags.includes(BASIC_TAG),
     };
   };

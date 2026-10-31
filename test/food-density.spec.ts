@@ -1,8 +1,10 @@
 import { getGramsForVolume, supportsVolumeUnits } from '../src/food/food-density';
 
 describe('getGramsForVolume', () => {
-  it('converts 1 cup dairy to ~247g (density ~1.03)', () => {
-    const grams = getGramsForVolume('Dairy and Egg Products', 'cup', 1);
+  // FR-1198 (LO-1198 B2): the mixed "Dairy and Egg Products" family is no
+  // longer a density (shredded cheese is 113 g a cup); yogurt alone is.
+  it('converts 1 cup yogurt to ~247g (density ~1.03)', () => {
+    const grams = getGramsForVolume('Yogurt', 'cup', 1);
     // 240ml * 1.03 = 247.2
     expect(grams).not.toBeNull();
     expect(grams!).toBeCloseTo(247.2, 0);
@@ -21,9 +23,11 @@ describe('getGramsForVolume', () => {
     expect(grams!).toBeCloseTo(4.3, 1);
   });
 
+  // FR-1198 (LO-1198 B2): 'Cereal Grains and Pasta' is no longer a density
+  // (rolled oats 80 g a cup, rice 185 g), so a kept liquid category is used.
   it('scales linearly with quantity', () => {
-    const oneCup = getGramsForVolume('Cereal Grains and Pasta', 'cup', 1)!;
-    const twoCups = getGramsForVolume('Cereal Grains and Pasta', 'cup', 2)!;
+    const oneCup = getGramsForVolume('Beverages', 'cup', 1)!;
+    const twoCups = getGramsForVolume('Beverages', 'cup', 2)!;
     expect(twoCups).toBeCloseTo(oneCup * 2, 1);
   });
 
@@ -38,14 +42,14 @@ describe('getGramsForVolume', () => {
   });
 
   it('returns null for non-positive quantity', () => {
-    expect(getGramsForVolume('Dairy', 'cup', 0)).toBeNull();
-    expect(getGramsForVolume('Dairy', 'cup', -1)).toBeNull();
-    expect(getGramsForVolume('Dairy', 'cup', NaN)).toBeNull();
+    expect(getGramsForVolume('Beverages', 'cup', 0)).toBeNull();
+    expect(getGramsForVolume('Beverages', 'cup', -1)).toBeNull();
+    expect(getGramsForVolume('Beverages', 'cup', NaN)).toBeNull();
   });
 
   it('is case-insensitive on category names', () => {
-    const lower = getGramsForVolume('dairy', 'cup', 1);
-    const upper = getGramsForVolume('DAIRY', 'cup', 1);
+    const lower = getGramsForVolume('beverages', 'cup', 1);
+    const upper = getGramsForVolume('BEVERAGES', 'cup', 1);
     expect(lower).not.toBeNull();
     expect(lower).toBe(upper);
   });
@@ -53,7 +57,7 @@ describe('getGramsForVolume', () => {
 
 describe('supportsVolumeUnits', () => {
   it('returns true for a known category', () => {
-    expect(supportsVolumeUnits('Dairy')).toBe(true);
+    expect(supportsVolumeUnits('Beverages')).toBe(true);
     expect(supportsVolumeUnits('Fats and Oils')).toBe(true);
   });
 
