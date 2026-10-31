@@ -19,6 +19,16 @@ import { ExerciseCatalogController } from '../src/exercise-catalog/exercise-cata
 import { WorkoutBuilderService } from '../src/workout-builder/workout-builder.service';
 import type { MuxService } from '../src/video/mux.service';
 import type { AuthedRequest } from '../src/auth/auth-request';
+import { Test } from '@nestjs/testing';
+import { ExecutionContext, ValidationPipe } from '@nestjs/common';
+import request from 'supertest';
+import { WorkoutController } from '../src/workout/workout.controller';
+import { JwtAuthGuard } from '../src/auth/auth.guard';
+import { RolesGuard } from '../src/auth/roles.guard';
+import { ClientEntitlementGuard } from '../src/common/guards/client-entitlement.guard';
+import { CoachService } from '../src/coach/coach.service';
+import type { AuditService } from '../src/audit/audit.service';
+import { ConsentScope, ConsentService } from '../src/consent/consent.service';
 
 function stub<T>(value: unknown): T { return value as T; }
 
@@ -62,11 +72,12 @@ beforeAll(async () => {
     /^CREATE TABLE "(WorkoutSession|ExerciseSet|WorkoutPlan|WorkoutPlanExercise|ClientWorkoutAssignment|ClientWorkoutAssignmentSnapshot|ExerciseCatalogItem)"/.test(s),
   );
   expect(cluster).toHaveLength(11);
-  baseSql = `CREATE TABLE "User" ("id" TEXT PRIMARY KEY);\n` +
+  baseSql = `CREATE TABLE "User" ("id" TEXT PRIMARY KEY, "name" TEXT DEFAULT 'Review member', "coach_id" TEXT DEFAULT 'coach-a', "archived_at" TIMESTAMP(3));\n` +
     cluster.map((s) => s.replace(/^\s*"client_key" TEXT,?\s*$/m, '') + ';').join('\n') +
     `\nALTER TABLE "WorkoutSession" ADD FOREIGN KEY ("user_id") REFERENCES "User"("id");
      ALTER TABLE "ExerciseSet" ADD FOREIGN KEY ("workout_id") REFERENCES "WorkoutSession"("id");
-     CREATE UNIQUE INDEX "ClientWorkoutAssignmentSnapshot_assignment_id_key" ON "ClientWorkoutAssignmentSnapshot"("assignment_id");`;
+     CREATE UNIQUE INDEX "ClientWorkoutAssignmentSnapshot_assignment_id_key" ON "ClientWorkoutAssignmentSnapshot"("assignment_id");
+     CREATE TABLE "WorkoutComment" ("id" TEXT PRIMARY KEY, "workout_id" TEXT, "coach_id" TEXT, "body" TEXT, "updated_at" TIMESTAMP(3));`;
   expect(baseSql).not.toMatch(/"client_key"/);
   prisma = new PrismaClient({
     datasources: { db: { url: `postgresql://${encodeURIComponent(username)}@localhost/${database}?host=/var/run/postgresql` } },
@@ -245,7 +256,75 @@ describe('LS-1196 actual migration and real database behavior', () => {
       .toBe('review-signed-playback');
     await prisma.exerciseCatalogItem.update({ where: { id: row.id }, data: { mux_playback_policy: 'public' } });
     expect((await controller.detail(row.id, request)).playbackUrl).toBe('review-signed-playback');
+    await prisma.exerciseCatalogItem.update({ where: { id: row.id }, data: { mux_playback_policy: 'signed' } });
+    const assignments = Array.from({ length: 101 }, (_, i) => ({
+      id: `page-assignment-${i}`, workout_plan_id: 'page-plan', client_id: 'member-a',
+      assigned_by_coach_id: 'coach-a', scheduled_for: new Date(),
+    }));
+    await prisma.clientWorkoutAssignment.createMany({ data: assignments });
+    await prisma.clientWorkoutAssignmentSnapshot.createMany({ data: assignments.map((a, i) => ({
+      assignment_id: a.id, source_plan_id: 'page-plan', source_version: 1,
+      plan_name: 'Page proof', plan_type: 'strength',
+      exercises_json: [exercise(i === 100 ? row.source_ref! : `unassigned-page-${i}`)],
+    })) });
+    expect(await prisma.clientWorkoutAssignment.count()).toBe(101);
+    expect((await controller.detail(row.source_ref!, request)).playbackUrl).toBe('review-signed-playback');
     await prisma.exerciseCatalogItem.update({ where: { id: row.id }, data: { mux_playback_policy: 'signed', mux_asset_status: 'processing' } });
     expect((await controller.detail(row.id, request)).playbackUrl).toBeNull();
+  }, 60000);
+
+  it('HTTP header replay remains a readable 201 success and the real coach timeline reads one workout', async () => {
+    sql(up);
+    sql(`INSERT INTO "User" ("id") VALUES ('member-a'), ('member-b');`);
+    const service = new WorkoutService(
+      stub<PrismaService>(prisma), stub<PtmService>({ emit: jest.fn() }),
+      stub<ClientAIContextService>({ invalidateForUser: jest.fn() }),
+    );
+    const module = await Test.createTestingModule({
+      controllers: [WorkoutController],
+      providers: [{ provide: WorkoutService, useValue: service }],
+    })
+      .overrideGuard(JwtAuthGuard).useValue({ canActivate(context: ExecutionContext) {
+        context.switchToHttp().getRequest<AuthedRequest>().user = stub<AuthedRequest['user']>({ id: 'member-a', role: 'student' });
+        return true;
+      } })
+      .overrideGuard(ClientEntitlementGuard).useValue({ canActivate: () => true })
+      .overrideGuard(RolesGuard).useValue({ canActivate: () => true })
+      .compile();
+    const app = module.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }));
+    await app.init();
+    try {
+      const body = {
+        date: new Date().toISOString().slice(0, 10), workout_name: 'HTTP replay',
+        workout_type: 'strength', duration_minutes: 20,
+        exercises: [{ exercise_name: 'Bench', muscle_group: 'chest', sets_completed: 1, reps_per_set: [8], weight_per_set: [100] }],
+      };
+      const post = (key?: string) => {
+        const req = request(app.getHttpServer()).post('/workouts');
+        return key === undefined ? req.send(body) : req.set('Idempotency-Key', key).send(body);
+      };
+      const first = await post('http-queue-key').expect(201);
+      const again = await post('http-queue-key').expect(201);
+      expect(again.body).toEqual(first.body);
+      expect(typeof again.body.id).toBe('string');
+      expect(again.body.id.length).toBeGreaterThan(0);
+      expect(again.body.exercises).toHaveLength(1);
+      const coach = new CoachService(
+        stub<PrismaService>(prisma), stub<AuditService>({ write: jest.fn().mockResolvedValue(undefined) }),
+        stub<ConsentService>({ coachCanAccess: jest.fn(async (_coach: string, _client: string, scope: string) =>
+          scope === ConsentScope.FITNESS_WORKOUTS) }),
+      );
+      const timeline = await coach.getClientTimeline('coach-a', 'member-a', 90, 'coach');
+      expect(timeline).toMatchObject({ workouts: [{ id: first.body.id }] });
+      expect('workouts' in timeline && timeline.workouts).toHaveLength(1);
+      await post('short').expect(400);
+      expect(await prisma.workoutSession.count()).toBe(1);
+      await post().expect(201);
+      await post().expect(201);
+      expect(await prisma.workoutSession.count()).toBe(3);
+    } finally {
+      await app.close();
+    }
   }, 60000);
 });
