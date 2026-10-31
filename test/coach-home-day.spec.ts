@@ -78,12 +78,20 @@ describe("HOME-BE: the coach Home's day", () => {
     ]);
     const [received, replies] = db.coachMessage.findMany.mock.calls.map(([a]) => a.where);
     expect(received).toEqual({
-      coach_id: 'head-1', client_id: { in: ['c1', 'c2', 'c3'] }, sender_id: { in: ['c1', 'c2', 'c3'] },
-      ...countedMessagesFor('sub-1'), created_at: { gte: TODAY_FROM, lte: NOW },
+      coach_id: 'head-1',
+      client_id: { in: ['c1', 'c2', 'c3'] },
+      sender_id: { in: ['c1', 'c2', 'c3'] },
+      ...countedMessagesFor('sub-1'),
+      created_at: { gte: TODAY_FROM, lte: NOW },
     });
     expect(replies).toEqual({
-      coach_id: 'head-1', client_id: { in: ['c1', 'c2', 'c3'] }, sender_id: { notIn: ['c1', 'c2', 'c3'] },
-      ...countedMessagesFor('sub-1'), broadcast_delivery: { is: null }, automated_by: null, created_at: { gte: TODAY_FROM, lte: NOW },
+      coach_id: 'head-1',
+      client_id: { in: ['c1', 'c2', 'c3'] },
+      sender_id: { notIn: ['c1', 'c2', 'c3'] },
+      ...countedMessagesFor('sub-1'),
+      broadcast_delivery: { is: null },
+      automated_by: null,
+      created_at: { gte: TODAY_FROM, lte: NOW },
     });
     expect(db.coachNudge.findMany.mock.calls[0][0]).toEqual(expect.objectContaining({
       where: { coach_id: { in: ['sub-1', 'head-1'] }, client_id: { in: ['c1'] }, created_at: { gte: TODAY_FROM, lte: NOW } },

@@ -242,7 +242,12 @@ export class CommunityService {
     // the row's place: a block either way, an author banned from this
     // community, an author who left it), so a pin by a hidden author gives way
     // to the next pin, and unban or coming back restores it.
-    const [pinnedPost = null] = await this.safety.filterBlocked(user.id, pinnedRows, (p) => p.author_id, placeOf);
+    const [pinnedPost = null] = await this.safety.filterBlocked(
+      user.id,
+      pinnedRows,
+      (p) => p.author_id,
+      placeOf,
+    );
     // Two-way block: Today never surfaces an event or challenge created by
     // someone in a block relation with the caller (the events and challenges
     // lists hide them too). One block lookup.

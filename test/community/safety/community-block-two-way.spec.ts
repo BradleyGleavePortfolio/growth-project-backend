@@ -481,7 +481,15 @@ describe('two-way block: member list, leaderboard, wins, Today, search and voice
           findTodayContent: async () => ({
             event: null,
             challenge: null,
-            pinnedPosts: [{ id: PINNED, title: 'Alice pinned', author_id: ALICE, workspace_id: WS, cohort_id: null }],
+            pinnedPosts: [
+              {
+                id: PINNED,
+                title: 'Alice pinned',
+                author_id: ALICE,
+                workspace_id: WS,
+                cohort_id: null,
+              },
+            ],
           }),
         };
         const svc = new CommunityService(

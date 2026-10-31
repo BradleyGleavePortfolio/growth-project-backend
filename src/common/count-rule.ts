@@ -44,7 +44,10 @@ export const COUNTED_MESSAGE = { deleted_at: null } as const satisfies Prisma.Co
  * Spread it into a where with no `AND` of its own.
  */
 export function countedMessagesFor(viewerId: string): Prisma.CoachMessageWhereInput {
-  return { ...COUNTED_MESSAGE, AND: [{ OR: [{ sender_id: null }, { sender: notInBlockWith(viewerId) }] }] };
+  return {
+    ...COUNTED_MESSAGE,
+    AND: [{ OR: [{ sender_id: null }, { sender: notInBlockWith(viewerId) }] }],
+  };
 }
 
 /** The roster a coaching-chat count may read: `roster` minus every client in a block with `viewerId` either way. */
@@ -63,7 +66,11 @@ export async function countedClients(
  * not deleted, and whose author is in no block with the coach either way.
  */
 export function countedThreadsOf(coachId: string): Prisma.CoachMessageWhereInput {
-  return { coach_id: coachId, ...countedMessagesFor(coachId), client: { coach_id: coachId, ...notInBlockWith(coachId) } };
+  return {
+    coach_id: coachId,
+    ...countedMessagesFor(coachId),
+    client: { coach_id: coachId, ...notInBlockWith(coachId) },
+  };
 }
 
 /** Reactions `viewerId` may count: the community rule at the place (community, space) of the item reacted to. */

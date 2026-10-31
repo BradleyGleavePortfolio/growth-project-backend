@@ -535,7 +535,13 @@ export class CommandCenterService {
       // chat in a block either way and a deleted message count 0 in the tile.
       countedClients(this.prisma, coachId, clientIds).then((open) =>
         this.prisma.coachMessage.count({
-          where: { coach_id: ownerCoachId, client_id: { in: open }, read_at: null, sender_id: { in: open }, ...countedMessagesFor(coachId) },
+          where: {
+            coach_id: ownerCoachId,
+            client_id: { in: open },
+            read_at: null,
+            sender_id: { in: open },
+            ...countedMessagesFor(coachId),
+          },
         }),
       ),
     ]);
