@@ -457,8 +457,10 @@ describe('GC-3 — web page trials: card saved, nothing charged that day, one tr
             if (result.deferredTrialNoticeId) await handler.deliverTrialNotice(result.deferredTrialNoticeId);
           }
         }
-        expect(notifications.pushToUser).toHaveBeenCalledTimes(1);
-        expect(email.send).toHaveBeenCalledTimes(1);
+        expect({
+          push: notifications.pushToUser.mock.calls.length,
+          email: email.send.mock.calls.length,
+        }).toEqual({ push: 1, email: 1 });
         expect(notifications.pushToUser.mock.calls[0]).toEqual(expect.arrayContaining([
           purchase.client_user_id,
           expect.stringContaining('Your free trial'),
