@@ -493,9 +493,9 @@ describe('GC-3 — web page trials: card saved, nothing charged that day, one tr
     expect(world.state.guestCheckout[0].status).toBe('converted');
     expect(world.state.clientPurchase[0].stripe_customer_id).toBe(gc.stripe_customer_id);
     const clientId = world.state.clientPurchase[0].client_user_id;
-    stripe.createSetupIntent.mockResolvedValue({
+    stripe.createSetupIntent = jest.fn(async () => ({
       id: 'seti_updatecard01', client_secret: 'seti_updatecard01_secret_x',
-    });
+    }));
     stripe.createEphemeralKey = jest.fn(async () => ({ secret: 'synthetic-ephemeral-key' }));
     const billing = new ClientBillingService(world.db, stripe);
     const oldPk = process.env.STRIPE_PUBLISHABLE_KEY;
