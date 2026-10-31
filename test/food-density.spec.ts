@@ -55,11 +55,17 @@ describe('supportsVolumeUnits', () => {
   it('returns true for a known category', () => {
     expect(supportsVolumeUnits('Dairy')).toBe(true);
     expect(supportsVolumeUnits('Fats and Oils')).toBe(true);
-    expect(supportsVolumeUnits('generic')).toBe(true);
   });
 
   it('returns false for an unknown category', () => {
     expect(supportsVolumeUnits('Alien Space Goo')).toBe(false);
+  });
+
+  // FOOD-1-BE (R1, LO-FOOD B3, LS-FOOD B1): 'generic' is the catch-all, not a
+  // density; it used to give every such food the weight of water (240 g a cup).
+  it("returns false for the catch-all 'generic'", () => {
+    expect(supportsVolumeUnits('generic')).toBe(false);
+    expect(getGramsForVolume('generic', 'cup', 1)).toBeNull();
   });
 
   it('returns false for null/empty', () => {

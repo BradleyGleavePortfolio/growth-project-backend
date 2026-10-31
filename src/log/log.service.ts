@@ -20,6 +20,20 @@ export class LogService {
   ) {}
 
   async logFood(userId: string, data: LogFoodDto) {
+    // R6 (LO-FOOD B6, LS-FOOD B3): a repeat of a keyed save whose answer was
+    // lost returns the stored entry and does nothing else — no food import, no
+    // second entry, no analytics event or meal_logged signal. Another
+    // person's key reads as not found (D2 below).
+    if (data.client_uuid) {
+      const earlier = await this.prisma.loggedFoodEntry.findUnique({
+        where: { client_uuid: data.client_uuid },
+        include: { food_item: true },
+      });
+      if (earlier) {
+        if (earlier.user_id !== userId) throw new NotFoundException('Entry not found');
+        return earlier;
+      }
+    }
     // Mobile client may send synthetic ids ("usda_123", "off_456") returned by food search.
     // Resolve them to real FoodItem.id via upsert-on-log so the FK below can't blow up.
     // Another person's custom food resolves as not found (UX-FOOD-PRIV-124).

@@ -118,3 +118,14 @@ export class UpdateLogEntryDto {
   @MaxLength(32)
   original_unit?: string;
 }
+
+/**
+ * FOOD-1-BE (R6): the body's client_uuid is a save's key. When the body has
+ * none, the standard Idempotency-Key header (1-128 characters) stands in for
+ * it, so a client may send either. No key: a plain create, as before.
+ */
+export function withClientKey<T extends { client_uuid?: string }>(body: T, header?: string): T {
+  const key = typeof header === 'string' ? header.trim() : '';
+  if (body.client_uuid || !key || key.length > 128) return body;
+  return { ...body, client_uuid: key };
+}

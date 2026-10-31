@@ -1,11 +1,11 @@
-import { Controller, Post, Get, Put, Delete, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Get, Put, Delete, Body, Headers, Param, Query, UseGuards, Request } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { LogService } from './log.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
-import { LogFoodDto, UpdateLogEntryDto } from './log.dto';
+import { LogFoodDto, UpdateLogEntryDto, withClientKey } from './log.dto';
 import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
 import { OpenToCoachlessClient } from '../common/decorators/open-to-coachless-client.decorator';
 
@@ -18,9 +18,14 @@ import { OpenToCoachlessClient } from '../common/decorators/open-to-coachless-cl
 export class LogController {
   constructor(private logService: LogService) {}
 
+  // R6: the key is body.client_uuid, or the Idempotency-Key header when the body has none.
   @Post('food')
-  async logFood(@Request() req: AuthedRequest, @Body() body: LogFoodDto) {
-    return this.logService.logFood(req.user.id, body);
+  async logFood(
+    @Request() req: AuthedRequest,
+    @Body() body: LogFoodDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
+  ) {
+    return this.logService.logFood(req.user.id, withClientKey(body, idempotencyKey));
   }
 
   @Get('daily')

@@ -2,7 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
-import { getGramsForVolume, supportsVolumeUnits } from './food-density';
+import { volumeWeightsFor } from './food-density';
 import { parseFoodQuery } from './food-query-parser';
 
 export interface FoodSearchResponse {
@@ -34,6 +34,8 @@ interface UsdaFood {
   householdServingFullText?: string;
   servingSize?: number;
   servingSizeUnit?: string;
+  /** 'Foundation', 'SR Legacy', 'Survey (FNDDS)', 'Branded'. */
+  dataType?: string;
 }
 
 interface UsdaSearchResponse {
@@ -117,13 +119,29 @@ export interface FoodResult {
   cup_grams?: number;
   tbsp_grams?: number;
   tsp_grams?: number;
+  /**
+   * FOOD-1-BE (R3): a basic food — USDA Foundation or SR Legacy, or the seeded
+   * common-foods catalog. Search ranks its whole-word matches first.
+   */
+  basic_food: boolean;
 }
 
-function volumeWeights(category: string) {
+// Tags on stored rows: the seed importer's and the USDA importer's marks.
+const SEED_TAG = 'seed:common-foods';
+const BASIC_TAG = 'basic-food';
+const CATEGORY_TAG = 'category:';
+
+/**
+ * R1 (no guessed portions): volume chips only with a weight from the food's
+ * own household measure or the density table for its real category.
+ */
+function portionFields(measure: string, grams: number, category: string | null) {
+  const w = volumeWeightsFor(measure, grams, category);
   return {
-    cup_grams: getGramsForVolume(category, 'cup', 1) ?? undefined,
-    tbsp_grams: getGramsForVolume(category, 'tbsp', 1) ?? undefined,
-    tsp_grams: getGramsForVolume(category, 'tsp', 1) ?? undefined,
+    supports_volume_units: w !== null,
+    cup_grams: w?.cup_grams,
+    tbsp_grams: w?.tbsp_grams,
+    tsp_grams: w?.tsp_grams,
   };
 }
 
@@ -139,76 +157,97 @@ function canSeeFood(item: { created_by_user_id?: string | null }, viewerId: stri
   return item.created_by_user_id == null || item.created_by_user_id === viewerId;
 }
 
-/** Weighted relevance score of one result for the (parsed) query. */
-function scoreFoodResult(item: FoodResult, rawQuery: string): number {
-  // Singular/plural normalization: strip trailing 's' for comparison
-  const normalize = (s: string) =>
-    s.toLowerCase().trim().replace(/\s+/g, ' ').replace(/s$/, '');
+/** Words of a name or query, lowercased, a plain plural folded ("eggs" -> "egg"). */
+function words(text: string): string[] {
+  return text
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}%]+/u)
+    .filter(Boolean)
+    .map((w) => {
+      if (w.length <= 3) return w;
+      if (w.endsWith('ies')) return `${w.slice(0, -3)}y`;
+      if (w.endsWith('oes')) return w.slice(0, -2);
+      return w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w;
+    });
+}
 
-  const normalizedName = normalize(item.name);
-  const normalizedQuery = normalize(rawQuery);
+const startsWithWords = (list: string[], q: string[]) => q.every((w, i) => list[i] === w);
+const sameWords = (list: string[], q: string[]) => list.length === q.length && startsWithWords(list, q);
+const containsRun = (list: string[], q: string[]) =>
+  list.some((_, i) => startsWithWords(list.slice(i), q));
 
-  let score: number;
-
-  // Exact match
-  if (normalizedName === normalizedQuery) {
-    score = 100;
-  } else if (normalizedName.startsWith(normalizedQuery)) {
-    // Starts with
-    score = 80;
-  } else if (normalizedName.includes(normalizedQuery)) {
-    // Contains as whole phrase
-    score = 60;
-  } else {
-    const tokens = normalizedQuery.split(' ');
-    if (tokens.every((t) => normalizedName.includes(t))) {
-      // All query tokens found in name
-      score = 30;
-    } else {
-      // Found in tags/aliases
-      const allText = [
-        ...(item.tags || []),
-        ...(item.search_aliases || []),
-      ]
-        .join(' ')
-        .toLowerCase();
-      if (tokens.some((t) => allText.includes(normalize(t)))) {
-        score = 10;
-      } else {
-        score = 5;
-      }
-    }
-  }
-
-  // Single-ingredient boost: category 'generic' or name is <= 3 words
-  const wordCount = item.name.trim().split(/\s+/).length;
-  if (item.category === 'generic' || wordCount <= 3) {
-    score += 20;
-  }
-
-  return score;
+function isBranded(item: FoodResult): boolean {
+  return !!item.brand_or_restaurant || item.id.startsWith('off_') || (item.tags ?? []).some((t) => t.startsWith('off:'));
 }
 
 /**
- * De-duplicate by name (the first source listed wins), then score DESC and
- * alphabetical on ties, then take `limit`.
+ * Match quality of a name for the query. `whole`: every query word is a whole
+ * word of the name ("egg" is not in "eggplant"). USDA names lead with the food
+ * ("Bananas, raw"), so the part before the first comma counts as the name.
+ */
+function matchOf(item: FoodResult, rawQuery: string): { score: number; whole: boolean } {
+  const q = words(rawQuery);
+  const name = words(item.name);
+  const head = words(item.name.split(',')[0]);
+  const whole = q.length > 0 && q.every((w) => name.includes(w));
+  if (sameWords(name, q) || sameWords(head, q)) return { score: 100, whole };
+  if (startsWithWords(head, q)) return { score: 80, whole };
+  if (containsRun(name, q)) return { score: 60, whole };
+  if (whole) return { score: 40, whole };
+  const text = item.name.toLowerCase();
+  if (text.includes(rawQuery.toLowerCase().trim())) return { score: 20, whole };
+  if (q.every((w) => text.includes(w))) return { score: 15, whole };
+  const aliases = words([...(item.tags || []), ...(item.search_aliases || [])].join(' '));
+  return { score: q.some((w) => aliases.includes(w)) ? 10 : 5, whole };
+}
+
+/**
+ * R5 (LS-FOOD B5): one food, not one name. Same name with another brand,
+ * barcode / USDA id or calories is another food. A stored import carries its
+ * source tag (usda:<fdcId>, off:<barcode>), so it still meets its upstream row.
+ */
+function identityOf(item: FoodResult): string {
+  const source = /^(usda|off)_/.test(item.id)
+    ? item.id.replace('_', ':')
+    : (item.tags ?? []).find((t) => /^(usda|off):/.test(t)) ?? '';
+  const norm = (v: string | null | undefined) => (v ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+  return [norm(item.name), norm(item.brand_or_restaurant), Math.round(Number(item.calories)), source].join('|');
+}
+
+// USDA names the plain form of a food "..., raw" or "..., whole" ("Bananas, raw",
+// "Eggs, Grade A, Large, egg whole"); among equal matches it comes before a part
+// of the food ("egg yolk") or a prepared form.
+const PLAIN_FORM = new Set(['raw', 'whole']);
+const plainForm = (item: FoodResult) => (words(item.name).some((w) => PLAIN_FORM.has(w)) ? 1 : 0);
+
+/**
+ * De-duplicate by food identity (the first source listed wins), then rank.
+ * R3 (LO-FOOD B1): a whole-word match of a basic food comes first, then a
+ * whole-word match of any other unbranded food, then the rest by match
+ * quality; the plain form, shorter names and then A-Z break ties.
  */
 function rankFoodResults(items: FoodResult[], q: string, limit: number): FoodResult[] {
-  const merged: FoodResult[] = [];
-  const seen = new Set<string>();
+  const byIdentity = new Map<string, FoodResult>();
   for (const item of items) {
-    const key = item.name.toLowerCase().replace(/\s+/g, ' ').trim();
-    if (!seen.has(key)) {
-      seen.add(key);
-      merged.push(item);
-    }
+    const key = identityOf(item);
+    const kept = byIdentity.get(key);
+    if (!kept) byIdentity.set(key, item);
+    else if (item.basic_food && !kept.basic_food) byIdentity.set(key, { ...kept, basic_food: true });
   }
 
-  const scored = merged.map((item) => ({ item, score: scoreFoodResult(item, q) }));
-  scored.sort((a, b) => {
-    if (b.score !== a.score) return b.score - a.score;
-    return a.item.name.localeCompare(b.item.name);
+  const scored = [...byIdentity.values()].map((item) => {
+    const { score, whole } = matchOf(item, q);
+    const tier = item.basic_food ? 2 : isBranded(item) ? 0 : 1;
+    return { item, score, group: whole ? tier : 0 };
   });
+  scored.sort(
+    (a, b) =>
+      b.group - a.group ||
+      b.score - a.score ||
+      plainForm(b.item) - plainForm(a.item) ||
+      a.item.name.length - b.item.name.length ||
+      a.item.name.localeCompare(b.item.name),
+  );
 
   return scored.slice(0, limit).map((s) => s.item);
 }
@@ -216,7 +255,15 @@ function rankFoodResults(items: FoodResult[], q: string, limit: number): FoodRes
 // 24h TTL on cached search results — USDA/OFF data is effectively static at
 // the per-day level and the upstream APIs are slow + rate-limited.
 const SEARCH_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const SEARCH_CACHE_KEY_PREFIX = 'food:search:v1:';
+// v2 (FOOD-1-BE): new order, portions and basic_food; v1 entries are ignored.
+const SEARCH_CACHE_KEY_PREFIX = 'food:search:v2:';
+// R2's label "100 g", with a no-break space so the number and unit stay on one line.
+export const HUNDRED_GRAMS = '100\u00a0g';
+
+/** Throws on an upstream answer we must not keep; a 404 is "nothing found", as before. */
+function upstreamFailed(response: Response, source: string): void {
+  if (!response.ok && response.status !== 404) throw new Error(`${source} search failed: ${response.status}`);
+}
 
 @Injectable()
 export class FoodService implements OnModuleInit {
@@ -309,18 +356,20 @@ export class FoodService implements OnModuleInit {
   /** USDA + OpenFoodFacts + the shared local catalog, ranked and cached. */
   private async searchShared(q: string, limit: number, cacheKey: string): Promise<FoodResult[]> {
     // Run all 3 sources in parallel
-    const [usdaResults, offResults, localResults] = await Promise.allSettled([
+    const settled = await Promise.allSettled([
       this.searchUSDA(q, 20),
       this.searchOpenFoodFacts(q, 20),
       this.searchLocalDB(q, 10, null),
     ]);
-
-    const usda = usdaResults.status === 'fulfilled' ? usdaResults.value : [];
-    const off = offResults.status === 'fulfilled' ? offResults.value : [];
-    const local = localResults.status === 'fulfilled' ? localResults.value : [];
+    const [usda, off, local] = settled.map((r) => (r.status === 'fulfilled' ? r.value : []));
 
     // Merge: local catalog first, then USDA (reliable nutrition), then OFF (images)
     const results = rankFoodResults([...local, ...usda, ...off], q, limit);
+
+    // R4 (LS-FOOD B4): a failed or timed-out upstream is not an answer. Keep
+    // this list out of the cache so the next search asks again; a real
+    // (possibly empty) answer from every source is cached as before.
+    if (settled.some((r) => r.status === 'rejected')) return results;
 
     // Cache the merged+scored shared list (sans the query echo / parsed_*
     // fields, which are rebuilt per-call so callers with different leading
@@ -447,13 +496,13 @@ export class FoodService implements OnModuleInit {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
 
+    // A failure or timeout throws (R4): searchShared then skips the cache.
     try {
       const response = await fetch(url, {
         signal: controller.signal,
         headers: { 'User-Agent': 'TheGrowthProject/1.0' },
       });
-      clearTimeout(timeout);
-
+      upstreamFailed(response, 'USDA');
       if (!response.ok) return [];
 
       const data = (await response.json()) as UsdaSearchResponse;
@@ -463,9 +512,8 @@ export class FoodService implements OnModuleInit {
         .filter((f) => f.description && f.description.trim())
         .slice(0, limit)
         .map((f) => this.mapUSDAFood(f));
-    } catch {
+    } finally {
       clearTimeout(timeout);
-      return [];
     }
   }
 
@@ -496,8 +544,10 @@ export class FoodService implements OnModuleInit {
     const sugar = getNutrient('Sugars, total including NLEA') || getNutrient('Sugars, total');
     const sodium = getNutrient('Sodium, Na');
 
+    // R2 (LO-FOOD B2): with no package serving the portion is 100 g, so it is
+    // called "100 g", never "1 serving".
     const servingDesc = food.householdServingFullText ||
-      (food.servingSize ? `${food.servingSize}${food.servingSizeUnit || 'g'}` : '1 serving');
+      (food.servingSize ? `${food.servingSize}${food.servingSizeUnit || 'g'}` : HUNDRED_GRAMS);
 
     // CANONICAL BASIS: USDA FDC's `foodNutrients[].value` is reported per 100g
     // for Foundation / SR Legacy / Branded entries. We keep that basis verbatim
@@ -526,8 +576,10 @@ export class FoodService implements OnModuleInit {
       search_aliases: [],
       image_url: null,
       nutrient_basis: 'PER_100G',
-      supports_volume_units: supportsVolumeUnits(category),
-      ...volumeWeights(category),
+      // R1: its own household measure ("1/2 cup" of servingSize g), else its
+      // USDA category's density, else no volume.
+      ...portionFields(servingDesc, food.servingSize || 100, category),
+      basic_food: food.dataType === 'Foundation' || food.dataType === 'SR Legacy',
     };
   }
 
@@ -540,13 +592,13 @@ export class FoodService implements OnModuleInit {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
 
+    // A failure or timeout throws (R4): searchShared then skips the cache.
     try {
       const response = await fetch(url, {
         signal: controller.signal,
         headers: { 'User-Agent': 'TheGrowthProject/1.0' },
       });
-      clearTimeout(timeout);
-
+      upstreamFailed(response, 'OpenFoodFacts');
       if (!response.ok) return [];
 
       const data = (await response.json()) as OpenFoodFactsSearchResponse;
@@ -562,9 +614,8 @@ export class FoodService implements OnModuleInit {
         })
         .slice(0, limit)
         .map((p) => this.mapOpenFoodFactsProduct(p));
-    } catch {
+    } finally {
       clearTimeout(timeout);
-      return [];
     }
   }
 
@@ -598,8 +649,10 @@ export class FoodService implements OnModuleInit {
       search_aliases: [],
       image_url: product.image_front_small_url || null,
       nutrient_basis: 'PER_100G',
-      supports_volume_units: supportsVolumeUnits('generic'),
-      ...volumeWeights('generic'),
+      // R1 (LO-FOOD B3): a product row has no household measure or category
+      // density here, so no cup / tbsp / tsp — grams and ounces only.
+      ...portionFields('100g', 100, null),
+      basic_food: false,
     };
   }
 
@@ -734,7 +787,13 @@ export class FoodService implements OnModuleInit {
           fiber_g: mapped.fiber_g,
           sugar_g: mapped.sugar_g,
           sodium_mg: mapped.sodium_mg,
-          tags: [tag],
+          // The USDA category and basic mark, so the stored row offers the
+          // same portions and rank as its search row (R1, R3).
+          tags: [
+            tag,
+            ...(mapped.category !== 'generic' ? [`${CATEGORY_TAG}${mapped.category}`] : []),
+            ...(mapped.basic_food ? [BASIC_TAG] : []),
+          ],
           search_aliases: [],
           image_url: mapped.image_url,
         },
@@ -810,27 +869,39 @@ export class FoodService implements OnModuleInit {
   }
 
   /** Normalize a raw DB row or Prisma object to FoodResult shape */
-  private toResult = (item: FoodItemRow): FoodResult => ({
-    id: item.id,
-    name: item.name,
-    brand_or_restaurant: item.brand_or_restaurant ?? null,
-    category: item.category,
-    serving_description: item.serving_description,
-    serving_size_grams: Number(item.serving_size_grams),
-    calories: Number(item.calories),
-    protein_g: Number(item.protein_g),
-    carbs_g: Number(item.carbs_g),
-    fat_g: Number(item.fat_g),
-    fiber_g: item.fiber_g != null ? Number(item.fiber_g) : null,
-    sugar_g: item.sugar_g != null ? Number(item.sugar_g) : null,
-    sodium_mg: item.sodium_mg != null ? Number(item.sodium_mg) : null,
-    tags: item.tags ?? [],
-    search_aliases: item.search_aliases ?? [],
-    image_url: item.image_url ?? null,
-    // Default for legacy rows / raw query paths that don't select the column:
-    // PER_100G matches the assumption the rest of the system already makes.
-    nutrient_basis: item.nutrient_basis ?? 'PER_100G',
-    supports_volume_units: supportsVolumeUnits(item.category),
-    ...volumeWeights(item.category),
-  });
+  private toResult = (item: FoodItemRow): FoodResult => {
+    const tags = item.tags ?? [];
+    const grams = Number(item.serving_size_grams);
+    // R2: a USDA import stored before FOOD-1-BE says "1 serving" for 100 g.
+    const serving =
+      item.serving_description === '1 serving' && grams === 100 && tags.some((t) => t.startsWith('usda:'))
+        ? HUNDRED_GRAMS
+        : item.serving_description;
+    // R1: the row's own household measure, else its real category (seeded and
+    // USDA-imported rows keep it as a category:<name> tag), else none.
+    const category = tags.find((t) => t.startsWith(CATEGORY_TAG))?.slice(CATEGORY_TAG.length) ?? item.category;
+    return {
+      id: item.id,
+      name: item.name,
+      brand_or_restaurant: item.brand_or_restaurant ?? null,
+      category: item.category,
+      serving_description: serving,
+      serving_size_grams: grams,
+      calories: Number(item.calories),
+      protein_g: Number(item.protein_g),
+      carbs_g: Number(item.carbs_g),
+      fat_g: Number(item.fat_g),
+      fiber_g: item.fiber_g != null ? Number(item.fiber_g) : null,
+      sugar_g: item.sugar_g != null ? Number(item.sugar_g) : null,
+      sodium_mg: item.sodium_mg != null ? Number(item.sodium_mg) : null,
+      tags,
+      search_aliases: item.search_aliases ?? [],
+      image_url: item.image_url ?? null,
+      // Default for legacy rows / raw query paths that don't select the column:
+      // PER_100G matches the assumption the rest of the system already makes.
+      nutrient_basis: item.nutrient_basis ?? 'PER_100G',
+      ...portionFields(item.serving_description, grams, category),
+      basic_food: tags.includes(SEED_TAG) || tags.includes(BASIC_TAG),
+    };
+  };
 }

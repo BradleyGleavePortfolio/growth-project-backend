@@ -144,11 +144,11 @@ const DENSITY_G_PER_ML: Record<string, number> = {
   'restaurant foods': 0.80,
   'mixed dishes': 0.80,
 
-  // Generic catch-all used by hand-curated rows. NOT a synonym for "unknown" —
-  // we still want a sensible cup-to-g for water-based foods the user adds by
-  // hand. ~1.0 is the safe-ish average and is the same number MFP uses when
-  // no per-food density is recorded.
-  generic: 1.00,
+  // FOOD-1-BE (owner ruling R1, LO-FOOD B3, LS-FOOD B1): no `generic` entry.
+  // 'generic' is the catch-all every Open Food Facts row, USDA import, seeded
+  // row and custom food gets, so a water density there gave a cup of dry oats
+  // 240 g. Such a food offers a volume only from its own household measure
+  // (volumeWeightsFor below) or a real category here.
 };
 
 function normalizeCategory(category: string | null | undefined): string | null {
@@ -190,4 +190,58 @@ export function supportsVolumeUnits(foodCategory: string | null | undefined): bo
   const key = normalizeCategory(foodCategory);
   if (!key) return false;
   return DENSITY_G_PER_ML[key] != null;
+}
+
+/** Grams for one cup, tablespoon and teaspoon of a food. */
+export interface VolumeWeights {
+  cup_grams: number;
+  tbsp_grams: number;
+  tsp_grams: number;
+}
+
+// "1/2 cup dry (40g)", "1 cup cooked (158g)", "2 tbsp", "1 1/2 cups", "0.25 cup".
+const MEASURE_RE = /(\d+\s+\d+\/\d+|\d+\/\d+|\d*\.?\d+)\s*(cups?|tablespoons?|tbsps?|tbs|teaspoons?|tsps?)\b/i;
+// A weight in grams written in the same text: "(40g)", "40 g". Not "mg".
+const GRAMS_RE = /(\d+(?:\.\d+)?)\s*g(?![a-z])/i;
+
+function parseQty(raw: string): number {
+  const [whole, frac] = raw.trim().includes(' ') ? raw.trim().split(/\s+/) : ['0', raw.trim()];
+  const part = (t: string) => (t.includes('/') ? Number(t.split('/')[0]) / Number(t.split('/')[1]) : Number(t));
+  return Number(whole) + part(frac);
+}
+
+function unitOf(word: string): VolumeUnit {
+  const w = word.toLowerCase();
+  if (w.startsWith('c')) return 'cup';
+  return w.startsWith('tb') || w.startsWith('tablespoon') ? 'tbsp' : 'tsp';
+}
+
+function weightsAt(gramsPerMl: number): VolumeWeights {
+  const at = (u: VolumeUnit) => Math.round(VOLUME_ML[u] * gramsPerMl * 10) / 10;
+  return { cup_grams: at('cup'), tbsp_grams: at('tbsp'), tsp_grams: at('tsp') };
+}
+
+/**
+ * R1 (no guessed portions): cup/tbsp/tsp weights only when they come from the
+ * food's own household measure (a cup, tbsp or tsp in `measure` with a gram
+ * weight, written in the text or given as `grams`) or else from this file's
+ * density table for `category`. Otherwise null: the picker offers grams and
+ * ounces. An implausible own measure (outside 0.02-2.5 g/ml) also gives null.
+ */
+export function volumeWeightsFor(
+  measure: string | null | undefined,
+  grams: number | null | undefined,
+  category: string | null | undefined,
+): VolumeWeights | null {
+  const text = measure ?? '';
+  const m = MEASURE_RE.exec(text);
+  if (m) {
+    const ml = parseQty(m[1]) * VOLUME_ML[unitOf(m[2])];
+    const written = GRAMS_RE.exec(text.slice(m.index + m[0].length)) ?? GRAMS_RE.exec(text);
+    const perMl = (written ? Number(written[1]) : Number(grams)) / ml;
+    return Number.isFinite(perMl) && perMl >= 0.02 && perMl <= 2.5 ? weightsAt(perMl) : null;
+  }
+  const key = normalizeCategory(category);
+  const density = key ? DENSITY_G_PER_ML[key] : undefined;
+  return density == null ? null : weightsAt(density);
 }
