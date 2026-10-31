@@ -330,7 +330,8 @@ export class CommunityNotificationsService {
       const row =
         targetType === 'post'
           ? await this.prisma.communityPost.findUnique({ where: { id: targetId }, select: { workspace_id: true } })
-          : await this.prisma.communityMessage.findUnique({ where: { id: targetId }, select: { workspace_id: true } });
+          : // community_messages' key is (id, created_at): by id alone it is findFirst.
+            await this.prisma.communityMessage.findFirst({ where: { id: targetId }, select: { workspace_id: true } });
       return row?.workspace_id ?? null;
     } catch {
       return null;
