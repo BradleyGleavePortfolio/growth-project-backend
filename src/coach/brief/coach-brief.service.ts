@@ -41,9 +41,16 @@ import { ConsentScope, ConsentService } from '../../consent/consent.service';
 import { coachSharingCheck } from '../../consent/coach-sharing-gate';
 import { countedClients, countedMessagesFor } from '../../common/count-rule';
 import {
+  COACH_ACCOUNT_HOLD_REASON,
+  coachAccountWaitingLine,
+} from '../../checkout/dunning-v2/coach-account-hold';
+import {
   DUNNING_V2_REVERSAL_REASON,
   FULL_REFUND_PAUSE_REASON,
 } from '../../checkout/dunning-v2/dunning-v2.service';
+
+// PF-7-BE (R7): a renewal waiting on the coach's Stripe account (NULL-safe).
+const HELD_SQL = Prisma.sql`ds."last_failure_reason" IS NOT DISTINCT FROM ${COACH_ACCOUNT_HOLD_REASON}`;
 
 /**
  * Sentinel error surfaced by `markBriefRead` when the briefId either does
@@ -143,17 +150,23 @@ function plural(n: number, one: string, many: string): string {
 //   - on hold: a full refund or a bank dispute (pauseAfterFullRefund /
 //     applyDisputePause mark last_failure_reason); only the coach restarts it.
 // `count` / `total` keep their old column names for the inside-the-10-days row.
-export function dunningBriefSql(scope: Prisma.Sql): Prisma.Sql {
+// FR-1195R3 (ruling R-1195-C1): `waiting` counts only renewals held on the
+// owner's own Stripe account when an owner is given (a head coach's brief).
+export function dunningBriefSql(scope: Prisma.Sql, waitingOwner?: string): Prisma.Sql {
+  const owned = waitingOwner === undefined ? Prisma.empty : Prisma.sql` AND cp."coach_user_id" = ${waitingOwner}`;
   const onHold = Prisma.sql`COALESCE(ds."last_failure_reason", '') IN (${DUNNING_V2_REVERSAL_REASON}, ${FULL_REFUND_PAUSE_REASON})`;
-  const inWindow = Prisma.sql`NOT (${onHold}) AND ds."locked_out_at" IS NULL AND ds."client_canceled_at" IS NULL`;
-  const locked = Prisma.sql`NOT (${onHold}) AND ds."locked_out_at" IS NOT NULL`;
+  // PF-7-BE (R7): a renewal waiting on the coach's Stripe account is neither
+  // a failed payment nor a lock; it is counted apart as `waiting` (PF-W9 only).
+  const inWindow = Prisma.sql`NOT (${onHold}) AND ds."locked_out_at" IS NULL AND ds."client_canceled_at" IS NULL AND NOT (${HELD_SQL})`;
+  const locked = Prisma.sql`NOT (${onHold}) AND ds."locked_out_at" IS NOT NULL AND NOT (${HELD_SQL})`;
   return Prisma.sql`
     SELECT
       COUNT(*) FILTER (WHERE ${inWindow})::bigint AS count,
       COALESCE(SUM(ds."last_failed_amount_cents") FILTER (WHERE ${inWindow}), 0)::bigint AS total,
       COUNT(*) FILTER (WHERE ${locked})::bigint AS locked,
       COALESCE(SUM(ds."last_failed_amount_cents") FILTER (WHERE ${locked}), 0)::bigint AS locked_total,
-      COUNT(*) FILTER (WHERE ${onHold})::bigint AS on_hold
+      COUNT(*) FILTER (WHERE ${onHold})::bigint AS on_hold,
+      COUNT(*) FILTER (WHERE ${HELD_SQL} AND ds."client_canceled_at" IS NULL${owned})::bigint AS waiting
     FROM "DunningState" ds
     JOIN "ClientPurchase" cp ON cp."id" = ds."purchase_id"
     WHERE ds."status" = 'active'
@@ -167,6 +180,7 @@ export interface DunningBriefRow {
   locked?: bigint | number | null;
   locked_total?: bigint | number | null;
   on_hold?: bigint | number | null;
+  waiting?: bigint | number | null;
 }
 
 export function readDunningBrief(row: DunningBriefRow | undefined): {
@@ -538,7 +552,33 @@ export function buildFallbackNarrative(
   if (narrative.length > BRIEF_MAX_NARRATIVE_CHARS) {
     narrative = narrative.slice(0, BRIEF_MAX_NARRATIVE_CHARS);
   }
-  return narrative;
+  return withCoachAccountWaiting(narrative, ctx);
+}
+
+/**
+ * PF-7-BE (R4/R7): PF-W9 in every brief while a renewal waits on the coach's
+ * Stripe account, as the second sentence (after the greeting), the rest cut
+ * by whole sentences to stay within the cap. Names no client.
+ */
+export function withCoachAccountWaiting(
+  narrative: string,
+  ctx: Pick<BriefContext | BriefContextHeadCoach, 'coach_account_waiting'>,
+): string {
+  const waiting = ctx.coach_account_waiting ?? 0;
+  if (!(waiting > 0)) return narrative;
+  const line = coachAccountWaitingLine(waiting);
+  if (narrative.includes(line)) return narrative;
+  const room = BRIEF_MAX_NARRATIVE_CHARS - line.length - 1;
+  const kept: string[] = [];
+  let length = 0;
+  for (const sentence of splitSentences(narrative)) {
+    const next = length === 0 ? sentence.length : length + 1 + sentence.length;
+    if (next > room) break;
+    kept.push(sentence);
+    length = next;
+  }
+  if (kept.length === 0) return line;
+  return [kept[0], line, ...kept.slice(1)].join(' ');
 }
 
 const FULL_DETAILS = 'The full details are below.';
@@ -1376,6 +1416,8 @@ export class CoachBriefService {
     });
 
     const dunning = readDunningBrief(dunningInProgressRaw[0]);
+    // PF-7-BE (R7): waiting renewals are counted apart, shown only as PF-W9.
+    const coachAccountWaiting = Number(dunningInProgressRaw[0]?.waiting ?? 0);
 
     const context: BriefContext = {
       brief_mode: 'solo_coach',
@@ -1390,6 +1432,7 @@ export class CoachBriefService {
       dunning_in_progress: dunning.inWindow,
       dunning_locked: dunning.locked,
       dunning_on_hold: dunning.onHold,
+      ...(coachAccountWaiting > 0 ? { coach_account_waiting: coachAccountWaiting } : {}),
       weight_logs_flagged: flaggedWeightLogs.length,
       unread_messages: unreadThreads.length,
       checkins_to_review: reviewCheckIns.length,
@@ -1661,7 +1704,7 @@ export class CoachBriefService {
           ),
           // PF-5-BE: the three dunning states counted apart (see dunningBriefSql).
           this.prisma.$queryRaw<DunningBriefRow[]>(
-            dunningBriefSql(teamSaleSql),
+            dunningBriefSql(teamSaleSql, coachId),
           ),
         ]);
       revenueTodayCents = revenueTodayAgg._sum.gross_cents ?? 0;
@@ -1672,6 +1715,7 @@ export class CoachBriefService {
     }
 
     const dunning = readDunningBrief(dunningStateRaw[0]);
+    const coachAccountWaiting = Number(dunningStateRaw[0]?.waiting ?? 0);
 
     // P1-4: sub-coach highlights derived from SubCoachAssignment, NOT
     // User.coach_id. Each sub-coach's active_clients = open assignments
@@ -1716,6 +1760,7 @@ export class CoachBriefService {
       dunning_locked: dunning.locked,
       dunning_locked_amount_cents: dunning.lockedCents,
       dunning_on_hold: dunning.onHold,
+      ...(coachAccountWaiting > 0 ? { coach_account_waiting: coachAccountWaiting } : {}),
       sub_coach_highlights: subCoachHighlights,
     };
 
@@ -1861,7 +1906,7 @@ export class CoachBriefService {
         paymentLines,
       );
       if (!violation) {
-        return { narrative: firstAttempt.narrative, generated_by: 'ai' };
+        return { narrative: withCoachAccountWaiting(firstAttempt.narrative, ctx), generated_by: 'ai' };
       }
       this.logger.warn(
         `CoachBrief Claude output failed contract (${violation}) for ${logRef}; attempting one repair`,
@@ -1882,7 +1927,10 @@ export class CoachBriefService {
           paymentLines,
         );
         if (!violation2) {
-          return { narrative: secondAttempt.narrative, generated_by: 'ai' };
+          return {
+            narrative: withCoachAccountWaiting(secondAttempt.narrative, ctx),
+            generated_by: 'ai',
+          };
         }
         this.logger.warn(
           `CoachBrief Claude repair attempt also failed contract (${violation2}) for ${logRef}; using fallback`,
@@ -2062,9 +2110,12 @@ export class CoachBriefService {
         // sharing switch is written again under the current switches.
         // B-939-1: so is a brief built from a client who has since moved away,
         // or one stored before briefs recorded whose data they hold.
+        // FR-1195R2 (ruling R10): so is today's, written before one of the
+        // coach's renewals entered or left the hold.
         if (
           writtenBefore(existing, await this.lastSharingWithdrawal(coachId)) ||
-          (await this.briefsWithMovedClients(coachId, [existing])).size > 0
+          (await this.briefsWithMovedClients(coachId, [existing])).size > 0 ||
+          (await this.holdChangedSince(coachId, timezone, existing))
         ) {
           return this.generateBrief(coachId, timezone, briefDate, { force: true });
         }
@@ -2311,7 +2362,7 @@ export class CoachBriefService {
       brief_date: { gte: cutoff, lte: today },
     };
 
-    const [total, rows] = await Promise.all([
+    const [total, found] = await Promise.all([
       this.prisma.coachBrief.count({ where }),
       this.prisma.coachBrief.findMany({
         where,
@@ -2320,6 +2371,15 @@ export class CoachBriefService {
         take: limit,
       }),
     ]);
+    // FR-1195R3 (LS-1195R3 B1, ruling R10): today's row is written again here
+    // too when a renewal entered or left the hold since; earlier days as written.
+    const rows = await Promise.all(
+      found.map(async (r) =>
+        r.status === 'generated' && (await this.holdChangedSince(coachId, timezone, r))
+          ? this.rewrittenToday(coachId, timezone, r)
+          : r,
+      ),
+    );
 
     // B-872-SOL-130-1: a brief stored before a client turned off a Coach
     // sharing switch keeps its day and status in history, not its content.
@@ -2344,6 +2404,13 @@ export class CoachBriefService {
     };
   }
 
+  /** FR-1195R3: today's brief written again (force), read back as stored. */
+  private async rewrittenToday(coachId: string, timezone: string, row: CoachBrief): Promise<CoachBrief> {
+    await this.generateBrief(coachId, timezone, row.brief_date, { force: true });
+    const key = { coach_id: coachId, brief_date: row.brief_date };
+    return (await this.prisma.coachBrief.findUnique({ where: { CoachBrief_coach_date_key: key } })) ?? row;
+  }
+
   /**
    * B-872-SOL-130-1 — when a client of this coach last turned off a Coach
    * sharing switch. A brief stored before then may hold a log that client has
@@ -2360,6 +2427,33 @@ export class CoachBriefService {
       select: { revoked_at: true },
     });
     return row?.revoked_at ?? null;
+  }
+
+  /**
+   * FR-1195R2 (LS-1195R2 B3, ruling R10): true when today's stored brief holds
+   * another count of renewals waiting on the coach's account (PF-W9) than now,
+   * counted the way the brief counts it (a head coach's by the clients it was
+   * built from). Briefs of earlier days stay as written.
+   */
+  private async holdChangedSince(coachId: string, timezone: string, brief: CoachBrief): Promise<boolean> {
+    if (brief.brief_date !== bucketDateLocal(new Date(), timezone)) return false;
+    const ctx = brief.brief_context;
+    const saved: Prisma.JsonObject = ctx && typeof ctx === 'object' && !Array.isArray(ctx) ? ctx : {};
+    const stored = Number(saved.coach_account_waiting ?? 0);
+    let scope = Prisma.sql`cp."coach_user_id" = ${coachId}`;
+    if (brief.brief_mode === 'head_coach') {
+      const list = saved[BRIEF_SCOPE_KEY];
+      const ids = Array.isArray(list) ? list.filter((id): id is string => typeof id === 'string') : [];
+      if (ids.length === 0) return stored !== 0;
+      const subs = await this.prisma.teamSubCoachAssignment.findMany({
+        where: { head_coach_id: coachId, archived_at: null },
+        select: { sub_coach_id: true },
+      });
+      const sellers = [coachId, ...subs.map((s) => s.sub_coach_id)];
+      scope = Prisma.sql`cp."client_user_id" = ANY(${ids}::text[]) AND cp."coach_user_id" = ANY(${sellers}::text[])`;
+    }
+    const rows = await this.prisma.$queryRaw<DunningBriefRow[]>(dunningBriefSql(scope, coachId));
+    return Number(rows[0]?.waiting ?? 0) !== stored;
   }
 
   /**
