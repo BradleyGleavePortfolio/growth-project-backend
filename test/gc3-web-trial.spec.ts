@@ -13,6 +13,11 @@ import { renderPayDonePage } from '../src/storefront/pay-done.html';
 import { payPageTerms, PAY_PAGE_COPY } from '../src/storefront/pay-page.html';
 
 type Row = Record<string, any>;
+// Test doubles stand in for injected services; `cast` keeps the doubles typed at the call site.
+function cast<T>(v: unknown): T {
+  return v as T;
+}
+type Private = Record<string, (...args: unknown[]) => Promise<unknown>>;
 
 const COACH = 'coach-alex';
 const PKG = 'pkg-trial';
@@ -140,7 +145,7 @@ function makeDb() {
           throw err;
         }
       });
-      lock = turn.catch(() => undefined);
+      lock = turn.then(() => null, () => null);
       return turn;
     },
   };
@@ -211,14 +216,14 @@ function build(world: ReturnType<typeof makeDb>) {
   const service = new GuestCheckoutService(
     world.db,
     stripe,
-    supabase as any,
-    config as any,
-    { createNotification: jest.fn(async () => ({})) } as any,
-    {} as any,
-    {} as any,
+    cast(supabase),
+    cast(config),
+    cast({ createNotification: jest.fn(async () => ({})) }),
+    cast({}),
+    cast({}),
     undefined,
     undefined,
-    fanout as any,
+    cast(fanout),
     undefined,
     trialUsage,
   );
@@ -231,10 +236,12 @@ describe('GC-3 — web page trials: card saved, nothing charged that day, one tr
 
   beforeEach(() => {
     sent = [];
-    global.fetch = jest.fn(async (_url: unknown, init?: { body?: string }) => {
-      sent.push(JSON.parse(init?.body ?? '{}'));
-      return { ok: true, status: 200, json: async () => ({}) } as Response;
-    }) as unknown as typeof fetch;
+    global.fetch = cast<typeof fetch>(
+      jest.fn(async (_url: unknown, init?: { body?: string }) => {
+        sent.push(JSON.parse(init?.body ?? '{}'));
+        return { ok: true, status: 200, json: async () => ({}) } as Response;
+      }),
+    );
   });
   afterAll(() => {
     global.fetch = realFetch;
@@ -367,7 +374,7 @@ describe('GC-3 — web page trials: card saved, nothing charged that day, one tr
     const world = makeDb();
     const gc = world.addCheckout();
     const { service } = build(world);
-    (service as any).trialUsage = undefined;
+    Reflect.set(service, 'trialUsage', undefined);
 
     await service.handlePaymentSucceeded(gc.stripe_payment_intent_id);
 
@@ -379,7 +386,7 @@ describe('GC-3 — web page trials: card saved, nothing charged that day, one tr
 describe('GC-3 — the billing webhook routes a trial SetupIntent to the guest conversion', () => {
   const realFetch = global.fetch;
   beforeEach(() => {
-    global.fetch = jest.fn(async () => ({ ok: true, status: 200, json: async () => ({}) })) as unknown as typeof fetch;
+    global.fetch = cast<typeof fetch>(jest.fn(async () => ({ ok: true, status: 200, json: async () => ({}) })));
   });
   afterAll(() => {
     global.fetch = realFetch;
@@ -413,9 +420,9 @@ describe('GC-3 — the billing webhook routes a trial SetupIntent to the guest c
     const { service, stripe } = build(world);
     const { billing, checkoutWebhooks } = billingFor(world, service);
 
-    await (billing as any).handleEvent(setupSucceeded('evt_trial_1', gc.stripe_payment_intent_id));
-    await (billing as any).handleEvent(setupSucceeded('evt_trial_1', gc.stripe_payment_intent_id));
-    await (billing as any).handleEvent(setupSucceeded('evt_trial_2', gc.stripe_payment_intent_id));
+    await cast<Private>(billing).handleEvent(setupSucceeded('evt_trial_1', gc.stripe_payment_intent_id));
+    await cast<Private>(billing).handleEvent(setupSucceeded('evt_trial_1', gc.stripe_payment_intent_id));
+    await cast<Private>(billing).handleEvent(setupSucceeded('evt_trial_2', gc.stripe_payment_intent_id));
 
     expect(world.state.guestCheckout[0].status).toBe('converted');
     expect(world.state.clientPurchase).toHaveLength(1);
@@ -430,7 +437,7 @@ describe('GC-3 — the billing webhook routes a trial SetupIntent to the guest c
     const spy = jest.spyOn(service, 'handlePaymentSucceeded');
     const { billing, checkoutWebhooks } = billingFor(world, service);
 
-    await (billing as any).handleEvent(setupSucceeded('evt_app_1', 'seti_inapptrial01'));
+    await cast<Private>(billing).handleEvent(setupSucceeded('evt_app_1', 'seti_inapptrial01'));
 
     expect(checkoutWebhooks.handle).toHaveBeenCalled();
     expect(spy).not.toHaveBeenCalled();
@@ -449,8 +456,8 @@ describe('GC-3 — the billing webhook routes a trial SetupIntent to the guest c
     const created = { type: 'customer.subscription.created', data: { object: { id: 'sub_webtrial01', status: 'trialing' } } };
     const paid = { type: 'invoice.paid', data: { object: { subscription: 'sub_webtrial01', amount_paid: 0 } } };
 
-    expect(await (billing as any).maybeResolveGuestBySubscriptionEvent(created)).toBeNull();
-    expect(await (billing as any).maybeResolveGuestBySubscriptionEvent(paid)).toBeNull();
+    expect(await cast<Private>(billing).maybeResolveGuestBySubscriptionEvent(created)).toBeNull();
+    expect(await cast<Private>(billing).maybeResolveGuestBySubscriptionEvent(paid)).toBeNull();
   });
 });
 
@@ -470,7 +477,7 @@ describe('GC-3 — lost-webhook backstop polls the trial SetupIntent', () => {
     return { svc: new LostWebhookReconcileService(prisma, stripe, guest), prisma, stripe, guest };
   };
   const run = (svc: LostWebhookReconcileService) =>
-    (svc as any).reconcileOne('gc-1', 'seti_webtrial01', 'sub_webtrial01');
+    cast<Private>(svc).reconcileOne('gc-1', 'seti_webtrial01', 'sub_webtrial01');
 
   it('succeeded → the same claim as setup_intent.succeeded', async () => {
     const { svc, guest, stripe } = make('succeeded');
@@ -494,7 +501,7 @@ describe('GC-3 — lost-webhook backstop polls the trial SetupIntent', () => {
 
 describe('GC-3 — pay page and return page words', () => {
   const quote = (over: Record<string, unknown>) =>
-    ({
+    cast<Parameters<typeof payPageTerms>[0]>({
       name: 'Monthly Coaching',
       recurring: {
         amount_cents: 14900,
@@ -506,7 +513,7 @@ describe('GC-3 — pay page and return page words', () => {
       due_today_cents: 0,
       trial_days: 7,
       ...over,
-    }) as any;
+    });
 
   it('a trial package shows PF-W5 and PF-W6 with its own amount and date', () => {
     const t = payPageTerms(quote({}));
@@ -557,7 +564,7 @@ describe('GC-3 — pay page and return page words', () => {
     });
     expect(res.view).toMatchObject({ kind: 'paid', trial: { firstChargeCents: 14900 } });
     expect(deps.stripe.retrievePaymentIntent).not.toHaveBeenCalled();
-    const html = renderPayDonePage(res.view as any, 'nonce-gc3', 'https://apps.example.com/tgp');
+    const html = renderPayDonePage(cast(res.view), 'nonce-gc3', 'https://apps.example.com/tgp');
     expect(html).toContain('Your free trial has started');
     expect(html).toContain('Nothing is charged today. Your first charge of $149.00 is on Nov 6.');
 
