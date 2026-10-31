@@ -126,7 +126,7 @@ describe('F2: a cup weight comes from the food or from a one-density category', 
     ['Soup, chicken noodle, dry, mix', '100\u00a0g', 100, 'Soups, Sauces, and Gravies', null],
     ['Beverages, coffee, instant, powder', '100\u00a0g', 100, 'Beverages', null],
     ['Beverages, coffee, brewed', '100\u00a0g', 100, 'Beverages', 240],
-  ])('%s (%s, %s) -> cup %s', (name, measure, grams, category, cup) => {
+  ])('%s (%s, %s g, %s) -> cup %s', (name, measure, grams, category, cup) => {
     // The fourth argument (the food's name) is new in FR-1198.
     const weigh = stub<(m: string, g: number, c: string, n: string) => { cup_grams: number } | null>(volumeWeightsFor);
     expect(weigh(measure as string, grams as number, category as string, name as string)?.cup_grams ?? null).toBe(cup);
