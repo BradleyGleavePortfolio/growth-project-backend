@@ -1,5 +1,6 @@
 import { buildWorld, READY, RESTRICTED, HOUR, DAY, T0, at, flush } from './support/pf7-hold-world';
 import { StripeConnectApiError } from '../src/connect/stripe-connect-api.service';
+import { COACH_ACCOUNT_HOLD_REASON } from '../src/checkout/dunning-v2/coach-account-hold';
 
 describe('LS-1195 B3: card recovery includes a bank-action answer', () => {
   const saved = {
@@ -29,9 +30,14 @@ describe('LS-1195 B3: card recovery includes a bank-action answer', () => {
   ])('starts the client recovery clock for %s after the coach fixes the account', async (
     _label, code, type,
   ) => {
-    const w = buildWorld({ savedAccount: { ...RESTRICTED }, stripeAccount: { ...RESTRICTED } });
+    const w = buildWorld({ saved: { ...RESTRICTED }, stripeNow: { ...RESTRICTED } });
     await w.fail();
     await flush();
+    expect(w.state()).toMatchObject({
+      step_index: -1,
+      last_failure_reason: COACH_ACCOUNT_HOLD_REASON,
+    });
+    expect(w.clientPushes()).toBe(0);
     w.account.value = { ...READY };
     // Same bank-action shape already handled by ClientBillingService and
     // test/support/fake-stripe-billing.ts; no client action can fix an account.
