@@ -11,11 +11,11 @@
  */
 import 'reflect-metadata';
 import { BadRequestException } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
+import { ROUTE_ARGS_METADATA } from '@nestjs/common/constants';
 import { Prisma } from '@prisma/client';
-import { PrismaService } from '../src/prisma.service';
-import { PtmService } from '../src/ptm/ptm.service';
-import { ClientAIContextService } from '../src/ai/client-ai-context.service';
+import type { PrismaService } from '../src/prisma.service';
+import type { PtmService } from '../src/ptm/ptm.service';
+import type { ClientAIContextService } from '../src/ai/client-ai-context.service';
 import { WorkoutController } from '../src/workout/workout.controller';
 import { WorkoutService } from '../src/workout/workout.service';
 import type { AuthedRequest } from '../src/auth/auth-request';
@@ -58,20 +58,19 @@ function fakeStore() {
   return { rows, prisma: { workoutSession } };
 }
 
-async function setup() {
+function setup() {
   const store = fakeStore();
   const emit = jest.fn();
   const invalidateForUser = jest.fn();
-  const moduleRef = await Test.createTestingModule({
-    controllers: [WorkoutController],
-    providers: [
-      WorkoutService,
-      { provide: PrismaService, useValue: store.prisma },
-      { provide: PtmService, useValue: { emit } },
-      { provide: ClientAIContextService, useValue: { invalidateForUser } },
-    ],
-  }).compile();
-  const controller = moduleRef.get(WorkoutController);
+  // The real controller and service; the route's guards are covered by the
+  // entitlement / guard-chain suites, so they are left out of this unit.
+  const controller = new WorkoutController(
+    new WorkoutService(
+      store.prisma as unknown as PrismaService,
+      { emit } as unknown as PtmService,
+      { invalidateForUser } as unknown as ClientAIContextService,
+    ),
+  );
   // POST /workouts as the route sees it: (req, body, Idempotency-Key header).
   const post = (userId: string, body: CreateWorkoutDto, key?: string) =>
     (controller.createWorkout as (...a: unknown[]) => Promise<Row>).call(
@@ -96,8 +95,18 @@ const body: CreateWorkoutDto = {
 const queueKey = 'client-1:1793402400000';
 
 describe('WK-1-BE POST /workouts with an Idempotency-Key', () => {
+  it('B-WK-1: the route passes the Idempotency-Key header as the third argument', () => {
+    const args = Reflect.getMetadata(ROUTE_ARGS_METADATA, WorkoutController, 'createWorkout') as Record<
+      string,
+      { index: number; data?: unknown }
+    >;
+    expect(Object.values(args ?? {})).toEqual(
+      expect.arrayContaining([expect.objectContaining({ index: 2, data: 'idempotency-key' })]),
+    );
+  });
+
   it('B-WK-1: the same key sent again after a dropped answer stores one workout and the coach reads one', async () => {
-    const { post, coachReads, store, emit, invalidateForUser } = await setup();
+    const { post, coachReads, store, emit, invalidateForUser } = setup();
     const first = await post('client-1', body, queueKey);
     // The answer to `first` never reached the phone; the sync retry resends.
     const again = await post('client-1', body, queueKey);
@@ -113,21 +122,21 @@ describe('WK-1-BE POST /workouts with an Idempotency-Key', () => {
   });
 
   it('B-WK-1: two sends of one key racing past the lookup still store one workout', async () => {
-    const { post, coachReads } = await setup();
+    const { post, coachReads } = setup();
     const [a, b] = await Promise.all([post('client-1', body, queueKey), post('client-1', body, queueKey)]);
     expect(await coachReads('client-1')).toHaveLength(1);
     expect(b.id).toBe(a.id);
   });
 
   it('a different key stores a second workout', async () => {
-    const { post, coachReads } = await setup();
+    const { post, coachReads } = setup();
     await post('client-1', body, queueKey);
     await post('client-1', body, 'client-1:1793406000000');
     expect(await coachReads('client-1')).toHaveLength(2);
   });
 
   it('no key behaves exactly as before: every save stores a workout and no key is written', async () => {
-    const { post, coachReads, store, emit } = await setup();
+    const { post, coachReads, store, emit } = setup();
     await post('client-1', body);
     await post('client-1', body, '   ');
     expect(await coachReads('client-1')).toHaveLength(2);
@@ -139,7 +148,7 @@ describe('WK-1-BE POST /workouts with an Idempotency-Key', () => {
   });
 
   it('another member sending the same key gets their own workout, never the first member\'s', async () => {
-    const { post, coachReads } = await setup();
+    const { post, coachReads } = setup();
     const mine = await post('client-1', body, queueKey);
     const theirs = await post('client-2', body, queueKey);
     expect(theirs.id).not.toBe(mine.id);
@@ -151,7 +160,7 @@ describe('WK-1-BE POST /workouts with an Idempotency-Key', () => {
   it.each(['short', 'x'.repeat(129), 'has space here', 'emoji-\u{1F600}-key'])(
     'refuses a malformed key %p with 400 IDEMPOTENCY_KEY_INVALID and stores nothing',
     async (bad) => {
-      const { post, store } = await setup();
+      const { post, store } = setup();
       await expect(post('client-1', body, bad)).rejects.toBeInstanceOf(BadRequestException);
       await expect(post('client-1', body, bad)).rejects.toMatchObject({
         response: { error: 'IDEMPOTENCY_KEY_INVALID' },
