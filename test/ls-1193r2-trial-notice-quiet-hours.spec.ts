@@ -12,7 +12,7 @@ describe('LS-1193R2 shared trial notice follow-up witness', () => {
     jest.useFakeTimers({ now: new Date('2026-11-01T02:00:00Z') });
     try {
       const kind = NotificationKind.TRIAL_ENDING;
-      expect(quietHoursFor({ kind, timeZone: 'UTC', now: new Date() })).toMatchObject({
+      expect(quietHoursFor({ kind, timeZone: 'Europe/London', now: new Date() })).toMatchObject({
         deferred: true,
         reason: 'quiet_hours',
         deliverAt: new Date('2026-11-01T08:00:00Z'),
