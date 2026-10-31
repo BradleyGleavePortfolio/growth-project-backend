@@ -123,7 +123,7 @@ describe('LS-1195R3 independent whole-PR acceptance', () => {
 describe('LS-1195R3 invoice collection boundary', () => {
   const priorKey = process.env['STRIPE_SECRET_KEY'];
   beforeEach(() => {
-    process.env['STRIPE_SECRET_KEY'] = 'sk_test_ls1195r3_boundary_only';
+    process.env['STRIPE_SECRET_KEY'] = 'sk_test_ls1195r3boundaryonly';
   });
   afterEach(() => {
     if (priorKey === undefined) delete process.env['STRIPE_SECRET_KEY'];
