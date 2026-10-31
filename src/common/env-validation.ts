@@ -2053,8 +2053,6 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'FEATURE_COACH_ACCOUNT_HOLD',
-    values: ['true', 'false'],
-    unsetIs: 'on',
     tier: 'optional',
     default: "on (unset = on; only exactly 'false' turns it off)",
     reason:
