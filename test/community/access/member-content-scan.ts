@@ -1281,12 +1281,13 @@ function followHeldArguments(
     return out;
   };
 
+  // A site the per-node pass already found (an inline include on the call's own line) is not listed twice.
+  const found = new Set(sites.map((s) => `${s.file}:${s.line}:${s.reader}:${s.model}:${s.via}`));
   for (const { file, sf } of parsed) {
-    const found = new Set<string>();
     const add = (call: ts.Node, model: string, via: ReadSite['via']) => {
       const line = sf.getLineAndCharacterOfPosition(call.getStart(sf)).line + 1;
       const reader = readerOf(call);
-      const key = `${line}:${reader}:${model}:${via}`;
+      const key = `${file}:${line}:${reader}:${model}:${via}`;
       if (found.has(key)) return;
       found.add(key);
       sites.push({ file, line, reader, model, via });
