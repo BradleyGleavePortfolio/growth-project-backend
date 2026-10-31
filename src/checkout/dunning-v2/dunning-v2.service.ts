@@ -2051,7 +2051,11 @@ export class DunningV2Service {
         coachName: coach?.name ?? 'your coach',
         amount: claim.isLateReversalCycle ? undefined : formatMoney(amountCents, purchase.currency),
         cardLast4: customer?.default_card_last4 ?? undefined,
-        attempts: state.last_attempt_number ? String(state.last_attempt_number) : undefined,
+        // FR-1191R2 (LS-1191R2B B1): no {attempts}. last_attempt_number is
+        // Stripe's retry-schedule counter, not the charges that really ran (a
+        // manual payment after a card update does not raise it), so the coach
+        // email leaves out its "Charge attempts on this invoice so far" line.
+        attempts: undefined,
         lockoutDate: formatLockoutDate(
           dunningV2LockoutAt(state.entered_at),
           prefs?.timezone ?? null,
