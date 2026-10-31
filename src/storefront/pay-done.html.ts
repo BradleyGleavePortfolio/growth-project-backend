@@ -31,6 +31,12 @@ export const PAY_DONE_COPY = {
   confirming: 'This usually takes a few seconds. This page checks again by itself.',
   slowH: 'Your payment is still being confirmed',
   slow: (email: string) => `You don't need to pay again. When it goes through, we'll email ${email}.`,
+  // TRIAL-WORDS-BE (owner #189-D1 op 1, TW1 and TW2): a web trial still
+  // starting says a free trial, never a payment; TW1's line is `confirming`.
+  trialConfirmingH: 'Starting your free trial',
+  trialSlowH: 'Your free trial is still starting',
+  trialSlow: (email: string) =>
+    `Nothing is charged today, and you don't need to start it again. When it's ready, we'll email ${email}.`,
   checkAgain: 'Check again',
   failedH: "Your payment didn't go through",
   failedReason: "The payment wasn't finished.",
@@ -61,7 +67,8 @@ export type PayDoneView =
       /** GC-3 — a web trial: card saved, nothing charged; its first charge. */
       trial?: { firstChargeCents: number | null; firstChargeAt: string | null };
     }
-  | { kind: 'confirming'; email: string; again: boolean; checkUrl: string }
+  /** trial: the guest row holds a web trial's SetupIntent (pay-done.ts), never the query's say-so. */
+  | { kind: 'confirming'; email: string; again: boolean; checkUrl: string; trial?: boolean }
   /** FR-1193 — a web trial refused at conversion (already had one with this coach). */
   | { kind: 'trialRefused'; coach: string }
   | { kind: 'failed'; reason: string | null; payUrl: string; spent: SpentKey }
@@ -137,10 +144,12 @@ function body(v: PayDoneView, appStoreUrl: string): string {
       }
       return `<section id="paid">${TICK}<h1 class="state">${PAY_DONE_COPY.paidH}</h1>${line}<h2>${PAY_PAGE_COPY.nextH}</h2>${next}${who}</section>`;
     }
-    case 'confirming':
+    case 'confirming': {
+      const c = PAY_DONE_COPY;
       return v.again
-        ? `<section id="confirming" aria-live="polite"><span class="wait" aria-hidden="true"></span><h1 class="state">${PAY_DONE_COPY.confirmingH}</h1><p>${PAY_DONE_COPY.confirming}</p></section>`
-        : `<section id="slow"><h1 class="state">${PAY_DONE_COPY.slowH}</h1><p>${esc(PAY_DONE_COPY.slow(v.email))}</p><a class="link" href="${esc(v.checkUrl)}">${PAY_DONE_COPY.checkAgain}</a></section>`;
+        ? `<section id="confirming" aria-live="polite"><span class="wait" aria-hidden="true"></span><h1 class="state">${v.trial ? c.trialConfirmingH : c.confirmingH}</h1><p>${c.confirming}</p></section>`
+        : `<section id="slow"><h1 class="state">${v.trial ? c.trialSlowH : c.slowH}</h1><p>${esc(v.trial ? c.trialSlow(v.email) : c.slow(v.email))}</p><a class="link" href="${esc(v.checkUrl)}">${c.checkAgain}</a></section>`;
+    }
     case 'trialRefused':
       return `<section id="trial-refused"><h1 class="state">${esc(GUEST_TRIAL_COPY.refusedSubject(v.coach))}</h1><p>${esc(GUEST_TRIAL_COPY.refused(v.coach))}</p>${store(appStoreUrl)}</section>`;
     case 'failed':
