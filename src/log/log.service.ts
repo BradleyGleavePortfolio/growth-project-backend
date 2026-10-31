@@ -63,14 +63,31 @@ export class LogService {
     // D2 (AUTHB-03): no key means a plain create. client_uuid is unique across
     // all users, so a shared fallback key (or another person's key) used to
     // return their entry and save nothing; such an entry is never returned.
-    const created = data.client_uuid
-      ? await this.prisma.loggedFoodEntry.upsert({
-          where: { client_uuid: data.client_uuid },
-          create: { ...entryData, client_uuid: data.client_uuid },
-          update: {}, // no-op if already exists — idempotent on retry
-          include: { food_item: true },
-        })
-      : await this.prisma.loggedFoodEntry.create({ data: entryData, include: { food_item: true } });
+    const write = () =>
+      data.client_uuid
+        ? this.prisma.loggedFoodEntry.upsert({
+            where: { client_uuid: data.client_uuid },
+            create: { ...entryData, client_uuid: data.client_uuid },
+            update: {}, // no-op if already exists — idempotent on retry
+            include: { food_item: true },
+          })
+        : this.prisma.loggedFoodEntry.create({ data: entryData, include: { food_item: true } });
+    let created: Awaited<ReturnType<typeof write>>;
+    try {
+      created = await write();
+    } catch (err) {
+      // FR-1198 (LO-1198 C1): two saves with one key at once both miss the
+      // read above, and the loser's insert hits the unique key (P2002). The
+      // loser answers with the stored entry, like the saved-meal route.
+      if (!data.client_uuid || (err as { code?: string } | null)?.code !== 'P2002') throw err;
+      const stored = await this.prisma.loggedFoodEntry.findUnique({
+        where: { client_uuid: data.client_uuid },
+        include: { food_item: true },
+      });
+      if (!stored) throw err;
+      if (stored.user_id !== userId) throw new NotFoundException('Entry not found');
+      return stored;
+    }
     if (created.user_id !== userId) throw new NotFoundException('Entry not found');
     this.analytics.capture(userId, Events.CLIENT_FOOD_LOGGED, {
       meal_type: data.meal_type,
