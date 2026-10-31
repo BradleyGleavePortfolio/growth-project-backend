@@ -295,4 +295,40 @@ describe('PF-5-BE AI writer on and off', () => {
     expect(validateClaudeNarrative(base, 'Sarah', [W1])).toBe('missing_payment_line');
     expect(validateClaudeNarrative(`Sarah, five clients checked in. ${W1}`, 'Sarah', [W1])).toBeNull();
   });
+
+  // FR-1191R2 (LO-1191R2B C2): the same promise in other words is refused, and
+  // no approved line (alone or together) is ever refused.
+  const base = 'Sarah, five clients checked in. Two still need a nudge.';
+  it.each([
+    'Stripe will charge the card again tomorrow.',
+    'The payment will be attempted again on Friday.',
+    'TGP will try the card once more.',
+    'The failed payment is being handled automatically.',
+    'No action is needed from you on that payment.',
+    'Nothing needed from you there.',
+  ])('validateClaudeNarrative refuses a retry promise in other words: %s', (bad) => {
+    expect(validateClaudeNarrative(`${base} ${bad}`, 'Sarah')).toBe('payment_retry_promise');
+  });
+  it.each([
+    ['W1', [W1]],
+    ['W2', [W2]],
+    ['W3', [W3]],
+    ['W3 (head coach)', [W3_HEAD]],
+    ['all three', [W1, W2, W3]],
+  ])('validateClaudeNarrative keeps the approved line(s): %s', (_l, lines) => {
+    expect(validateClaudeNarrative(`${base} ${lines.join(' ')}`, 'Sarah', lines)).toBeNull();
+  });
+
+  // FR-1191R2 (LO-1191R2B C1): the repair prompt counts the payment lines
+  // apart, like the system prompts and the validator.
+  it('the repair prompt does not count the payment lines in the 2 to 4 sentences or 450 characters', async () => {
+    const anthropic = makeMockAnthropic(soloAi('One client still owes a payment.'));
+    const { svc } = wireSolo([], anthropic);
+    await callClaude(svc, makeBriefContext({ dunning_on_hold: 1 }));
+    expect(anthropic.messages.create).toHaveBeenCalledTimes(2);
+    const repair = JSON.stringify(anthropic.messages.create.mock.calls[1][0]);
+    expect(repair).toContain('2 to 4 complete sentences, not counting the payment lines');
+    expect(repair).toContain('not counting the payment lines; with them the whole brief stays under 600 characters');
+    expect(repair).toContain(W3);
+  });
 });

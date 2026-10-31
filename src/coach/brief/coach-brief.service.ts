@@ -712,12 +712,27 @@ export function validateClaudeNarrative(
 
   // PF-5-BE: TGP never retries a card, and a paused or locked plan is never
   // "nothing needed". The approved payment lines are the only payment words.
-  if (/\bretr(?:y|ies|ied|ying)\b|nothing is needed/i.test(narrative)) return 'payment_retry_promise';
+  // FR-1191R2 (LO-1191R2B C2): the same promise in other words is refused too,
+  // checked on the text around the approved lines so they are never blocked.
+  if (PAYMENT_RETRY_PROMISE.test(own.join(' '))) return 'payment_retry_promise';
   const flat = narrative.replace(/\s+/g, ' ');
   if (paymentLines.some((line) => !flat.includes(line))) return 'missing_payment_line';
 
   return null;
 }
+
+// A promise that the card is tried again or that the coach need not act.
+const PAYMENT_RETRY_PROMISE = new RegExp(
+  [
+    String.raw`\bretr(?:y|ies|ied|ying)\b`,
+    String.raw`\bnothing (?:is )?needed\b`,
+    String.raw`\bno action (?:is )?(?:needed|required)\b`,
+    String.raw`\b(?:charg|attempt)(?:e|es|ed|ing|s)?(?: (?:it|them|the card|their card))? again\b`,
+    String.raw`\btr(?:y|ies|ied|ying) (?:the|their|a) card\b`,
+    String.raw`\b(?:handled|run|resolved|sorted|collected) automatically\b`,
+  ].join('|'),
+  'i',
+);
 
 function splitSentences(text: string): string[] {
   return text
@@ -1850,7 +1865,7 @@ export class CoachBriefService {
         `CoachBrief Claude output failed contract (${violation}) for ${logRef}; attempting one repair`,
       );
 
-      const repairPrompt = `${userPrompt}\n\nThe previous response broke the format (${violation}). Output a fresh brief that:\n- Opens with the sentence "Good morning, ${safeCoachFirstName}."\n- Is 2 to 4 complete sentences.\n- Uses no first person ("I", "we", "us", "our"), no exclamation marks and no emojis.\n- Contains no markdown, no bullet points, no meta prefix like "Here is".\n- Stays under ${BRIEF_TARGET_NARRATIVE_CHARS} characters.${paymentLines.length > 0 ? `\n- Copies each payment line word for word: ${paymentLines.join(' ')}` : ''}`;
+      const repairPrompt = `${userPrompt}\n\nThe previous response broke the format (${violation}). Output a fresh brief that:\n- Opens with the sentence "Good morning, ${safeCoachFirstName}."\n- Is 2 to 4 complete sentences${paymentLines.length > 0 ? ', not counting the payment lines' : ''}.\n- Uses no first person ("I", "we", "us", "our"), no exclamation marks and no emojis.\n- Contains no markdown, no bullet points, no meta prefix like "Here is".\n- Stays under ${BRIEF_TARGET_NARRATIVE_CHARS} characters${paymentLines.length > 0 ? `, not counting the payment lines; with them the whole brief stays under ${BRIEF_MAX_NARRATIVE_CHARS} characters` : ''}.${paymentLines.length > 0 ? `\n- Copies each payment line word for word: ${paymentLines.join(' ')}` : ''}`;
 
       const secondAttempt = await this.invokeClaudeOnce(
         client,
