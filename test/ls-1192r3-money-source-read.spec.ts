@@ -54,10 +54,11 @@ async function rig(source: Source) {
     client: { name: 'Client', email: null },
   }));
   const notices = makeTrialNoticeTable();
+  const noticeRead = jest.fn(notices.findUnique);
   const db: Record<string, unknown> = {
     ...world.db,
     dunningState: { findUnique: dunningRead },
-    packageTrialNotice: notices,
+    packageTrialNotice: { ...notices, findUnique: noticeRead },
     clientPurchase: { findUnique: purchaseRead, findMany: purchases.findMany },
     connectCustomer: { findUnique: jest.fn(async () => ({ default_payment_method_id: 'card' })) },
   };
@@ -115,7 +116,7 @@ async function rig(source: Source) {
   expect(world.rows[0]).toMatchObject({ status: 'pending', not_before: MORNING });
   expect(send).not.toHaveBeenCalled();
   const read = source === 'trial notice read'
-    ? notices.findUnique
+    ? noticeRead
     : source === 'trial purchase read' ? purchaseRead : dunningRead;
   return {
     clock, world, send, delivery, read, state, purchase,
