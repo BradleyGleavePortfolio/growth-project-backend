@@ -227,9 +227,13 @@ const plainForm = (item: FoodResult) =>
 
 /**
  * De-duplicate by food identity (the first source listed wins), then rank.
- * R3 (LO-FOOD B1): a whole-word match of a basic food comes first, then a
- * whole-word match of any other unbranded food, then the rest by match
- * quality; the plain form, shorter names and then A-Z break ties.
+ * R3 (LO-FOOD B1): whole-word matches come first, a basic food before any
+ * other unbranded food before a branded one, then the rest by match quality.
+ * FR-1198 (LS-1198 B1, LO-1198 B1): ahead of all of those, an unbranded row
+ * named for the food (score 80 or more: the query leads the name before its
+ * first comma) comes before an unbranded row that only mentions it
+ * ("Oatmeal, NFS" before "Bread, oatmeal"), whatever its USDA data type. The
+ * plain form, shorter names and then A-Z break ties.
  */
 function rankFoodResults(items: FoodResult[], q: string, limit: number): FoodResult[] {
   const byIdentity = new Map<string, FoodResult>();
@@ -243,10 +247,12 @@ function rankFoodResults(items: FoodResult[], q: string, limit: number): FoodRes
   const scored = [...byIdentity.values()].map((item) => {
     const { score, whole } = matchOf(item, q);
     const tier = item.basic_food ? 2 : isBranded(item) ? 0 : 1;
-    return { item, score, group: whole ? tier : 0 };
+    const named = whole && tier > 0 && score >= 80 ? 1 : 0;
+    return { item, score, named, group: whole ? tier : 0 };
   });
   scored.sort(
     (a, b) =>
+      b.named - a.named ||
       b.group - a.group ||
       b.score - a.score ||
       plainForm(b.item) - plainForm(a.item) ||
