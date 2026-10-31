@@ -1,7 +1,7 @@
 import { COACH_ACCOUNT_HOLD_REASON } from '../src/checkout/dunning-v2/coach-account-hold';
 import { DAY, RESTRICTED, T0, at, buildWorld, fixture, flush, stub } from './support/pf7-hold-world';
 
-describe('LS-1195 B3: a held renewal keeps access through subscription updates', () => {
+describe('LS-1195 acceptance: a held renewal keeps access through subscription updates', () => {
   const saved = {
     v2: process.env['FEATURE_DUNNING_V2'],
     hold: process.env['FEATURE_COACH_ACCOUNT_HOLD'],
@@ -37,7 +37,12 @@ describe('LS-1195 B3: a held renewal keeps access through subscription updates',
         status,
       };
       Reflect.set(w.stripe, 'retrieveSubscriptionForCheckout', jest.fn(async () => subscription));
-      const event = fixture('customer.subscription.updated', { ...subscription });
+      const envelope = fixture('invoice.payment_failed');
+      const event = {
+        ...envelope,
+        type: 'customer.subscription.updated',
+        data: { object: subscription },
+      };
       const prefetch = await w.handler.prefetchForOuterTx(event);
       await w.handler.handle(event, stub(w.prisma), prefetch);
       await flush();
