@@ -1036,4 +1036,57 @@ describe('TRIAL-WORDS-BE — the return page while a web trial starts', () => {
       expect(page.html).not.toContain(TW2);
     }
   });
+
+  it.each(['conversion cap', 'lost-webhook cap', 'card save canceled'])(
+    'LS-1199 B1: a slow trial ending at %s notifies the buyer instead of silently abandoning the email promise',
+    async (ending) => {
+      const { world, gc, service, stripe, done } = trialWorld({
+        created_at: new Date(Date.now() - 60_000),
+      });
+      const slow = await done({ n: '5' });
+      expect(slow.html).toContain(esc(TW2_LINE(gc.guest_email)));
+      expect(sent).toHaveLength(0);
+
+      if (ending === 'conversion cap') {
+        // A normal dependency outage persists through all five conversion tries.
+        world.db.connectAccount.findUnique = jest.fn(async () => {
+          throw new Error('conversion dependency unavailable');
+        });
+        await service.handlePaymentSucceeded(gc.stripe_payment_intent_id);
+        for (let attempt = 1; attempt < 5; attempt++) {
+          await service.reconcilePaidCheckout(gc.id);
+        }
+        expect(world.state.guestCheckout[0].status).toBe('conversion_failed_terminal');
+      } else {
+        stripe.retrieveSetupIntent.mockImplementation(async (intent: string) => ({
+          id: intent,
+          status: ending === 'card save canceled' ? 'canceled' : 'processing',
+          client_secret: `${intent}_secret_z`,
+        }));
+        // The production backstop scans pending rows and atomically increments
+        // its poll count. Supply those DB operations on the same real test row.
+        const backstopDb: any = {
+          guestCheckout: {
+            findMany: async () => world.state.guestCheckout.filter((row) => row.status === 'pending'),
+            updateMany: world.db.guestCheckout.updateMany,
+            update: async () => {
+              const row = world.state.guestCheckout[0];
+              row.reconcile_attempts = (row.reconcile_attempts ?? 0) + 1;
+              return row;
+            },
+          },
+        };
+        const backstop = new LostWebhookReconcileService(backstopDb, stripe, service);
+        for (let poll = 0; poll < 6; poll++) await backstop.runOnce();
+        expect(world.state.guestCheckout[0].status).toBe(
+          ending === 'card save canceled' ? 'failed' : 'conversion_failed_terminal',
+        );
+      }
+      await service.reconcilePaidCheckout(gc.id);
+      await new Promise((resolve) => setImmediate(resolve));
+      // The buyer was explicitly told to wait for email and may have closed
+      // the page. Logging for an operator is not a buyer notification.
+      expect(sent.filter((message) => message.to === gc.guest_email)).toHaveLength(1);
+    },
+  );
 });
