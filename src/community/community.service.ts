@@ -4,7 +4,7 @@ import { PrismaService } from '../prisma.service';
 import { CommunityRepository } from './community.repository';
 import { CommunitySafetyService } from './safety/community-safety.service';
 import { memberName } from './member-display-name';
-import { fullNamesFor, membersNow } from './community-space-access';
+import { fullNamesFor, membersNow, placeOf } from './community-space-access';
 import { isBannedFromWorkspace } from './community-ban';
 import { communityTabUnread, spaceUnreadCounts } from './space-reads/community-space-reads.service';
 // FR-1168 (LO-1168 B1, owner R7): member_count leaves out the people who left the space (membersNow).
@@ -234,17 +234,21 @@ export class CommunityService {
 
     const {
       event: eventRow,
-      pinnedPost: pinnedRow,
+      pinnedPosts: pinnedRows,
       challenge: challengeRow,
     } = await this.repo.findTodayContent(workspace.id, user.id, new Date());
-    // Two-way block: Today never surfaces a pinned post, event or challenge
-    // authored by someone in a block relation with the caller (the Hall,
-    // events and challenges lists hide them too). One block lookup.
-    const hidden =
-      pinnedRow || eventRow || challengeRow ? await this.safety.hiddenFromViewer(user.id) : null;
+    // LS-1197 B2: the pinned post is the newest pin the Hall and the space
+    // feeds would show the caller: the posts' author rule (filterBlocked with
+    // the row's place: a block either way, an author banned from this
+    // community, an author who left it), so a pin by a hidden author gives way
+    // to the next pin, and unban or coming back restores it.
+    const [pinnedPost = null] = await this.safety.filterBlocked(user.id, pinnedRows, (p) => p.author_id, placeOf);
+    // Two-way block: Today never surfaces an event or challenge created by
+    // someone in a block relation with the caller (the events and challenges
+    // lists hide them too). One block lookup.
+    const hidden = eventRow || challengeRow ? await this.safety.hiddenFromViewer(user.id) : null;
     const visibleTo = (authorId: string | null | undefined) =>
       !hidden || !authorId || !hidden.has(authorId);
-    const pinnedPost = pinnedRow && visibleTo(pinnedRow.author_id) ? pinnedRow : null;
     const event = eventRow && visibleTo(eventRow.created_by_id) ? eventRow : null;
     const challenge = challengeRow && visibleTo(challengeRow.created_by_id) ? challengeRow : null;
 
