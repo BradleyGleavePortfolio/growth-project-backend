@@ -383,7 +383,7 @@ describe('GC-3 — web page trials: card saved, nothing charged that day, one tr
     expect(html).not.toContain('The package shows under Your plans.');
   });
 
-  it.each(['sweep', 'trial_will_end', 'subscription_update_then_notice'])(
+  it.each(['sweep', 'trial_will_end', 'subscription_update_then_notice', 'subscription_update_then_sweep'])(
     'LS-1193-B2 S4: a converted web trial gets one push and email with amount and date via %s',
     async (path) => {
       jest.useFakeTimers({
@@ -442,11 +442,11 @@ describe('GC-3 — web page trials: card saved, nothing charged that day, one tr
         };
         // Positive control: the real native lifecycle handler can refine the
         // web purchase. The two other paths must not require that extra event.
-        if (path === 'subscription_update_then_notice') {
+        if (path.startsWith('subscription_update_then_')) {
           await handler.handle({ id: 'event-update', type: 'customer.subscription.updated', data: { object: sub } });
         }
         jest.setSystemTime(new Date(end.getTime() - 3 * DAY));
-        if (path === 'sweep') {
+        if (path === 'sweep' || path === 'subscription_update_then_sweep') {
           await noticeSvc.sweep(new Date());
           await noticeSvc.sweep(new Date());
         } else {
