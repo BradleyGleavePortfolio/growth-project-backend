@@ -2360,7 +2360,7 @@ export class CoachBriefService {
       brief_date: { gte: cutoff, lte: today },
     };
 
-    const [total, rows] = await Promise.all([
+    const [total, found] = await Promise.all([
       this.prisma.coachBrief.count({ where }),
       this.prisma.coachBrief.findMany({
         where,
@@ -2369,6 +2369,15 @@ export class CoachBriefService {
         take: limit,
       }),
     ]);
+    // FR-1195R3 (LS-1195R3 B1, ruling R10): today's row is written again here
+    // too when a renewal entered or left the hold since; earlier days as written.
+    const rows = await Promise.all(
+      found.map(async (r) =>
+        r.status === 'generated' && (await this.holdChangedSince(coachId, timezone, r))
+          ? this.rewrittenToday(coachId, timezone, r)
+          : r,
+      ),
+    );
 
     // B-872-SOL-130-1: a brief stored before a client turned off a Coach
     // sharing switch keeps its day and status in history, not its content.
@@ -2391,6 +2400,13 @@ export class CoachBriefService {
       page,
       limit,
     };
+  }
+
+  /** FR-1195R3: today's brief written again (force), read back as stored. */
+  private async rewrittenToday(coachId: string, timezone: string, row: CoachBrief): Promise<CoachBrief> {
+    await this.generateBrief(coachId, timezone, row.brief_date, { force: true });
+    const key = { coach_id: coachId, brief_date: row.brief_date };
+    return (await this.prisma.coachBrief.findUnique({ where: { CoachBrief_coach_date_key: key } })) ?? row;
   }
 
   /**
