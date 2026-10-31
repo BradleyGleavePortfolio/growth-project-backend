@@ -355,6 +355,31 @@ describe('GC-3 — web page trials: card saved, nothing charged that day, one tr
     expect(stripe.setSubscriptionDefaultPaymentMethod).not.toHaveBeenCalled();
   });
 
+  it('LS-1193-B1: a refused second trial never renders trial-started success', async () => {
+    const world = makeDb();
+    const { service, stripe } = build(world);
+    world.state.user.push({ id: 'user-app', supabase_id: 'sb-jane', email: 'jane@example.com', role: 'student', coach_id: COACH, created_at: new Date(0) });
+    world.state.packageTrialUsage.push({ id: 'usage-app', client_user_id: 'user-app', coach_user_id: COACH, package_id: PKG, purchase_id: 'purchase-app', status: 'started' });
+    const gc = world.addCheckout();
+
+    await service.handlePaymentSucceeded(gc.stripe_payment_intent_id);
+    expect(world.state.guestCheckout[0]).toMatchObject({
+      status: 'conversion_failed_terminal', last_error: 'trial_already_used',
+    });
+    expect(world.state.clientPurchase).toHaveLength(0);
+    expect(stripe.cancelSubscription).toHaveBeenCalledWith(gc.stripe_subscription_id);
+
+    const result = await readPayDone(
+      { db: world.db, stripe },
+      world.pkg.share_token,
+      { setup_intent: gc.stripe_payment_intent_id, setup_intent_client_secret: `${gc.stripe_payment_intent_id}_secret_z` },
+    );
+    const html = renderPayDonePage(result.view, 'nonce');
+    expect(html).not.toContain('Your free trial has started');
+    expect(html).not.toContain('Your first charge of');
+    expect(html).not.toContain('The package shows under Your plans.');
+  });
+
   it('a legacy purchase whose trial started (no ledger row) also refuses — the in-app eligibility read', async () => {
     const world = makeDb();
     const { service, stripe } = build(world);
