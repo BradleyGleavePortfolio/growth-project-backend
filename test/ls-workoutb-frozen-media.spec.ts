@@ -27,13 +27,14 @@ type AssignmentLookup = {
 
 describe('LS-WORKOUTB signed media follows the prescription actually presented', () => {
   it.each([
-    { scenario: 'an unchanged frozen assignment', frozenRef: row.id, liveRef: row.id, member: 'member-one', allowed: true },
-    { scenario: 'a frozen exercise removed from the live plan', frozenRef: row.id, liveRef: 'catalog-row', member: 'member-one', allowed: true },
-    { scenario: 'a new live exercise absent from the frozen assignment', frozenRef: 'catalog-row', liveRef: row.id, member: 'member-one', allowed: false },
-    { scenario: 'a legacy assignment without a snapshot', frozenRef: null, liveRef: row.id, member: 'member-one', allowed: true },
-    { scenario: 'another member assignment', frozenRef: row.id, liveRef: row.id, member: 'member-two', allowed: false },
+    { scenario: 'an unchanged frozen assignment', frozenRef: row.id, liveRef: row.id, storedRefs: [row.id], member: 'member-one', allowed: true },
+    { scenario: 'a frozen exercise removed from the live plan', frozenRef: row.id, liveRef: 'catalog-row', storedRefs: [row.id, 'catalog-row'], member: 'member-one', allowed: true },
+    { scenario: 'a new live exercise absent from the frozen assignment', frozenRef: 'catalog-row', liveRef: row.id, storedRefs: ['catalog-row', row.id], member: 'member-one', allowed: false },
+    { scenario: 'an archived exercise absent from the frozen assignment', frozenRef: 'catalog-row', liveRef: 'catalog-current', storedRefs: ['catalog-row', row.id, 'catalog-current'], member: 'member-one', allowed: false },
+    { scenario: 'a legacy assignment without a snapshot', frozenRef: null, liveRef: row.id, storedRefs: [row.id], member: 'member-one', allowed: true },
+    { scenario: 'another member assignment', frozenRef: row.id, liveRef: row.id, storedRefs: [row.id], member: 'member-two', allowed: false },
   ])('B-LS-WORKOUT-6 honors $scenario when minting signed video', async ({
-    frozenRef, liveRef, member, allowed,
+    frozenRef, liveRef, storedRefs, member, allowed,
   }) => {
     const assignment = {
       id: 'assignment-one', client_id: member, workout_plan_id: 'plan-one',
@@ -51,11 +52,13 @@ describe('LS-WORKOUTB signed media follows the prescription actually presented',
     const prisma = {
       exerciseCatalogItem: { findFirst: jest.fn(async () => row) },
       clientWorkoutAssignment: {
-        // Model the current ORM predicate and expose complete scoped rows for
-        // a repair that reads the same visible-assignment basis as the presenter.
+        // setExercises soft-archives old rows, it does not delete them.
+        // Unlike the visible read join, the current mint predicate has no
+        // archived_at filter and can match any retained plan revision.
         findFirst: jest.fn(async ({ where }: AssignmentLookup) =>
           memberMatches(where) &&
-          where.workout_plan?.exercises.some.exercise_external_id.in.includes(liveRef)
+          storedRefs.some((ref) =>
+            where.workout_plan?.exercises.some.exercise_external_id.in.includes(ref))
             ? assignment : null),
         findMany: jest.fn(async ({ where }: AssignmentLookup) =>
           memberMatches(where) ? [assignment] : []),
