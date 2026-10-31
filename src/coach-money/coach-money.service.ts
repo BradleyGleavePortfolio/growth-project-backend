@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
-import { DUNNING_V2_CADENCE_DAYS } from '../checkout/dunning-v2/dunning-v2.cadence';
 import { isCoachAccountHoldReason } from '../checkout/dunning-v2/coach-account-hold';
 import { movedAwayClientIds } from '../checkout/moved-client-money';
 import { movedAwayDates } from '../checkout/plan-renewal/switch-tell';
@@ -28,8 +28,14 @@ export const MONEY_CHARGES_PAGE_MAX = 50;
 
 const DAY_MS = 86_400_000;
 
-/** Purchase statuses that mean "the client's payment did not go through". */
-export const FAILED_PURCHASE_STATUSES = ['past_due', 'payment_failed'] as const;
+/**
+ * Purchase statuses that mean "the client's payment did not go through".
+ * PF-5-BE (LS-PAYFAIL B9): 'unpaid' is the status the webhook writes when
+ * Stripe stops trying an invoice; it is a failed collection too. The one list
+ * for the to-do list, the failed charge filter, the charge state and the
+ * coach's failed-payments route.
+ */
+export const FAILED_PURCHASE_STATUSES = ['past_due', 'payment_failed', 'unpaid'] as const;
 /** Purchase statuses that mean "the client paid and access is live". */
 export const PAID_PURCHASE_STATUSES = ['paid', 'active'] as const;
 /** Dispute statuses that still need the coach's attention. */
@@ -206,8 +212,11 @@ export interface MoneyAttentionItem {
   failed_payment?: {
     purchase_id: string;
     package_name: string;
+    /** Bank tries so far; 0 = not known (FR-1191R2: always 0, see getAttention). */
     attempt: number;
+    /** The bank's try limit; 0 = not known, so the phone shows no "Try n of m". */
     max_attempts: number;
+    /** The card's real next try when the server knows it, else null (PF-5-BE B8). */
     next_retry_at: string | null;
     locked_out_at: string | null;
     /**
@@ -276,6 +285,17 @@ export const PAID_WHERE = {
     { disputes: { none: { status: { in: [...LOST_DISPUTE_STATUSES] } } } },
     BILLED_WHERE,
   ],
+};
+
+/**
+ * FR-1191 (LS-1191 B1): the `paid` charge filter is today's state, so a sale
+ * whose current collection failed (an earlier invoice paid, the renewal did
+ * not) is a Failed row, not a Paid one. PAID_WHERE and BILLED_WHERE stay the
+ * historical "this sale was paid once" evidence for MRR, churn, new and
+ * returning clients.
+ */
+export const PAID_NOW_WHERE = {
+  AND: [...PAID_WHERE.AND, { status: { notIn: [...FAILED_PURCHASE_STATUSES] } }],
 };
 
 /** `refunded` filter: money went back by refund OR by a lost chargeback. */
@@ -1563,7 +1583,7 @@ export class CoachMoneyService {
     );
     const statusWhere =
       opts.status === 'paid'
-        ? PAID_WHERE
+        ? PAID_NOW_WHERE
         : opts.status === 'failed'
           ? { status: { in: [...FAILED_PURCHASE_STATUSES] } }
           : opts.status === 'refunded'
@@ -1571,13 +1591,23 @@ export class CoachMoneyService {
             : opts.status === 'disputed'
               ? DISPUTED_WHERE
               : {};
-    const rows = await this.prisma.clientPurchase.findMany({
-      where: { coach_user_id: coachId, source: null, amount_cents: { gt: 0 }, ...statusWhere },
-      orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
-      take: limit + 1,
-      ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
-      select: this.chargeSelect(),
-    });
+    const find = (where: Prisma.ClientPurchaseWhereInput) =>
+      this.prisma.clientPurchase.findMany({
+        where: { coach_user_id: coachId, source: null, amount_cents: { gt: 0 }, ...where },
+        orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+        take: limit + 1,
+        ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
+        select: this.chargeSelect(),
+      });
+    let rows = await find(statusWhere);
+    // FR-1191 (LO-1191 C1): `paid` with limit 1 and no cursor is the phone's
+    // setup checklist asking "was this coach ever paid?" (mobile
+    // src/lib/coachSetup/setupStatus.ts). When every paid sale's renewal is
+    // failing now, that answer is still yes, so it falls back to the
+    // historical evidence; the Money Paid list (20 a page) never takes this.
+    if (opts.status === 'paid' && limit === 1 && !opts.cursor && rows.length === 0) {
+      rows = await find(PAID_WHERE);
+    }
     const hasMore = rows.length > limit;
     const page = hasMore ? rows.slice(0, limit) : rows;
     const moved = await movedAwayClientIds(this.prisma, coachId, page.map((r) => r.client?.id));
@@ -1744,9 +1774,6 @@ export class CoachMoneyService {
           dunning: {
             select: {
               status: true,
-              failure_count: true,
-              step_index: true,
-              next_attempt_at: true,
               locked_out_at: true,
               last_failed_amount_cents: true,
               last_failure_at: true,
@@ -1801,7 +1828,6 @@ export class CoachMoneyService {
       ...failed.map((p) => p.client?.id),
       ...disputes.map((d) => d.purchase?.client?.id),
     ]);
-    const maxAttempts = DUNNING_V2_CADENCE_DAYS.length;
     const items: MoneyAttentionItem[] = [];
     for (const p of failed) {
       if (p.client && moved.has(p.client.id)) continue;
@@ -1809,10 +1835,14 @@ export class CoachMoneyService {
       // PF-7-BE (R7): a renewal waiting on the coach's own Stripe account is
       // not the client's failed payment; the coach sees it only as PF-W9.
       if (d?.status === 'active' && isCoachAccountHoldReason(d.last_failure_reason)) continue;
-      const attempt = Math.min(
-        maxAttempts,
-        Math.max(1, d ? Math.max(d.failure_count, d.step_index + 1) : 1),
-      );
+      // FR-1191R2 (LS-1191R2B B1): no "Try n of m". The server has no record
+      // of the bank charges that really ran on this invoice, nor of Stripe's
+      // real retry limit. last_attempt_number is Stripe's invoice.attempt_count,
+      // a retry-schedule counter: a manual payment after a card update does not
+      // raise it, and skipped hard-decline slots do. failure_count counts
+      // failure webhooks; the reminder cadence is not a bank limit. So every
+      // row sends the unknown form (attempt 0, max_attempts 0), which the
+      // phone's reader shows with no try line.
       items.push({
         kind: 'failed_payment',
         id: `failed:${p.id}`,
@@ -1823,9 +1853,12 @@ export class CoachMoneyService {
         failed_payment: {
           purchase_id: p.id,
           package_name: p.package?.name ?? 'Package',
-          attempt,
-          max_attempts: maxAttempts,
-          next_retry_at: d?.next_attempt_at ? d.next_attempt_at.toISOString() : null,
+          attempt: 0,
+          max_attempts: 0,
+          // PF-5-BE (LS-PAYFAIL B8): the card's real next try. The server does
+          // not store Stripe's next_payment_attempt; DunningState.next_attempt_at
+          // is the next reminder email, never a card try. So: unknown, null.
+          next_retry_at: null,
           locked_out_at: d?.locked_out_at ? d.locked_out_at.toISOString() : null,
           card_update_link_sent_at: d?.attempts[0]?.sent_at
             ? d.attempts[0].sent_at.toISOString()

@@ -38,7 +38,13 @@ export interface BriefContext {
   paid_today_count: number;
   revenue_today_cents: number;
   renewals_upcoming_7d: number;
+  // PF-5-BE: active dunning told apart in three states. dunning_in_progress
+  // counts only plans inside the 10 days (TGP is reminding the client).
   dunning_in_progress: number;
+  // Plans locked at Day 10 (access comes back when the client pays).
+  dunning_locked?: number;
+  // Plans on hold after a full refund or a bank dispute (only the coach restarts).
+  dunning_on_hold?: number;
   // PF-7-BE: renewals waiting on this coach's Stripe account (PF-W9); set only when > 0.
   coach_account_waiting?: number;
 
@@ -90,8 +96,14 @@ export interface BriefContextHeadCoach {
   mrr_projected_cents: number;
   paid_today_count: number;
 
+  // PF-5-BE: inside the 10 days only, with the failed amount.
   dunning_in_progress: number;
   dunning_amount_cents: number;
+  // Locked at Day 10, with the failed amount (the to-do item counts these too).
+  dunning_locked?: number;
+  dunning_locked_amount_cents?: number;
+  // On hold after a full refund or a bank dispute.
+  dunning_on_hold?: number;
   // PF-7-BE: renewals waiting on this coach's Stripe account (PF-W9); set only when > 0.
   coach_account_waiting?: number;
 
