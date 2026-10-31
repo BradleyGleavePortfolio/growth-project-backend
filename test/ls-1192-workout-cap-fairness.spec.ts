@@ -66,7 +66,7 @@ function rig() {
   return { world, send, direct, delivery, advance, communityBurst, workout };
 }
 
-describe('LS-1192 B3: workout own-time exception does not permit night delivery after ordinary burst deferrals', () => {
+describe('LS-1192 independent workout cap-fairness control', () => {
   beforeEach(() => {
     jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'setTimeout', 'setInterval', 'queueMicrotask'] });
   });
@@ -81,7 +81,7 @@ describe('LS-1192 B3: workout own-time exception does not permit night delivery 
     expect(r.world.rows[0].status).toBe('sent');
   });
 
-  it('B3: an eligible 20:00 workout reminder delayed by normal Community bursts stays held at 21:00', async () => {
+  it('an eligible 20:00 workout takes the first cap opening ahead of newer Community messages', async () => {
     const r = rig();
     r.advance('02:55:00');
     await r.communityBurst('first');
@@ -90,28 +90,22 @@ describe('LS-1192 B3: workout own-time exception does not permit night delivery 
     await r.workout();
     await r.delivery.drain();
     const reminder = r.world.rows.find((row) => row.kind === NotificationKind.WORKOUT_REMINDER);
-    expect(reminder).toMatchObject({ status: 'pending', not_before: atLocal('03:10:00') });
-    const deferrals = [
-      ['03:05:01', '03:10:00', '03:20:00'],
-      ['03:15:02', '03:20:00', '03:30:00'],
-      ['03:25:03', '03:30:00', '03:40:00'],
-      ['03:35:04', '03:40:00', '03:50:00'],
-      ['03:45:05', '03:50:00', '04:00:00'],
-    ];
-    for (const [index, [burstAt, drainAt, nextAt]] of deferrals.entries()) {
-      r.advance(burstAt);
-      await r.communityBurst(`phase-${index}`);
-      expect(r.send).toHaveBeenCalledTimes((index + 2) * 8);
-      r.advance(drainAt);
-      await r.delivery.drain();
-      expect(reminder).toMatchObject({ status: 'pending', not_before: atLocal(nextAt) });
-    }
+    expect(reminder).toMatchObject({ status: 'pending', not_before: atLocal('03:05:00') });
+    r.advance('03:05:01');
+    await r.communityBurst('second');
+    expect(r.send).toHaveBeenCalledTimes(16);
+    expect(reminder).toMatchObject({ status: 'sent', sent_at: atLocal('03:05:01') });
+    expect(r.send.mock.calls.flatMap((call) => call[0])).toContainEqual(expect.objectContaining({
+      title: 'Review workout', body: 'Review evening reminder',
+    }));
     r.send.mockClear();
 
-    r.advance('04:00:00'); // 21:00 Los Angeles: only the reminder is due; burst window is now clear.
+    r.advance('04:00:00'); // 21:00 Los Angeles: the remaining newer Community row must wait.
     await r.delivery.drain();
     expect(r.direct).not.toHaveBeenCalled();
     expect(r.send).not.toHaveBeenCalled();
-    expect(reminder).toMatchObject({ status: 'pending' });
+    expect(r.world.rows.filter((row) => row.status === 'pending')).toHaveLength(1);
+    expect(r.world.rows.find((row) => row.status === 'pending')?.not_before)
+      .toEqual(atLocal('15:00:00'));
   });
 });
