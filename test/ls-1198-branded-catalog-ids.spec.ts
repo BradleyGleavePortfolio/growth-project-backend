@@ -11,7 +11,7 @@ const eggs = JSON.parse(
   readFileSync(join(__dirname, 'fixtures/lo-food-usda-eggs.json'), 'utf8'),
 ) as Array<{ fdcId: number; brandOwner?: string }>;
 
-describe('LS-1198 B1: distinct branded catalog IDs remain selectable', () => {
+describe('LS-1198 independent control: distinct branded catalog IDs remain selectable', () => {
   const oldKey = process.env.USDA_API_KEY;
 
   beforeEach(() => {
