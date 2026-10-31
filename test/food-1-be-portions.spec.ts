@@ -49,7 +49,7 @@ afterEach(() => {
 
 async function searchOne(food: Row, source: 'usda' | 'off'): Promise<FoodResult> {
   fetchSpy = jest.spyOn(global, 'fetch').mockImplementation(async (url: RequestInfo | URL) =>
-    String(url).includes('api.nal.usda.gov')
+    new URL(String(url)).hostname === 'api.nal.usda.gov'
       ? answer({ foods: source === 'usda' ? [food] : [] })
       : answer({ products: source === 'off' ? [food] : [] }),
   );

@@ -28,7 +28,7 @@ describe('LO-FOOD B3 cup weight', () => {
     process.env.USDA_API_KEY = 'test-key';
     fetchSpy = jest.spyOn(global, 'fetch').mockImplementation(async (url: RequestInfo | URL) => stub<Response>({
       ok: true,
-      json: async () => (String(url).includes('openfoodfacts.org') ? { products: [QUAKER_OATS] } : { foods: [] }),
+      json: async () => (new URL(String(url)).hostname === 'world.openfoodfacts.org' ? { products: [QUAKER_OATS] } : { foods: [] }),
     }));
   });
 

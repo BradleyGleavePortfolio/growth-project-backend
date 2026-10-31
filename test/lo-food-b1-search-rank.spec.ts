@@ -25,7 +25,7 @@ describe('LO-FOOD B1 food search order', () => {
     process.env.USDA_API_KEY = 'test-key';
     fetchSpy = jest.spyOn(global, 'fetch').mockImplementation(async (url: RequestInfo | URL) => stub<Response>({
       ok: true,
-      json: async () => (String(url).includes('api.nal.usda.gov') ? { foods: usdaEggs } : { products: [] }),
+      json: async () => (new URL(String(url)).hostname === 'api.nal.usda.gov' ? { foods: usdaEggs } : { products: [] }),
     }));
   });
 

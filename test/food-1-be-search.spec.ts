@@ -60,7 +60,7 @@ function upstreams(usda: Row[], off: Row[]) {
     stub<Response>({
       ok: true,
       status: 200,
-      json: async () => (String(url).includes('api.nal.usda.gov') ? { foods: usda } : { products: off }),
+      json: async () => (new URL(String(url)).hostname === 'api.nal.usda.gov' ? { foods: usda } : { products: off }),
     }),
   );
 }
@@ -180,7 +180,7 @@ describe('R4: the search cache keeps no upstream failure', () => {
   ])('after $label the next search asks again and finds the food', async ({ failing, fail }) => {
     let down = true;
     fetchSpy = jest.spyOn(global, 'fetch').mockImplementation(async (url: RequestInfo | URL) => {
-      const source = String(url).includes('api.nal.usda.gov') ? 'usda' : 'off';
+      const source = new URL(String(url)).hostname === 'api.nal.usda.gov' ? 'usda' : 'off';
       if (down && (failing === 'both' || failing === source)) return fail();
       return stub<Response>({ ok: true, status: 200, json: async () => (source === 'usda' ? { foods: [] } : { products: [banana] }) });
     });
