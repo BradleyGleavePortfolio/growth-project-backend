@@ -30,6 +30,7 @@ import {
 import {
   CommunityCohortResponse,
   CommunityCohortResponseSchema,
+  spacePurpose,
 } from './dto/community-cohort.dto';
 
 const FORBIDDEN_WORKSPACE = {
@@ -344,6 +345,7 @@ export class CommunityService {
         kind: c.kind,
         posting_policy: c.posting_policy,
         visibility: c.visibility,
+        description: spacePurpose(c.description),
         member_count: (await membersNow(this.prisma, c)).length,
         my_role: role,
         unread_count: unread.get(c.id) ?? 0,
@@ -384,6 +386,7 @@ export class CommunityService {
       kind: cohort.kind,
       posting_policy: cohort.posting_policy,
       visibility: cohort.visibility,
+      description: spacePurpose(cohort.description),
       package_ids: coachView ? cohort.packages.map((l) => l.package_id) : null, // C6-ACCESS: coach only
       member_count: (await membersNow(this.prisma, cohort)).length,
       created_at: cohort.created_at.toISOString(),
