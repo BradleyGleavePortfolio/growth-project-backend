@@ -39,7 +39,7 @@ import { describeFailure } from '../../observability/log-pii';
 import { usableTimeZone } from '../../notifications/local-time';
 import { ConsentScope, ConsentService } from '../../consent/consent.service';
 import { coachSharingCheck } from '../../consent/coach-sharing-gate';
-import { inBlockWith } from '../../messaging/block-pair';
+import { countedClients, countedMessagesFor } from '../../common/count-rule';
 import {
   DUNNING_V2_REVERSAL_REASON,
   FULL_REFUND_PAUSE_REASON,
@@ -1242,6 +1242,9 @@ export class CoachBriefService {
         where: {
           client_id: { in: clientIds },
           ...ownThreads(coachId, briefMode),
+          // COUNT-DELETED-BE: a deleted message, or one whose author is in a
+          // block with this coach either way (LS-1197 B1), is no unread thread.
+          ...countedMessagesFor(coachId),
           read_at: null,
           // The message is unread by anyone with coach-side access AND
           // the sender is NOT the coach reading this brief — i.e. the
@@ -1330,15 +1333,14 @@ export class CoachBriefService {
       { client_id: string; client_name: string; message_preview: string; occurred_at: Date }
     >();
     // FX-1141 (Opus B2): a chat in a block either way gives no brief row, no
-    // preview and no count, and its words never reach the brief's prompt.
-    const blockedPairs = await inBlockWith(
-      this.prisma,
-      coachId,
-      unreadMessagesRaw.flatMap((m) => (m.client_id ? [m.client_id] : [])),
+    // preview and no count, and its words never reach the brief's prompt
+    // (the count rule, common/count-rule.ts).
+    const counted = new Set(
+      await countedClients(this.prisma, coachId, unreadMessagesRaw.flatMap((m) => (m.client_id ? [m.client_id] : []))),
     );
     for (const m of unreadMessagesRaw) {
       if (!m.client_id || threadByClient.has(m.client_id)) continue;
-      if (blockedPairs.has(m.client_id)) continue;
+      if (!counted.has(m.client_id)) continue;
       // Only the thread with the client's current coach (owner decision 4).
       if (m.coach_id !== m.client?.coach_id) continue;
       threadByClient.set(m.client_id, {
@@ -2570,6 +2572,11 @@ export class CoachBriefService {
     const found = await this.prisma.coachMessage.findMany({
       where: {
         NOT: { sender_id: coachId },
+        // COUNT-DELETED-BE: a deleted voice note has a null body like a live
+        // one, so only deleted_at drops its "(voice message)" row (count rule);
+        // a row whose author is now in a block with this coach either way is
+        // not found either, so its stored words drop (LS-1197 B1).
+        ...countedMessagesFor(coachId),
         OR: asked.map((m) => ({
           client_id: m.client_id,
           AND: [
@@ -2589,13 +2596,13 @@ export class CoachBriefService {
     });
     // The same text the item's detail was cut from (aggregateSoloContext, buildActionItems).
     const inThread = new Set(found.map((m) => `${m.client_id}\n${briefPreview(m).slice(0, 80)}`));
-    // FX-1141 (Opus B2): a stored brief drops the row of a chat now in a block.
-    const blocked = await inBlockWith(this.prisma, coachId, asked.map((m) => m.client_id));
+    // FX-1141 (Opus B2): a stored brief drops the row of a chat now in a block (count rule).
+    const counted = new Set(await countedClients(this.prisma, coachId, asked.map((m) => m.client_id)));
     return (items) =>
       Array.isArray(items)
         ? items.filter((i) => {
             const m = messageItem(i);
-            return !m || (!blocked.has(m.client_id) && inThread.has(`${m.client_id}\n${m.detail}`));
+            return !m || (counted.has(m.client_id) && inThread.has(`${m.client_id}\n${m.detail}`));
           })
         : items;
   }
