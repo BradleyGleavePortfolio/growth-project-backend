@@ -528,6 +528,20 @@ export class PushDeliveryService {
     return res.count === 1;
   }
 
+  /** Whether a due push is still owed by its sender's own check; 'unread' when a read fails (ruling R4). */
+  private async stillOwed(row: OutboxRow, context: OutboxContext | null): Promise<'owed' | 'ended' | 'unread'> {
+    if (row.kind === NotificationKind.PLAN_RENEWAL) {
+      let due: boolean;
+      try {
+        due = await planRenewalPushStillDue(this.prisma, row.user_id);
+      } catch {
+        return 'unread';
+      }
+      if (!due) return 'ended';
+    }
+    return context ? heldPushStillOwed(this.prisma, row.user_id, context, this.now()) : 'owed';
+  }
+
   async sendOne(row: OutboxRow): Promise<SendOutcome> {
     const context = asContext(row.context);
     let handedOff = false;
@@ -622,15 +636,12 @@ export class PushDeliveryService {
       }
       // RENEWAL-BE: a renewal push whose sequence stopped while it waited (the
       // client bought, moved, was archived or refunded) is not sent.
-      if (row.kind === NotificationKind.PLAN_RENEWAL && !(await planRenewalPushStillDue(this.prisma, row.user_id))) {
-        return await this.finish(row, 'dropped', 'obsolete');
-      }
-      // FR-1192R2: so is a payment reminder (to the client, or the coach's Day
-      // 7 alert) whose dunning cycle ended, a trial-ending push whose trial
+      // FR-1192R2: nor is a payment reminder (to the client, or the coach's
+      // Day 7 alert) whose dunning cycle ended, a trial-ending push whose trial
       // converted, ended or was canceled, or (FR-1192R3) a workout reminder
       // its sender would no longer send, by the sender's own check. A source
       // that could not be read waits for the next pass (ruling R4).
-      const owed = context ? await heldPushStillOwed(this.prisma, row.user_id, context, this.now()) : 'owed';
+      const owed = await this.stillOwed(row, context);
       if (owed === 'ended') {
         this.logger.log(`push dropped: row=${row.id} kind=${row.kind} reason=source-ended`);
         return await this.finish(row, 'dropped', 'obsolete');
