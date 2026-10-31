@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { DunningV2Service } from './dunning-v2.service';
+import { CoachAccountHoldService } from './coach-account-hold.service';
 import { dunningErrorCode } from './dunning-v2.safe-error';
 import { isDunningV2Enabled } from './dunning-v2.feature';
 import { DUNNING_V2_SWEEP_CRON_EXPRESSION } from './dunning-v2.cadence';
@@ -23,7 +24,11 @@ export class DunningLockoutScheduler {
   private readonly logger = new Logger(DunningLockoutScheduler.name);
   private running = false;
 
-  constructor(private readonly dunningV2: DunningV2Service) {}
+  constructor(
+    private readonly dunningV2: DunningV2Service,
+    // PF-7-BE: renewals waiting on the coach's Stripe account, same hour.
+    @Optional() private readonly coachHold?: CoachAccountHoldService,
+  ) {}
 
   @Cron(DUNNING_V2_SWEEP_CRON_EXPRESSION, {
     name: 'dunning-v2-sweep',
@@ -44,6 +49,14 @@ export class DunningLockoutScheduler {
       this.logger.log(JSON.stringify({ event: 'dunning_v2.sweep_completed', ...out }));
     } catch (err: unknown) {
       this.logger.error(`dunning v2 sweep: fatal error: ${dunningErrorCode(err)}`);
+    }
+    try {
+      if (this.coachHold) {
+        const held = await this.coachHold.runSweep();
+        this.logger.log(JSON.stringify({ event: 'dunning_v2.coach_hold_sweep', ...held }));
+      }
+    } catch (err: unknown) {
+      this.logger.error(`coach hold sweep: fatal error: ${dunningErrorCode(err)}`);
     } finally {
       this.running = false;
     }

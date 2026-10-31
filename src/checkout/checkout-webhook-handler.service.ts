@@ -9,6 +9,7 @@ import { PurchaseFanoutService } from '../packages/purchase-fanout.service';
 import { PrismaService } from '../prisma.service';
 import { DunningService } from './dunning.service';
 import { DunningV2Service } from './dunning-v2/dunning-v2.service';
+import { CoachAccountHoldService } from './dunning-v2/coach-account-hold.service';
 import { DUNNING_V2_GRACE_STATUSES, DunningWebhookRetryError } from './dunning-v2/dunning-grace';
 import { isDunningV2Enabled } from './dunning-v2/dunning-v2.feature';
 import { dunningErrorCode } from './dunning-v2/dunning-v2.safe-error';
@@ -498,6 +499,16 @@ export interface CheckoutWebhookResult {
 // FOR UPDATE lock) is open. BillingService calls `prefetchForOuterTx(event)`
 // before the tx and threads the result through `handle(event, tx, prefetched)`.
 export interface CheckoutWebhookPrefetch {
+  // PF-7-BE: invoice.payment_failed — a fresh read of the coach's Stripe
+  // account through the one readiness rule, done before the outer tx. true =
+  // can take payments; false = can't; null = no fresh answer (waits);
+  // undefined = not read (hold switch off).
+  coachAccountReady?: boolean | null;
+  // FR-1195 (LS-1195 B2): invoice.paid on a held renewal — the purchase's
+  // other renewal invoices still unpaid, read before the outer tx. null = no
+  // fresh answer (the delivery fails and Stripe sends it again); undefined =
+  // the renewal is not held (or not read).
+  heldInvoicesUnpaid?: string[] | null;
   // The renewed Stripe subscription for an invoice.paid/payment_succeeded
   // event, resolved out-of-tx. null when not applicable or the lookup failed
   // (the handler then falls back to its own out-of-tx retrieve only when no
@@ -595,6 +606,8 @@ export class CheckoutWebhookHandlerService {
     @Optional() private trialNotices?: TrialNoticeService,
     // B-TRIALS-3 (B-656-1) — durable cancellation of a second trial.
     @Optional() private trialConflicts?: TrialConflictService,
+    // PF-7-BE — a renewal failing on the coach's own account waits.
+    @Optional() private coachHold?: CoachAccountHoldService,
   ) {}
 
   /**
@@ -882,7 +895,7 @@ export class CheckoutWebhookHandlerService {
     ) {
       return {};
     }
-    const inv = event.data.object as { subscription?: string | null };
+    const inv = event.data.object as { id?: string; subscription?: string | null };
     if (!inv?.subscription) return {};
     // Only pre-resolve when this invoice maps to a package purchase we own;
     // otherwise the SaaS-coach-subscription path (BillingService) handles it
@@ -892,16 +905,23 @@ export class CheckoutWebhookHandlerService {
     });
     if (!purchase) return {};
     const invoiceRevision = lifecycleRevision(purchase);
+    // FR-1195 (LS-1195 B2): never throws; undefined unless the renewal is held.
+    const heldInvoicesUnpaid = await this.coachHold?.unpaidHeldInvoices(
+      purchase.id,
+      inv.subscription,
+      inv.id,
+    );
+    const held = heldInvoicesUnpaid === undefined ? {} : { heldInvoicesUnpaid };
     try {
       const invoiceSubscription = await this.stripeConnect.retrieveSubscription(
         inv.subscription,
       );
-      return { invoiceSubscription, invoiceRevision };
+      return { invoiceSubscription, invoiceRevision, ...held };
     } catch (err) {
       this.logger.warn(
         `prefetchForOuterTx: retrieveSubscription failed for sub=${inv.subscription} error=${errorLabel(err)}`,
       );
-      return { invoiceSubscription: null };
+      return { invoiceSubscription: null, ...held };
     }
   }
 
@@ -945,24 +965,32 @@ export class CheckoutWebhookHandlerService {
    * a newer invoice, or after the subscription ended must never open dunning,
    * and a payment that lands after these reads is seen under the lock.
    */
+  /** PF-7-BE: fresh coach-account readiness; undefined while the hold is off. Never throws. */
+  private async readCoachAccount(coachUserId: string): Promise<boolean | null | undefined> {
+    if (!this.coachHold?.enabled()) return undefined;
+    return this.coachHold.freshCoachAccountReady(coachUserId);
+  }
+
   private async prefetchFailedInvoice(event: StripeEvent): Promise<CheckoutWebhookPrefetch> {
     const inv = event.data.object as { id?: unknown; subscription?: unknown };
     if (typeof inv.id !== 'string' || typeof inv.subscription !== 'string') return {};
     try {
       const purchase = await this.prisma.clientPurchase.findUnique({
         where: { stripe_subscription_id: inv.subscription },
-        select: { id: true, updated_at: true, status: true },
+        select: { id: true, updated_at: true, status: true, coach_user_id: true },
       });
       if (!purchase) return {};
       const version = writeVersion(purchase);
-      const [live, sub] = await Promise.all([
+      const [live, sub, coachAccountReady] = await Promise.all([
         this.stripeConnect.retrieveInvoice(inv.id),
         this.stripeConnect.retrieveSubscription(inv.subscription),
+        this.readCoachAccount(purchase.coach_user_id),
       ]);
       const latest: unknown = sub.latest_invoice;
       const latestId: unknown =
         latest && typeof latest === 'object' ? Reflect.get(latest, 'id') : latest;
       return {
+        coachAccountReady,
         failedInvoiceStatus: typeof live.status === 'string' ? live.status : 'open',
         failedInvoiceAuthority: {
           version,
@@ -2726,7 +2754,11 @@ export class CheckoutWebhookHandlerService {
       invoice_charge_id: inv.charge ?? null,
     });
     // Phase 5 — clear any active dunning window (v1 + v2).
-    await this.resolveDunningOnPaid(updated.id, tx);
+    await this.resolveDunningOnPaid(updated.id, tx, {
+      purchase: updated,
+      invoiceId: inv.id ?? null,
+      unpaid: prefetched?.heldInvoicesUnpaid,
+    });
     return {
       claimed: true,
       purchase_id: purchase.id,
@@ -2764,7 +2796,34 @@ export class CheckoutWebhookHandlerService {
     return state?.status === 'active' && state.client_canceled_at != null;
   }
 
-  private async resolveDunningOnPaid(purchaseId: string, tx?: WebhookTx): Promise<void> {
+  private async resolveDunningOnPaid(
+    purchaseId: string,
+    tx?: WebhookTx,
+    paid?: {
+      purchase: { id: string; stripe_subscription_id: string | null };
+      invoiceId: string | null;
+      unpaid: string[] | null | undefined;
+    },
+  ): Promise<void> {
+    // FR-1195 (LS-1195 B2): a renewal waiting on the coach's account leaves
+    // the hold only when none of its renewal invoices is left unpaid; the
+    // sweep pays the rest. An unknown answer never ends it: the delivery
+    // fails and Stripe redelivers it.
+    if (this.coachHold && paid) {
+      const verdict = await this.coachHold.onRenewalPaid(
+        paid.purchase,
+        paid.invoiceId,
+        paid.unpaid,
+        tx,
+      );
+      if (verdict === 'unknown') throw new DunningWebhookRetryError('COACH_HOLD_CHECK_FAILED');
+      if (verdict === 'keep') {
+        this.logger.log(
+          JSON.stringify({ event: 'checkout_webhook.coach_hold_kept_on_paid', purchase_id: purchaseId }),
+        );
+        return;
+      }
+    }
     // S-DUNNING-R3 (B-628-8): a renewal payment does not settle a disputed
     // payment; the dispute cycle stays open until the dispute closes.
     if (this.dunningV2) {
@@ -2964,6 +3023,16 @@ export class CheckoutWebhookHandlerService {
     if (this.dunningV2) {
       const v2 = this.dunningV2;
       try {
+        // PF-7-BE: the coach's account can't take payments (fresh read) —
+        // the renewal waits; no ten-day cycle and nothing to the client.
+        const ready = prefetched
+          ? prefetched.coachAccountReady
+          : tx
+            ? undefined
+            : await this.readCoachAccount(updated.coach_user_id);
+        if (this.coachHold && (await this.coachHold.onRenewalFailed(updated, ready, db))) {
+          return { claimed: true, purchase_id: purchase.id };
+        }
         const claim = await v2.recordPaymentFailed(updated.id);
         if (claim) void v2.dispatchClaim(claim);
       } catch (err) {

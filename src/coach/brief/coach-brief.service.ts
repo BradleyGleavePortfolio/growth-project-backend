@@ -41,9 +41,16 @@ import { ConsentScope, ConsentService } from '../../consent/consent.service';
 import { coachSharingCheck } from '../../consent/coach-sharing-gate';
 import { inBlockWith } from '../../messaging/block-pair';
 import {
+  COACH_ACCOUNT_HOLD_REASON,
+  coachAccountWaitingLine,
+} from '../../checkout/dunning-v2/coach-account-hold';
+import {
   DUNNING_V2_REVERSAL_REASON,
   FULL_REFUND_PAUSE_REASON,
 } from '../../checkout/dunning-v2/dunning-v2.service';
+
+// PF-7-BE (R7): a renewal waiting on the coach's Stripe account (NULL-safe).
+const HELD_SQL = Prisma.sql`ds."last_failure_reason" IS NOT DISTINCT FROM ${COACH_ACCOUNT_HOLD_REASON}`;
 
 /**
  * Sentinel error surfaced by `markBriefRead` when the briefId either does
@@ -145,15 +152,18 @@ function plural(n: number, one: string, many: string): string {
 // `count` / `total` keep their old column names for the inside-the-10-days row.
 export function dunningBriefSql(scope: Prisma.Sql): Prisma.Sql {
   const onHold = Prisma.sql`COALESCE(ds."last_failure_reason", '') IN (${DUNNING_V2_REVERSAL_REASON}, ${FULL_REFUND_PAUSE_REASON})`;
-  const inWindow = Prisma.sql`NOT (${onHold}) AND ds."locked_out_at" IS NULL AND ds."client_canceled_at" IS NULL`;
-  const locked = Prisma.sql`NOT (${onHold}) AND ds."locked_out_at" IS NOT NULL`;
+  // PF-7-BE (R7): a renewal waiting on the coach's Stripe account is neither
+  // a failed payment nor a lock; it is counted apart as `waiting` (PF-W9 only).
+  const inWindow = Prisma.sql`NOT (${onHold}) AND ds."locked_out_at" IS NULL AND ds."client_canceled_at" IS NULL AND NOT (${HELD_SQL})`;
+  const locked = Prisma.sql`NOT (${onHold}) AND ds."locked_out_at" IS NOT NULL AND NOT (${HELD_SQL})`;
   return Prisma.sql`
     SELECT
       COUNT(*) FILTER (WHERE ${inWindow})::bigint AS count,
       COALESCE(SUM(ds."last_failed_amount_cents") FILTER (WHERE ${inWindow}), 0)::bigint AS total,
       COUNT(*) FILTER (WHERE ${locked})::bigint AS locked,
       COALESCE(SUM(ds."last_failed_amount_cents") FILTER (WHERE ${locked}), 0)::bigint AS locked_total,
-      COUNT(*) FILTER (WHERE ${onHold})::bigint AS on_hold
+      COUNT(*) FILTER (WHERE ${onHold})::bigint AS on_hold,
+      COUNT(*) FILTER (WHERE ${HELD_SQL} AND ds."client_canceled_at" IS NULL)::bigint AS waiting
     FROM "DunningState" ds
     JOIN "ClientPurchase" cp ON cp."id" = ds."purchase_id"
     WHERE ds."status" = 'active'
@@ -167,6 +177,7 @@ export interface DunningBriefRow {
   locked?: bigint | number | null;
   locked_total?: bigint | number | null;
   on_hold?: bigint | number | null;
+  waiting?: bigint | number | null;
 }
 
 export function readDunningBrief(row: DunningBriefRow | undefined): {
@@ -538,7 +549,33 @@ export function buildFallbackNarrative(
   if (narrative.length > BRIEF_MAX_NARRATIVE_CHARS) {
     narrative = narrative.slice(0, BRIEF_MAX_NARRATIVE_CHARS);
   }
-  return narrative;
+  return withCoachAccountWaiting(narrative, ctx);
+}
+
+/**
+ * PF-7-BE (R4/R7): PF-W9 in every brief while a renewal waits on the coach's
+ * Stripe account, as the second sentence (after the greeting), the rest cut
+ * by whole sentences to stay within the cap. Names no client.
+ */
+export function withCoachAccountWaiting(
+  narrative: string,
+  ctx: Pick<BriefContext | BriefContextHeadCoach, 'coach_account_waiting'>,
+): string {
+  const waiting = ctx.coach_account_waiting ?? 0;
+  if (!(waiting > 0)) return narrative;
+  const line = coachAccountWaitingLine(waiting);
+  if (narrative.includes(line)) return narrative;
+  const room = BRIEF_MAX_NARRATIVE_CHARS - line.length - 1;
+  const kept: string[] = [];
+  let length = 0;
+  for (const sentence of splitSentences(narrative)) {
+    const next = length === 0 ? sentence.length : length + 1 + sentence.length;
+    if (next > room) break;
+    kept.push(sentence);
+    length = next;
+  }
+  if (kept.length === 0) return line;
+  return [kept[0], line, ...kept.slice(1)].join(' ');
 }
 
 const FULL_DETAILS = 'The full details are below.';
@@ -1374,6 +1411,8 @@ export class CoachBriefService {
     });
 
     const dunning = readDunningBrief(dunningInProgressRaw[0]);
+    // PF-7-BE (R7): waiting renewals are counted apart, shown only as PF-W9.
+    const coachAccountWaiting = Number(dunningInProgressRaw[0]?.waiting ?? 0);
 
     const context: BriefContext = {
       brief_mode: 'solo_coach',
@@ -1388,6 +1427,7 @@ export class CoachBriefService {
       dunning_in_progress: dunning.inWindow,
       dunning_locked: dunning.locked,
       dunning_on_hold: dunning.onHold,
+      ...(coachAccountWaiting > 0 ? { coach_account_waiting: coachAccountWaiting } : {}),
       weight_logs_flagged: flaggedWeightLogs.length,
       unread_messages: unreadThreads.length,
       checkins_to_review: reviewCheckIns.length,
@@ -1670,6 +1710,7 @@ export class CoachBriefService {
     }
 
     const dunning = readDunningBrief(dunningStateRaw[0]);
+    const coachAccountWaiting = Number(dunningStateRaw[0]?.waiting ?? 0);
 
     // P1-4: sub-coach highlights derived from SubCoachAssignment, NOT
     // User.coach_id. Each sub-coach's active_clients = open assignments
@@ -1714,6 +1755,7 @@ export class CoachBriefService {
       dunning_locked: dunning.locked,
       dunning_locked_amount_cents: dunning.lockedCents,
       dunning_on_hold: dunning.onHold,
+      ...(coachAccountWaiting > 0 ? { coach_account_waiting: coachAccountWaiting } : {}),
       sub_coach_highlights: subCoachHighlights,
     };
 
@@ -1859,7 +1901,7 @@ export class CoachBriefService {
         paymentLines,
       );
       if (!violation) {
-        return { narrative: firstAttempt.narrative, generated_by: 'ai' };
+        return { narrative: withCoachAccountWaiting(firstAttempt.narrative, ctx), generated_by: 'ai' };
       }
       this.logger.warn(
         `CoachBrief Claude output failed contract (${violation}) for ${logRef}; attempting one repair`,
@@ -1880,7 +1922,10 @@ export class CoachBriefService {
           paymentLines,
         );
         if (!violation2) {
-          return { narrative: secondAttempt.narrative, generated_by: 'ai' };
+          return {
+            narrative: withCoachAccountWaiting(secondAttempt.narrative, ctx),
+            generated_by: 'ai',
+          };
         }
         this.logger.warn(
           `CoachBrief Claude repair attempt also failed contract (${violation2}) for ${logRef}; using fallback`,
