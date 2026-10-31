@@ -195,6 +195,8 @@ export function memberContentRelations(
 export interface SchemaModel {
   delegate: string;
   relations: Map<string, string>;
+  /** Every field's name (scalar and relation). */
+  fields: Set<string>;
 }
 
 /** Every model of the schema with its relation fields (FR-1185R4: a held argument is walked model by model). */
@@ -205,8 +207,12 @@ export function schemaModels(schemaPath = join(REPO_ROOT, 'prisma', 'schema.pris
   const out = new Map<string, SchemaModel>();
   for (const [, name, body] of blocks) {
     const relations = new Map<string, string>();
-    for (const m of body.matchAll(/^[ \t]+(\w+)[ \t]+(\w+)(\[\]|\?)?([ \t]|$)/gm)) if (names.has(m[2])) relations.set(m[1], m[2]);
-    out.set(name, { delegate: name[0].toLowerCase() + name.slice(1), relations });
+    const fields = new Set<string>();
+    for (const m of body.matchAll(/^[ \t]+(\w+)[ \t]+(\w+)(\[\]|\?)?([ \t]|$)/gm)) {
+      fields.add(m[1]);
+      if (names.has(m[2])) relations.set(m[1], m[2]);
+    }
+    out.set(name, { delegate: name[0].toLowerCase() + name.slice(1), relations, fields });
   }
   return out;
 }
@@ -872,6 +878,10 @@ function followHeldArguments(
   reach.add(ANY_MODEL);
   const targets = (model: string, key: string): string[] =>
     model === ANY_MODEL ? [...(anyRelations.get(key) ?? [])] : [models.get(model)?.relations.get(key)].filter((t): t is string => !!t);
+  // Prisma's scalar filter keys (StringFilter, IntFilter, DateTimeFilter, the list filters, Json filters).
+  const SCALAR_FILTER_KEYS = new Set(['equals', 'in', 'notIn', 'lt', 'lte', 'gt', 'gte', 'not', 'contains', 'startsWith',
+    'endsWith', 'mode', 'search', 'has', 'hasSome', 'hasEvery', 'isEmpty', 'path', 'string_contains', 'string_starts_with',
+    'string_ends_with', 'array_contains', 'array_starts_with', 'array_ends_with']);
   const isMember = (model: string) => Object.prototype.hasOwnProperty.call(MEMBER_CONTENT_MODELS, model);
 
   type Prop = { key?: string; value?: ts.Expression };
@@ -1324,8 +1334,15 @@ function followHeldArguments(
       };
       const whereKey = (model: string, key: string, value: ts.Expression | undefined): void => {
         if (key === 'AND' || key === 'OR' || key === 'NOT') return where(model, value);
+        // On ANY_MODEL a key is a relation only where its value can be a relation filter on that target: a plain
+        // value (`message: 'hello'`) or an object of scalar filter keys only, none a field of the target
+        // (`{ contains: q, mode }`), is a scalar field's filter. A value it cannot follow still counts (fail closed).
+        const shape = model === ANY_MODEL ? valueShape(value) : undefined;
+        const scalarFilter = (target: string): boolean => !!shape && !shape.unknown &&
+          shape.objs.every((o) => o.length > 0 && o.every((q) => q.key !== undefined && SCALAR_FILTER_KEYS.has(q.key) && !models.get(target)?.fields.has(q.key)));
         // a scalar field (no target): its value names no relation
         for (const target of targets(model, key)) {
+          if (scalarFilter(target)) continue;
           relation(target);
           // { some | none | every | is | isNot: where } or a to-one where without them
           each(target, valueShape(value), (t, k, v) => {
