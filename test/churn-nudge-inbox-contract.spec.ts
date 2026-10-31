@@ -111,6 +111,10 @@ function world(opts: { muted?: boolean; token?: string | null } = {}) {
   const db = {
     ...outbox.db,
     ...tx,
+    // The outbox worker's lease claim is raw SQL on PushOutbox; the rest is the service's own read.
+    $queryRaw: jest.fn(async (sql: TemplateStringsArray, ...values: unknown[]) =>
+      sql.join('').includes('"PushOutbox"') ? outbox.db.$queryRaw(sql, ...values) : tx.$queryRaw(),
+    ),
     churnIntervention: {
       ...tx.churnIntervention,
       findFirst: jest.fn(async (a: { where: Row }) =>

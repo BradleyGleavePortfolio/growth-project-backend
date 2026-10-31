@@ -212,7 +212,7 @@ describe('PF-3-BE: every direct sender waits for 08:00 in the recipient zone (KG
       const calls = src.split(/\.pushToUser\(/).slice(1);
       for (const call of calls) {
         const head = call.slice(0, 1400);
-        expect(`${f}: ${/dedupeKey/.test(head) && /kind:/.test(head)}`).toBe(`${f}: true`);
+        expect(`${f}: ${/dedupeKey/.test(head) && /\bkind[,:]/.test(head)}`).toBe(`${f}: true`);
       }
     }
   });
