@@ -32,12 +32,16 @@ describe('trial_ending notice through main notification and push senders', () =>
       notification: { create: jest.fn(async (a: { data: object }) => ({ id: 'n1', ...a.data })) },
     };
     const send = jest.fn(async (messages: unknown[]) => messages.map(() => ({ status: 'ok', id: 'ticket-1' })));
-    const delivery = new PushDeliveryService(
+    class Clocked extends PushDeliveryService {
+      protected now(): Date {
+        return at;
+      }
+    }
+    const delivery = new Clocked(
       stub<ConstructorParameters<typeof PushDeliveryService>[0]>(db),
       stub<ExpoPushClient>({ send, getReceipts: jest.fn(async () => ({})) }),
     );
     delivery.autoDrain = false;
-    jest.spyOn(delivery as unknown as { now(): Date }, 'now').mockReturnValue(at);
     const svc = new NotificationsService(
       stub<ConstructorParameters<typeof NotificationsService>[0]>(db),
       undefined,

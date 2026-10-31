@@ -335,7 +335,7 @@ describe('PF-3-BE: Mute all keeps passing safety and money as built', () => {
 describe('PF-3-BE: a held push re-checks blocks when it goes (KG-HELD-BLOCK-MESSAGE)', () => {
   it('a new-message push held overnight is not sent once the client blocks the sender', async () => {
     const r = rig(NIGHT, { [CLIENT]: inZone(LA) });
-    jest.spyOn(r.notifications, 'createNotification').mockResolvedValue(undefined as never); // inbox row: not under test
+    jest.spyOn(r.notifications, 'createNotification').mockResolvedValue(null); // inbox row: not under test
     const emitter = new MessageReceivedEmitter(r.notifications);
     await emitter.emit(CLIENT, { senderName: 'Morgan', threadId: CLIENT, senderId: COACH });
     expect(r.world.rows[0]).toMatchObject({
@@ -352,7 +352,7 @@ describe('PF-3-BE: a held push re-checks blocks when it goes (KG-HELD-BLOCK-MESS
 
   it('the same push goes when no block was made', async () => {
     const r = rig(NIGHT, { [CLIENT]: inZone(LA) });
-    jest.spyOn(r.notifications, 'createNotification').mockResolvedValue(undefined as never);
+    jest.spyOn(r.notifications, 'createNotification').mockResolvedValue(null);
     await new MessageReceivedEmitter(r.notifications).emit(CLIENT, {
       senderName: 'Morgan',
       threadId: CLIENT,
@@ -411,7 +411,7 @@ describe('PF-3-BE C-PF-2: a locked client registers and clears their push token'
     // No handler metadata: the route is not marked open to a coachless client.
     return stub<Parameters<DunningLockoutGuard['canActivate']>[0]>({
       switchToHttp: () => ({ getRequest: () => req }),
-    } as never);
+    });
   };
 
   it.each([
