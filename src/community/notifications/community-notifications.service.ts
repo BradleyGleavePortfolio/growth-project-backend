@@ -57,6 +57,12 @@ export interface SendCommunityPushInput {
    * column lands and the resolver starts reading the real value.
    */
   lockscreenPrivacy?: boolean;
+  /**
+   * PF-3-BE (KG-HELD-BLOCK-MESSAGE): the person who caused the push (sender,
+   * replier). A push held for quiet hours is not sent once either side has
+   * blocked the other.
+   */
+  otherUserId?: string;
 }
 
 type SkipReason = 'flag_off' | 'preference_off' | 'muted' | 'no_token';
@@ -244,8 +250,8 @@ export class CommunityNotificationsService {
         return;
       }
 
-      // 6) Deliver via the EXISTING Expo transport. data carries IDs + enum
-      // only — never user text.
+      // 6) Deliver via the one send path (the push outbox). data carries IDs
+      // + enum only — never user text.
       const result = await this.notifications.pushToUser(
         recipientId,
         title,
@@ -255,6 +261,16 @@ export class CommunityNotificationsService {
           category: defaults.category,
           target_type: targetType,
           target_id: targetId,
+        },
+        undefined,
+        // PF-3-BE: the one send path. Mute all alone, read again when it goes
+        // (step 2b); held to 08:00 in quiet hours; a block with the sender
+        // while it waited stops it; one replay key is posted once.
+        {
+          kind,
+          muteAllOnly: true,
+          dedupeKey: idempotencyKey,
+          ...(input.otherUserId ? { otherUserId: input.otherUserId } : {}),
         },
       );
 

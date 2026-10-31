@@ -500,6 +500,13 @@ export class CoachBriefScheduler implements OnModuleInit {
               actionScreen: 'CoachBrief',
             },
             abortController.signal,
+            // PF-3-BE: the one send path (Mute all read again when it goes,
+            // quiet hours); one brief day is posted once.
+            {
+              kind: 'coach_brief',
+              muteAllOnly: true,
+              dedupeKey: `coach_brief:${prefs.coach_id}:${briefDate}`,
+            },
           ),
           timeoutPromise,
         ]);

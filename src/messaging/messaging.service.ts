@@ -565,6 +565,8 @@ export class MessagingService {
         this.messageReceived.emit(recipientId, {
           senderName,
           threadId: clientId,
+          // PF-3-BE (KG-HELD-BLOCK-MESSAGE): a held push re-checks blocks.
+          senderId,
         }),
       );
     if (!isMessagingCoreV2Enabled()) {

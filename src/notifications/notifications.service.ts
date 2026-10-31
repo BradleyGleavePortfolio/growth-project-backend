@@ -6,6 +6,7 @@ import {
   OnModuleInit,
   Optional,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 // expo-server-sdk v6 is ESM-only and exports `Expo` as a NAMED export
@@ -13,7 +14,7 @@ import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 // `transformIgnorePatterns` allowlist in jest.config.js — see that file for
 // the rationale (one ESM dep in an otherwise CJS project; full ESM
 // conversion would be a multi-day effort).
-import { Expo, ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk';
+import { Expo } from 'expo-server-sdk';
 import { PrismaService } from '../prisma.service';
 import { AuditAction, AuditService } from '../audit/audit.service';
 import {
@@ -22,16 +23,17 @@ import {
   TimeZoneSource,
 } from './notifications.dto';
 import { usableTimeZone } from './local-time';
-import { NotificationKindValue } from './notification-kind';
+import { NotificationKind, NotificationKindValue } from './notification-kind';
 import { NotificationCategory, DEFAULT_NOTIFICATION_CATEGORY } from './notification-category.enum';
 import { PushAbortedError, PushDeliveryResult } from './push-delivery.types';
 import { VoicePolicyService } from '../roman/voice/voice-policy.service';
-import { EnqueueResult, PushDeliveryService } from './push/push-delivery.service';
+import { EnqueueResult, PushDeliveryService, SendPathContext } from './push/push-delivery.service';
 import { PushContext, lockScreenCopy, safetyAlertTap } from './push/lock-screen-copy';
 import { currentCoachInbox } from './current-coach-inbox';
 import { InboxBlockRule } from './inbox-block-rule';
 import { resolveRecipientTimeZone } from './recipient-timezone';
 import {
+  MUTE_ALL_PASS,
   MuteAllPass,
   muteAllStops,
   notificationPrefsPrefix,
@@ -47,6 +49,23 @@ import { describeFailure } from '../observability/log-pii';
 //
 // Phase 11: `category` field added. Defaults to SYSTEM so all existing call
 // sites remain valid without modification.
+/**
+ * PF-3-BE: how the one send path treats a sender's own push (pushToUser).
+ * `kind` decides quiet hours, the switches and the Android channel; the tap
+ * data the phone gets is the sender's own.
+ */
+export interface PushRoute {
+  kind: string;
+  /** The sender's switch is Mute all alone (it has no per-kind switch). */
+  muteAllOnly?: boolean;
+  /** A notice that passes Mute all (MUTE_ALL_PASS, owner #171-3). */
+  passesMuteAll?: boolean;
+  /** The event's exactly-once identity: a replayed send never posts twice. */
+  dedupeKey?: string;
+  /** The other person the push is about: a block either way stops a waiting push. */
+  otherUserId?: string;
+}
+
 export interface PushPayload {
   alertId: string;
   alertType: string;
@@ -116,7 +135,6 @@ export const PUSH_TWIN_WINDOW_MS = 60 * 60_000;
 @Injectable()
 export class NotificationsService implements OnModuleInit {
   private readonly logger = new Logger(NotificationsService.name);
-  private readonly expo = new Expo();
 
   constructor(
     private prisma: PrismaService,
@@ -609,7 +627,7 @@ export class NotificationsService implements OnModuleInit {
       kind: NotificationKindValue;
       body: string;
       deep_link?: string;
-      context?: (PushContext & MuteAllPass & RenewalOffer) | null;
+      context?: (PushContext & MuteAllPass & RenewalOffer & Pick<SendPathContext, 'otherUserId'>) | null;
       dedupe_key?: string | null;
       urgent?: boolean;
     },
@@ -797,14 +815,14 @@ export class NotificationsService implements OnModuleInit {
   /**
    * Phase 6B — Push an alert payload to a coach's device(s).
    *
-   * Returns `true` when delivery was attempted, `false` on transport error.
-   * Push failure must never throw — callers treat `false` as graceful fallback
-   * to the in-app inbox.
+   * Returns `true` when the push was handed to the one send path (or there
+   * was nothing to send to), `false` on a failure. Push failure must never
+   * throw — callers treat `false` as graceful fallback to the in-app inbox.
+   * PF-3-BE: no caller on main; it goes through pushToUser and the outbox
+   * like every other push (no direct Expo send).
    *
-   * Phase 11: `payload.category` is now forwarded to the push transport.
-   * When not provided, defaults to `SYSTEM` so existing callers continue
-   * to work without modification. Callers should set the appropriate category
-   * from the `NotificationCategory` enum.
+   * Phase 11: `payload.category` is forwarded in the tap data. When not
+   * provided, defaults to `SYSTEM`.
    */
   async pushToCoach(coachId: string, payload: PushPayload): Promise<boolean> {
     const category = payload.category ?? DEFAULT_NOTIFICATION_CATEGORY;
@@ -812,58 +830,40 @@ export class NotificationsService implements OnModuleInit {
     this.logger.log(
       `push delivery: coach=${coachId} alertId=${payload.alertId} type=${payload.alertType} sev=${payload.severity} category=${category}`,
     );
-
-    try {
-      const coach = await this.prisma.user.findUnique({
-        where: { id: coachId },
-        select: { expo_push_token: true },
-      });
-      if (!coach?.expo_push_token) return true;
-      if (!Expo.isExpoPushToken(coach.expo_push_token)) {
-        this.logger.warn(`Invalid Expo push token for coach ${coachId}`);
-        return true;
-      }
-      const message: ExpoPushMessage = {
-        to: coach.expo_push_token,
-        title: payload.message,
-        body: payload.alertType,
-        data: { alertId: payload.alertId, alertType: payload.alertType, category },
-        sound: 'default',
-      };
-      const chunks = this.expo.chunkPushNotifications([message]);
-      const tickets: ExpoPushTicket[] = [];
-      for (const chunk of chunks) {
-        const ticketChunk = await this.expo.sendPushNotificationsAsync(chunk);
-        tickets.push(...ticketChunk);
-      }
-      await this.pollReceipts(tickets, coachId);
-      return true;
-    } catch (err) {
-      this.logger.error(`pushToCoach failed for coach=${coachId}: ${describeFailure(err)}`);
-      return false;
-    }
+    const res = await this.pushToUser(
+      coachId,
+      payload.message,
+      payload.alertType,
+      { alertId: payload.alertId, alertType: payload.alertType, category },
+      undefined,
+      { kind: NotificationKind.COACH_ALERT, dedupeKey: `coach_alert_push:${payload.alertId}` },
+    );
+    return res.delivered || res.code === 'no-token' || res.code === 'invalid-token';
   }
 
   /**
-   * Send a push notification to any user (coach or client) by userId.
-   * Identical delivery logic to pushToCoach but accepts a plain title/body
-   * envelope instead of the PushPayload coach-alert envelope.
+   * Send a push notification to any user (coach or client) by userId, in the
+   * sender's own words (title, body, tap data).
    *
-   * P2-6: `signal` lets the caller (e.g. CoachBriefScheduler) cancel the
-   * downstream Expo round-trip when an external deadline elapses. We
-   * check the signal at every await boundary so an abort during the
-   * findUnique, chunk send, or receipt poll short-circuits cleanly.
+   * PF-3-BE (one send path): the push is queued in the outbox
+   * (PushDeliveryService), never sent to Expo from here, so the outbox's rules
+   * apply to it like to every other push: quiet hours in the recipient's zone
+   * (a push inside 21:00-08:00 waits for 08:00, the workout reminder keeps its
+   * own time), the recipient's switches read again when it goes (`route`:
+   * the kind's rule, or Mute all alone; money and a stored Mute all pass go
+   * through Mute all), a block with `route.otherUserId` while it waited, the
+   * burst cap and the token. `route.dedupeKey` is the event's exactly-once
+   * identity, so a replayed send never posts twice.
    *
-   * P1-5 (fix round 5): returns a typed PushDeliveryResult so callers
-   * that need delivery semantics can distinguish "the SDK accepted the
-   * message" from "the transport threw / the signal aborted / there was
-   * no token". Pre-fix-round-5 this method resolved void on every path,
-   * which let CoachBriefScheduler write last_push_date even when Expo
-   * had thrown. The scheduler now consults `result.delivered`.
+   * P2-6: `signal` lets the caller (e.g. CoachBriefScheduler) cancel before
+   * the push is queued; an abort is reported as 'aborted' and nothing is queued.
    *
-   * P1-6 (fix round 5): the abort path throws a typed PushAbortedError
-   * (stable code 'PUSH_ABORTED') instead of `new Error('...aborted')`.
-   * No raw new Error in the Coach Brief push path.
+   * P1-5: returns a typed PushDeliveryResult. delivered=true now means the
+   * push was handed to the one send path (`detail`: queued, deferred to the
+   * morning, or a duplicate of one already handed over); no-token and
+   * invalid-token mean there is no device to send to (nothing is queued).
+   *
+   * P1-6: the abort path throws a typed PushAbortedError internally.
    */
   async pushToUser(
     userId: string,
@@ -871,6 +871,7 @@ export class NotificationsService implements OnModuleInit {
     body: string,
     data?: Record<string, unknown>,
     signal?: AbortSignal,
+    route?: PushRoute,
   ): Promise<PushDeliveryResult> {
     const checkAborted = () => {
       if (signal?.aborted) {
@@ -895,52 +896,39 @@ export class NotificationsService implements OnModuleInit {
       if (!Expo.isExpoPushToken(user.expo_push_token)) {
         return { delivered: false, code: 'invalid-token' };
       }
-      const message: ExpoPushMessage = {
-        to: user.expo_push_token,
+      if (!this.pushDelivery) {
+        this.logger.warn(`pushToUser: no push outbox wired; user=${userId} not sent`);
+        return { delivered: false, code: 'transport-error', detail: 'no-outbox' };
+      }
+      // A sender that names no route has no switch of its own: Mute all alone.
+      const r: PushRoute = route ?? {
+        kind: typeof data?.kind === 'string' ? data.kind : 'push',
+        muteAllOnly: true,
+      };
+      const timeZone = await resolveRecipientTimeZone(this.prisma, userId);
+      checkAborted();
+      const dedupeKey = r.dedupeKey ?? `push:${randomUUID()}`;
+      const queued = await this.pushDelivery.enqueue({
+        userId,
+        kind: r.kind,
         title,
         body,
         data: data ?? {},
-        sound: 'default',
-      };
-      const chunks = this.expo.chunkPushNotifications([message]);
-      const tickets: ExpoPushTicket[] = [];
-      for (const chunk of chunks) {
-        checkAborted();
-        const ticketChunk = await this.expo.sendPushNotificationsAsync(chunk);
-        tickets.push(...ticketChunk);
-      }
-      checkAborted();
-
-      // Inspect tickets synchronously. Expo returns one ticket per
-      // message; a ticket with status='error' means the SDK refused
-      // the message and we must NOT report delivered=true.
-      for (const ticket of tickets) {
-        if (ticket.status === 'error') {
-          // C-611-17: Expo's ticket message quotes the push token
-          // ("ExponentPushToken[...] is not a registered ..."); log and
-          // return its error code only.
-          const errorCode = ticket.details?.error ?? 'unknown';
-          this.logger.error(`pushToUser ticket error for user ${userId}: ${errorCode}`);
-          // Poll receipts on a best-effort basis so stale tokens get
-          // cleared even though we report failure to the caller.
-          await this.pollReceipts(tickets, userId);
-          return {
-            delivered: false,
-            code: 'ticket-error',
-            detail: errorCode,
-          };
-        }
-      }
-
-      // Poll receipts so DeviceNotRegistered tokens are cleared for this
-      // user — mirrors the same pattern used in pushToCoach().
-      await this.pollReceipts(tickets, userId);
-      return { delivered: true, code: 'delivered' };
+        context: {
+          senderWords: true,
+          ...(r.muteAllOnly ? { muteAllOnly: true as const } : {}),
+          ...(r.passesMuteAll ? MUTE_ALL_PASS : {}),
+          ...(r.otherUserId ? { otherUserId: r.otherUserId } : {}),
+        },
+        dedupeKey,
+        collapseKey: dedupeKey,
+        timeZone,
+      });
+      return { delivered: true, code: 'delivered', detail: queued.code };
     } catch (err) {
       // R17: return a scrubbed typed result to the caller. The `detail`
       // field carries only the Error.name so we never leak stack traces or
-      // query text. B-700-1: the log line holds the class and code only
-      // (an Expo error message quotes the push token).
+      // query text. B-700-1: the log line holds the class and code only.
       this.logger.error(`Push notification failed for user ${userId}: ${describeFailure(err)}`);
       if (err instanceof PushAbortedError) {
         return { delivered: false, code: 'aborted', detail: err.name };
@@ -950,40 +938,6 @@ export class NotificationsService implements OnModuleInit {
         code: 'transport-error',
         detail: err instanceof Error ? err.name : 'unknown',
       };
-    }
-  }
-
-  /**
-   * Poll Expo receipts for a batch of tickets and clear any tokens that
-   * Expo reports as DeviceNotRegistered. Called after every pushToCoach send.
-   */
-  private async pollReceipts(tickets: ExpoPushTicket[], userId: string): Promise<void> {
-    const receiptIds: string[] = [];
-    for (const ticket of tickets) {
-      if ('id' in ticket) receiptIds.push(ticket.id);
-    }
-    if (receiptIds.length === 0) return;
-    try {
-      const chunks = this.expo.chunkPushNotificationReceiptIds(receiptIds);
-      for (const chunk of chunks) {
-        const receipts = await this.expo.getPushNotificationReceiptsAsync(chunk);
-        for (const [, receipt] of Object.entries(receipts)) {
-          if (receipt.status === 'error') {
-            if (receipt.details?.error === 'DeviceNotRegistered') {
-              // Token is stale — clear it so we don't waste sends.
-              await this.prisma.user.updateMany({
-                where: { id: userId },
-                data: { expo_push_token: null },
-              });
-            }
-            this.logger.error(
-              `Push receipt error for user ${userId}: ${receipt.details?.error ?? 'unknown'}`,
-            );
-          }
-        }
-      }
-    } catch (err) {
-      this.logger.warn(`Failed to poll push receipts: ${describeFailure(err)}`);
     }
   }
 

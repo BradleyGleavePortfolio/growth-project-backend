@@ -224,7 +224,14 @@ export class DunningV2Dispatcher {
     const data = ctx.isLateReversalCycle
       ? { kind: 'dunning_dispute', actionScreen: 'NotificationCenter' }
       : { kind: 'dunning_payment', actionScreen: 'UpdateCard' };
-    const res = await this.notifications.pushToUser(ctx.clientUserId, 'Payment', body, data);
+    // LS-PAYFAIL B4 / PF-3-BE: through the one send path. A payment reminder
+    // is money (DUNNING_BLOCKER): it passes Mute all, waits for 08:00 in the
+    // client's zone when sent in quiet hours, and a replay of the same
+    // cycle step is never posted twice (dedupe key).
+    const res = await this.notifications.pushToUser(ctx.clientUserId, 'Payment', body, data, undefined, {
+      kind: NotificationKind.DUNNING_BLOCKER,
+      dedupeKey: `dunning_v2:${ctx.dunningStateId}${this.cyclePart(ctx)}:push:${ctx.stepIndex}`,
+    });
     // A transport that returns no verdict (legacy stubs) counts as sent.
     if (typeof res === 'object' && res !== null && res.delivered === false) {
       if (res.code === 'no-token') return { status: 'skipped', error: 'push_no_token' };

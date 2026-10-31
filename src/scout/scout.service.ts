@@ -599,11 +599,20 @@ export class ScoutService implements OnModuleDestroy {
         select: { muted: true },
       });
       if (muteAllStops(prefs, 'import.complete', 'push')) return;
-      await this.notifications.pushToUser(coachId, title, body, {
-        kind: 'import.complete',
-        intent_id: dto.intent_id,
-        terminal_status: dto.terminal_status,
-      });
+      // PF-3-BE: the one send path (held to 08:00 in quiet hours, Mute all
+      // read again when it goes); a replayed completion never posts twice.
+      await this.notifications.pushToUser(
+        coachId,
+        title,
+        body,
+        { kind: 'import.complete', intent_id: dto.intent_id, terminal_status: dto.terminal_status },
+        undefined,
+        {
+          kind: 'import.complete',
+          muteAllOnly: true,
+          dedupeKey: `import_complete:${dto.intent_id}:${dto.terminal_status}`,
+        },
+      );
     } catch (err) {
       this.logger.warn(
         `import.complete push failed for coach ${coachId}: ${

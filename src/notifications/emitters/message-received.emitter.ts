@@ -7,6 +7,11 @@ export interface MessageReceivedPayload {
   senderName: string;
   /** Thread ID for deep-link routing. */
   threadId?: string;
+  /**
+   * PF-3-BE (KG-HELD-BLOCK-MESSAGE): the sender. A push held for quiet hours
+   * is not sent once either side has blocked the other.
+   */
+  senderId?: string;
 }
 
 /**
@@ -44,6 +49,7 @@ export class MessageReceivedEmitter {
         kind: NotificationKind.MESSAGE_RECEIVED,
         body,
         deep_link: deepLink,
+        ...(payload.senderId ? { context: { otherUserId: payload.senderId } } : {}),
       });
     } catch (err) {
       this.logger.warn(

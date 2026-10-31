@@ -752,6 +752,9 @@ export class TrialNoticeService {
             actionScreen: TRIAL_ACTION_SCREEN,
           },
           signal,
+          // PF-3-BE: the one send path re-reads the same rule when it goes,
+          // holds it to 08:00 in quiet hours, and a retry never posts twice.
+          { kind: NotificationKind.TRIAL_ENDING, passesMuteAll: true, dedupeKey: `trial_notice:${notice.id}:push` },
         ),
       );
       const result = sent.result;

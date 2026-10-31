@@ -435,6 +435,7 @@ export class CommunityPostsService {
         targetType: 'post',
         targetId: post.id,
         deepLink: `tgp://community/posts/${post.id}`,
+        otherUserId: created.sender_id,
       });
     }
     return CommunityCommentResponseSchema.parse({

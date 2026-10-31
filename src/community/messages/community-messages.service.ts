@@ -617,6 +617,7 @@ export class CommunityMessagesService {
           targetType: 'message',
           targetId: created.id,
           deepLink: `tgp://community/cohorts/${cohortId}`,
+          otherUserId: created.sender_id,
         });
       }
     } catch (err) {
