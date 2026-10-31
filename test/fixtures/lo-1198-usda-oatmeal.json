@@ -1,0 +1,569 @@
+[
+ {
+  "fdcId": 1995469,
+  "description": "OATMEAL",
+  "dataType": "Branded",
+  "brandOwner": "Billion Bay",
+  "foodCategory": "Cereal",
+  "servingSize": 45.0,
+  "servingSizeUnit": "g",
+  "householdServingFullText": "45 GRM",
+  "foodNutrients": [
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 6.67
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 66.7
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 1580.0
+   }
+  ]
+ },
+ {
+  "fdcId": 2503998,
+  "description": "OATMEAL",
+  "dataType": "Branded",
+  "brandOwner": "Thomas Brothers Ham Company",
+  "foodCategory": "Cereal",
+  "servingSize": 45.0,
+  "servingSizeUnit": "IU",
+  "householdServingFullText": "1/2 cup",
+  "foodNutrients": [
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 11.1
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 6.67
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 68.9
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 378
+   }
+  ]
+ },
+ {
+  "fdcId": 2055229,
+  "description": "OATMEAL",
+  "dataType": "Branded",
+  "brandOwner": "Caribbean Foods Limited",
+  "foodCategory": "Cereal",
+  "servingSize": 74.0,
+  "servingSizeUnit": "g",
+  "householdServingFullText": "74 GRM",
+  "foodNutrients": [
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 8.11
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 5.41
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 75.7
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 365
+   }
+  ]
+ },
+ {
+  "fdcId": 2708398,
+  "description": "Oatmeal, multigrain",
+  "dataType": "Survey (FNDDS)",
+  "foodCategory": "Oatmeal",
+  "foodNutrients": [
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 2.12
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 0.46
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 12.19
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 56
+   }
+  ]
+ },
+ {
+  "fdcId": 2708380,
+  "description": "Oatmeal, NFS",
+  "dataType": "Survey (FNDDS)",
+  "foodCategory": "Oatmeal",
+  "foodNutrients": [
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 2.18
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 2.63
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 11.17
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 76
+   }
+  ]
+ },
+ {
+  "fdcId": 172678,
+  "description": "Bread, oatmeal",
+  "dataType": "SR Legacy",
+  "foodCategory": "Baked Products",
+  "foodNutrients": [
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 4.4
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 48.5
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 269
+   },
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 8.4
+   }
+  ]
+ },
+ {
+  "fdcId": 2707768,
+  "description": "Bread, oatmeal",
+  "dataType": "Survey (FNDDS)",
+  "foodCategory": "Yeast breads",
+  "foodNutrients": [
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 8.4
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 4.4
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 48.5
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 269
+   }
+  ]
+ },
+ {
+  "fdcId": 2707945,
+  "description": "Cookie, oatmeal",
+  "dataType": "Survey (FNDDS)",
+  "foodCategory": "Cookies and brownies",
+  "foodNutrients": [
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 6.2
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 18.1
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 68.7
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 450
+   }
+  ]
+ },
+ {
+  "fdcId": 2708136,
+  "description": "Crackers, oatmeal",
+  "dataType": "Survey (FNDDS)",
+  "foodCategory": "Crackers, excludes saltines",
+  "foodNutrients": [
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 7.3
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 16.4
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 70.73
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 455
+   }
+  ]
+ },
+ {
+  "fdcId": 2707839,
+  "description": "Muffin, oatmeal",
+  "dataType": "Survey (FNDDS)",
+  "foodCategory": "Biscuits, muffins, quick breads",
+  "foodNutrients": [
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 6.43
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 18.92
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 43.94
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 370
+   }
+  ]
+ },
+ {
+  "fdcId": 2708016,
+  "description": "Pie, oatmeal",
+  "dataType": "Survey (FNDDS)",
+  "foodCategory": "Cakes and pies",
+  "foodNutrients": [
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 6.14
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 16.02
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 56.92
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 396
+   }
+  ]
+ },
+ {
+  "fdcId": 2707773,
+  "description": "Roll, oatmeal",
+  "dataType": "Survey (FNDDS)",
+  "foodCategory": "Rolls and buns",
+  "foodNutrients": [
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 8.4
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 4.4
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 48.5
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 269
+   }
+  ]
+ },
+ {
+  "fdcId": 2707946,
+  "description": "Cookie, oatmeal, with raisins",
+  "dataType": "Survey (FNDDS)",
+  "foodCategory": "Cookies and brownies",
+  "foodNutrients": [
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 6.2
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 18.1
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 68.7
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 450
+   }
+  ]
+ },
+ {
+  "fdcId": 2708100,
+  "description": "Snack bar, oatmeal",
+  "dataType": "Survey (FNDDS)",
+  "foodCategory": "Cereal bars",
+  "foodNutrients": [
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 6.67
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 6.67
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 75.47
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 389
+   }
+  ]
+ },
+ {
+  "fdcId": 2708397,
+  "description": "Oatmeal, reduced sugar",
+  "dataType": "Survey (FNDDS)",
+  "foodCategory": "Oatmeal",
+  "foodNutrients": [
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 2.35
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 1.28
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 16.62
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 85
+   }
+  ]
+ },
+ {
+  "fdcId": 2707769,
+  "description": "Bread, oatmeal, toasted",
+  "dataType": "Survey (FNDDS)",
+  "foodCategory": "Yeast breads",
+  "foodNutrients": [
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 9.23
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 4.84
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 53.3
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 296
+   }
+  ]
+ },
+ {
+  "fdcId": 172679,
+  "description": "Bread, oatmeal, toasted",
+  "dataType": "SR Legacy",
+  "foodCategory": "Baked Products",
+  "foodNutrients": [
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 9.2
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 4.8
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 52.7
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 292
+   }
+  ]
+ },
+ {
+  "fdcId": 174963,
+  "description": "Cookies, oatmeal, with raisins",
+  "dataType": "SR Legacy",
+  "foodCategory": "Baked Products",
+  "foodNutrients": [
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 15.8
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 69.0
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 441
+   },
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 5.86
+   }
+  ]
+ },
+ {
+  "fdcId": 2708379,
+  "description": "Oatmeal, fast food, flavored",
+  "dataType": "Survey (FNDDS)",
+  "foodCategory": "Oatmeal",
+  "foodNutrients": [
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 2.4
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 2.33
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 20.34
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 110
+   }
+  ]
+ },
+ {
+  "fdcId": 2708378,
+  "description": "Oatmeal, fast food, plain",
+  "dataType": "Survey (FNDDS)",
+  "foodCategory": "Oatmeal",
+  "foodNutrients": [
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 2.6
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 2.54
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 11.9
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 80
+   }
+  ]
+ }
+]
