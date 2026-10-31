@@ -89,7 +89,7 @@ describe('LS-1192 independent transport and delivery contracts', () => {
     r.clock.at = new Date('2026-10-07T15:00:00Z');
     jest.setSystemTime(r.clock.at);
     await r.delivery.drain();
-    expect(r.send).toHaveBeenCalledWith([expect.objectContaining({
+    expect(r.send.mock.calls[0][0]).toEqual([expect.objectContaining({
       title: 'Review title', body: 'Review body', data, sound: 'default',
     })]);
     expect(r.world.rows[0].status).toBe('sent');
