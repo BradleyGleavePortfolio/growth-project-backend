@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import * as ts from 'typescript';
 import type { Prisma } from '@prisma/client';
@@ -8,16 +9,18 @@ import { scanFile, scanSenders, scanText } from './utils/notify-sender-scan';
 import { bracketNoticeFile, bracketNoticeText, BRACKET_NOTICE_FORMS } from './utils/ls-1186r3-bracket-notice-fixtures';
 import { stub } from './utils/trial-fakes';
 
-// Install the exact fixtures into the real runtime tree before loading every original registry assertion.
-const root = path.resolve(__dirname, '..');
+// FR-1186R3: the exact fixtures go into a scratch tree (<tmp>/src/ls1186r3-bracket/), not the real src/. Now that the
+// scan reads them, fixtures in the real src/ would turn every other spec that scans src/ (the registry spec and the
+// real-tree controls, in other jest workers) red while this file runs. The B-TEST below is unchanged; the controls
+// that pinned the bug (the gate blind to the fixtures, scanText skipping them) now pin the fix.
+const REPO = path.resolve(__dirname, '..');
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ls1186r3-bracket-'));
 const dir = path.join(root, 'src/ls1186r3-bracket');
-if (fs.existsSync(dir)) throw new Error('Bracket notice fixture path already exists');
-fs.mkdirSync(dir);
+fs.mkdirSync(dir, { recursive: true });
 for (const [name, access] of BRACKET_NOTICE_FORMS) {
   fs.writeFileSync(path.join(root, bracketNoticeFile(name)), bracketNoticeText(access));
 }
-afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
-require('../src/notifications/__tests__/sender-registry.spec');
+afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 
 describe('LS-1186R3 B2 static bracket notice writers bypass the prefilter', () => {
   it.each(BRACKET_NOTICE_FORMS)('B2 %s notice writer must be rejected with file:line', (name, access) => {
@@ -28,18 +31,20 @@ describe('LS-1186R3 B2 static bracket notice writers bypass the prefilter', () =
     expect(findings).toEqual(expect.arrayContaining([expect.stringContaining(`${rel}:3 ordinaryNotice`)]));
   });
 
-  it('control: the complete unchanged gate has no finding with all three physical fixtures present', () => {
-    const hits = scanSenders(root);
-    expect(hits.length).toBeGreaterThan(80);
-    expect(hits.filter((h) => h.file.startsWith('src/ls1186r3-bracket/'))).toEqual([]);
-    expect([...directTransport(hits), ...unregistered(hits), ...funnelArgFindings(hits)]).toEqual([]);
+  it('control: the whole gate over the real tree plus the three fixtures finds exactly the three writers, at :3', () => {
+    const real = scanSenders(REPO);
+    expect(real.length).toBeGreaterThan(80);
+    const hits = [...real, ...scanSenders(root)];
+    const findings = [...directTransport(hits), ...unregistered(hits), ...funnelArgFindings(hits)];
+    expect(findings).toHaveLength(BRACKET_NOTICE_FORMS.length);
+    expect(findings).toEqual(expect.arrayContaining(BRACKET_NOTICE_FORMS.map(([name]) => expect.stringContaining(`${bracketNoticeFile(name)}:3 ordinaryNotice [notificationRow]`))));
   });
 
-  it.each(BRACKET_NOTICE_FORMS)('control: %s is recognized by the AST walker but skipped by scanText', (name, access) => {
+  it.each(BRACKET_NOTICE_FORMS)('control: %s: scanText (the prefilter, then the walker) gives what the walker gives', (name, access) => {
     const rel = bracketNoticeFile(name);
     const text = bracketNoticeText(access);
     expect(unregistered(scanFile(rel, rel, text))).toEqual(expect.arrayContaining([expect.stringContaining(`${rel}:3 ordinaryNotice`)]));
-    expect(scanText(rel, text)).toEqual([]);
+    expect(scanText(rel, text)).toEqual(scanFile(rel, rel, text));
   });
 
   it('control: the equivalent ordinary dot writer is rejected', () => {
@@ -48,10 +53,23 @@ describe('LS-1186R3 B2 static bracket notice writers bypass the prefilter', () =
   });
 
   it('control: every exact bracket fixture is strict-type-valid against the real generated Prisma types', () => {
-    const program = ts.createProgram(BRACKET_NOTICE_FORMS.map(([name]) => path.join(root, bracketNoticeFile(name))), {
+    // Each fixture is checked as if it sat at its path in this repo (so @prisma/client resolves to the real generated
+    // types), served from memory: nothing is written to the real src/.
+    const virtual = new Map(BRACKET_NOTICE_FORMS.map(([name, access]) => [path.join(REPO, bracketNoticeFile(name)), bracketNoticeText(access)]));
+    const options: ts.CompilerOptions = {
       strict: true, noEmit: true, skipLibCheck: true, target: ts.ScriptTarget.ES2021,
       module: ts.ModuleKind.CommonJS, moduleResolution: ts.ModuleResolutionKind.Node10,
-    });
+    };
+    const host = ts.createCompilerHost(options);
+    const { fileExists, readFile, getSourceFile } = host;
+    host.fileExists = (f) => virtual.has(path.resolve(f)) || fileExists.call(host, f);
+    host.readFile = (f) => virtual.get(path.resolve(f)) ?? readFile.call(host, f);
+    host.getSourceFile = (f, lang, ...rest) => {
+      const text = virtual.get(path.resolve(f));
+      return text !== undefined ? ts.createSourceFile(f, text, lang) : getSourceFile.call(host, f, lang, ...rest);
+    };
+    const program = ts.createProgram([...virtual.keys()], options, host);
+    expect(program.getRootFileNames().map((f) => program.getSourceFile(f)?.text)).toEqual([...virtual.values()]);
     expect(ts.getPreEmitDiagnostics(program).map((d) => ts.flattenDiagnosticMessageText(d.messageText, '\n'))).toEqual([]);
   });
 
