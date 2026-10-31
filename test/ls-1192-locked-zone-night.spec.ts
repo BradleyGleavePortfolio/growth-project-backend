@@ -107,18 +107,15 @@ describe('LS-1192 B2: a locked traveller receives pushes in the device zone, not
     ['Europe/London', '2026-10-07T07:00:00Z'], // 08:00 old zone is midnight on device
   ])('B2: a locked client returning from %s is not woken before the device reaches 08:00', async (priorZone, oldRelease) => {
     const r = rig(true, priorZone);
-    expect(await r.phoneForegroundSync()).toMatchObject({
-      response: expect.objectContaining({ code: 'LOCKED_DUNNING' }),
-    });
-    expect(r.db.notificationPreferences.upsert).not.toHaveBeenCalled();
-    expect(r.world.prefs[CLIENT].timezone).toBe(priorZone);
+    const syncFailure = await r.phoneForegroundSync();
     await r.emitter.emit(CLIENT, { senderName: 'Review coach', threadId: CLIENT, senderId: COACH });
-    expect(r.world.rows[0].not_before).toEqual(new Date(oldRelease));
     expect(r.direct).not.toHaveBeenCalled();
     r.clock.at = new Date(oldRelease);
     jest.setSystemTime(r.clock.at);
     await r.delivery.drain();
     expect(r.send).not.toHaveBeenCalled();
     expect(r.world.rows[0]).toMatchObject({ status: 'pending', not_before: MORNING });
+    expect(syncFailure).toBeNull();
+    expect(r.world.prefs[CLIENT].timezone).toBe('America/Los_Angeles');
   });
 });
