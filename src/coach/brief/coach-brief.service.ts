@@ -153,7 +153,7 @@ function plural(n: number, one: string, many: string): string {
 // FR-1195R3 (ruling R-1195-C1): `waiting` counts only renewals held on the
 // owner's own Stripe account when an owner is given (a head coach's brief).
 export function dunningBriefSql(scope: Prisma.Sql, waitingOwner?: string): Prisma.Sql {
-  const owned = waitingOwner === undefined ? Prisma.empty : Prisma.sql`AND cp."coach_user_id" = ${waitingOwner}`;
+  const owned = waitingOwner === undefined ? Prisma.empty : Prisma.sql` AND cp."coach_user_id" = ${waitingOwner}`;
   const onHold = Prisma.sql`COALESCE(ds."last_failure_reason", '') IN (${DUNNING_V2_REVERSAL_REASON}, ${FULL_REFUND_PAUSE_REASON})`;
   // PF-7-BE (R7): a renewal waiting on the coach's Stripe account is neither
   // a failed payment nor a lock; it is counted apart as `waiting` (PF-W9 only).
@@ -166,7 +166,7 @@ export function dunningBriefSql(scope: Prisma.Sql, waitingOwner?: string): Prism
       COUNT(*) FILTER (WHERE ${locked})::bigint AS locked,
       COALESCE(SUM(ds."last_failed_amount_cents") FILTER (WHERE ${locked}), 0)::bigint AS locked_total,
       COUNT(*) FILTER (WHERE ${onHold})::bigint AS on_hold,
-      COUNT(*) FILTER (WHERE ${HELD_SQL} AND ds."client_canceled_at" IS NULL ${owned})::bigint AS waiting
+      COUNT(*) FILTER (WHERE ${HELD_SQL} AND ds."client_canceled_at" IS NULL${owned})::bigint AS waiting
     FROM "DunningState" ds
     JOIN "ClientPurchase" cp ON cp."id" = ds."purchase_id"
     WHERE ds."status" = 'active'
