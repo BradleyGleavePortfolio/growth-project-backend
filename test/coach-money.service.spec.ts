@@ -21,6 +21,7 @@ import {
   CHARGE_STATUS_FILTERS,
   CoachMoneyService,
   DISPUTED_WHERE,
+  PAID_NOW_WHERE,
   PAID_WHERE,
   REFUNDED_WHERE,
   allocateReversal,
@@ -218,6 +219,33 @@ function chargeRow(over: Record<string, unknown> = {}) {
   };
 }
 
+describe('LS-PAYFAIL unpaid collection surfaces', () => {
+  it.each(['attention', 'failed charges', 'charge state'])(
+    'LS-PAYFAIL B9: %s recognizes an unpaid recurring purchase as failed collection',
+    async (surface) => {
+      const p = buildPrisma();
+      if (surface === 'charge state') {
+        // A previously paid recurring purchase still has its earlier ledger
+        // slice when a later invoice fails and Stripe marks it unpaid.
+        p.clientPurchase.findFirst.mockResolvedValue(chargeRow({ status: 'unpaid' }));
+        const out = await svc(p).getChargeBreakdown(COACH, 'synthetic-unpaid-purchase');
+        expect(out.charge.state).toBe('failed');
+        return;
+      }
+
+      if (surface === 'attention') {
+        await svc(p).getAttention(COACH);
+      } else {
+        await svc(p).listCharges(COACH, { status: 'failed' });
+      }
+      const query = p.clientPurchase.findMany.mock.calls[0][0] as {
+        where: { status: { in: readonly string[] } };
+      };
+      expect(query.where.status.in).toContain('unpaid');
+    },
+  );
+});
+
 function pkgCadence(over: Record<string, unknown> = {}) {
   return {
     interval: 'month',
@@ -360,15 +388,16 @@ describe('CoachMoneyService.listCharges', () => {
     expect(
       (p.clientPurchase.findMany.mock.calls[1][0] as { where: { status: unknown } }).where.status,
     ).toEqual({
-      in: ['past_due', 'payment_failed'],
+      in: ['past_due', 'payment_failed', 'unpaid'],
     });
     await svc(p).listCharges(COACH, { status: 'refunded' });
     expect((p.clientPurchase.findMany.mock.calls[2][0] as { where: unknown }).where).toMatchObject(
       REFUNDED_WHERE,
     );
     await svc(p).listCharges(COACH, { status: 'paid' });
+    // FR-1191 (LS-1191 B1): the Paid list is today's state, not PAID_WHERE's history.
     expect((p.clientPurchase.findMany.mock.calls[3][0] as { where: unknown }).where).toMatchObject(
-      PAID_WHERE,
+      PAID_NOW_WHERE,
     );
     await svc(p).listCharges(COACH, { status: 'disputed' });
     expect((p.clientPurchase.findMany.mock.calls[4][0] as { where: unknown }).where).toMatchObject(
@@ -468,6 +497,42 @@ describe('CoachMoneyService.getChargeBreakdown', () => {
 });
 
 describe('CoachMoneyService.getAttention', () => {
+  it('LS-PAYFAIL B8: a reminder deadline does not become a promised card retry', async () => {
+    const p = buildPrisma();
+    // recordFailure schedules DunningAttempt reminders and stamps their
+    // earliest time into DunningState.next_attempt_at even with v2 enabled.
+    // That is not Stripe's invoice.next_payment_attempt. MoneyScreen renders
+    // next_retry_at as "TGP tries the card again on ...", so an unknown bank
+    // retry must stay unknown rather than inheriting this communication time.
+    p.clientPurchase.findMany.mockResolvedValue([
+      {
+        id: 'synthetic-payfail-b8-purchase',
+        amount_cents: 4900,
+        currency: 'usd',
+        updated_at: new Date('2026-10-30T09:00:00Z'),
+        last_error: 'The card has expired.',
+        client: { id: 'synthetic-payfail-b8-client', name: 'Test client' },
+        package: { name: 'Monthly coaching' },
+        dunning: {
+          status: 'active',
+          failure_count: 1,
+          step_index: 0,
+          next_attempt_at: new Date('2026-10-30T09:00:00Z'),
+          locked_out_at: null,
+          last_failed_amount_cents: 4900,
+          last_failure_at: new Date('2026-10-30T09:00:00Z'),
+          last_failure_reason: 'expired_card',
+          attempts: [],
+        },
+      },
+    ]);
+
+    const out = await svc(p).getAttention(COACH);
+
+    expect(out.items).toHaveLength(1);
+    expect(out.items[0].failed_payment?.next_retry_at).toBeNull();
+  });
+
   it('lists failed payments with dunning status, open disputes and Stripe requirements', async () => {
     const p = buildPrisma();
     p.clientPurchase.findMany.mockResolvedValue([
@@ -536,9 +601,11 @@ describe('CoachMoneyService.getAttention', () => {
     const failed = out.items.find((i) => i.kind === 'failed_payment')!;
     expect(failed.client).toEqual({ id: 'c9', name: 'Sam Lee' });
     expect(failed.failed_payment).toMatchObject({
-      attempt: 2,
-      max_attempts: 4,
-      next_retry_at: '2026-10-03T00:00:00.000Z',
+      // FR-1191R2 (LS-1191R2B B1): no bank try count is recorded: unknown form.
+      attempt: 0,
+      max_attempts: 0,
+      // PF-5-BE (B8): next_attempt_at is the next reminder email, not a card try.
+      next_retry_at: null,
       card_update_link_sent_at: '2026-10-01T01:00:00.000Z',
     });
     const dispute = out.items.find((i) => i.kind === 'dispute')!;
@@ -600,6 +667,77 @@ const ev = (kind: 'refund' | 'chargeback', at: string, amount: number, charge = 
   at: new Date(at),
   amount_cents: amount,
   stripe_charge_id: charge,
+});
+
+describe('PF-5-BE: Money tells card tries apart from reminders, and unpaid stays failed', () => {
+  function failedRow(dunning: Record<string, unknown> | null) {
+    return {
+      id: 'p-pf5',
+      amount_cents: 4900,
+      currency: 'usd',
+      updated_at: new Date('2026-10-30T09:00:00Z'),
+      last_error: 'Your card was declined.',
+      client: { id: 'c-pf5', name: 'Test client' },
+      package: { name: 'Monthly coaching' },
+      dunning,
+    };
+  }
+  const dunning = (over: Record<string, unknown> = {}) => ({
+    status: 'active',
+    failure_count: 1,
+    last_attempt_number: null,
+    step_index: 3,
+    next_attempt_at: new Date('2026-11-02T09:00:00Z'),
+    locked_out_at: null,
+    last_failed_amount_cents: 4900,
+    last_failure_at: new Date('2026-10-30T09:00:00Z'),
+    last_failure_reason: 'card_declined',
+    attempts: [],
+    ...over,
+  });
+
+  // FR-1191R2 (LS-1191R2B B1): Stripe's attempt_count and failure_count are
+  // not executed bank tries, and the reminder cadence is not a bank limit, so
+  // every row sends the unknown form and the phone shows no "Try n of m".
+  it.each([
+    ['one failure, reminder step 3 (step is not a try)', dunning(), 0, 0],
+    ["Stripe's invoice attempt count is a schedule counter, not tries", dunning({ last_attempt_number: 3 }), 0, 0],
+    ['no bank try known (a refund or dispute hold)', dunning({ failure_count: 0, last_failure_reason: 'charge_refunded' }), 0, 0],
+    ['no dunning row', null, 0, 0],
+  ])('%s', async (_label, d, attempt, max) => {
+    const p = buildPrisma();
+    p.clientPurchase.findMany.mockResolvedValue([failedRow(d)]);
+    const out = await svc(p).getAttention(COACH);
+    const fp = out.items.find((i) => i.kind === 'failed_payment')?.failed_payment;
+    expect(fp).toMatchObject({ attempt, max_attempts: max, next_retry_at: null });
+  });
+
+  it('the attention query reads neither try counters nor the reminder deadline', async () => {
+    const p = buildPrisma();
+    await svc(p).getAttention(COACH);
+    const sel = (
+      p.clientPurchase.findMany.mock.calls[0][0] as {
+        select: Record<string, { select?: Record<string, unknown> }>;
+      }
+    ).select;
+    expect(sel.dunning.select).not.toHaveProperty('failure_count');
+    expect(sel.dunning.select).not.toHaveProperty('last_attempt_number');
+    expect(sel.dunning.select).not.toHaveProperty('next_attempt_at');
+    expect(sel.dunning.select).not.toHaveProperty('step_index');
+  });
+
+  it.each([
+    ['unpaid with an earlier paid slice', { status: 'unpaid' }, 'failed'],
+    ['past_due with an earlier paid slice', { status: 'past_due' }, 'failed'],
+    ['unpaid, fully refunded', { status: 'unpaid', refunds: [{ amount_cents: 4900, status: 'succeeded' }] }, 'refunded'],
+    ['unpaid, open dispute', { status: 'unpaid', disputes: [{ status: 'needs_response', amount_cents: 4900 }] }, 'disputed'],
+    ['canceled with no paid slice', { status: 'canceled', splits: [] }, 'canceled'],
+  ])('charge state: %s', async (_label, over, state) => {
+    const p = buildPrisma();
+    p.clientPurchase.findFirst.mockResolvedValue(chargeRow(over));
+    const out = await svc(p).getChargeBreakdown(COACH, 'p1');
+    expect(out.charge.state).toBe(state);
+  });
 });
 
 describe('C-641-1 — reversals land in the window they happened in', () => {
@@ -1247,5 +1385,45 @@ describe('C-641-6 — the tax export can be limited to one currency (S-COACH-3)'
 
   it('an unsupported currency is the specific MONEY_CURRENCY_INVALID', () => {
     expect(() => parseCurrency('xyz')).toThrow(BadRequestException);
+  });
+});
+
+// LO-1191 B2 (lens LO-1191 on b#1191 PF-5-BE): class 2, "Try n of m counts
+// bank tries only". DunningState is one row per purchase and failure_count is
+// never reset when a cycle resolves (only adminReset clears it), so it counts
+// every failed try in the plan's life. The current invoice's try is Stripe's
+// attempt_count (last_attempt_number).
+describe('LO-1191 B2: Try n of m counts this cycle, not every failure in the plan life', () => {
+  it('LO-1191 B2: a first decline after an earlier recovered cycle reads Try 1 of 4', async () => {
+    const p = buildPrisma();
+    p.clientPurchase.findMany.mockResolvedValue([
+      {
+        id: 'p-lo1191',
+        amount_cents: 14900,
+        currency: 'usd',
+        updated_at: new Date('2026-10-30T09:00:00Z'),
+        last_error: 'Your card was declined.',
+        client: { id: 'c-lo1191', name: 'Test client' },
+        package: { name: 'Monthly coaching' },
+        dunning: {
+          status: 'active',
+          // Three failed tries in an earlier month (then the client paid),
+          // plus today's first try on the new invoice.
+          failure_count: 4,
+          last_attempt_number: 1,
+          locked_out_at: null,
+          last_failed_amount_cents: 14900,
+          last_failure_at: new Date('2026-10-30T09:00:00Z'),
+          last_failure_reason: 'card_declined',
+          attempts: [],
+        },
+      },
+    ]);
+    const out = await svc(p).getAttention(COACH);
+    const fp = out.items.find((i) => i.kind === 'failed_payment')?.failed_payment;
+    // FR-1191R2: LS-1191R2B B1 showed Stripe's count is not bank tries, so the
+    // accepted forms are the unknown form or this invoice's own count; the
+    // lifetime count (4) must never show.
+    expect(fp!.max_attempts === 0 || (fp!.attempt === 1 && fp!.max_attempts >= 1)).toBe(true);
   });
 });

@@ -1087,9 +1087,13 @@ model WorkoutSession {
   exercises        ExerciseSet[]
   comments         WorkoutComment[]
   created_at       DateTime      @default(now())
+  // WK-1-BE: the phone's Idempotency-Key on POST /workouts; a resend with the same key returns this row.
+  client_key       String?
 
   // Hot path: coach alerts, community leaderboard, workout history all filter by (user_id, date).
   @@index([user_id, date])
+  // 20270502010500_workout_session_client_key: one workout per user per key (NULLs never collide).
+  @@unique([user_id, client_key])
 }
 
 // TRAIN-BE2: a coach's comment on a client's logged workout, one per coach per workout. Row rules:

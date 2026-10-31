@@ -17,6 +17,10 @@ export const PAY_PAGE_COPY = {
   billing: 'Billing',
   nextCharge: 'Next charge',
   dueToday: 'Due today',
+  // GC-3 (#GC-TRIAL op 1): a trial package. PF-W5 / PF-W6.
+  trialToday: (amount: string, date: string) =>
+    `Nothing is charged today. Your first charge of ${amount} is on ${date}.`,
+  startTrial: 'Start free trial',
   orCard: 'Or pay with card',
   name: 'Name',
   phone: 'Phone',
@@ -87,6 +91,8 @@ const usd = (cents: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100);
 const cadence = (i: string, n: number) => (n > 1 ? `every ${n} ${i}s` : `a ${i}`);
 const period = (i: string, n: number) => (n > 1 ? `${n} ${i}s` : i);
+export const shortDate = (iso: string) =>
+  new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(iso));
 const longDate = (iso: string) =>
   new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(new Date(iso));
 
@@ -98,17 +104,26 @@ export function esc(s: string): string {
 export function payPageTerms(p: PublicPackageData) {
   const due = usd(p.due_today_cents);
   const r = p.recurring;
-  if (!r) return { price: `${due} once`, cta: `Pay ${due}`, billing: null };
+  if (!r) return { trial: false, price: `${due} once`, cta: `Pay ${due}`, billing: null };
   const each = `${usd(r.amount_cents)} ${cadence(r.interval, r.interval_count)}`;
   const first = period(r.interval, r.interval_count);
+  // GC-3 — a trial: the card is saved today, the first charge is the plan's
+  // own amount at the trial's end (the quote's next_charge_at).
+  const trial = (p.trial_days ?? 0) > 0 && p.due_today_cents === 0;
   return {
+    trial,
     price: r.one_time_cents > 0 ? `${each}, plus ${usd(r.one_time_cents)} once` : each,
-    cta: r.one_time_cents > 0 ? `Subscribe, pay ${due} today` : `Subscribe for ${each}`,
+    cta: trial
+      ? PAY_PAGE_COPY.startTrial
+      : r.one_time_cents > 0
+        ? `Subscribe, pay ${due} today`
+        : `Subscribe for ${each}`,
     billing: {
       each,
       next: longDate(r.next_charge_at),
-      today:
-        r.one_time_cents > 0
+      today: trial
+        ? PAY_PAGE_COPY.trialToday(usd(r.amount_cents), shortDate(r.next_charge_at))
+        : r.one_time_cents > 0
           ? `You pay ${due} today: ${usd(r.one_time_cents)} once plus your first ${first} at ${usd(r.amount_cents)}.`
           : `You pay ${due} today for your first ${first}.`,
       renewal: `Renews automatically at ${each} until you cancel. Cancel anytime in the TGP Fitness app, under Your plans; you keep the plan until the end of the period you paid for.`,
@@ -141,7 +156,8 @@ export function renderPayPage(p: PublicPackageData, ctx: PayPageContext): string
     token: ctx.token,
     lp: ctx.lp,
     obo: ctx.onBehalfOf,
-    mode: p.recurring ? 'subscription' : 'payment',
+    // GC-3 — a trial saves the card (a SetupIntent), nothing is charged.
+    mode: t.trial ? 'setup' : p.recurring ? 'subscription' : 'payment',
     amount: p.due_today_cents,
     ret: ctx.returnUrl,
     copy: {
@@ -318,8 +334,9 @@ try{r=await fetch(api+p,{method:'POST',headers:{'Content-Type':'application/json
 return{ok:!!(r&&r.ok),d:d||{}}}
 function view(a,k,w,p){f1.hidden=!a;S.f2.hidden=!k;S.s3.hidden=!w;f.hidden=!p}
 function mount(){if(el)return;stripe=Stripe(c.pk);
-el=stripe.elements({mode:c.mode,amount:c.amount,currency:'usd',onBehalfOf:c.obo,paymentMethodTypes:['card'],
-appearance:{theme:'stripe',variables:{colorPrimary:'#2C4A36',colorText:'#1A1A18',colorTextSecondary:'#2C2C2C',colorDanger:'#B91C1C',colorBackground:'#ffffff',borderRadius:'12px',fontSizeBase:'16px'},rules:{'.Input':{border:'1px solid #DCD5CC',boxShadow:'none'}}}});
+var o={mode:c.mode,currency:'usd',onBehalfOf:c.obo,paymentMethodTypes:['card'],
+appearance:{theme:'stripe',variables:{colorPrimary:'#2C4A36',colorText:'#1A1A18',colorTextSecondary:'#2C2C2C',colorDanger:'#B91C1C',colorBackground:'#ffffff',borderRadius:'12px',fontSizeBase:'16px'},rules:{'.Input':{border:'1px solid #DCD5CC',boxShadow:'none'}}}};
+if(c.mode!=='setup')o.amount=c.amount;el=stripe.elements(o);
 var pe=el.create('payment',{fields:{billingDetails:{name:'never',email:'never'}},wallets:{applePay:'never',googlePay:'never',link:'never'}});
 pe.on('loaderror',function(){b.disabled=true;m.textContent=c.copy.failed});pe.mount('#card');
 var x=el.create('expressCheckout',{emailRequired:false,phoneNumberRequired:true,billingAddressRequired:true,buttonHeight:48,paymentMethods:{link:'never',paypal:'never',amazonPay:'never'}});
@@ -360,7 +377,7 @@ if(!s||s.h!==h){s={k:crypto.randomUUID(),h:h};try{sessionStorage.setItem(K,JSON.
 async function pay(name,phone){busy(true);m.textContent='';var email=E;
 var r=await post(c.lp?'?lp='+encodeURIComponent(c.lp):'',{guest_name:name,guest_phone:phone,guest_email:email,idempotency_key:key(email),buyer_token:T||undefined}),d=r.d;
 if(!r.ok||!d.client_secret){say(r.ok?c.copy.failed:txt(d,c.copy.failed));if(d.error==='BUYER_CODE_REQUIRED'){m.textContent='';await code()}return false}
-var res=await stripe.confirmPayment({elements:el,clientSecret:d.client_secret,confirmParams:{return_url:c.ret,payment_method_data:{billing_details:{name:name,phone:phone,email:email}}}});
+var res=await stripe[c.mode==='setup'?'confirmSetup':'confirmPayment']({elements:el,clientSecret:d.client_secret,confirmParams:{return_url:c.ret,payment_method_data:{billing_details:{name:name,phone:phone,email:email}}}});
 if(res.error){say(res.error.message);return false}return true}
 f.addEventListener('submit',async function(ev){ev.preventDefault();if(!E)return;busy(true);
 var s=await el.submit();if(s.error){say(s.error.message);return}await pay(nm.value.trim(),ph.value.trim())});
