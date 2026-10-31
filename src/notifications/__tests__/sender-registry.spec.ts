@@ -443,13 +443,14 @@ async function spacePush(s: Scenario): Promise<string> {
 }
 
 /**
- * FR-1186R2 (LO-1186R2 C2, KG-HELD-BLOCK-MESSAGE): a coach's message push to CLIENT through the real
+ * FR-1186R2 (LO-1186R2 C2; KG-HELD-BLOCK-MESSAGE, fixed by b#1192): a coach's message push to CLIENT through the real
  * MessageReceivedEmitter and the real funnel, held at 23:30 by quiet hours. In `blocked`, CLIENT blocks the
  * coach while it waits. At 08:00 the real outbox worker runs: 'sent' when it hands the push to the transport.
  */
 async function heldMessage(s: Scenario): Promise<string> {
   const c = core(CLIENT, 'quietHours');
-  await new MessageReceivedEmitter(c.svc).emit(CLIENT, { senderName: 'Coach A', threadId: 'thread-1' });
+  // FR-1192R3: the arguments MessagingService.notifyNewMessage passes (LO-1186R2 C1), senderId included (b#1192).
+  await new MessageReceivedEmitter(c.svc).emit(CLIENT, { senderName: 'Coach A', threadId: 'thread-1', senderId: COACH });
   const at2330 = await c.outcome();
   if (at2330 !== 'held') return `not held at 23:30 (${at2330})`;
   if (s === 'blocked') c.blocks.push({ blocker_id: CLIENT, blocked_id: COACH });
