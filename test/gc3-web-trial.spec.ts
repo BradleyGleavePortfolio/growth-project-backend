@@ -663,7 +663,7 @@ describe('GC-3 — pay page and return page words', () => {
           findUnique: jest.fn(async () => ({
             guest_email: 'jane@example.com',
             created_at: created,
-            status: 'paid',
+            status: 'converted',
             expires_at: new Date(Date.now() + DAY),
             idempotency_key: 'idem-key-trial-1',
             package_snapshot: { price_cents: 14900, trial_days: 7 },
@@ -698,4 +698,64 @@ describe('GC-3 — pay page and return page words', () => {
     });
     expect(wrong.view.kind).toBe('unknown');
   });
+  // FR-1193 (LO-1193 B1, LS-1193 B1) — the saved card alone never says the
+  // trial started: the row's conversion result decides the view.
+  it.each([
+    ['paid', null, 'confirming'],
+    ['pending', null, 'confirming'],
+    ['conversion_failed_retryable', 'db:x', 'confirming'],
+    ['conversion_failed_terminal', 'trial_already_used', 'trialRefused'],
+    ['conversion_failed_terminal', 'buyer_has_other_coach', 'unknown'],
+    ['refunded', null, 'unknown'],
+  ])('FR-1193: a saved card with row %s (%s) shows %s, never the trial started', async (status, lastError, kind) => {
+    const deps: any = {
+      storefrontBase: 'https://app.example.com',
+      db: {
+        guestCheckout: {
+          findUnique: jest.fn(async () => ({
+            guest_email: 'jane@example.com',
+            created_at: new Date(Date.now() - 60 * 1000),
+            status,
+            last_error: lastError,
+            expires_at: new Date(Date.now() + DAY),
+            idempotency_key: 'idem-key-trial-2',
+            package_snapshot: { price_cents: 14900, trial_days: 7 },
+            package: { share_token: 'tok_trial_page_012345', name: 'Monthly Coaching', coach: { name: 'Alex' } },
+          })),
+        },
+        user: { findFirst: jest.fn(async () => null) },
+      },
+      stripe: {
+        retrievePaymentIntent: jest.fn(),
+        retrieveCharge: jest.fn(),
+        retrieveSetupIntent: jest.fn(async () => ({
+          id: 'seti_webtrial02', status: 'succeeded', client_secret: 'seti_webtrial02_secret_z',
+        })),
+      },
+    };
+    const res = await readPayDone(deps, 'tok_trial_page_012345', {
+      setup_intent: 'seti_webtrial02',
+      setup_intent_client_secret: 'seti_webtrial02_secret_z',
+      n: '1',
+    });
+    expect(res.view.kind).toBe(kind);
+    const html = renderPayDonePage(cast(res.view), 'nonce-gc3', 'https://apps.example.com/tgp');
+    expect(html).not.toContain('Your free trial has started');
+    expect(html).not.toContain('Your first charge of');
+    expect(html).not.toContain('The package shows under Your plans.');
+    if (kind === 'confirming') {
+      // The existing confirming view, checking this SetupIntent again.
+      expect(res.refresh).toContain('setup_intent=seti_webtrial02');
+      expect(res.refresh).toContain('n=2');
+    } else {
+      expect(res.refresh).toBeNull();
+    }
+    if (kind === 'trialRefused') {
+      expect(html).toContain(`<h1 class="state">${GUEST_TRIAL_COPY.refusedSubject('Alex')}</h1>`);
+      expect(html).toContain(
+        'You&#39;ve already had a free trial with Alex, so this one was not started and nothing was charged. Open the app to subscribe.',
+      );
+    }
+  });
+
 });

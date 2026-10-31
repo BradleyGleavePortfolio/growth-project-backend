@@ -6,6 +6,15 @@ import { APP_STORE_URL_DEFAULT, PAY_PAGE_COPY, doc, esc, shortDate } from './pay
 // Every value is escaped. The only script is the failed/cancelled one that
 // drops that attempt's spent key from the pay page's tab storage (FR-1155 B2).
 
+// GC-3 — the buyer-facing words of a refused web trial (the email and the
+// return page). PF-W7 (approved); the heading/subject is GC3-W2 (Wording
+// needed, #188-W1), built from PF-W7.
+export const GUEST_TRIAL_COPY = {
+  refused: (coach: string) =>
+    `You've already had a free trial with ${coach}, so this one was not started and nothing was charged. Open the app to subscribe.`,
+  refusedSubject: (coach: string) => `Your free trial with ${coach} was not started`,
+} as const;
+
 export const PAY_DONE_COPY = {
   brand: 'TGP Fitness',
   paidH: 'Payment received',
@@ -53,6 +62,8 @@ export type PayDoneView =
       trial?: { firstChargeCents: number | null; firstChargeAt: string | null };
     }
   | { kind: 'confirming'; email: string; again: boolean; checkUrl: string }
+  /** FR-1193 — a web trial refused at conversion (already had one with this coach). */
+  | { kind: 'trialRefused'; coach: string }
   | { kind: 'failed'; reason: string | null; payUrl: string; spent: SpentKey }
   | { kind: 'cancelled'; payUrl: string; spent: SpentKey }
   | { kind: 'refunded' }
@@ -130,6 +141,8 @@ function body(v: PayDoneView, appStoreUrl: string): string {
       return v.again
         ? `<section id="confirming" aria-live="polite"><span class="wait" aria-hidden="true"></span><h1 class="state">${PAY_DONE_COPY.confirmingH}</h1><p>${PAY_DONE_COPY.confirming}</p></section>`
         : `<section id="slow"><h1 class="state">${PAY_DONE_COPY.slowH}</h1><p>${esc(PAY_DONE_COPY.slow(v.email))}</p><a class="link" href="${esc(v.checkUrl)}">${PAY_DONE_COPY.checkAgain}</a></section>`;
+    case 'trialRefused':
+      return `<section id="trial-refused"><h1 class="state">${esc(GUEST_TRIAL_COPY.refusedSubject(v.coach))}</h1><p>${esc(GUEST_TRIAL_COPY.refused(v.coach))}</p>${store(appStoreUrl)}</section>`;
     case 'failed':
       return `<section id="failed"><h1 class="state">${PAY_DONE_COPY.failedH}</h1><p>${esc(v.reason ?? PAY_DONE_COPY.failedReason)}</p><p>${PAY_DONE_COPY.failedNothing}</p><a class="btn" href="${esc(v.payUrl)}">${PAY_DONE_COPY.tryAgain}</a></section>`;
     case 'cancelled':

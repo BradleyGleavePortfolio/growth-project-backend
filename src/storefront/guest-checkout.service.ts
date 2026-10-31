@@ -43,6 +43,7 @@ import { EmailSenderConfigError, resolveEmailSender } from '../email/email-sende
 import { COACHING_COACH } from '../packages/coach-selling';
 import { BuyerHasOtherCoachError, assertBuyerMayPay, buyerVerdict } from './buyer-check';
 import { payPageUrl } from './storefront-links';
+import { GUEST_TRIAL_COPY } from './pay-done.html';
 import { packageTrialDays } from '../checkout/subscription-plan';
 import { attachTrialCard } from '../checkout/trial-card';
 import { TrialUsageService } from '../packages/trials/trial-usage.service';
@@ -127,13 +128,9 @@ export function isGuestTrialIntent(id: string | null | undefined): boolean {
   return typeof id === 'string' && id.startsWith('seti_');
 }
 
-// GC-3 — the buyer-facing words of a refused web trial. PF-W7 (approved);
-// the subject is "Wording needed" (PR table), built from PF-W7.
-export const GUEST_TRIAL_COPY = {
-  refused: (coach: string) =>
-    `You've already had a free trial with ${coach}, so this one was not started and nothing was charged. Open the app to subscribe.`,
-  refusedSubject: (coach: string) => `Your free trial with ${coach} was not started`,
-} as const;
+// GC-3 — the buyer-facing words of a refused web trial live with the return
+// page, which shows them too (FR-1193); re-exported for the email below.
+export { GUEST_TRIAL_COPY };
 
 // GC-3 — conversion lost the one-trial claim (PackageTrialUsage, one per
 // client + coach, shared with the app): roll the conversion transaction back.

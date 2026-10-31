@@ -25,6 +25,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const LANDING_PAGE_ID = /^[a-z0-9]{20,40}$/i;
 /** Not paid for: the claim refuses these once expires_at passes (guest-checkout.service.ts). */
 const UNCLAIMED = new Set(['pending', 'failed']);
+/** FR-1193 — a web trial whose card is saved but whose conversion has not run yet (or will retry). */
+const TRIAL_CONVERTING = new Set(['pending', 'paid', 'conversion_failed_retryable']);
 /** Stripe dispute outcomes that leave the money with the coach (won, a closed inquiry, prevented). */
 const DISPUTE_KEPT = new Set(['won', 'warning_closed', 'prevented']);
 /** Stripe dispute outcomes that sent the money back to the buyer. */
@@ -182,6 +184,7 @@ async function readTrialDone(
       guest_email: true,
       created_at: true,
       status: true,
+      last_error: true,
       expires_at: true,
       idempotency_key: true,
       package_snapshot: true,
@@ -203,6 +206,33 @@ async function readTrialDone(
   const landing = LANDING_PAGE_ID.test(lp) ? lp : undefined;
   const payUrl = payPageUrl(deps.storefrontBase, token, { lp: landing });
   const status = str(si.status);
+  // FR-1193 (LO-1193 B1, LS-1193 B1) — a saved card is not a started trial:
+  // the conversion decides. Converted: started. Refused (a second trial with
+  // this coach, refuseSecondTrial): PF-W7. Not converted yet: the confirming
+  // view, which checks again. Any other end: nothing is claimed.
+  const confirming = (): PayDoneResult => {
+    const n = Number.parseInt(str(q.n), 10);
+    const done = Number.isFinite(n) && n >= 0 ? Math.min(n, PAY_DONE_MAX_CHECKS) : 0;
+    const again = done < PAY_DONE_MAX_CHECKS;
+    const at = (k: number) =>
+      `/p/${encodeURIComponent(token)}/done?${new URLSearchParams({
+        setup_intent: siId,
+        setup_intent_client_secret: secret,
+        ...(landing ? { lp: landing } : {}),
+        n: String(k),
+      }).toString()}`;
+    return {
+      view: { kind: 'confirming', email: row.guest_email, again, checkUrl: at(0) },
+      refresh: again ? at(done + 1) : null,
+    };
+  };
+  if (status === 'succeeded' && row.status !== 'converted') {
+    if (TRIAL_CONVERTING.has(row.status)) return confirming();
+    if (row.status === 'conversion_failed_terminal' && row.last_error === 'trial_already_used') {
+      return { view: { kind: 'trialRefused', coach: row.package.coach.name.trim() || 'your coach' }, refresh: null };
+    }
+    return none;
+  }
   if (status === 'succeeded') {
     const snap = (row.package_snapshot ?? {}) as { price_cents?: unknown; trial_days?: unknown };
     const cents = typeof snap.price_cents === 'number' ? snap.price_cents : null;
@@ -230,22 +260,7 @@ async function readTrialDone(
       refresh: null,
     };
   }
-  if (status === 'processing') {
-    const n = Number.parseInt(str(q.n), 10);
-    const done = Number.isFinite(n) && n >= 0 ? Math.min(n, PAY_DONE_MAX_CHECKS) : 0;
-    const again = done < PAY_DONE_MAX_CHECKS;
-    const at = (k: number) =>
-      `/p/${encodeURIComponent(token)}/done?${new URLSearchParams({
-        setup_intent: siId,
-        setup_intent_client_secret: secret,
-        ...(landing ? { lp: landing } : {}),
-        n: String(k),
-      }).toString()}`;
-    return {
-      view: { kind: 'confirming', email: row.guest_email, again, checkUrl: at(0) },
-      refresh: again ? at(done + 1) : null,
-    };
-  }
+  if (status === 'processing') return confirming();
   const spent = { token, tag: payKeyTag(row.idempotency_key) };
   if (status === 'canceled') return { view: { kind: 'cancelled', payUrl, spent }, refresh: null };
   const err = (si as { last_setup_error?: { message?: unknown } | null }).last_setup_error;
