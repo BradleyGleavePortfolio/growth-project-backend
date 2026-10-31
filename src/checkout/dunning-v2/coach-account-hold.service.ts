@@ -18,6 +18,7 @@ import {
   isBillingPauseReason,
 } from './dunning-v2.service';
 import { dunningErrorCode } from './dunning-v2.safe-error';
+import { isDunningV2Enabled } from './dunning-v2.feature';
 import {
   COACH_ACCOUNT_HOLD_REASON,
   COACH_ACCOUNT_HOLD_RETRY_MS,
@@ -235,7 +236,7 @@ export class CoachAccountHoldService {
    */
   async runSweep(now: Date = new Date()): Promise<{ released: number; retried: number }> {
     const out = { released: 0, retried: 0 };
-    if (!this.v2.enabled()) return out;
+    if (!isDunningV2Enabled()) return out;
     const rows = await this.prisma.dunningState.findMany({
       where: HELD_WHERE,
       select: {
