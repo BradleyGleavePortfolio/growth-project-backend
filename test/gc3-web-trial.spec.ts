@@ -1089,4 +1089,36 @@ describe('TRIAL-WORDS-BE — the return page while a web trial starts', () => {
       expect(sent.filter((message) => message.to === gc.guest_email)).toHaveLength(1);
     },
   );
+
+  it.each(['provider rejects', 'network throws'])(
+    'LS-1199 B2: a ready trial recovers the promised welcome email after %s',
+    async (failure) => {
+      const { world, gc, service, done } = trialWorld();
+      expect((await done({ n: '5' })).html).toContain(esc(TW2_LINE(gc.guest_email)));
+      let providerAvailable = false;
+      const sender = jest.fn(async (_url: unknown, init?: { body?: string }) => {
+        if (!providerAvailable) {
+          if (failure === 'network throws') throw new Error('mail provider unavailable');
+          return { ok: false, status: 503, json: async () => ({}) } as Response;
+        }
+        sent.push(JSON.parse(init?.body ?? '{}'));
+        return { ok: true, status: 200, json: async () => ({}) } as Response;
+      });
+      global.fetch = cast<typeof fetch>(sender);
+
+      await service.handlePaymentSucceeded(gc.stripe_payment_intent_id);
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(world.state.guestCheckout[0].status).toBe('converted');
+      expect(sender).toHaveBeenCalledTimes(1);
+      expect(sent).toHaveLength(0);
+
+      // The provider recovers. Neither a normal webhook replay nor the
+      // existing reconciliation entry point may strand the welcome email.
+      providerAvailable = true;
+      await service.handlePaymentSucceeded(gc.stripe_payment_intent_id);
+      await service.reconcilePaidCheckout(gc.id);
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(sent.filter((message) => message.to === gc.guest_email)).toHaveLength(1);
+    },
+  );
 });
