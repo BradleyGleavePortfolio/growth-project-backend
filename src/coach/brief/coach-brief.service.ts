@@ -39,7 +39,7 @@ import { describeFailure } from '../../observability/log-pii';
 import { usableTimeZone } from '../../notifications/local-time';
 import { ConsentScope, ConsentService } from '../../consent/consent.service';
 import { coachSharingCheck } from '../../consent/coach-sharing-gate';
-import { COUNTED_MESSAGE, countedClients } from '../../common/count-rule';
+import { countedClients, countedMessagesFor } from '../../common/count-rule';
 import {
   DUNNING_V2_REVERSAL_REASON,
   FULL_REFUND_PAUSE_REASON,
@@ -1242,8 +1242,9 @@ export class CoachBriefService {
         where: {
           client_id: { in: clientIds },
           ...ownThreads(coachId, briefMode),
-          // COUNT-DELETED-BE: a deleted message is no unread thread (count rule).
-          ...COUNTED_MESSAGE,
+          // COUNT-DELETED-BE: a deleted message, or one whose author is in a
+          // block with this coach either way (LS-1197 B1), is no unread thread.
+          ...countedMessagesFor(coachId),
           read_at: null,
           // The message is unread by anyone with coach-side access AND
           // the sender is NOT the coach reading this brief — i.e. the
@@ -2572,8 +2573,10 @@ export class CoachBriefService {
       where: {
         NOT: { sender_id: coachId },
         // COUNT-DELETED-BE: a deleted voice note has a null body like a live
-        // one, so only deleted_at drops its "(voice message)" row (count rule).
-        ...COUNTED_MESSAGE,
+        // one, so only deleted_at drops its "(voice message)" row (count rule);
+        // a row whose author is now in a block with this coach either way is
+        // not found either, so its stored words drop (LS-1197 B1).
+        ...countedMessagesFor(coachId),
         OR: asked.map((m) => ({
           client_id: m.client_id,
           AND: [

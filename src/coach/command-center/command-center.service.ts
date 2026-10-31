@@ -30,7 +30,7 @@ import { CHURN_FACTOR_SCOPES, coachVisibleFactors } from './churn-factor-scopes'
 import { resolveRecipientTimeZone } from '../../notifications/recipient-timezone';
 import { type CoachHomeDay, loadHomeDay } from './coach-home-day';
 import { inBlockWith } from '../../messaging/block-pair';
-import { COUNTED_MESSAGE, countedClients } from '../../common/count-rule';
+import { countedClients, countedMessagesFor } from '../../common/count-rule';
 import { spaceAlertCopies, spaceCopyOf, withSpaceCopies } from '../../community/space-safety-alerts';
 import type { CoachRiskBoardRow } from '../../admin/ptm/admin-ptm.service';
 import type { PtmRiskBucket } from '../../ptm/ptm.types';
@@ -535,7 +535,7 @@ export class CommandCenterService {
       // chat in a block either way and a deleted message count 0 in the tile.
       countedClients(this.prisma, coachId, clientIds).then((open) =>
         this.prisma.coachMessage.count({
-          where: { coach_id: ownerCoachId, client_id: { in: open }, read_at: null, sender_id: { in: open }, ...COUNTED_MESSAGE },
+          where: { coach_id: ownerCoachId, client_id: { in: open }, read_at: null, sender_id: { in: open }, ...countedMessagesFor(coachId) },
         }),
       ),
     ]);
@@ -854,7 +854,9 @@ export class CommandCenterService {
     // 10-23 "Dissapear": a chat in a block either way leaves the Inbox tab
     // (no row, no words, unread 0 in the total); unblock brings it back.
     // COUNT-DELETED-BE: through the count rule (common/count-rule.ts), which
-    // also leaves deleted messages out of the rows, previews and unread counts.
+    // also leaves deleted messages, and messages whose author is in a block
+    // with this coach either way (a team coach, LS-1197 B1), out of the rows,
+    // previews and unread counts; the newest message left is the preview.
     const clientIds = await countedClients(this.prisma, coachId, roster);
     if (clientIds.length === 0) {
       return { threads: [], total_unread: 0 };
@@ -875,7 +877,7 @@ export class CommandCenterService {
       where: {
         coach_id: ownerCoachId,
         client_id: { in: clientIds },
-        ...COUNTED_MESSAGE,
+        ...countedMessagesFor(coachId),
       },
       orderBy: { created_at: 'desc' },
       distinct: ['client_id'],
@@ -911,7 +913,7 @@ export class CommandCenterService {
         client_id: { in: clientIds },
         read_at: null,
         sender_id: { in: clientIds },
-        ...COUNTED_MESSAGE,
+        ...countedMessagesFor(coachId),
       },
       _count: { _all: true },
     });

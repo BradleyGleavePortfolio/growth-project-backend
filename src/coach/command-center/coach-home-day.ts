@@ -25,7 +25,7 @@
 import type { PrismaService } from '../../prisma.service';
 import { sanitizePromptInput } from '../../ai/utils/sanitize-prompt-input';
 import { clientWeek } from '../client-week';
-import { COUNTED_MESSAGE, countedClients } from '../../common/count-rule';
+import { countedClients, countedMessagesFor } from '../../common/count-rule';
 
 /** The newest wins returned; `count` still counts every win this week. */
 export const HOME_WINS_MAX = 50;
@@ -311,14 +311,14 @@ async function contactRings(
   scope: HomeDayScope,
   dayFrom: Date,
   now: Date,
-  counted?: string[],
+  clientIds: string[],
 ): Promise<Pick<Rings, 'replies' | 'reach_outs'>> {
   const { ownerCoachId, needsYou } = scope;
   const goal = Math.min(REACH_OUT_GOAL_MAX, needsYou.length);
-  // COUNT-DELETED-BE: the count rule (common/count-rule.ts): a client in a
-  // block with the coach either way adds nothing to Replies. loadHomeDay
-  // passes the roster it already ran through the rule.
-  const clientIds = counted ?? (await countedClients(prisma, scope.coachId, scope.clientIds));
+  // COUNT-DELETED-BE: the count rule (common/count-rule.ts): `clientIds` is the
+  // roster loadHomeDay already ran through countedClients (a client in a block
+  // with the coach either way adds nothing to Replies), and each message read
+  // below takes countedMessagesFor (no deleted message, no author in a block).
   if (clientIds.length === 0) {
     return { replies: { answered: 0, received: 0 }, reach_outs: { contacted: 0, goal, contacted_ids: [] } };
   }
@@ -332,7 +332,7 @@ async function contactRings(
         coach_id: ownerCoachId,
         client_id: { in: clientIds },
         sender_id: { in: clientIds },
-        ...COUNTED_MESSAGE,
+        ...countedMessagesFor(scope.coachId),
         created_at: today,
       },
       select: { client_id: true, created_at: true },
@@ -347,7 +347,7 @@ async function contactRings(
         coach_id: ownerCoachId,
         client_id: { in: clientIds },
         sender_id: { notIn: clientIds },
-        ...COUNTED_MESSAGE,
+        ...countedMessagesFor(scope.coachId),
         broadcast_delivery: { is: null },
         automated_by: null,
         created_at: today,
