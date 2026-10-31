@@ -99,6 +99,24 @@ describe('StorefrontService', () => {
     expect(data.features).toEqual([]);
   });
 
+  it('LS-PAYFAIL B6: the public web quote preserves an offered seven-day trial with nothing due today', async () => {
+    findUnique.mockResolvedValueOnce(
+      makePkg({
+        billing_type: 'recurring',
+        amount_cents: 4900,
+        interval: 'month',
+        interval_count: 1,
+        trial_days: 7,
+      }),
+    );
+
+    const data = await service.getPublicPackageByToken('tok1234567890abcDEFGH');
+
+    expect(data).toEqual(
+      expect.objectContaining({ trial_days: 7, due_today_cents: 0 }),
+    );
+  });
+
   // P1-1 — destination-charge PaymentIntents live on the PLATFORM account, so
   // the storefront must confirm with the platform publishable key. The
   // connected-account publishable key from /accounts/{acct} is the wrong
