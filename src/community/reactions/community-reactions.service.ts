@@ -13,7 +13,8 @@ import {
   CommunitySafetyService,
 } from '../safety/community-safety.service';
 import { reactionKindForEmoji } from './community-emoji.allowlist';
-import { placeOf } from '../community-space-access';
+import { type RowPlace, placeOf } from '../community-space-access';
+import { countedReactions } from '../../common/count-rule';
 import {
   CommunityReactionState,
   CommunityReactionStateSchema,
@@ -37,6 +38,8 @@ interface ResolvedTarget {
   targetCreatedAt: Date | null;
   /** Who may read the target, so who hears its reaction pings. */
   audience: CommunityAudience;
+  /** The target's (community, space): where a reactor's ban or departure is read (count rule). */
+  place: RowPlace;
 }
 
 /**
@@ -110,6 +113,7 @@ export class CommunityReactionsService {
         targetId: post.id,
         targetCreatedAt: post.created_at,
         audience: { workspaceId: post.workspace_id, cohortId: post.cohort_id ?? null },
+        place: placeOf(post),
       };
     }
 
@@ -154,13 +158,17 @@ export class CommunityReactionsService {
       audience: msg.dm_key
         ? { people: [msg.sender_id, msg.recipient_user_id ?? msg.sender_id] }
         : { workspaceId: msg.workspace_id, cohortId: msg.cohort_id },
+      place: placeOf(msg),
     };
   }
 
-  /** Reactions on the target, minus those by anyone in a block relation with the caller. */
+  /**
+   * Reactions on the target the caller may count (COUNT-DELETED-BE, common/count-rule.ts): none by
+   * anyone in a block with the caller either way, banned from the community, or gone from the space.
+   */
   private async visibleReactions(user: User, t: ResolvedTarget): Promise<CommunityResponse[]> {
     const rows = await this.reactions.listForTarget(t.targetType, t.targetId);
-    return this.safety.filterBlocked(user.id, rows, (r) => r.user_id);
+    return countedReactions(this.safety, user.id, rows, () => t.place);
   }
 
   private summarise(
