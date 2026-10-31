@@ -374,11 +374,11 @@ describe('GC-3 — web page trials: card saved, nothing charged that day, one tr
     expect(stripe.cancelSubscription).toHaveBeenCalledWith(gc.stripe_subscription_id);
 
     const result = await readPayDone(
-      { db: world.db, stripe },
+      { db: world.db, stripe, storefrontBase: 'https://app.example.com' },
       world.pkg.share_token,
       { setup_intent: gc.stripe_payment_intent_id, setup_intent_client_secret: `${gc.stripe_payment_intent_id}_secret_z` },
     );
-    const html = renderPayDonePage(result.view, 'nonce');
+    const html = renderPayDonePage(result.view, 'nonce', 'https://apps.example.com/tgp');
     expect(html).not.toContain('Your free trial has started');
     expect(html).not.toContain('Your first charge of');
     expect(html).not.toContain('The package shows under Your plans.');
@@ -405,7 +405,7 @@ describe('GC-3 — web page trials: card saved, nothing charged that day, one tr
         // Read the actual conversion output with the existing query-aware
         // table fake. No native purchase or trial-state correction is seeded.
         const purchases = makeTable([['id']], () => ({}));
-        purchases.rows.push(purchase);
+        purchases.rows.push(cast(purchase));
         world.db.clientPurchase.findMany = purchases.findMany;
         world.db.clientPurchase.update = purchases.update;
         world.db.clientPurchase.findUnique = async (args: any) => {
@@ -780,7 +780,7 @@ describe('GC-3 — pay page and return page words', () => {
       expect(purchase).toMatchObject({ status: 'trialing', entitlement_active: true, card_on_file: true });
 
       const purchases = makeTable([['id']], () => ({}));
-      purchases.rows.push(purchase);
+      purchases.rows.push(cast(purchase));
       world.db.clientPurchase.findMany = purchases.findMany;
       world.db.clientPurchase.update = purchases.update;
       world.db.clientPurchase.findUnique = async (args: any) => {

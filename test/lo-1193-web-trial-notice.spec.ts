@@ -295,7 +295,7 @@ async function convertWebTrial(trialDays: number) {
 function noticeWorld(converted: Awaited<ReturnType<typeof convertWebTrial>>) {
   const notices = makeTrialNoticeTable();
   const usage = makeTrialUsageTable();
-  for (const r of converted.ledger) usage.rows.push({ ...r });
+  for (const r of converted.ledger) usage.rows.push(cast({ ...r }));
   // Column defaults the database fills on insert (the fake create does not).
   const purchases: Row[] = [
     { cancel_at_period_end: false, created_at: new Date(), ...converted.purchase },
