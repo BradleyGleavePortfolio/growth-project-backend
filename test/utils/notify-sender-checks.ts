@@ -1,6 +1,6 @@
 import { NotificationKind, type NotificationKindValue } from '../../src/notifications/notification-kind';
 import { SAFETY_ALERT_PUSH_BODY } from '../../src/notifications/push/lock-screen-copy';
-import { FUNNEL_SITES, SENDERS, type FunnelPush, type FunnelSite, type SenderRow } from './notify-sender-registry';
+import { FUNNEL_SITES, IMPORTS_WITHOUT_SEND, SENDERS, type FunnelPush, type FunnelSite, type ImportWithoutSend, type SenderRow } from './notify-sender-registry';
 import type { PushArgs, SendHit } from './notify-sender-scan';
 
 /**
@@ -27,17 +27,38 @@ export function directTransport(hits: SendHit[], funnel: FunnelSite[] = FUNNEL_S
 }
 
 /** "not in the sender registry": a send hit whose function has no SENDERS row with that via. */
-export function unregistered(hits: SendHit[], senders: SenderRow[] = SENDERS, funnel: FunnelSite[] = FUNNEL_SITES): string[] {
+export function unregistered(
+  hits: SendHit[],
+  senders: SenderRow[] = SENDERS,
+  funnel: FunnelSite[] = FUNNEL_SITES,
+  noSend: ImportWithoutSend[] = IMPORTS_WITHOUT_SEND,
+): string[] {
   const f = funnelKeys(funnel);
   const rows = new Map(senders.map((r) => [keyOf(r.file, r.fn), r]));
-  return hits
-    .filter((h) => {
-      if (h.via === 'transport') return false; // directTransport
-      if (f.has(keyOf(h.file, h.fn))) return false;
-      const row = rows.get(keyOf(h.file, h.fn));
-      return !row || !row.via.includes(h.via);
-    })
-    .map((h) => `not in the sender registry (test/utils/notify-sender-registry.ts). ${KT4}: ${where(h)}`);
+  return hits.flatMap((h) => {
+    if (h.via === 'transport') return []; // directTransport
+    // FR-1186R3: fail closed. Only IMPORTS_WITHOUT_SEND clears an import the scan reads no send of; a sender row or
+    // a funnel site never does.
+    if (h.via === 'unread') return noSend.some((e) => isListed(e, h)) ? [] : [unreadMessage(h)];
+    if (f.has(keyOf(h.file, h.fn))) return [];
+    const row = rows.get(keyOf(h.file, h.fn));
+    return !row || !row.via.includes(h.via) ? [`not in the sender registry (test/utils/notify-sender-registry.ts). ${KT4}: ${where(h)}`] : [];
+  });
+}
+
+const isListed = (e: ImportWithoutSend, h: SendHit): boolean => e.file === h.file && e.name === h.unread?.name;
+
+const unreadMessage = (h: SendHit): string =>
+  `the scan reads no send of ${h.unread?.name ?? '?'} in this file, though it imports it (${h.unread?.form ?? '?'}). ` +
+  'KT-4 fails closed: write the send in a form the scan reads (SEND_FORMS in test/utils/notify-sender-forms.ts lists them) ' +
+  'and register it, or, if this file only holds the class and never sends through it, add it to IMPORTS_WITHOUT_SEND ' +
+  `in test/utils/notify-sender-registry.ts with why. ${KT4}: ${where(h)}`;
+
+/** FR-1186R3: an IMPORTS_WITHOUT_SEND entry the scan no longer needs (the file now sends, or no longer imports it). */
+export function staleImportsWithoutSend(hits: SendHit[], noSend: ImportWithoutSend[] = IMPORTS_WITHOUT_SEND): string[] {
+  return noSend
+    .filter((e) => !hits.some((h) => h.via === 'unread' && isListed(e, h)))
+    .map((e) => `IMPORTS_WITHOUT_SEND lists ${e.file} ${e.name}, but the scan reads a send of it there or no import of it: delete the entry. ${KT4}`);
 }
 
 /** A funnel push whose context passes Mute all: MUTE_ALL_PASS, or a safety alert key (owner #168-18). */

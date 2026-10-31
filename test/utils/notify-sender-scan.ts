@@ -17,7 +17,10 @@ import { MUTE_ALL_PASS, RENEWAL_OFFER } from '../../src/notifications/push/push-
  *     requiring or loading FetchExpoPushClient, ExpoPushClient, EXPO_SEND_URL, EXPO_RECEIPTS_URL or
  *     EXPO_PUSH_CLIENT from it (or from push-delivery.service.ts, which re-exports them), any use of those
  *     names in a function, `new` of the client, and `.send` / `.getReceipts` on a name typed with it;
- *   - the Expo push URL in a string, a push_outbox write, a raw INSERT into the notice or outbox table;
+ *     FR-1186R3 (LS-1186R3 B1): an inline import type of it too (`import('../push/expo-push-client').ExpoPushClient`,
+ *     `typeof import('...')`);
+ *   - the Expo push URL in a string, a push_outbox write (`x.pushOutbox.create`, `x['pushOutbox']['create']`, a
+ *     copy of the delegate), a raw INSERT into the notice or outbox table;
  *   - PushDeliveryService.enqueue: `.enqueue` on a receiver whose name says push, or on any name that holds
  *     PushDeliveryService (see "holds" below);
  *   - FR-1186R2 (LO-1186R2 B1): importing PushDeliveryService itself, in any file but the funnel's own and a
@@ -25,7 +28,9 @@ import { MUTE_ALL_PASS, RENEWAL_OFFER } from '../../src/notifications/push/push-
  * - `pushToUser` / `pushToCoach`: NotificationsService's direct Expo push (no outbox, no quiet hours).
  * - `sendPush`: NotificationsService.sendPush, the funnel push (Mute all, push switch, quiet hours).
  * - `createNotification`: NotificationsService.createNotification, the funnel in-app notice.
- * - `notificationRow`: a direct `<db>.notification.create|createMany|upsert` that skips the gate.
+ * - `notificationRow`: a direct `<db>.notification.create|createMany|createManyAndReturn|upsert` that skips the
+ *   gate, by dot or bracket (`db['notification']['create']`, FR-1186R3, LS-1186R3 B2), or through a copy of the
+ *   delegate (`const n = db.notification`, `n: Prisma.NotificationDelegate`).
  * - `emitter`: a call into a src/notifications/emitters/* class, which writes the notice and the push.
  * - `communityPush`: a call to CommunityNotificationsService.sendCommunityPush (inbox row + pushToUser).
  *
@@ -35,10 +40,23 @@ import { MUTE_ALL_PASS, RENEWAL_OFFER } from '../../src/notifications/push/push-
  * type or initializer names the imported class, a local `type` alias of it (`type Outbox = Pick<X, 'm'>`)
  * or a local interface that extends it; when it is an interface or type-literal field typed that way
  * (`deps.queue`); when it is a constructor parameter with `@Inject(X)`; and when it is a local copy of a
- * holder (`const q = this.outbox`, `const { outbox: q } = this`) (FR-1186R2, LO-1186R2 B1).
- * Not seen (say so in review): a method name built at run time (`x[name]`), `Reflect.get(x, 'sendPush')`,
- * assignment destructuring (`({ sendPush: send } = x)`), an `@Inject('TOKEN')` string token, and a send
- * reached through `any` or a value passed in from another file under a name and type that say nothing.
+ * holder (`const q = this.outbox`, `const { outbox: q } = this`) (FR-1186R2, LO-1186R2 B1). FR-1186R3
+ * (LO-1186R3 B1): also a get accessor or a method declared to return one, or that returns a holder
+ * (`get alerts(): CoachAlertEmitter`, `alerts() { return this.made; }`, `this.alerts().emit`), what a call on a
+ * holder gives (`this.relays.get('coach')?.emit`, `this.list.find(...)`), and an element of a Map or array holder
+ * (`for (const e of this.emitters)`, the parameter of `this.emitters.forEach((e) => ...)`, `this.list[0]`).
+ *
+ * The gate fails closed (FR-1186R3): a file that imports a sender class (an emitter, CommunityNotificationsService,
+ * NotificationsService) by any form (named, default, namespace, `export ... from`, `import x = require()`,
+ * `require()`, `import()`, an inline `import('x').X` type) and in which the scan reads no send of that class is an
+ * `unread` hit at the import. The registry checks report it unless IMPORTS_WITHOUT_SEND (the registry) names the
+ * file and class with why (it only holds the class or hands it on). Nest `*.module.ts` files, the class's own file
+ * and, for the emitters, src/notifications/emitters/ itself are not callers. The prefilter (PREFILTER) is never
+ * narrower than this walker: every name the walker keys on admits the file.
+ * Not seen (say so in review): a send in a form the walker cannot read (a method name built at run time
+ * (`x[name]`), `Reflect.get(x, 'sendPush')`, assignment destructuring (`({ sendPush: send } = x)`)) in a file where
+ * the scan reads another send of the same class; and a sender the file never imports (an `@Inject('TOKEN')`
+ * string token, `any`, or a value passed in from another file under a name and type that say nothing).
  *
  * What a sendPush call passes (FR-1186R2, LS-1186R2 B1 and LO-1186R2 B2): the kind is read as a value when
  * it is spelled statically (`NotificationKind.X`, `NotificationKind['X']`, a string or template literal,
@@ -54,7 +72,11 @@ export type SendVia =
   | 'createNotification'
   | 'notificationRow'
   | 'emitter'
-  | 'communityPush';
+  | 'communityPush'
+  | 'unread';
+
+/** FR-1186R3: the sender kinds an `unread` hit stands for (an emitter class, the community relay, NotificationsService). */
+export type UnreadKind = 'emitter' | 'communityPush' | 'notices';
 
 /** How a sendPush call sets `urgent` and `context` (one variant per branch of its argument object). */
 export interface PushArgVariant {
@@ -106,6 +128,11 @@ export interface SendHit {
    * property's literal value, or `{ code }` when it is a value the scan cannot read. Opaque when not an object.
    */
   callArgs?: CallArgs;
+  /**
+   * FR-1186R3 (the gate fails closed): for an `unread` hit, the sender class this file imports (by any import form)
+   * with no send of it the scan reads in the file; the hit sits on the import.
+   */
+  unread?: { name: string; kind: UnreadKind; form: string };
 }
 
 /** One property of an emitter call's argument: its literal value, or only its code. */
@@ -127,7 +154,8 @@ const TRANSPORT_EXPORTS = ['FetchExpoPushClient', 'ExpoPushClient', 'EXPO_SEND_U
 const OUTBOX_CLASS = 'PushDeliveryService';
 const EXPO_URL = /exp\.host\/--\/api\/v2\/push|api\.expo\.dev\/v2\/push/;
 const RAW_INSERT = /insert\s+into\s+"?(notifications?|push_outbox|push_outboxes|pushoutbox)"?/i;
-const ROW_WRITE = new Set(['create', 'createMany', 'upsert']);
+const ROW_WRITE = new Set(['create', 'createMany', 'createManyAndReturn', 'upsert']);
+const ROW_WRITE_RE = /^(create|createMany|createManyAndReturn|upsert)$/;
 const PASS_WORDS = /\b(passesMuteAll|MUTE_ALL_PASS|safetyAlert)\b/;
 const OFFER_WORDS = /\b(renewalOffer|RENEWAL_OFFER)\b/;
 /** The push-preferences constants a context may name (their real values, so a change there is read here). */
@@ -137,10 +165,16 @@ const KIND_VALUES = NotificationKind as Record<string, string>;
 const escape = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /**
  * A file is parsed only when it names one of these. Built from the same lists the scan uses, so a form
- * the scan knows is never skipped here (LO-1186 B1).
+ * the scan knows is never skipped here (LO-1186 B1). FR-1186R3 (LS-1186R3 B2): never narrower than the walker:
+ * any mention of `notification` (the notice table's delegate in any spelling, `x['notification']['create']`,
+ * NotificationsService, createNotification, CommunityNotificationsService and their modules) or `emit` (every
+ * emitter class, module and method) admits the file. These only add files; fr-1186r3-fail-closed.spec.ts proves the
+ * whole of src/ parsed without the prefilter gives the same hits.
  */
 export const PREFILTER = new RegExp(
   [
+    'notification',
+    'emit',
     'CommunityNotificationsService',
     'Emitter',
     ...SEND_METHODS,
@@ -228,35 +262,82 @@ const isTransportModule = (rel: string, spec: string): boolean => TRANSPORT_MODU
 
 type Relay = { via: SendVia; method: RegExp; name: string };
 
+const EMITTER_MODULE = /(^|\/)emitters\/[a-z0-9-]+\.emitter$/;
+const COMMUNITY_CLASS = 'CommunityNotificationsService';
+const COMMUNITY_MODULE = 'src/community/notifications/community-notifications.service';
+const NOTICES_CLASS = 'NotificationsService';
+const NOTICES_MODULE = 'src/notifications/notifications.service';
+/**
+ * FR-1186R3: the notice and outbox tables' Prisma delegates, by property name and by type, so a delegate held under
+ * another name (`const n = tx.notification; n.create(...)`, `n: Prisma.NotificationDelegate`) is still read.
+ */
+const NOTICE_ROW: Relay = { via: 'notificationRow', method: ROW_WRITE_RE, name: 'notification' };
+const OUTBOX_ROW: Relay = { via: 'transport', method: ROW_WRITE_RE, name: 'pushOutbox' };
+const DELEGATES = new Map<string, Relay>([
+  ['notification', NOTICE_ROW],
+  ['pushOutbox', OUTBOX_ROW],
+]);
+const DELEGATE_TYPES = new Map<string, Relay>([
+  ['NotificationDelegate', NOTICE_ROW],
+  ['PushOutboxDelegate', OUTBOX_ROW],
+]);
+
+/** The relay an imported name stands for, if any (shared by every import form the walker follows). */
+function relayFor(imported: string, from: string, rel: string): Relay | undefined {
+  // FR-1186R3: an *Emitter class from any src/notifications module (a barrel too), not only its own file.
+  if (/Emitter$/.test(imported) && (EMITTER_MODULE.test(from) || resolveSpecifier(rel, from).startsWith('src/notifications/'))) {
+    return { via: 'emitter', method: /^emit/, name: imported };
+  }
+  if (imported === COMMUNITY_CLASS) return { via: 'communityPush', method: /^sendCommunityPush$/, name: imported };
+  if (imported === OUTBOX_CLASS) return { via: 'transport', method: /^enqueue$/, name: imported };
+  if ((imported === 'FetchExpoPushClient' || imported === 'ExpoPushClient') && isTransportModule(rel, from)) {
+    return { via: 'transport', method: /^(send|getReceipts)$/, name: imported };
+  }
+  return undefined;
+}
+
+/** `import('x')` as a type: its module specifier, and the last name of its qualifier (`import('x').A.B` -> B). */
+function importTypeParts(n: ts.ImportTypeNode): { spec: string | undefined; name: string | undefined } {
+  const arg = n.argument;
+  const spec = ts.isLiteralTypeNode(arg) && ts.isStringLiteral(arg.literal) ? arg.literal.text : undefined;
+  const q = n.qualifier;
+  return { spec, name: q ? (ts.isIdentifier(q) ? q.text : q.right.text) : undefined };
+}
+
+/** FR-1186R3 (LS-1186R3 B1): the relay each inline import type in a file names (`import('../push/expo-push-client').ExpoPushClient`). */
+const IMPORT_TYPE_RELAY = new WeakMap<ts.Node, Relay>();
+
 /**
  * The names this file imports that stand for a sender or for the transport: every class in
  * src/notifications/emitters/ (methods named emit*), CommunityNotificationsService.sendCommunityPush,
  * PushDeliveryService.enqueue, and the Expo client (FetchExpoPushClient / ExpoPushClient: send, getReceipts).
+ * FR-1186R3: also an inline import type of one (LS-1186R3 B1) and the Prisma delegate types of the notice and
+ * outbox tables.
  */
 function relayTypes(sf: ts.SourceFile, rel: string): Map<string, Relay> {
-  const types = new Map<string, Relay>();
+  const types = new Map<string, Relay>(DELEGATE_TYPES);
   for (const st of sf.statements) {
     if (!ts.isImportDeclaration(st) || !ts.isStringLiteral(st.moduleSpecifier)) continue;
     const from = st.moduleSpecifier.text;
     const named = st.importClause?.namedBindings;
     if (!named || !ts.isNamedImports(named)) continue;
     for (const el of named.elements) {
-      const local = el.name.text;
-      const imported = (el.propertyName ?? el.name).text;
-      if (/(^|\/)emitters\/[a-z0-9-]+\.emitter$/.test(from) && /Emitter$/.test(imported)) {
-        types.set(local, { via: 'emitter', method: /^emit/, name: imported });
-      } else if (imported === 'CommunityNotificationsService') {
-        types.set(local, { via: 'communityPush', method: /^sendCommunityPush$/, name: imported });
-      } else if (imported === OUTBOX_CLASS) {
-        types.set(local, { via: 'transport', method: /^enqueue$/, name: imported });
-      } else if ((imported === 'FetchExpoPushClient' || imported === 'ExpoPushClient') && isTransportModule(rel, from)) {
-        types.set(local, { via: 'transport', method: /^(send|getReceipts)$/, name: imported });
-      }
+      const relay = relayFor((el.propertyName ?? el.name).text, from, rel);
+      if (relay) types.set(el.name.text, relay);
     }
   }
+  const inline = (n: ts.Node): void => {
+    if (ts.isImportTypeNode(n)) {
+      const { spec, name } = importTypeParts(n);
+      const relay = spec !== undefined && name !== undefined ? relayFor(name, spec, rel) : undefined;
+      if (relay) IMPORT_TYPE_RELAY.set(n, relay);
+    }
+    ts.forEachChild(n, inline);
+  };
+  inline(sf);
   // FR-1186R2 (LO-1186R2 B1): a local `type` alias of a relay (`type Outbox = Pick<PushDeliveryService, 'enqueue'>`)
   // or a local interface that extends one is that relay too; an alias of an alias is followed.
-  for (let pass = 0, grew = types.size > 0; grew && pass < 8; pass++) {
+  for (let pass = 0, grew = true; grew && pass < 8; pass++) {
     grew = false;
     const visit = (n: ts.Node): void => {
       let relay: Relay | undefined;
@@ -273,13 +354,14 @@ function relayTypes(sf: ts.SourceFile, rel: string): Map<string, Relay> {
   return types;
 }
 
-/** The first relay type named anywhere inside a node (a type such as `Pick<X, 'm'>`, or `moduleRef.get(X)`). */
+/** The first relay type named anywhere inside a node (a type such as `Pick<X, 'm'>`, `import('x').X`, or `moduleRef.get(X)`). */
 function relayIn(node: ts.Node | undefined, types: Map<string, Relay>): Relay | undefined {
-  if (!node || types.size === 0) return undefined;
+  if (!node) return undefined;
   let found: Relay | undefined;
   const look = (n: ts.Node): void => {
     if (found) return;
     if (ts.isIdentifier(n) && types.has(n.text)) found = types.get(n.text);
+    else if (IMPORT_TYPE_RELAY.has(n)) found = IMPORT_TYPE_RELAY.get(n);
     else ts.forEachChild(n, look);
   };
   look(node);
@@ -287,25 +369,90 @@ function relayIn(node: ts.Node | undefined, types: Map<string, Relay>): Relay | 
 }
 
 /**
+ * FR-1186R3 (LO-1186R3 B1): the relay an expression stands for: a holder's name (`a`, `this.a`, `x['a']`); a getter
+ * or a method that returns one (`this.a`, `this.a()`); what a call on a holder gives (`this.relays.get('k')`,
+ * `this.list.find(...)`), but not a send on it (`this.a.emit(...)` gives its result); an element of one
+ * (`this.list[0]`); an awaited one; and the notice or outbox table's Prisma delegate (`tx.notification`).
+ */
+function holderOf(e: ts.Expression | undefined, holders: Map<string, Relay>, depth = 0): Relay | undefined {
+  if (!e || depth > 8) return undefined;
+  const x = strip(e);
+  const next = (y: ts.Expression): Relay | undefined => holderOf(y, holders, depth + 1);
+  if (ts.isAwaitExpression(x)) return next(x.expression);
+  if (ts.isIdentifier(x)) return holders.get(x.text);
+  if (ts.isPropertyAccessExpression(x)) return holders.get(x.name.text) ?? DELEGATES.get(x.name.text) ?? next(x.expression);
+  if (ts.isElementAccessExpression(x)) {
+    const key = nameOf(x.argumentExpression);
+    return (key !== undefined ? (holders.get(key) ?? DELEGATES.get(key)) : undefined) ?? next(x.expression);
+  }
+  if (ts.isCallExpression(x)) {
+    const callee = strip(x.expression);
+    const name = ts.isPropertyAccessExpression(callee) ? callee.name.text : ts.isElementAccessExpression(callee) ? nameOf(callee.argumentExpression) : undefined;
+    const relay = next(callee);
+    return relay && name !== undefined && relay.method.test(name) ? undefined : relay;
+  }
+  if (ts.isArrowFunction(x) && !ts.isBlock(x.body)) return next(x.body);
+  return undefined;
+}
+
+/** Every name a binding binds (`a`, `{ a, b: c }`, `[a, [b]]`). */
+function boundNames(name: ts.BindingName): string[] {
+  if (ts.isIdentifier(name)) return [name.text];
+  return name.elements.flatMap((el) => (ts.isOmittedExpression(el) ? [] : boundNames(el.name)));
+}
+
+/** Array and promise methods whose callback gets the holder's element (or value) as its parameter. */
+const ELEMENT_METHODS = new Set(['forEach', 'map', 'flatMap', 'filter', 'find', 'findLast', 'some', 'every', 'reduce', 'reduceRight', 'then']);
+
+/**
  * The names that hold a relay in this file and the relay each holds: constructor params, class fields, locals,
  * interface and type-literal fields (`deps.queue`), a param with `@Inject(X)`, and a local copy of a holder
  * (`const q = this.outbox`, `const { outbox: q } = this`), followed until nothing new is found.
+ * FR-1186R3 (LO-1186R3 B1): also a get accessor, a method or a function by its declared return type or by what it
+ * returns (`get alerts(): CoachAlertEmitter`, `alerts() { return this.made; }`), an element of a Map or an array
+ * held that way (`this.relays.get('k')`, a for-of variable, an array method's callback parameter), and a copy of
+ * the notice or outbox table's delegate.
  */
 function relayHolders(sf: ts.SourceFile, types: Map<string, Relay>): Map<string, Relay> {
   const holders = new Map<string, Relay>();
-  if (types.size === 0) return holders;
-  const fromHolder = (e: ts.Expression | undefined): Relay | undefined => {
-    if (!e) return undefined;
-    const name = lastName(strip(e));
-    return name !== undefined ? holders.get(name) : undefined;
-  };
+  const fromHolder = (e: ts.Expression | undefined): Relay | undefined => holderOf(e, holders);
   let grew = true;
   const put = (name: string | undefined, relay: Relay | undefined): void => {
     if (!name || !relay || holders.has(name)) return;
     holders.set(name, relay);
     grew = true;
   };
+  /** What a function body returns, when that is a holder (returns inside nested functions are not its own). */
+  const returned = (body: ts.Node | undefined): Relay | undefined => {
+    let found: Relay | undefined;
+    const look = (n: ts.Node): void => {
+      if (found || ts.isFunctionLike(n)) return;
+      if (ts.isReturnStatement(n)) found = fromHolder(n.expression);
+      else ts.forEachChild(n, look);
+    };
+    if (body) ts.forEachChild(body, look);
+    return found;
+  };
   const visit = (n: ts.Node): void => {
+    if (ts.isGetAccessorDeclaration(n) || ts.isMethodDeclaration(n) || ts.isFunctionDeclaration(n) || ts.isMethodSignature(n)) {
+      put(nameOf(n.name), relayIn(n.type, types) ?? ('body' in n ? returned(n.body) : undefined));
+    }
+    if (ts.isVariableDeclaration(n) && ts.isVariableDeclarationList(n.parent) && ts.isForOfStatement(n.parent.parent)) {
+      const relay = fromHolder(n.parent.parent.expression);
+      for (const name of boundNames(n.name)) put(name, relay);
+    }
+    if (
+      ts.isParameter(n) &&
+      (ts.isArrowFunction(n.parent) || ts.isFunctionExpression(n.parent)) &&
+      ts.isCallExpression(n.parent.parent) &&
+      n.parent.parent.arguments.some((a) => a === n.parent)
+    ) {
+      const callee = strip(n.parent.parent.expression);
+      if (ts.isPropertyAccessExpression(callee) && ELEMENT_METHODS.has(callee.name.text)) {
+        const relay = fromHolder(callee.expression);
+        for (const name of boundNames(n.name)) put(name, relay);
+      }
+    }
     if (ts.isParameter(n) || ts.isPropertyDeclaration(n) || ts.isVariableDeclaration(n)) {
       const decorators = ts.canHaveDecorators(n) ? (ts.getDecorators(n) ?? []) : [];
       const injected = decorators.map((d) => relayIn(d.expression, types)).find((r) => !!r);
@@ -314,7 +461,7 @@ function relayHolders(sf: ts.SourceFile, types: Map<string, Relay>): Map<string,
       put(nameOf(n.name), relayIn(n.type, types));
     } else if (ts.isBindingElement(n) && ts.isObjectBindingPattern(n.parent) && ts.isIdentifier(n.name)) {
       const key = nameOf(n.propertyName ?? n.name);
-      if (key !== undefined && holders.has(key)) put(n.name.text, holders.get(key));
+      if (key !== undefined) put(n.name.text, holders.get(key) ?? DELEGATES.get(key));
     }
     ts.forEachChild(n, visit);
   };
@@ -531,7 +678,7 @@ export function scanFile(abs: string, rel: string, text: string): SendHit[] {
   if (transportHome) for (const [k, r] of holders) if (r.via === 'transport') holders.delete(k);
   /** Local names bound to an Expo client value or URL import (so a use inside a function names that function). */
   const transportLocals = new Set<string>();
-  const add = (node: ts.Node, via: SendVia, args?: PushArgs, more?: Pick<SendHit, 'relay' | 'callArgs'>): void => {
+  const add = (node: ts.Node, via: SendVia, args?: PushArgs, more?: Pick<SendHit, 'relay' | 'callArgs' | 'unread'>): void => {
     const line = sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
     hits.push({ file: rel, line, fn: enclosingFunction(node), via, code: (lines[line - 1] ?? '').trim(), ...(args ? { args } : {}), ...(more ?? {}) });
   };
@@ -550,7 +697,8 @@ export function scanFile(abs: string, rel: string, text: string): SendHit[] {
   /** A method reached on a receiver: called, bound, passed on, or read by `x['name']`. */
   const reach = (node: ts.Node, method: string, recv: ts.Expression | undefined): void => {
     const recvName = recv ? lastName(recv) : undefined;
-    const relay = (recvName ? holders.get(recvName) : undefined) ?? (recv && !transportHome ? relayIn(strip(recv), types) : undefined);
+    // FR-1186R3 (LO-1186R3 B1): through a getter, a method's return, a Map or an array element (holderOf).
+    const relay = holderOf(recv, holders) ?? (recv && !transportHome ? relayIn(strip(recv), types) : undefined);
     const call = node.parent && ts.isCallExpression(node.parent) && node.parent.expression === node ? node.parent : undefined;
     if (SDK_METHODS.includes(method)) add(node, 'transport');
     else if (recvName === 'pushOutbox' && ROW_WRITE.has(method)) add(node, 'transport');
@@ -559,11 +707,21 @@ export function scanFile(abs: string, rel: string, text: string): SendHit[] {
       add(node, method as SendMethod, method === 'sendPush' ? pushArgs(call, sf, env) : undefined);
     } else if (recvName === 'notification' && ROW_WRITE.has(method)) add(node, 'notificationRow');
     else if (relay?.method.test(method)) {
-      add(node, relay.via, undefined, relay.via === 'transport' ? undefined : { relay: { name: relay.name, method }, ...(relay.via === 'emitter' ? { callArgs: callArgs(call, sf, env) } : {}) });
+      const plain = relay.via === 'transport' || relay.via === 'notificationRow';
+      add(node, relay.via, undefined, plain ? undefined : { relay: { name: relay.name, method }, ...(relay.via === 'emitter' ? { callArgs: callArgs(call, sf, env) } : {}) });
     }
   };
 
+  /** FR-1186R3: every import of a sender class, by any import form (the fail-closed check below). */
+  const senderImports: Array<{ node: ts.Node; name: string; kind: UnreadKind; form: string }> = [];
+  const noteImport = (node: ts.Node, spec: string, names: string[] | null, form: string): void => {
+    if (rel.endsWith('.module.ts')) return;
+    for (const s of sendersFrom(rel, spec, names)) senderImports.push({ node, ...s, form });
+  };
+
   const visit = (n: ts.Node): void => {
+    const imported = importForm(n);
+    if (imported) noteImport(n, imported.spec, imported.names, imported.form);
     if ((ts.isImportDeclaration(n) || ts.isExportDeclaration(n)) && n.moduleSpecifier && ts.isStringLiteral(n.moduleSpecifier)) {
       const spec = n.moduleSpecifier.text;
       if (spec === SDK) add(n, 'transport');
@@ -592,6 +750,13 @@ export function scanFile(abs: string, rel: string, text: string): SendHit[] {
       (EXPO_URL.test(n.text) || RAW_INSERT.test(n.text))
     ) {
       add(n, 'transport');
+    } else if (ts.isImportTypeNode(n)) {
+      // FR-1186R3 (LS-1186R3 B1): `import('../push/expo-push-client').ExpoPushClient` as a type is an import of it.
+      const { spec, name } = importTypeParts(n);
+      if (spec !== undefined && transportSpec(spec)) {
+        const outbox = name === OUTBOX_CLASS && !rel.endsWith('.module.ts');
+        if (spec === SDK || name === undefined || outbox || TRANSPORT_EXPORTS.includes(name)) add(n, 'transport');
+      }
     } else if (ts.isPropertyAccessExpression(n)) {
       reach(n, n.name.text, n.expression);
     } else if (ts.isElementAccessExpression(n)) {
@@ -611,7 +776,63 @@ export function scanFile(abs: string, rel: string, text: string): SendHit[] {
     ts.forEachChild(n, visit);
   };
   visit(sf);
+  // FR-1186R3: the gate fails closed. A file that imports a sender class by any import form, and in which the scan
+  // reads no send of it, is an `unread` hit on the import: the send is in a form the walker cannot read, or the
+  // file only holds it (IMPORTS_WITHOUT_SEND in the registry names those, with why).
+  const sends = (u: { name: string; kind: UnreadKind }): boolean =>
+    u.kind === 'notices'
+      ? hits.some((h) => (SEND_METHODS as readonly string[]).includes(h.via))
+      : hits.some((h) => h.via === u.kind && (u.name.endsWith('.emitter') || h.relay?.name === u.name));
+  for (const u of senderImports) {
+    if (!sends(u)) add(u.node, 'unread', undefined, { unread: { name: u.name, kind: u.kind, form: u.form } });
+  }
   return hits;
+}
+
+/** FR-1186R3: an import of a module by any form: its specifier, the names it takes (null: the whole module) and the form. */
+function importForm(n: ts.Node): { spec: string; names: string[] | null; form: string } | undefined {
+  if (ts.isImportDeclaration(n) && ts.isStringLiteral(n.moduleSpecifier)) {
+    const c = n.importClause;
+    const named = c?.namedBindings;
+    if (c?.name || !named || !ts.isNamedImports(named)) return { spec: n.moduleSpecifier.text, names: null, form: c?.name ? 'default import' : named ? 'namespace import' : 'side-effect import' };
+    return { spec: n.moduleSpecifier.text, names: named.elements.map((el) => (el.propertyName ?? el.name).text), form: 'named import' };
+  }
+  if (ts.isExportDeclaration(n) && n.moduleSpecifier && ts.isStringLiteral(n.moduleSpecifier)) {
+    const named = n.exportClause;
+    return { spec: n.moduleSpecifier.text, names: named && ts.isNamedExports(named) ? named.elements.map((el) => (el.propertyName ?? el.name).text) : null, form: 'export from' };
+  }
+  if (ts.isImportEqualsDeclaration(n) && ts.isExternalModuleReference(n.moduleReference) && ts.isStringLiteral(n.moduleReference.expression)) {
+    return { spec: n.moduleReference.expression.text, names: null, form: 'import = require' };
+  }
+  if (ts.isCallExpression(n) && (n.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(n.expression) && n.expression.text === 'require'))) {
+    const arg = n.arguments[0];
+    if (arg && (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg))) {
+      return { spec: arg.text, names: null, form: n.expression.kind === ts.SyntaxKind.ImportKeyword ? 'dynamic import()' : 'require()' };
+    }
+  }
+  if (ts.isImportTypeNode(n)) {
+    const { spec, name } = importTypeParts(n);
+    if (spec !== undefined) return { spec, names: name !== undefined ? [name] : null, form: 'inline import type' };
+  }
+  return undefined;
+}
+
+/**
+ * FR-1186R3: the sender classes an import brings in: an emitter class (or a whole emitter module), the community
+ * relay, NotificationsService (the notice table's writer). A sender's own files and its own directory's insides
+ * (src/notifications/emitters/ for the emitters) are the sender itself, not a caller.
+ */
+function sendersFrom(rel: string, spec: string, names: string[] | null): Array<{ name: string; kind: UnreadKind }> {
+  const r = resolveSpecifier(rel, spec);
+  const self = rel.replace(/\.ts$/, '');
+  const out: Array<{ name: string; kind: UnreadKind }> = [];
+  if (!rel.startsWith('src/notifications/emitters/')) {
+    if (names === null && EMITTER_MODULE.test(r)) out.push({ name: path.posix.basename(r), kind: 'emitter' });
+    for (const x of names ?? []) if (relayFor(x, spec, rel)?.via === 'emitter') out.push({ name: x, kind: 'emitter' });
+  }
+  if (self !== COMMUNITY_MODULE && ((names === null && r === COMMUNITY_MODULE) || names?.includes(COMMUNITY_CLASS))) out.push({ name: COMMUNITY_CLASS, kind: 'communityPush' });
+  if (self !== NOTICES_MODULE && ((names === null && r === NOTICES_MODULE) || names?.includes(NOTICES_CLASS))) out.push({ name: NOTICES_CLASS, kind: 'notices' });
+  return out;
 }
 
 function isDeclarationName(n: ts.Identifier): boolean {

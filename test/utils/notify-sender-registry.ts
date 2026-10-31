@@ -238,6 +238,37 @@ export const FUNNEL_SITES: FunnelSite[] = [
   { file: 'src/notifications/push/push-delivery.service.ts', fn: 'PushDeliveryService.enqueue', via: 'transport', what: 'writes the PushOutbox row: quietHoursFor sets not_before; the send step checks Mute all again' },
 ];
 
+/**
+ * FR-1186R3: the gate fails closed. A file that imports a sender class (an emitter, CommunityNotificationsService,
+ * NotificationsService) by any import form, and in which the scan reads no send of it, is red (an `unread` hit),
+ * unless it is listed here with why: it only holds or hands on the class and never sends through it. Keep this
+ * short; an entry the scan no longer needs is red too (sender-registry.spec.ts).
+ */
+export interface ImportWithoutSend {
+  file: string;
+  /** The class it imports (or, for an import of a whole emitter module, the module's file name). */
+  name: string;
+  why: string;
+}
+
+export const IMPORTS_WITHOUT_SEND: ImportWithoutSend[] = [
+  {
+    file: 'src/scheduling/scheduling.service.ts',
+    name: 'BookingEmitter',
+    why: 'hands its optional BookingEmitter to the SchedulingSessionLifecycleService it builds; the sends are in that service (registered)',
+  },
+  {
+    file: 'src/notifications/notifications.controller.ts',
+    name: 'NotificationsService',
+    why: 'the inbox and preference routes: list, read, unread count, preferences, time zone; it sends nothing',
+  },
+  {
+    file: 'src/notifications/digest-unsubscribe.controller.ts',
+    name: 'NotificationsService',
+    why: 'the digest unsubscribe link: updatePreferences only; it sends nothing',
+  },
+];
+
 const BOOKING_KINDS = [
   'booking_requested', 'booking_confirmed', 'booking_declined', 'booking_cancelled', 'booking_rescheduled',
   'booking_reminder_24h', 'booking_reminder_1h', 'booking_link_needed', 'booking_link_ready', 'booking_request_expired',

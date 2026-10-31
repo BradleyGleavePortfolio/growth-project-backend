@@ -38,6 +38,16 @@ export class WorkoutBuilderService {
   }
 }
 `;
+/** FR-1186R3: the LO-1186R3 B1 emitter import and a money alert (passes Mute all, so a miss reaches a muted coach). */
+const ALERT_IMPORT = `import { CoachAlertEmitter } from '../notifications/emitters/coach-alert.emitter';\n`;
+const ALERT = `{ coachId: 'c', alertId: 'a', alertType: 'kt4_forms', message: 'm', severity: 'warning', money: true }`;
+/** FR-1186R3: a direct notice-table writer (LS-1186R3 B2's fixture shape) with `body` as its function body. */
+const noticeRow = (body: string): string => `import type { Prisma } from '@prisma/client';
+const NOTICE = { user_id: 'u', kind: 'message_received', body: 'Body', channel: 'inapp' };
+export async function ordinaryNotice(db: Pick<Prisma.TransactionClient, 'notification'>) {
+  ${body}
+}
+`;
 const ENQ = `({ userId: 'u', kind: 'message_received', title: '', body: '', data: {}, collapseKey: 'k', timeZone: null })`;
 
 export const SEND_FORMS: SendForm[] = [
@@ -521,6 +531,259 @@ export async function relayVia(r: Relay) {
     text: wb('', `'workout_assigned'`),
     expect: [{ fn: 'WorkoutBuilderService.emitAssignmentPush', via: 'sendPush', at: 'notifications.sendPush(' }],
     finds: [],
+  },
+  // ── FR-1186R3: LO-1186R3 B1 (a relay under a getter, a method's return, a Map or an array) ─────
+  {
+    id: 'relay-getter',
+    from: 'LO-1186R3 B1',
+    file: `${F}/relay-getter.ts`,
+    text: `${ALERT_IMPORT}export class StreakAlerts {
+  constructor(private readonly made: CoachAlertEmitter) {}
+  private get alerts(): CoachAlertEmitter {
+    return this.made;
+  }
+  async notify() {
+    await this.alerts.emit(${ALERT});
+  }
+}
+`,
+    expect: [{ fn: 'StreakAlerts.notify', via: 'emitter', at: 'this.alerts.emit(' }],
+    finds: [{ at: 'this.alerts.emit(', says: 'not in the sender registry' }],
+  },
+  {
+    id: 'relay-getter-untyped',
+    from: 'LO-1186R3 B1 (fresh form, FR-1186R3: the getter declares no type; it returns a holder)',
+    file: `${F}/relay-getter-untyped.ts`,
+    text: `${ALERT_IMPORT}export class StreakAlerts {
+  constructor(private readonly made: CoachAlertEmitter) {}
+  private get alerts() {
+    return this.made;
+  }
+  async notify() {
+    await this.alerts.emit(${ALERT});
+  }
+}
+`,
+    expect: [{ fn: 'StreakAlerts.notify', via: 'emitter', at: 'this.alerts.emit(' }],
+    finds: [{ at: 'this.alerts.emit(', says: 'not in the sender registry' }],
+  },
+  {
+    id: 'relay-method-return',
+    from: 'LO-1186R3 B1',
+    file: `${F}/relay-method-return.ts`,
+    text: `${ALERT_IMPORT}export class StreakAlerts {
+  constructor(private readonly made: CoachAlertEmitter) {}
+  private alerts(): CoachAlertEmitter {
+    return this.made;
+  }
+  async notify() {
+    await this.alerts().emit(${ALERT});
+  }
+}
+`,
+    expect: [{ fn: 'StreakAlerts.notify', via: 'emitter', at: 'this.alerts().emit(' }],
+    finds: [{ at: 'this.alerts().emit(', says: 'not in the sender registry' }],
+  },
+  {
+    id: 'relay-map-field',
+    from: 'LO-1186R3 B1',
+    file: `${F}/relay-map-field.ts`,
+    text: `${ALERT_IMPORT}export class StreakAlerts {
+  private readonly relays = new Map<string, CoachAlertEmitter>();
+  async notify() {
+    await this.relays.get('coach')?.emit(${ALERT});
+  }
+}
+`,
+    expect: [{ fn: 'StreakAlerts.notify', via: 'emitter', at: "this.relays.get('coach')?.emit(" }],
+    finds: [{ at: "this.relays.get('coach')?.emit(", says: 'not in the sender registry' }],
+  },
+  {
+    id: 'relay-array-for-of',
+    from: 'LO-1186R3 B1',
+    file: `${F}/relay-array-for-of.ts`,
+    text: `${ALERT_IMPORT}export class StreakAlerts {
+  constructor(private readonly list: CoachAlertEmitter[]) {}
+  async notify() {
+    for (const alerts of this.list) await alerts.emit(${ALERT});
+  }
+}
+`,
+    expect: [{ fn: 'StreakAlerts.notify', via: 'emitter', at: 'alerts.emit(' }],
+    finds: [{ at: 'alerts.emit(', says: 'not in the sender registry' }],
+  },
+  {
+    id: 'relay-array-callback',
+    from: 'LO-1186R3 B1 (fresh form, FR-1186R3: an array method callback parameter)',
+    file: `${F}/relay-array-callback.ts`,
+    text: `${ALERT_IMPORT}export class StreakAlerts {
+  constructor(private readonly list: ReadonlyArray<CoachAlertEmitter>) {}
+  notify() {
+    this.list.forEach((alerts) => void alerts.emit(${ALERT}));
+  }
+}
+`,
+    expect: [{ fn: 'StreakAlerts.notify', via: 'emitter', at: 'alerts.emit(' }],
+    finds: [{ at: 'alerts.emit(', says: 'not in the sender registry' }],
+  },
+  {
+    id: 'relay-array-element',
+    from: 'LO-1186R3 B1 (fresh form, FR-1186R3: an element by index)',
+    file: `${F}/relay-array-element.ts`,
+    text: `${ALERT_IMPORT}export class StreakAlerts {
+  constructor(private readonly list: CoachAlertEmitter[]) {}
+  async notify() {
+    await this.list[0].emit(${ALERT});
+  }
+}
+`,
+    expect: [{ fn: 'StreakAlerts.notify', via: 'emitter', at: 'this.list[0].emit(' }],
+    finds: [{ at: 'this.list[0].emit(', says: 'not in the sender registry' }],
+  },
+  {
+    id: 'relay-getter-community',
+    from: 'LO-1186R3 B1',
+    file: `${F}/relay-getter-community.ts`,
+    text: `import type { CommunityNotificationsService } from '../community/notifications/community-notifications.service';
+export class SpaceAlerts {
+  constructor(private readonly made: CommunityNotificationsService) {}
+  private get community(): CommunityNotificationsService {
+    return this.made;
+  }
+  async notify(args: never) {
+    await this.community.sendCommunityPush(args);
+  }
+}
+`,
+    expect: [{ fn: 'SpaceAlerts.notify', via: 'communityPush', at: 'this.community.sendCommunityPush(' }],
+    finds: [{ at: 'this.community.sendCommunityPush(', says: 'not in the sender registry' }],
+  },
+  // ── FR-1186R3: LS-1186R3 B1 (an inline import type of the transport) ────────────────────────────
+  {
+    id: 'transport-inline-import-type',
+    from: 'LS-1186R3 B1',
+    file: `${F}/transport-inline-import-type.ts`,
+    text: `type Wire = import('../notifications/push/expo-push-client').ExpoPushClient;
+export function ordinaryNotice(wire: Wire, messages: never, signal: AbortSignal) {
+  return wire.send(messages, signal);
+}
+`,
+    expect: [
+      { fn: '<module>', via: 'transport', at: 'type Wire =' },
+      { fn: 'ordinaryNotice', via: 'transport', at: 'wire.send(' },
+    ],
+    finds: [
+      { at: 'type Wire =', says: 'calls the push transport directly' },
+      { at: 'wire.send(', says: 'calls the push transport directly' },
+    ],
+  },
+  {
+    id: 'transport-typeof-import',
+    from: 'LS-1186R3 B1 (fresh form, FR-1186R3: `typeof import()` of the whole module)',
+    file: `${F}/transport-typeof-import.ts`,
+    text: `type Client = typeof import('../notifications/push/expo-push-client');
+export const make = (m: Client) => new m.FetchExpoPushClient();
+`,
+    expect: [{ fn: '<module>', via: 'transport', at: 'type Client =' }],
+    finds: [{ at: 'type Client =', says: 'calls the push transport directly' }],
+  },
+  // ── FR-1186R3: LS-1186R3 B2 (the notice and outbox tables by bracket or a delegate copy) ────────
+  ...(
+    [
+      ['notice-bracket-method', "db.notification['create']"],
+      ['notice-bracket-delegate', "db['notification'].create"],
+      ['notice-bracket-both', "db['notification']['create']"],
+      ['notice-createManyAndReturn', 'db.notification.createManyAndReturn'],
+    ] as const
+  ).map(
+    ([id, access]): SendForm => ({
+      id,
+      from: id === 'notice-createManyAndReturn' ? 'LS-1186R3 B2 (fresh form, FR-1186R3: the fourth Prisma create)' : 'LS-1186R3 B2',
+      file: `${F}/${id}.ts`,
+      text: noticeRow(`return ${access}({ data: NOTICE });`),
+      expect: [{ fn: 'ordinaryNotice', via: 'notificationRow', at: access }],
+      finds: [{ at: access, says: 'not in the sender registry' }],
+    }),
+  ),
+  {
+    id: 'notice-delegate-copy',
+    from: 'LS-1186R3 B2 (fresh form, FR-1186R3: the delegate under another name)',
+    file: `${F}/notice-delegate-copy.ts`,
+    text: noticeRow(`const rows = db['notification'];
+  return rows.create({ data: NOTICE });`),
+    expect: [{ fn: 'ordinaryNotice', via: 'notificationRow', at: 'rows.create(' }],
+    finds: [{ at: 'rows.create(', says: 'not in the sender registry' }],
+  },
+  {
+    id: 'outbox-bracket',
+    from: 'LS-1186R3 B2 (fresh form, FR-1186R3: the outbox table by bracket)',
+    file: `${F}/outbox-bracket.ts`,
+    text: `export async function rawOutbox(db: { pushOutbox: { create(a: unknown): Promise<unknown> } }) {
+  return db['pushOutbox']['create']({ data: {} });
+}
+`,
+    expect: [{ fn: 'rawOutbox', via: 'transport', at: "db['pushOutbox']['create']" }],
+    finds: [{ at: "db['pushOutbox']['create']", says: 'calls the push transport directly' }],
+  },
+  // ── FR-1186R3: the gate fails closed (an import of a sender class with no send the scan reads) ──
+  {
+    id: 'unread-reflect-notices',
+    from: 'FR-1186R3 (fail closed: a send the walker cannot read, Reflect.get)',
+    file: `${F}/unread-reflect-notices.ts`,
+    text: `import type { NotificationsService } from '../notifications/notifications.service';
+export const go = (n: NotificationsService) => Reflect.get(n, 'send' + 'Push');
+`,
+    expect: [{ fn: '<module>', via: 'unread', at: 'import type { NotificationsService }' }],
+    finds: [{ at: 'import type { NotificationsService }', says: 'the scan reads no send of NotificationsService in this file' }],
+  },
+  {
+    id: 'unread-namespace-community',
+    from: 'FR-1186R3 (fail closed: a namespace import, a send through `any`)',
+    file: `${F}/unread-namespace-community.ts`,
+    text: `import * as community from '../community/notifications/community-notifications.service';
+export const go = (c: community.CommunityNotificationsService, args: never) => (c as any).sendCommunityPush(args);
+`,
+    expect: [{ fn: '<module>', via: 'unread', at: 'import * as community' }],
+    finds: [{ at: 'import * as community', says: 'the scan reads no send of CommunityNotificationsService in this file' }],
+  },
+  {
+    id: 'unread-require-emitter',
+    from: 'FR-1186R3 (fail closed: require() of an emitter module)',
+    file: `${F}/unread-require-emitter.ts`,
+    text: `export function later(svc: unknown) {
+  const { CoachAlertEmitter: Alerts } = require('../notifications/emitters/coach-alert.emitter');
+  return new Alerts(svc).emit(${ALERT});
+}
+`,
+    expect: [{ fn: 'later', via: 'unread', at: 'require(' }],
+    finds: [{ at: 'require(', says: 'the scan reads no send of coach-alert.emitter in this file' }],
+  },
+  {
+    id: 'unread-reexport-emitter',
+    from: 'FR-1186R3 (fail closed: a re-export, a barrel others send through)',
+    file: `${F}/unread-reexport-emitter.ts`,
+    text: `export { CoachAlertEmitter as Alerts } from '../notifications/emitters/coach-alert.emitter';
+`,
+    expect: [{ fn: '<module>', via: 'unread', at: 'export { CoachAlertEmitter' }],
+    finds: [{ at: 'export { CoachAlertEmitter', says: 'the scan reads no send of CoachAlertEmitter in this file' }],
+  },
+  {
+    id: 'emitter-payload-type-only',
+    from: 'negative (FR-1186R3: a payload type from an emitter module is not the emitter)',
+    file: `${F}/emitter-payload-type-only.ts`,
+    text: `import type { CoachAlertNotificationPayload } from '../notifications/emitters/coach-alert.emitter';
+export const title = (p: CoachAlertNotificationPayload): unknown => p;
+`,
+    expect: [],
+  },
+  {
+    id: 'emitter-in-nest-module',
+    from: 'negative (FR-1186R3: a Nest module file lists providers; it is not a caller)',
+    file: `${F}/kt4-forms.module.ts`,
+    text: `import { CoachAlertEmitter } from '../notifications/emitters/coach-alert.emitter';
+export const providers = [CoachAlertEmitter];
+`,
+    expect: [],
   },
   // ── Controls: forms the scan saw before FR-1186 ─────────────────────────────────────────────
   {

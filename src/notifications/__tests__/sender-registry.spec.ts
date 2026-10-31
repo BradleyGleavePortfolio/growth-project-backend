@@ -29,12 +29,22 @@
  *     it (an enum member, a literal, a push-preferences constant); a kind picked at run time is declared as the
  *     row's `dynamicKind`. Never declare a Mute all pass to make it green (FR-1186R2, LO-1186R2 C3).
  *  7. "looks fixed (tripwire)": the code a KNOWN GAP names is gone. Check the gap, then delete it.
+ *  8. "the scan reads no send of X in this file, though it imports it" (FR-1186R3: the gate fails closed): the file
+ *     imports a sender class (an emitter, CommunityNotificationsService or NotificationsService), by any import
+ *     form, and the scan reads no send of it there. Write the send in a form the scan reads (SEND_FORMS in
+ *     test/utils/notify-sender-forms.ts) and register it. If the file only holds the class or hands it on and never
+ *     sends through it, add it to IMPORTS_WITHOUT_SEND in the registry with why. "IMPORTS_WITHOUT_SEND lists":
+ *     the entry is no longer needed; delete it.
  * The registry is per function: a second send of a kind its row already lists, in the same function, adds no
  * row. When you add one, read the row again and make sure its five rules still hold for the new send.
  * The scan finds the forms its header (test/utils/notify-sender-scan.ts) lists: called, bound, destructured, by
  * `x['name']`, and under a name that holds the sender (typed, a type alias, an interface field, `@Inject(X)`, a
- * local copy). It does not see a method name built at run time, `Reflect.get`, assignment destructuring, a
- * string DI token, or `any`. sender-scan-forms.spec.ts proves each form it knows; a new way to send goes there.
+ * local copy, a getter or a method that returns it, a Map or an array of it, an inline `import('x').X` type), and
+ * the notice and outbox tables' delegates by dot or bracket. A file that imports a sender class and in which the
+ * scan reads no send of it is red (item 8). Still not seen: a send in a form the scan cannot read (a method name
+ * built at run time, `Reflect.get`, assignment destructuring) in a file where the scan reads another send of the
+ * same class, and a sender the file never imports (a string DI token, `any`). sender-scan-forms.spec.ts proves each
+ * form it knows; a new way to send goes there.
  * What is driven and what is a claim (LO-1186 C2, C3): Mute all and quiet hours run for every funnel kind and every
  * driver; an emitter caller of CoachAlertEmitter is run through the real emitter with the arguments its code
  * passes (LO-1186R2 C1); a renewal offer runs with and without the person's yes (LO-1186R2 B2). Block and ban,
@@ -86,6 +96,7 @@ import {
   KT4,
   sendPushHitsByRow,
   sentValues,
+  staleImportsWithoutSend,
   unregistered,
 } from '../../../test/utils/notify-sender-checks';
 import { type SendHit, scanSenders } from '../../../test/utils/notify-sender-scan';
@@ -112,6 +123,10 @@ describe('KT-4 sender registry: the send sites in src/', () => {
 
   it('every other send site is a registered sender', () => {
     expect(unregistered(hits)).toEqual([]);
+  });
+
+  it('every IMPORTS_WITHOUT_SEND entry is still needed (FR-1186R3: the gate fails closed)', () => {
+    expect(staleImportsWithoutSend(hits)).toEqual([]);
   });
 
   it("each sendPush sender's funnel entries declare what its code passes (kind, urgent, a Mute all pass)", () => {
