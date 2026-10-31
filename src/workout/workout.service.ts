@@ -1,5 +1,5 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { PtmService } from '../ptm/ptm.service';
 import { ClientAIContextService } from '../ai/client-ai-context.service';
@@ -15,6 +15,13 @@ import {
 /** TRAIN-BE2: Your history lists at most this many sessions, newest first; Best ever and Since week 1 read them all. */
 const HISTORY_SESSIONS = 100;
 
+/**
+ * WK-1-BE: the optional Idempotency-Key on POST /workouts. Same rule as
+ * packages (IDEMPOTENCY_KEY_PATTERN): 8–128 letters, digits, dots, colons,
+ * dashes, underscores. The phone's queue key `${userId}:${sessionStartMs}` fits.
+ */
+const WORKOUT_CLIENT_KEY_PATTERN = /^[A-Za-z0-9._:-]{8,128}$/;
+
 type TopSet = { weight_lbs: number; reps: number };
 const heavier = (a: TopSet, b: TopSet | null | undefined) =>
   !b || a.weight_lbs > b.weight_lbs || (a.weight_lbs === b.weight_lbs && a.reps > b.reps);
@@ -28,37 +35,63 @@ export class WorkoutService {
     private aiContext: ClientAIContextService,
   ) {}
 
-  async createWorkout(userId: string, data: CreateWorkoutDto) {
+  async createWorkout(userId: string, data: CreateWorkoutDto, clientKey?: string) {
+    // WK-1-BE: a resend after a lost answer carries the same key and gets the
+    // stored workout back (same shape, nothing created, no second signal).
+    // No key (or a blank header) is exactly the pre-WK-1 path.
+    const key = clientKey?.trim() || undefined;
+    if (key !== undefined && !WORKOUT_CLIENT_KEY_PATTERN.test(key)) {
+      throw new BadRequestException({
+        error: 'IDEMPOTENCY_KEY_INVALID',
+        message: 'Idempotency-Key must be 8-128 characters of A-Z a-z 0-9 . _ : -',
+      });
+    }
+    if (key !== undefined) {
+      const stored = await this.findByClientKey(userId, key);
+      if (stored) return stored;
+    }
     // Explicit field mapping — previously `...sessionData` spread the body into
     // Prisma, which (combined with `@Body() body: any` on the controller) would
     // let a client set `user_id`, `id`, etc. See audit C4/H10.
-    const created = await this.prisma.workoutSession.create({
-      data: {
-        user_id: userId,
-        date: data.date ? new Date(data.date) : new Date(),
-        workout_name: data.workout_name,
-        workout_type: data.workout_type,
-        duration_minutes: data.duration_minutes,
-        intensity: data.intensity ?? 'moderate',
-        notes: data.notes,
-        exercises: data.exercises
-          ? {
-              create: data.exercises.map((e) => ({
-                exercise_name: e.exercise_name,
-                muscle_group: e.muscle_group,
-                sets_completed: e.sets_completed,
-                reps_per_set: e.reps_per_set,
-                weight_per_set: e.weight_per_set,
-                rpe: e.rpe,
-                notes: e.notes,
-                video_url: e.video_url,
-                exercise_external_id: e.exercise_external_id,
-              })),
-            }
-          : undefined,
-      },
-      include: { exercises: true },
-    });
+    let created;
+    try {
+      created = await this.prisma.workoutSession.create({
+        data: {
+          ...(key !== undefined ? { client_key: key } : {}),
+          user_id: userId,
+          date: data.date ? new Date(data.date) : new Date(),
+          workout_name: data.workout_name,
+          workout_type: data.workout_type,
+          duration_minutes: data.duration_minutes,
+          intensity: data.intensity ?? 'moderate',
+          notes: data.notes,
+          exercises: data.exercises
+            ? {
+                create: data.exercises.map((e) => ({
+                  exercise_name: e.exercise_name,
+                  muscle_group: e.muscle_group,
+                  sets_completed: e.sets_completed,
+                  reps_per_set: e.reps_per_set,
+                  weight_per_set: e.weight_per_set,
+                  rpe: e.rpe,
+                  notes: e.notes,
+                  video_url: e.video_url,
+                  exercise_external_id: e.exercise_external_id,
+                })),
+              }
+            : undefined,
+        },
+        include: { exercises: true },
+      });
+    } catch (err) {
+      // Two sends of one key raced past the lookup: the unique (user_id,
+      // client_key) index kept one; answer with it.
+      if (key !== undefined && err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        const stored = await this.findByClientKey(userId, key);
+        if (stored) return stored;
+      }
+      throw err;
+    }
 
     // Sum weight*reps across every set on every exercise. Mirrors the
     // per-muscle-group aggregation in getVolume but flattened to a single
@@ -79,6 +112,13 @@ export class WorkoutService {
     this.aiContext.invalidateForUser(userId);
 
     return created;
+  }
+
+  private findByClientKey(userId: string, clientKey: string) {
+    return this.prisma.workoutSession.findUnique({
+      where: { user_id_client_key: { user_id: userId, client_key: clientKey } },
+      include: { exercises: true },
+    });
   }
 
   async getWorkouts(userId: string, limit = 10) {
