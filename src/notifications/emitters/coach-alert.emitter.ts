@@ -27,6 +27,8 @@ export interface CoachAlertNotificationPayload {
   clientUserId?: string;
   /** FR-1154 (owner #171-3): a money alert (the Day 7 payment alert); its push passes Mute all. */
   money?: true;
+  /** FR-1192R2: the dunning cycle a payment alert is about; its held push is not sent once that cycle ended. */
+  dunning?: { stateId: string; cycleKey?: string };
   /** FR-1152R3 B1: a public space's copy of a photo safety alert, for this space. */
   spaceId?: string;
 }
@@ -133,7 +135,7 @@ export class CoachAlertEmitter {
                 dedupe_key: `coach_alert:${alertId}`,
               }
             : payload.money
-              ? { context: MUTE_ALL_PASS }
+              ? { context: { ...MUTE_ALL_PASS, ...(payload.dunning ? { dunning: payload.dunning } : {}) } }
               : {}),
           ...(urgent ? { urgent: true } : {}),
         });

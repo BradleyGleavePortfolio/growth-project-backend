@@ -66,6 +66,10 @@ export interface PushRoute {
   otherUserId?: string;
   /** FR-1192: the community it comes from: a ban there stops a waiting push. */
   community?: SendPathContext['community'];
+  /** FR-1192R2: a payment reminder's dunning cycle: a cycle that ended stops a waiting push. */
+  dunning?: SendPathContext['dunning'];
+  /** FR-1192R2: a trial-ending push's notice: a trial that ended, converted or was canceled stops it. */
+  trialNotice?: SendPathContext['trialNotice'];
 }
 
 export interface PushPayload {
@@ -629,7 +633,7 @@ export class NotificationsService implements OnModuleInit {
       kind: NotificationKindValue;
       body: string;
       deep_link?: string;
-      context?: (PushContext & MuteAllPass & RenewalOffer & Pick<SendPathContext, 'otherUserId' | 'alsoUserId' | 'coachThread'>) | null;
+      context?: (PushContext & MuteAllPass & RenewalOffer & Pick<SendPathContext, 'otherUserId' | 'alsoUserId' | 'coachThread' | 'dunning'>) | null;
       dedupe_key?: string | null;
       urgent?: boolean;
     },
@@ -923,6 +927,8 @@ export class NotificationsService implements OnModuleInit {
           ...(r.passesMuteAll ? MUTE_ALL_PASS : {}),
           ...(r.otherUserId ? { otherUserId: r.otherUserId } : {}),
           ...(r.community ? { community: r.community } : {}),
+          ...(r.dunning ? { dunning: r.dunning } : {}),
+          ...(r.trialNotice ? { trialNotice: r.trialNotice } : {}),
         },
         dedupeKey,
         collapseKey: dedupeKey,

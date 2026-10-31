@@ -186,6 +186,11 @@ export class DunningV2Dispatcher {
     return { decision, results };
   }
 
+  /** FR-1192R2: the cycle a held push is checked against when it goes (dunningPushStillDue). */
+  private cycleRef(ctx: DispatchContext): { stateId: string; cycleKey?: string } {
+    return { stateId: ctx.dunningStateId, ...(ctx.cycleKey ? { cycleKey: ctx.cycleKey } : {}) };
+  }
+
   /** Cycle-scoped key segment ("" for a legacy context without a cycle). */
   private cyclePart(ctx: DispatchContext): string {
     return ctx.cycleKey ? `:${ctx.cycleKey}` : '';
@@ -227,10 +232,12 @@ export class DunningV2Dispatcher {
     // LS-PAYFAIL B4 / PF-3-BE: through the one send path. A payment reminder
     // is money (DUNNING_BLOCKER): it passes Mute all, waits for 08:00 in the
     // client's zone when sent in quiet hours, and a replay of the same
-    // cycle step is never posted twice (dedupe key).
+    // cycle step is never posted twice (dedupe key). FR-1192R2: it keeps its
+    // cycle, so a reminder that waited is not sent once that cycle ended.
     const res = await this.notifications.pushToUser(ctx.clientUserId, 'Payment', body, data, undefined, {
       kind: NotificationKind.DUNNING_BLOCKER,
       dedupeKey: `dunning_v2:${ctx.dunningStateId}${this.cyclePart(ctx)}:push:${ctx.stepIndex}`,
+      dunning: this.cycleRef(ctx),
     });
     // A transport that returns no verdict (legacy stubs) counts as sent.
     if (typeof res === 'object' && res !== null && res.delivered === false) {
@@ -372,6 +379,8 @@ export class DunningV2Dispatcher {
             clientUserId: ctx.clientUserId,
             // FR-1154 (owner #171-3): a payment alert; its push passes Mute all.
             money: true,
+            // FR-1192R2: ...and is not sent, once it waited, if the cycle ended.
+            dunning: this.cycleRef(ctx),
           },
           { inapp: want.alert, push: want.push },
           { title: 'Payment', body: pushBody },

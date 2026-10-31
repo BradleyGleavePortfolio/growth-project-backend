@@ -1,6 +1,8 @@
 import type { PrismaService } from '../../prisma.service';
 import { bannedAmong } from '../../community/community-ban';
 import { isMessagingCoreV2Enabled } from '../../messaging/messaging-core.feature';
+import { dunningPushStillDue } from '../../checkout/dunning-v2/dunning-cycle';
+import { trialPushStillDue } from '../../packages/trials/trial-notice-truth';
 
 /**
  * FR-1192 (R1): what a push about other people keeps with it, so the one
@@ -21,9 +23,14 @@ export interface HeldPushSource {
   community?: { workspaceId: string | null };
   /** The coach thread a message push is about: the reader's mute of it stops it. */
   coachThread?: { coachId: string; clientId: string };
+  /** FR-1192R2: a payment reminder's dunning cycle: once it is no longer live (paid, canceled, ended, replaced) it stops it. */
+  dunning?: { stateId: string; cycleKey?: string };
+  /** FR-1192R2: a trial-ending push's notice: a trial that ended, converted, was replaced or canceled stops it. */
+  trialNotice?: { noticeId: string; cancelAtPeriodEnd: boolean };
 }
 
 type Db = Pick<PrismaService, 'userBlock' | 'communityWorkspaceBan' | 'coachThreadState'>;
+type MoneyDb = Pick<PrismaService, 'dunningState' | 'packageTrialNotice' | 'clientPurchase'>;
 
 const id = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
 
@@ -33,6 +40,11 @@ export function asHeldPushSource(o: Record<string, unknown>): HeldPushSource {
   const thread = o.coachThread as Record<string, unknown> | null | undefined;
   const coachId = id(thread?.coachId);
   const clientId = id(thread?.clientId);
+  const dunning = o.dunning as Record<string, unknown> | null | undefined;
+  const stateId = id(dunning?.stateId);
+  const cycleKey = id(dunning?.cycleKey);
+  const trial = o.trialNotice as Record<string, unknown> | null | undefined;
+  const noticeId = id(trial?.noticeId);
   return {
     ...(id(o.otherUserId) ? { otherUserId: id(o.otherUserId) } : {}),
     ...(id(o.alsoUserId) ? { alsoUserId: id(o.alsoUserId) } : {}),
@@ -40,7 +52,30 @@ export function asHeldPushSource(o: Record<string, unknown>): HeldPushSource {
       ? { community: { workspaceId: id(community.workspaceId) ?? null } }
       : {}),
     ...(coachId && clientId ? { coachThread: { coachId, clientId } } : {}),
+    ...(stateId ? { dunning: { stateId, ...(cycleKey ? { cycleKey } : {}) } } : {}),
+    ...(noticeId ? { trialNotice: { noticeId, cancelAtPeriodEnd: trial?.cancelAtPeriodEnd === true } } : {}),
   };
+}
+
+/**
+ * FR-1192R2: a money push that waited goes only while the reminder is still
+ * owed, by its sender's own check (owner #186-P1, operator ruling R3): a
+ * reminder whose cycle ended (paid or renewed, canceled, or over) is not
+ * owed. A failed read sends it (never drops a reminder that may be owed),
+ * as the thread-mute read fails open.
+ */
+export async function heldMoneyPushStillDue(
+  prisma: MoneyDb,
+  source: HeldPushSource,
+  now: Date,
+): Promise<boolean> {
+  try {
+    if (source.dunning && !(await dunningPushStillDue(prisma, source.dunning))) return false;
+    if (source.trialNotice && !(await trialPushStillDue(prisma, source.trialNotice, now))) return false;
+  } catch {
+    return true;
+  }
+  return true;
 }
 
 /** Why a held push to `userId` may no longer be sent, or null when it still may. */

@@ -22,7 +22,7 @@ import { pushStillCurrent } from '../current-coach-inbox';
 import { planRenewalPushStillDue } from '../../checkout/plan-renewal/plan-renewal.state';
 import { asSpacePushContext, spacePushExpoFields } from '../../community/space-push/space-push-policy';
 import { spacePushDropReason } from '../../community/space-push/space-push-still-due';
-import { HeldPushSource, asHeldPushSource, heldPushDropReason } from './held-push-source';
+import { HeldPushSource, asHeldPushSource, heldMoneyPushStillDue, heldPushDropReason } from './held-push-source';
 
 // Device delivery for inbox notifications (C-643-2), through a durable
 // outbox (B-NOTIF-5: B-648-1, B-648-6, C-648-4 / OR-113-5, C-648-5).
@@ -619,6 +619,13 @@ export class PushDeliveryService {
       // RENEWAL-BE: a renewal push whose sequence stopped while it waited (the
       // client bought, moved, was archived or refunded) is not sent.
       if (row.kind === NotificationKind.PLAN_RENEWAL && !(await planRenewalPushStillDue(this.prisma, row.user_id))) {
+        return await this.finish(row, 'dropped', 'obsolete');
+      }
+      // FR-1192R2: so is a payment reminder (to the client, or the coach's Day
+      // 7 alert) whose dunning cycle ended, or a trial-ending push whose trial
+      // converted, ended or was canceled, by its sender's own check.
+      if (context && !(await heldMoneyPushStillDue(this.prisma, context, this.now()))) {
+        this.logger.log(`push dropped: row=${row.id} kind=${row.kind} reason=money-ended`);
         return await this.finish(row, 'dropped', 'obsolete');
       }
       const token = user?.expo_push_token ?? null;
