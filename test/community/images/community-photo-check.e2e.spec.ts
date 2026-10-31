@@ -486,6 +486,108 @@ describe('the automatic photo check on a space chat photo send (PHOTO-CHECK-BE)'
     expect(w.checks).toEqual([]);
     expect(w.messages).toEqual([]);
   });
+  // LO-1187R4 (new, outside the fix): a FLIR ONE thermal camera on a phone writes its own GPS record (FFF record
+  // type 0x2B GPSInfo: latitude and longitude as little-endian doubles) inside "FLIR\0" APP1 chunks, beside a raw
+  // thermal frame that pushes the segments before SOS past 256 KB. Main's reader stopped at 256 KB and refused it;
+  // the whole-photo reader (FR-1187R2) reads every APP1 but finds no EXIF header or XMP name there, so the photo
+  // posts and the bucket stores and serves the FLIR record with the position in it.
+  // Layout from metadata-extractor-images jpg/FLIR iPhone device.jpg (FLIR ONE Pro gen 3); exiftool FLIR GPSLatitude.
+  it('LO-1187R4: a FLIR ONE photo with a GPS position in its FLIR record is refused before any SDK call, as on main', async () => {
+    const be32 = (n: number) => [n >>> 24 & 0xff, n >>> 16 & 0xff, n >>> 8 & 0xff, n & 0xff];
+    const be16 = (n: number) => [n >>> 8 & 0xff, n & 0xff];
+    const gps = Buffer.alloc(184);
+    gps.writeUInt32LE(1, 0); // GPSValid
+    gps.write('N', 8, 'latin1');
+    gps.write('W', 10, 'latin1');
+    gps.writeDoubleLE(34.07542615928911, 16); // latitude
+    gps.writeDoubleLE(118.25426816553305, 24); // longitude
+    const raw = Buffer.alloc(300 * 1024); // the raw thermal frame (record type 0x01), zeros here
+    const index = (type: number, offset: number, length: number) => [...be16(type), ...be16(1), ...be32(100), ...be32(1), ...be32(offset), ...be32(length), ...new Array(12).fill(0)];
+    const rawAt = 64 + 2 * 32;
+    const gpsAt = rawAt + raw.length;
+    const fff = Buffer.from([
+      ...Buffer.from('FFF\0', 'latin1'), ...new Array(16).fill(0), ...be32(100), ...be32(64), ...be32(2), ...new Array(32).fill(0),
+      ...index(0x01, rawAt, raw.length), ...index(0x2b, gpsAt, gps.length), ...raw, ...gps,
+    ]);
+    const chunk = 65524;
+    const count = Math.ceil(fff.length / chunk);
+    const chunks: number[] = [];
+    for (let k = 0; k < count; k += 1) {
+      const body = [...Buffer.from('FLIR\0', 'latin1'), 0x01, k, count - 1, ...fff.subarray(k * chunk, (k + 1) * chunk)];
+      chunks.push(0xff, 0xe1, ...be16(body.length + 2), ...body);
+    }
+    expect(chunks.length).toBeGreaterThan(256 * 1024);
+    const w = world({ photo: Buffer.from([...validPicture.subarray(0, 20), ...chunks, ...validPicture.subarray(20)]) });
+    expect(await codeOf(w.send(''))).toBe('422 community.image.has_location');
+    expect(w.checks).toEqual([]);
+    expect(w.messages).toEqual([]);
+  });
+  // LS-1189 B1: the pre-b#1187 reader refused these valid JPEG segment layouts because
+  // the pre-SOS metadata exceeds 256 KB. The FLIR-only replacement still posts all
+  // three with readable coordinates. ExifTool independently reads GPS from each carrier.
+  it.each(['Photoshop 1058 EXIF', 'UTF16 XMP', 'GoPro GPMF GPS5'])(
+    'LS-1189 B1: oversized %s location metadata is refused before SDK and publication',
+    async (carrier) => {
+      const be32 = (n: number): Buffer => {
+        const b = Buffer.alloc(4);
+        b.writeUInt32BE(n);
+        return b;
+      };
+      let payload: Buffer;
+      let marker: number;
+      if (carrier === 'Photoshop 1058 EXIF') {
+        const rawTiff = preciseGps.subarray(10); // remove JPEG marker/length and Exif\0\0
+        marker = 0xed;
+        payload = Buffer.concat([
+          Buffer.from('Photoshop 3.0\0'), Buffer.from('8BIM'), Buffer.from([0x04, 0x22, 0, 0]),
+          be32(rawTiff.length), rawTiff, ...(rawTiff.length % 2 ? [Buffer.from([0])] : []),
+        ]);
+      } else if (carrier === 'UTF16 XMP') {
+        marker = 0xe1;
+        const xml = '<?xpacket begin="\ufeff" id="W5M0MpCehiHzreSzNTczkc9d"?>' +
+          '<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">' +
+          '<rdf:Description rdf:about="" xmlns:exif="http://ns.adobe.com/exif/1.0/" ' +
+          'exif:GPSLatitude="1,14.07036N" exif:GPSLongitude="2,20.74068E"/>' +
+          '</rdf:RDF></x:xmpmeta><?xpacket end="w"?>';
+        payload = Buffer.concat([Buffer.from('http://ns.adobe.com/xap/1.0/\0'), Buffer.from(xml, 'utf16le')]);
+      } else {
+        marker = 0xe6;
+        payload = Buffer.concat([
+          Buffer.from('GoPro\0SCALl'), Buffer.from([4, 0, 5]),
+          ...[10000000, 10000000, 1000, 1000, 100].map(be32),
+          Buffer.from('GPS5l'), Buffer.from([20, 0, 1]),
+          ...[12345678, 23456789, 100, 0, 0].map(be32),
+        ]);
+      }
+      const filler = Buffer.from(segment(0xe2, Array<number>(65533).fill(0)));
+      const location = Buffer.from(segment(marker, [...payload]));
+      const upload = Buffer.concat([
+        validPicture.subarray(0, 20), filler, filler, filler, filler, location, validPicture.subarray(20),
+      ]);
+      const w = world({ photo: upload });
+      const code = await codeOf(w.send(''));
+      if (code === 'ok') {
+        // Prove the privacy impact, rather than merely asserting a scanner boolean:
+        // the clean moderation wire is not what members get; the original is published.
+        expect(w.objects.get(sentImageKey(w.key))).toEqual(upload);
+        expect(w.objects.get(sentImageKey(w.key))?.includes(payload)).toBe(true);
+        expect(wirePhoto(w)).toEqual(validPicture);
+      }
+      expect(code).toBe('422 community.image.has_location');
+      expect(w.checks).toEqual([]);
+      expect(w.messages).toEqual([]);
+    },
+  );
+  it('LS-1189 B1 control: an oversized JPEG without location still posts with clean SDK bytes', async () => {
+    const filler = Buffer.from(segment(0xe2, Array<number>(65533).fill(0)));
+    const upload = Buffer.concat([
+      validPicture.subarray(0, 20), filler, filler, filler, filler, validPicture.subarray(20),
+    ]);
+    const w = world({ photo: upload });
+    expect(await codeOf(w.send(''))).toBe('ok');
+    expect(wirePhoto(w)).toEqual(validPicture);
+    expect(w.objects.get(sentImageKey(w.key))).toEqual(upload);
+  });
   it.each(independentBlocks)('LS-1187R2 matrix: %s before the frame is absent from the wire only', async (_label, block) => {
     const upload = Buffer.from([...validPicture.subarray(0, 20), ...block, ...validPicture.subarray(20)]);
     const w = world({ photo: upload });
