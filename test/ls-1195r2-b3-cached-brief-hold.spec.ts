@@ -49,7 +49,6 @@ describe('LS-1195R2 B3: today reads the hold after a brief was already generated
         coach_first_name: 'Review',
         roster_size: 1,
         dunning_in_progress: priorCardCycle ? 1 : 0,
-        dunning_amount_cents: priorCardCycle ? 15000 : 0,
       });
       let row: Record<string, unknown> = {
         id: 'review-cached-brief',

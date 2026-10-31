@@ -91,7 +91,7 @@ describe('FR-1195R2 F3: today\'s brief follows the hold both ways; earlier days 
 
   it('written in the morning, the hold starts later that day: the next read shows PF-W9 and no PF-W1 for it', async () => {
     const live: Live = { failing: 1, waiting: 0 };
-    const context = makeBriefContext({ date: TODAY, roster_size: 1, dunning_in_progress: 1, dunning_amount_cents: 15000 });
+    const context = makeBriefContext({ date: TODAY, roster_size: 1, dunning_in_progress: 1 });
     const w = world({ brief_date: TODAY, context }, live);
 
     const morning = await w.service.getOrGenerateTodaysBrief('coach-1');
@@ -134,7 +134,7 @@ describe('FR-1195R2 F3: today\'s brief follows the hold both ways; earlier days 
 
   it('a brief of an earlier day stays as written when the hold changes', async () => {
     const live: Live = { failing: 0, waiting: 1 };
-    const context = makeBriefContext({ date: '2026-10-04', roster_size: 1, dunning_in_progress: 1, dunning_amount_cents: 15000 });
+    const context = makeBriefContext({ date: '2026-10-04', roster_size: 1, dunning_in_progress: 1 });
     const w = world({ brief_date: '2026-10-04', context }, live);
     const before = w.row().narrative;
 

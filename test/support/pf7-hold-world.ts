@@ -109,7 +109,7 @@ export function buildWorld(opts: { saved?: StripeAccountState; stripeNow?: Strip
     cancelSubscription: jest.fn(async () => ({ status: 'canceled' })),
     pauseSubscriptionCollection: jest.fn(async () => ({ status: 'active' })),
     listOpenInvoices: jest.fn(async () => [{ id: 'in_dv2_renewal_1', status: 'open' }]),
-    retryInvoiceOffSession: jest.fn(async (args: { invoiceId: string }) => ({
+    retryInvoiceOffSession: jest.fn(async (args: { invoiceId: string; idempotencyKey: string }) => ({
       id: args.invoiceId,
       status: 'paid',
     })),
