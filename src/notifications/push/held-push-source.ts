@@ -3,6 +3,7 @@ import { bannedAmong } from '../../community/community-ban';
 import { isMessagingCoreV2Enabled } from '../../messaging/messaging-core.feature';
 import { dunningPushStillDue } from '../../checkout/dunning-v2/dunning-cycle';
 import { trialPushStillDue } from '../../packages/trials/trial-notice-truth';
+import { WorkoutDb, workoutReminderStillDue } from '../../engagement/workout-reminder-due';
 
 /**
  * FR-1192 (R1): what a push about other people keeps with it, so the one
@@ -27,10 +28,16 @@ export interface HeldPushSource {
   dunning?: { stateId: string; cycleKey?: string };
   /** FR-1192R2: a trial-ending push's notice: a trial that ended, converted, was replaced or canceled stops it. */
   trialNotice?: { noticeId: string; cancelAtPeriodEnd: boolean };
+  /**
+   * FR-1192R3: a workout reminder's client-local day and the plan workout it
+   * named (none on the first day): its sender's own checks stop it.
+   */
+  workoutReminder?: { localDate: string; assignmentId?: string };
 }
 
 type Db = Pick<PrismaService, 'userBlock' | 'communityWorkspaceBan' | 'coachThreadState'>;
-type MoneyDb = Pick<PrismaService, 'dunningState' | 'packageTrialNotice' | 'clientPurchase'>;
+type OwedDb = Pick<PrismaService, 'dunningState' | 'packageTrialNotice' | 'clientPurchase'> & WorkoutDb;
+const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
 
 const id = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
 
@@ -45,6 +52,9 @@ export function asHeldPushSource(o: Record<string, unknown>): HeldPushSource {
   const cycleKey = id(dunning?.cycleKey);
   const trial = o.trialNotice as Record<string, unknown> | null | undefined;
   const noticeId = id(trial?.noticeId);
+  const workout = o.workoutReminder as Record<string, unknown> | null | undefined;
+  const localDate = id(workout?.localDate);
+  const assignmentId = id(workout?.assignmentId);
   return {
     ...(id(o.otherUserId) ? { otherUserId: id(o.otherUserId) } : {}),
     ...(id(o.alsoUserId) ? { alsoUserId: id(o.alsoUserId) } : {}),
@@ -54,28 +64,39 @@ export function asHeldPushSource(o: Record<string, unknown>): HeldPushSource {
     ...(coachId && clientId ? { coachThread: { coachId, clientId } } : {}),
     ...(stateId ? { dunning: { stateId, ...(cycleKey ? { cycleKey } : {}) } } : {}),
     ...(noticeId ? { trialNotice: { noticeId, cancelAtPeriodEnd: trial?.cancelAtPeriodEnd === true } } : {}),
+    ...(localDate && DAY_KEY.test(localDate)
+      ? { workoutReminder: { localDate, ...(assignmentId ? { assignmentId } : {}) } }
+      : {}),
   };
 }
 
 /**
- * FR-1192R2: a money push that waited goes only while the reminder is still
- * owed, by its sender's own check (owner #186-P1, operator ruling R3): a
- * reminder whose cycle ended (paid or renewed, canceled, or over) is not
- * owed. A failed read sends it (never drops a reminder that may be owed),
- * as the thread-mute read fails open.
+ * Whether a push that waited is still owed, by its sender's own check (owner
+ * #186-P1, operator rulings R3 and R4). 'ended': a payment reminder whose
+ * dunning cycle ended (paid or renewed, canceled, or over), a trial-ending
+ * push whose trial converted, ended or was canceled, or a workout reminder
+ * its sender would no longer send (FR-1192R3: done or logged, the client
+ * deleted, locked at Day 10, or the plan workout no longer theirs that day).
+ * 'unread': a source read failed, which is neither yes nor no (ruling R4): the
+ * row waits for the next pass and is asked again, never sent unchecked and
+ * never dropped on a guess.
  */
-export async function heldMoneyPushStillDue(
-  prisma: MoneyDb,
+export async function heldPushStillOwed(
+  prisma: OwedDb,
+  userId: string,
   source: HeldPushSource,
   now: Date,
-): Promise<boolean> {
+): Promise<'owed' | 'ended' | 'unread'> {
   try {
-    if (source.dunning && !(await dunningPushStillDue(prisma, source.dunning))) return false;
-    if (source.trialNotice && !(await trialPushStillDue(prisma, source.trialNotice, now))) return false;
+    if (source.dunning && !(await dunningPushStillDue(prisma, source.dunning))) return 'ended';
+    if (source.trialNotice && !(await trialPushStillDue(prisma, source.trialNotice, now))) return 'ended';
+    if (source.workoutReminder && !(await workoutReminderStillDue(prisma, userId, source.workoutReminder))) {
+      return 'ended';
+    }
   } catch {
-    return true;
+    return 'unread';
   }
-  return true;
+  return 'owed';
 }
 
 /** Why a held push to `userId` may no longer be sent, or null when it still may. */

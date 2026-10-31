@@ -22,7 +22,7 @@ import { pushStillCurrent } from '../current-coach-inbox';
 import { planRenewalPushStillDue } from '../../checkout/plan-renewal/plan-renewal.state';
 import { asSpacePushContext, spacePushExpoFields } from '../../community/space-push/space-push-policy';
 import { spacePushDropReason } from '../../community/space-push/space-push-still-due';
-import { HeldPushSource, asHeldPushSource, heldMoneyPushStillDue, heldPushDropReason } from './held-push-source';
+import { HeldPushSource, asHeldPushSource, heldPushDropReason, heldPushStillOwed } from './held-push-source';
 
 // Device delivery for inbox notifications (C-643-2), through a durable
 // outbox (B-NOTIF-5: B-648-1, B-648-6, C-648-4 / OR-113-5, C-648-5).
@@ -105,6 +105,8 @@ export const RECEIPT_DEADLINE_MS = 15_000;
 export const LEASE_MS = 2 * 60_000;
 export const MAX_ATTEMPTS = 3;
 export const RETRY_BACKOFF_MS = [30_000, 2 * 60_000, 10 * 60_000];
+/** FR-1192R3: a push whose source could not be read is asked again on the next pass (the minute sweep). */
+export const SOURCE_RECHECK_MS = 60_000;
 /** Rows one drain works through at most (the next sweep takes the rest). */
 export const MAX_ROWS_PER_DRAIN = 500;
 export const RETENTION_MS = 30 * 24 * 60 * 60_000;
@@ -165,6 +167,7 @@ export type SendOutcome =
   | 'retry-scheduled'
   | 'burst-deferred'
   | 'quiet-deferred'
+  | 'source-unread'
   | 'preference-off'
   | 'token-cleanup-pending'
   | 'lease-lost';
@@ -484,7 +487,7 @@ export class PushDeliveryService {
   private async later(
     row: OutboxRow,
     notBefore: Date,
-    reason: 'burst_cap' | 'provider_retry' | 'quiet_hours' | 'worker_retry',
+    reason: 'burst_cap' | 'provider_retry' | 'quiet_hours' | 'source_unread' | 'worker_retry',
     code: SendOutcome,
   ): Promise<SendOutcome> {
     const res = await this.prisma.pushOutbox.updateMany({
@@ -497,8 +500,9 @@ export class PushDeliveryService {
         lease_token: null,
         handed_off_at: null,
         result_code: code,
-        // Waiting for room or for the morning is not a delivery attempt.
-        ...(reason === 'burst_cap' || reason === 'quiet_hours'
+        // Waiting for room, for the morning or for a source read is not a
+        // delivery attempt.
+        ...(reason === 'burst_cap' || reason === 'quiet_hours' || reason === 'source_unread'
           ? { attempts: { decrement: 1 } }
           : {}),
       },
@@ -622,11 +626,19 @@ export class PushDeliveryService {
         return await this.finish(row, 'dropped', 'obsolete');
       }
       // FR-1192R2: so is a payment reminder (to the client, or the coach's Day
-      // 7 alert) whose dunning cycle ended, or a trial-ending push whose trial
-      // converted, ended or was canceled, by its sender's own check.
-      if (context && !(await heldMoneyPushStillDue(this.prisma, context, this.now()))) {
-        this.logger.log(`push dropped: row=${row.id} kind=${row.kind} reason=money-ended`);
+      // 7 alert) whose dunning cycle ended, a trial-ending push whose trial
+      // converted, ended or was canceled, or (FR-1192R3) a workout reminder
+      // its sender would no longer send, by the sender's own check. A source
+      // that could not be read waits for the next pass (ruling R4).
+      const owed = context ? await heldPushStillOwed(this.prisma, row.user_id, context, this.now()) : 'owed';
+      if (owed === 'ended') {
+        this.logger.log(`push dropped: row=${row.id} kind=${row.kind} reason=source-ended`);
         return await this.finish(row, 'dropped', 'obsolete');
+      }
+      if (owed === 'unread') {
+        this.logger.warn(`push held: row=${row.id} kind=${row.kind} reason=source-unread`);
+        const next = new Date(this.now().getTime() + SOURCE_RECHECK_MS);
+        return await this.later(row, next, 'source_unread', 'source-unread');
       }
       const token = user?.expo_push_token ?? null;
       if (!token) return await this.finish(row, 'dropped', 'no-token');

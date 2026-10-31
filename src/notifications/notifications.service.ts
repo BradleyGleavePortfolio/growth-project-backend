@@ -70,6 +70,8 @@ export interface PushRoute {
   dunning?: SendPathContext['dunning'];
   /** FR-1192R2: a trial-ending push's notice: a trial that ended, converted or was canceled stops it. */
   trialNotice?: SendPathContext['trialNotice'];
+  /** FR-1192R3: a workout reminder's day and plan workout: the sender's own checks stop a waiting push. */
+  workoutReminder?: SendPathContext['workoutReminder'];
 }
 
 export interface PushPayload {
@@ -929,6 +931,7 @@ export class NotificationsService implements OnModuleInit {
           ...(r.community ? { community: r.community } : {}),
           ...(r.dunning ? { dunning: r.dunning } : {}),
           ...(r.trialNotice ? { trialNotice: r.trialNotice } : {}),
+          ...(r.workoutReminder ? { workoutReminder: r.workoutReminder } : {}),
         },
         dedupeKey,
         collapseKey: dedupeKey,
