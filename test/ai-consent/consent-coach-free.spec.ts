@@ -188,6 +188,9 @@ describe('P0 copy: partner sentence removed (C-6a) and coach-free versions (owne
       'consult-consent-v17-coach-free',
       'consult-consent-v17',
       'consult-consent-v18',
+      // STORE-E4: the one-box screens (test/onboarding-consent-one-box.spec.ts).
+      'consult-consent-v19',
+      'consult-consent-v18-coach-free',
     ]);
     const p0 = (copy_version: string, text_sha256: string) => ({
       agreed: true,

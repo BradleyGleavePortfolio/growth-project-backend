@@ -33,6 +33,10 @@ function makePrismaStub() {
       findMany: jest.fn(async ({ where }: any) => {
         const out = rows.filter((r) =>
           Object.entries(where).every(([k, v]) => {
+            // STORE-1TO1: `coach` is a relation filter on the coach's account
+            // (still coaching, not leaving, not blocked); the live suite
+            // test/rls/store-1to1-coaching-rls.spec.ts proves it on Postgres.
+            if (k === 'coach') return true;
             if (v === null) return r[k] === null || r[k] === undefined;
             if (typeof v === 'object' && v !== null) {
               // Filter sub-objects (archived_at: null, published_at: { not: null }, etc.)
@@ -348,7 +352,7 @@ describe('PackagesService', () => {
       // b → inactive; c → archived; d → still DRAFT (never published).
       await svc.update('coach-1', b.id, { is_active: false });
       await svc.archive('coach-1', c.id);
-      const out = await svc.listPublicForCoach('coach-1');
+      const out = await svc.listPublicForCoach('coach-1', 'client-1');
       const names = out.map((r) => r.name).sort();
       expect(names).toEqual(['a']);
     });

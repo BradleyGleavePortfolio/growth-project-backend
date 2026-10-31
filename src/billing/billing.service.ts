@@ -25,7 +25,11 @@ import { EmailTemplateKey } from '../email/email.types';
 import { NotificationKind } from '../notifications/notification-kind';
 import { NotificationsService } from '../notifications/notifications.service';
 import { describeFailure } from '../observability/log-pii';
-import { GUEST_CHECKOUT_METADATA_KEY, GuestCheckoutService } from '../storefront/guest-checkout.service';
+import {
+  GUEST_CHECKOUT_METADATA_KEY,
+  GuestCheckoutService,
+  isGuestTrialIntent,
+} from '../storefront/guest-checkout.service';
 
 // PR-2 P0-c — deep link the coach taps from the COACH_ALERT inbox to
 // open the payment-ops surface where they can see the failed transfer.
@@ -547,6 +551,26 @@ export class BillingService {
             );
             break;
           }
+          // GC-3 — a web trial's card was saved (its row holds the SetupIntent
+          // id). Claimed here like a paid PaymentIntent; the conversion after
+          // commit claims the one trial per client + coach. Nothing was
+          // charged, so there is no settlement and no receipt.
+          case 'setup_intent.succeeded': {
+            if (claimedByCheckout || !this.guestCheckout) break;
+            const si = event.data.object as { id?: string };
+            if (!isGuestTrialIntent(si?.id)) break;
+            const siId = si.id as string;
+            const sentinel = await tx.guestCheckout.findUnique({
+              where: { stripe_payment_intent_id: siId },
+              select: { id: true },
+            });
+            if (!sentinel) break;
+            const chargeInfo = { chargeId: null, receiptUrl: null, preResolveAttempted: true };
+            if (await this.guestCheckout.handlePaymentSucceeded(siId, chargeInfo, tx)) {
+              guestConversionRef.value = { paymentIntentId: siId, chargeInfo };
+            }
+            break;
+          }
           case 'account.updated':
           case 'capability.updated':
             await this.applyConnectAccountUpdated(event, tx);
@@ -831,6 +855,10 @@ export class BillingService {
         },
       });
       if (!sentinel) return null;
+      // GC-3 — a web trial's subscription is trialing (and its $0 invoice
+      // paid) before the card is saved: only setup_intent.succeeded (or the
+      // lost-webhook poll of that SetupIntent) converts it.
+      if (isGuestTrialIntent(sentinel.stripe_payment_intent_id)) return null;
       if (sentinel.stripe_payment_intent_id.startsWith('pending_')) {
         // Sentinel never made it past the synthetic placeholder — no PI
         // to resume against. The mint path patches the row with the real

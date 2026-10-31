@@ -190,7 +190,9 @@ describe('B-641-1 — card update link sent comes from the dunning production wr
     const after = await money(db).getAttention(COACH);
     const item = after.items.find((i) => i.kind === 'failed_payment')!;
     expect(item.failed_payment?.card_update_link_sent_at).toBe(sent.sent_at.toISOString());
-    expect(item.failed_payment?.attempt).toBe(1);
+    // FR-1191R2 (LS-1191R2B B1): no bank try count is recorded, so the row
+    // sends the unknown form (the phone shows no "Try n of m").
+    expect(item.failed_payment).toMatchObject({ attempt: 0, max_attempts: 0 });
     expect(item.failed_payment?.last_failure_reason).toBe('card_declined');
   });
 

@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma.service';
 import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
-import { GuestCheckoutService } from './guest-checkout.service';
+import { GuestCheckoutService, isGuestTrialIntent } from './guest-checkout.service';
 
 // r48 #2 — lost-webhook reconciler.
 //
@@ -147,6 +147,35 @@ export class LostWebhookReconcileService {
         `lost-webhook-reconcile: bailing out on ${checkoutId} after ${claimed.reconcile_attempts} attempts`,
       );
       return true;
+    }
+
+    // GC-3 — a web trial's row holds its SetupIntent: the card saved is what
+    // converts it (the subscription is trialing from the start, so its
+    // status proves nothing). Same claim as setup_intent.succeeded.
+    if (isGuestTrialIntent(paymentIntentId)) {
+      let siStatus: unknown;
+      try {
+        siStatus = (await this.stripe.retrieveSetupIntent(paymentIntentId)).status;
+      } catch (err) {
+        this.logger.warn(
+          `lost-webhook-reconcile: Stripe SetupIntent retrieve failed for ${paymentIntentId} (tag=${
+            err instanceof Error ? err.name : 'unknown'
+          })`,
+        );
+        return false;
+      }
+      if (siStatus === 'succeeded') {
+        await this.guestCheckout.handlePaymentSucceeded(paymentIntentId);
+        return true;
+      }
+      if (siStatus === 'canceled') {
+        await this.prisma.guestCheckout.updateMany({
+          where: { id: checkoutId, status: 'pending' },
+          data: { status: 'failed' },
+        });
+        return true;
+      }
+      return false;
     }
 
     // Poll Stripe.  retrievePaymentIntent has an AbortController(10s)

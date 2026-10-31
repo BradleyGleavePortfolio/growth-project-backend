@@ -12,8 +12,7 @@ import { PrismaService } from '../../prisma.service';
 import { SKIP_CLIENT_ENTITLEMENT_KEY } from '../decorators/skip-client-entitlement.decorator';
 import { OPEN_TO_COACHLESS_CLIENT_KEY } from '../decorators/open-to-coachless-client.decorator';
 import { VoicePolicyService } from '../../roman/voice/voice-policy.service';
-import { isDunningV2Enabled } from '../../checkout/dunning-v2/dunning-v2.feature';
-import { DUNNING_V2_GRACE_STATUSES } from '../../checkout/dunning-v2/dunning-grace';
+import { dunningGraceWhere } from '../../checkout/dunning-v2/dunning-grace';
 
 @Injectable()
 export class ClientEntitlementGuard implements CanActivate {
@@ -62,26 +61,14 @@ export class ClientEntitlementGuard implements CanActivate {
     };
     // S-DUNNING F7: under Smart Dunning v2 a client keeps full access on
     // Days 0-9 of a failed payment (the owner's sequence; Day 10 locks via
-    // DunningLockoutGuard). A past_due purchase with an ACTIVE, UNLOCKED
-    // dunning cycle therefore still entitles. Flag off: unchanged query.
-    const where: Prisma.ClientPurchaseWhereInput = isDunningV2Enabled()
-      ? {
-          client_user_id: user.id,
-          entitlement_active: true,
-          OR: [
-            paidWindow,
-            {
-              // B-690-5: past_due or unpaid (DUNNING_V2_GRACE_STATUSES).
-              status: { in: [...DUNNING_V2_GRACE_STATUSES] },
-              dunning: { is: { status: 'active', locked_out_at: null } },
-            },
-          ],
-        }
-      : {
-          client_user_id: user.id,
-          entitlement_active: true,
-          ...paidWindow,
-        };
+    // DunningLockoutGuard): the shared live-grace rule (dunningGraceWhere).
+    // Flag off: unchanged query.
+    const grace = dunningGraceWhere();
+    const where: Prisma.ClientPurchaseWhereInput = {
+      client_user_id: user.id,
+      entitlement_active: true,
+      ...(grace ? { OR: [paidWindow, grace] } : paidWindow),
+    };
     const entitlement = await this.prisma.clientPurchase.findFirst({
       where,
       select: { id: true, status: true, access_expires_at: true },

@@ -56,6 +56,7 @@ import { isMwbTemplatesEnabled } from './mwb-templates.feature';
 import { assertLastDayMayGo, lockProgramMaster, programDaysWhere } from './program-guards';
 import { inTenantWhere, planStaysInTenantWhere, programStaysInTenantWhere } from './tenant-clients';
 import { alternativesOf } from './plan-exercise-fields';
+import { visibleAssignmentExercises } from './assignment-exercises';
 import {
   AssignProgramDto,
   CloneProgramResultDto,
@@ -1685,19 +1686,10 @@ export class WorkoutBuilderService {
   } {
     const { adjustment_proposals: applied, ...rest } = assignment;
     const roman_adjusted_sets = romanAdjustedSets(applied);
-    if (assignment.snapshot) {
-      const frozen = assignment.snapshot.exercises_json;
-      return {
-        ...rest,
-        exercises: Array.isArray(frozen) ? (frozen as unknown[]) : [],
-        snapshot_source: true,
-        roman_adjusted_sets,
-      };
-    }
     return {
       ...rest,
-      exercises: assignment.workout_plan?.exercises ?? [],
-      snapshot_source: false,
+      exercises: visibleAssignmentExercises(assignment),
+      snapshot_source: !!assignment.snapshot,
       roman_adjusted_sets,
     };
   }
