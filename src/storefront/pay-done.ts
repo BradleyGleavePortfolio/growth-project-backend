@@ -4,6 +4,7 @@ import type { StripeConnectApiService } from '../connect/stripe-connect-api.serv
 import { SHARE_TOKEN_REGEX } from '../share-link/share-link.service';
 import { payKeyTag, type PayDoneView } from './pay-done.html';
 import { payPageUrl } from './storefront-links';
+import { isGuestTrialIntent } from './guest-checkout.service';
 
 // GC-2 — read-only: which state /p/:token/done shows. Stripe's query alone is
 // never trusted: the PaymentIntent must belong to a guest checkout of this
@@ -187,6 +188,7 @@ async function readTrialDone(
       last_error: true,
       expires_at: true,
       idempotency_key: true,
+      stripe_payment_intent_id: true,
       package_snapshot: true,
       package: { select: { share_token: true, name: true, coach: { select: { name: true } } } },
     },
@@ -222,7 +224,15 @@ async function readTrialDone(
         n: String(k),
       }).toString()}`;
     return {
-      view: { kind: 'confirming', email: row.guest_email, again, checkUrl: at(0) },
+      // TRIAL-WORDS-BE (#189-D1 op 1) — the trial's words come from the row:
+      // its stored intent is the trial's SetupIntent, as every guest path reads it.
+      view: {
+        kind: 'confirming',
+        email: row.guest_email,
+        again,
+        checkUrl: at(0),
+        trial: isGuestTrialIntent(row.stripe_payment_intent_id),
+      },
       refresh: again ? at(done + 1) : null,
     };
   };
