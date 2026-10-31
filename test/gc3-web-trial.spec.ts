@@ -1121,4 +1121,38 @@ describe('TRIAL-WORDS-BE — the return page while a web trial starts', () => {
       expect(sent.filter((message) => message.to === gc.guest_email)).toHaveLength(1);
     },
   );
+
+  it('LS-1199 B3: reopening a trial return after its first paid charge does not claim nothing is charged today', async () => {
+    const { world, gc, stripe, done } = trialWorld({
+      status: 'converted',
+      created_at: new Date(Date.now() - 7 * DAY),
+      expires_at: new Date(Date.now() - 6 * DAY),
+    });
+    // This is the ordinary state after the trial's first paid renewal:
+    // the guest row stays converted; invoice/subscription events update
+    // the recurring purchase, not the original card-save SetupIntent.
+    world.state.clientPurchase.push({
+      id: 'purchase-ended-trial',
+      client_user_id: 'buyer-ended-trial',
+      package_id: PKG,
+      coach_user_id: COACH,
+      stripe_subscription_id: gc.stripe_subscription_id,
+      stripe_payment_intent_id: gc.stripe_payment_intent_id,
+      status: 'active',
+      trial_started_at: gc.created_at,
+      trial_ends_at: new Date(Date.now() - 60_000),
+      entitlement_active: true,
+    });
+    stripe.retrieveSubscription.mockResolvedValue({
+      status: 'active',
+      trial_end: Math.floor((Date.now() - 60_000) / 1000),
+      latest_invoice: {
+        status: 'paid',
+        amount_paid: 14900,
+        status_transitions: { paid_at: Math.floor(Date.now() / 1000) },
+      },
+    });
+    const page = await done();
+    expect(page.html).not.toContain('Nothing is charged today.');
+  });
 });
