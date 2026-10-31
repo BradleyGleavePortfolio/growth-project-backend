@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import { ClientAIContextService } from '../src/ai/client-ai-context.service';
 import { ClientContextService } from '../src/ai/context/client-context.service';
+import { PrivateContextService } from '../src/ai/gateway/private-context.service';
 import { ls1197Database } from './ls-1197-live-fixture';
 
 describe('LS-1197R2 B2: structured AI preview honors the actual author block', () => {
@@ -34,14 +35,14 @@ describe('LS-1197R2 B2: structured AI preview honors the actual author block', (
   }, 240_000);
   afterAll(async () => { await fixture?.stop(); });
 
-  it.each(['client-blocks-author', 'author-blocks-client'] as const)(
+  it.each(['coach-blocks-author', 'author-blocks-coach'] as const)(
     'does not put the excluded author in coach AI context (%s)',
     async (direction) => {
       const structured = new ClientContextService(fixture.db);
       expect((await structured.build(client)).coach.last_coach_message_excerpt).toBe(hidden);
       const pair = {
-        blocker_id: direction === 'client-blocks-author' ? client : team,
-        blocked_id: direction === 'client-blocks-author' ? team : client,
+        blocker_id: direction === 'coach-blocks-author' ? head : team,
+        blocked_id: direction === 'coach-blocks-author' ? team : head,
       };
       await fixture.prisma.userBlock.create({ data: pair });
       try {
@@ -51,6 +52,25 @@ describe('LS-1197R2 B2: structured AI preview honors the actual author block', (
         expect(JSON.stringify(gateway)).not.toContain(hidden);
         const result = await structured.build(client);
         expect(JSON.stringify(result)).not.toContain(hidden);
+      } finally {
+        await fixture.prisma.userBlock.deleteMany({ where: pair });
+      }
+    },
+  );
+
+  it.each(['viewer-blocks-author', 'author-blocks-viewer'] as const)(
+    'does not put the excluded author in gateway self context (%s)',
+    async (direction) => {
+      const gateway = new PrivateContextService(fixture.db);
+      const caller = { id: client, role: 'student' as const, coach_id: head };
+      expect(JSON.stringify(await gateway.loadSelfContext(caller))).toContain(hidden);
+      const pair = {
+        blocker_id: direction === 'viewer-blocks-author' ? client : team,
+        blocked_id: direction === 'viewer-blocks-author' ? team : client,
+      };
+      await fixture.prisma.userBlock.create({ data: pair });
+      try {
+        expect(JSON.stringify(await gateway.loadSelfContext(caller))).not.toContain(hidden);
       } finally {
         await fixture.prisma.userBlock.deleteMany({ where: pair });
       }
