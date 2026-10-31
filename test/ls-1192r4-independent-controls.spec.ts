@@ -247,6 +247,25 @@ describe('LS-1192R4 independent source recovery controls', () => {
     },
   );
 
+  it.each(['client dunning', 'coach dunning', 'trial notice', 'trial purchase', 'plan renewal'] as const)(
+    '%s: an unknown row still owed after 31 days survives cleanup and sends once after restart',
+    async (source) => {
+      const r = rig(source);
+      await r.queue();
+      await r.delivery.drain();
+      r.clock.at = new Date(NOON.getTime() + 31 * 24 * 60 * 60_000);
+      await r.delivery.checkReceipts();
+      expect(r.w.rows).toHaveLength(1);
+      expect(r.w.rows[0]).toMatchObject({ status: 'pending', attempts: 0 });
+      r.state.unread = false;
+      const restarted = r.makeDelivery();
+      await restarted.sweep();
+      await restarted.sweep();
+      expect(r.w.rows[0]).toMatchObject({ status: 'sent', attempts: 1 });
+      expect(r.send).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it('an unread client money row does not postpone a source-free crisis alert or an ordinary peer', async () => {
     const r = rig('client dunning', NIGHT);
     await r.queue();
