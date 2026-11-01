@@ -31,27 +31,36 @@ const VOLUME_ML: Record<VolumeUnit, number> = {
 };
 
 // Category names use the USDA FDC `foodCategory` strings verbatim where
-// possible (so the lookup hits without any mapping layer) plus the FoodItem
-// `FoodCategory` enum values for hand-curated rows.
+// possible (so the lookup hits without any mapping layer).
 //
 // Keys are matched case-insensitively against a normalized version of the
 // supplied category. Multiple synonyms point at the same density to handle
 // the long tail of USDA category labels.
+//
+// FR-1198 (LO-1198 B2 + C3): a category value stands in for a food's own cup
+// weight only where every food of that category shares one density: liquids,
+// pourable fats and liquid sweeteners. Mixed solid families are not listed.
+// "Cereal Grains and Pasta" gave rolled oats 156 g a cup (real 80 g, about
+// 596 kcal for 300), "Oatmeal" gave 96 g, "Nut and Seed Products" gave peanut
+// butter 8.25 g a tbsp (real 16 g), "Dairy and Egg Products" gave shredded
+// cheddar 264 g a cup (real 113 g) and whey powder 15.5 g a tbsp, "Fruits and
+// Fruit Juices" gave orange juice 144 g a cup (real 248 g). Such a food offers
+// a volume only from its own household measure (volumeWeightsFor below);
+// without one the picker offers grams and ounces (R1).
 const DENSITY_G_PER_ML: Record<string, number> = {
-  // Dairy & dairy alternatives — milk, yogurt, kefir cluster around water.
-  dairy: 1.03,
-  'dairy and egg products': 1.03,
-  'milk products': 1.03,
-  yogurt: 1.03,
-  cheese: 1.10,
-  cheeses: 1.10,
-
-  // Beverages — water-equivalent for unsweetened, slightly higher for soda/juice.
+  // Beverages and juices — water-equivalent, slightly higher for juice.
   beverages: 1.00,
   beverage: 1.00,
+  'non-alcoholic beverages': 1.00,
   juice: 1.05,
   juices: 1.05,
-  'non-alcoholic beverages': 1.00,
+
+  // Yogurt alone (not the whole dairy family): plain and Greek sit near 1.03.
+  yogurt: 1.03,
+
+  // Liquid egg (beaten whole egg, whites, yolks) sits near 1.03.
+  eggs: 1.03,
+  egg: 1.03,
 
   // Fats & oils — packed liquid fats, all near 0.92.
   oil: 0.92,
@@ -62,72 +71,13 @@ const DENSITY_G_PER_ML: Record<string, number> = {
   mayonnaise: 0.91,
   shortening: 0.90,
 
-  // Sweeteners — sugar, honey, syrup. Granular sugar packs lighter than honey.
-  sweeteners: 1.20,
+  // Sugar and liquid sweeteners, each its own density ("sweeteners" and
+  // "syrups and toppings" mix granules, honey and whipped toppings: not listed).
   sugars: 0.85,
   sugar: 0.85,
   honey: 1.42,
   syrup: 1.32,
   syrups: 1.32,
-  'syrups and toppings': 1.32,
-
-  // Flours, grains, cereals — dry, loose-packed.
-  flour: 0.55,
-  flours: 0.55,
-  cereals: 0.45,
-  cereal: 0.45,
-  'breakfast cereals': 0.40,
-  oats: 0.40,
-  oatmeal: 0.40,
-  rice: 0.80, // dry rice, raw; cooked is closer to 1.0 but we key on the catalog basis.
-  pasta: 0.65,
-  'pasta and noodles': 0.65,
-  grains: 0.70,
-  'cereal grains and pasta': 0.65,
-
-  // Legumes & seeds — dry beans, lentils, peanuts.
-  legumes: 0.80,
-  'legumes and legume products': 0.80,
-  nuts: 0.55,
-  'nuts and seeds': 0.55,
-  'nut and seed products': 0.55,
-
-  // Vegetables — wide range, this is a chopped-fresh average.
-  vegetables: 0.55,
-  'vegetables and vegetable products': 0.55,
-
-  // Fruits — fresh, chopped average.
-  fruits: 0.60,
-  'fruits and fruit juices': 0.60,
-  fruit: 0.60,
-
-  // Meats — diced/ground packed weight (cooked or raw both close to ~0.85).
-  meat: 0.85,
-  meats: 0.85,
-  poultry: 0.85,
-  'poultry products': 0.85,
-  beef: 0.85,
-  'beef products': 0.85,
-  pork: 0.85,
-  'pork products': 0.85,
-  'finfish and shellfish products': 0.90,
-  fish: 0.90,
-  seafood: 0.90,
-
-  // Eggs — large/diced.
-  eggs: 1.03,
-  egg: 1.03,
-
-  // Sweets — average for cookies/candies (light + dense balance).
-  sweets: 0.75,
-  'sweets and snacks': 0.75,
-  candy: 0.90,
-
-  // Baked / breads — sliced/cubed, very airy.
-  baked: 0.30,
-  bread: 0.30,
-  breads: 0.30,
-  'baked products': 0.30,
 
   // Soups & sauces — water-equivalent (or slightly above).
   soup: 1.00,
@@ -137,19 +87,17 @@ const DENSITY_G_PER_ML: Record<string, number> = {
   sauces: 1.05,
   condiments: 1.05,
 
-  // Fast food / restaurant / mixed dishes — averaged density across components.
-  'fast foods': 0.80,
-  fast_food: 0.80,
-  restaurant: 0.80,
-  'restaurant foods': 0.80,
-  'mixed dishes': 0.80,
-
-  // Generic catch-all used by hand-curated rows. NOT a synonym for "unknown" —
-  // we still want a sensible cup-to-g for water-based foods the user adds by
-  // hand. ~1.0 is the safe-ish average and is the same number MFP uses when
-  // no per-food density is recorded.
-  generic: 1.00,
+  // FOOD-1-BE (owner ruling R1, LO-FOOD B3, LS-FOOD B1): no `generic` entry.
+  // 'generic' is the catch-all every Open Food Facts row, USDA import, seeded
+  // row and custom food gets, so a water density there gave a cup of dry oats
+  // 240 g. The FoodCategory values fast_food and restaurant are not listed
+  // either: they say where a food comes from, not what it weighs.
 };
+
+// FR-1198: a dry form inside a liquid category ("Beverages, coffee, instant,
+// powder", "Soup, chicken noodle, dry, mix") does not weigh what the liquid
+// weighs, so its name keeps the category value away.
+const DRY_FORM = /\b(powder|powdered|dry|dried|dehydrated|mix|mixes|flakes|granules|crystals|freeze-dried)\b/i;
 
 function normalizeCategory(category: string | null | undefined): string | null {
   if (!category) return null;
@@ -190,4 +138,61 @@ export function supportsVolumeUnits(foodCategory: string | null | undefined): bo
   const key = normalizeCategory(foodCategory);
   if (!key) return false;
   return DENSITY_G_PER_ML[key] != null;
+}
+
+/** Grams for one cup, tablespoon and teaspoon of a food. */
+export interface VolumeWeights {
+  cup_grams: number;
+  tbsp_grams: number;
+  tsp_grams: number;
+}
+
+// "1/2 cup dry (40g)", "1 cup cooked (158g)", "2 tbsp", "1 1/2 cups", "0.25 cup".
+const MEASURE_RE = /(\d+\s+\d+\/\d+|\d+\/\d+|\d*\.?\d+)\s*(cups?|tablespoons?|tbsps?|tbs|teaspoons?|tsps?)\b/i;
+// A weight in grams written in the same text: "(40g)", "40 g". Not "mg".
+const GRAMS_RE = /(\d+(?:\.\d+)?)\s*g(?![a-z])/i;
+
+function parseQty(raw: string): number {
+  const [whole, frac] = raw.trim().includes(' ') ? raw.trim().split(/\s+/) : ['0', raw.trim()];
+  const part = (t: string) => (t.includes('/') ? Number(t.split('/')[0]) / Number(t.split('/')[1]) : Number(t));
+  return Number(whole) + part(frac);
+}
+
+function unitOf(word: string): VolumeUnit {
+  const w = word.toLowerCase();
+  if (w.startsWith('c')) return 'cup';
+  return w.startsWith('tb') || w.startsWith('tablespoon') ? 'tbsp' : 'tsp';
+}
+
+function weightsAt(gramsPerMl: number): VolumeWeights {
+  const at = (u: VolumeUnit) => Math.round(VOLUME_ML[u] * gramsPerMl * 10) / 10;
+  return { cup_grams: at('cup'), tbsp_grams: at('tbsp'), tsp_grams: at('tsp') };
+}
+
+/**
+ * R1 (no guessed portions): cup/tbsp/tsp weights only when they come from the
+ * food's own household measure (a cup, tbsp or tsp in `measure` with a gram
+ * weight, written in the text or given as `grams`) or else from this file's
+ * density table for `category`, unless `name` says a dry form. Otherwise null:
+ * the picker offers grams and ounces. An implausible own measure (outside
+ * 0.02-2.5 g/ml) also gives null.
+ */
+export function volumeWeightsFor(
+  measure: string | null | undefined,
+  grams: number | null | undefined,
+  category: string | null | undefined,
+  name?: string | null,
+): VolumeWeights | null {
+  const text = measure ?? '';
+  const m = MEASURE_RE.exec(text);
+  if (m) {
+    const ml = parseQty(m[1]) * VOLUME_ML[unitOf(m[2])];
+    const written = GRAMS_RE.exec(text.slice(m.index + m[0].length)) ?? GRAMS_RE.exec(text);
+    const perMl = (written ? Number(written[1]) : Number(grams)) / ml;
+    return Number.isFinite(perMl) && perMl >= 0.02 && perMl <= 2.5 ? weightsAt(perMl) : null;
+  }
+  if (name && DRY_FORM.test(name)) return null;
+  const key = normalizeCategory(category);
+  const density = key ? DENSITY_G_PER_ML[key] : undefined;
+  return density == null ? null : weightsAt(density);
 }

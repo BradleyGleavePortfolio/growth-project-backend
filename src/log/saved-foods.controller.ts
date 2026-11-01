@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Request, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
@@ -7,6 +7,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { OpenToCoachlessClient } from '../common/decorators/open-to-coachless-client.decorator';
 import { AddFavoriteDto, CreateSavedMealDto, LogSavedMealDto, RenameSavedMealDto } from './saved-foods.dto';
 import { SavedFoodsService } from './saved-foods.service';
+import { withClientKey } from './log.dto';
 
 /**
  * FOODSAVED: the client's own favourite foods and saved meals for the add
@@ -56,8 +57,14 @@ export class SavedFoodsController {
     return this.saved.deleteSavedMeal(req.user.id, id);
   }
 
+  // R6: the key is body.client_uuid, or the Idempotency-Key header when the body has none.
   @Post('saved-meals/:id/log')
-  logSavedMeal(@Request() req: AuthedRequest, @Param('id') id: string, @Body() body: LogSavedMealDto) {
-    return this.saved.logSavedMeal(req.user.id, id, body);
+  logSavedMeal(
+    @Request() req: AuthedRequest,
+    @Param('id') id: string,
+    @Body() body: LogSavedMealDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
+  ) {
+    return this.saved.logSavedMeal(req.user.id, id, withClientKey(body, idempotencyKey));
   }
 }
