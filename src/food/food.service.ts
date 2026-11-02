@@ -234,15 +234,19 @@ const plainForm = (item: FoodResult) =>
  * ("Oatmeal, NFS", "Pancakes, plain"). 1: USDA's group-first form
  * "<Group>, <food>, <form>", a one-word group then the food ("Fish, sardine,
  * Atlantic, ...", "Beans, black, ...", "Yogurt, Greek, ..." for "greek
- * yogurt"). 0: a head that only begins with the food and goes on to another
- * dish ("Sardine sandwich", "Salmon salad") or any other mention.
+ * yogurt"), or a head of the query's words in another order ("Greek yogurt,
+ * plain" for "yogurt greek"). 0: a head that only begins with the food and
+ * goes on to another dish ("Sardine sandwich", "Salmon salad") or any other
+ * mention.
  */
 function namesFood(item: FoodResult, score: number, rawQuery: string): 0 | 1 | 2 {
   if (score === 100) return 2;
   const [group, food] = item.name.split(',').map((part) => words(part));
-  if (!food || group.length !== 1) return 0;
   const q = words(rawQuery);
   const sorted = (list: string[]) => [...list].sort().join(' ');
+  // The query's words in another order ("yogurt greek" for "Greek yogurt, plain").
+  if (sorted(group) === sorted(q)) return 1;
+  if (!food || group.length !== 1) return 0;
   return sameWords(food, q) || sorted([...group, ...food]) === sorted(q) ? 1 : 0;
 }
 
