@@ -1806,4 +1806,124 @@ describe('TRIAL-WORDS-BE — the return page while a web trial starts', () => {
     for (let tick = 0; tick < 2; tick++) await cast<Private>(cron).scanOutcomeMail();
     expect(toBuyer(gc).map((m) => m.html.includes(TW_F1))).toEqual([true]);
   });
+
+  // FR-1199R2B (agent 192) — own tests: F3, the Resend Idempotency-Key.
+  // A provider double that behaves as Resend documents: a key it accepted is
+  // kept; the same key and body returns the first answer without a new
+  // email; the same key with another body is a 409 invalid_idempotent_request;
+  // a request it refused is not kept.
+  const resendDouble = (plan: Array<'lose' | '503' | 'ok'> = []) => {
+    const kept = new Map<string, string>();
+    const delivered: Array<{ to: string; subject: string; html: string }> = [];
+    const calls: Array<{ key: string | null; body: string }> = [];
+    const left = [...plan];
+    global.fetch = cast<typeof fetch>(jest.fn(async (_url: unknown, init?: RequestInit) => {
+      const key = new Headers(init?.headers).get('Idempotency-Key');
+      const body = String(init?.body);
+      calls.push({ key, body });
+      const step = left.shift() ?? 'ok';
+      if (step === '503') return { ok: false, status: 503, json: async () => ({}) } as Response;
+      if (key && kept.has(key)) {
+        if (kept.get(key) !== body) {
+          return { ok: false, status: 409, json: async () => ({ statusCode: 409, name: 'invalid_idempotent_request' }) } as Response;
+        }
+        return { ok: true, status: 200, json: async () => ({ id: 'email-first' }) } as Response;
+      }
+      if (key) kept.set(key, body);
+      const mail = JSON.parse(body);
+      delivered.push(mail);
+      sent.push(mail);
+      if (step === 'lose') throw new Error('response lost after acceptance');
+      return { ok: true, status: 200, json: async () => ({ id: 'email-first' }) } as Response;
+    }));
+    return { delivered, calls };
+  };
+  const ageTries = (world: any) => {
+    for (const row of world.mail) row.created_at = new Date(Date.now() - 3 * 60_000);
+  };
+  // One checkout per template, opened the way its ending opens it.
+  const openOutcome = async (template: string, plan: Array<'lose' | '503' | 'ok'>) => {
+    const over: Row =
+      template === 'guest-welcome-existing' ? { status: 'converted' }
+        : template === 'guest-trial-refused' ? { status: 'conversion_failed_terminal', last_error: 'trial_already_used' }
+          : template === 'guest-trial-not-started' ? { status: 'failed' }
+            : {};
+    const { world, gc, service } = trialWorld(over);
+    let minted = 0;
+    jest.spyOn(cast<any>(service), 'generateInviteLink').mockImplementation(async () => `https://auth.example.com/confirm-${++minted}`);
+    const provider = resendDouble(plan);
+    if (template === 'guest-welcome-new') {
+      await service.handlePaymentSucceeded(gc.stripe_payment_intent_id);
+    } else {
+      await service.sendOutcomeMail(gc.id, { opening: true });
+    }
+    await settle();
+    return { world, gc, service, provider, minted: () => minted };
+  };
+  const OUTCOME_OF: Record<string, string> = {
+    'guest-welcome-new': 'welcome', 'guest-welcome-existing': 'welcome',
+    'guest-trial-refused': 'trial-refused', 'guest-trial-not-started': 'trial-not-started',
+  };
+  const TEMPLATES = ['guest-welcome-new', 'guest-welcome-existing', 'guest-trial-refused', 'guest-trial-not-started'];
+
+  it.each(TEMPLATES)('FR-1199R2B F3: %s carries guest-outcome:<checkout>:<outcome> as its Idempotency-Key, the same key and body on every try', async (template) => {
+    const { world, gc, service, provider, minted } = await openOutcome(template, ['503']);
+    expect(world.mail.map((r: Row) => [r.template_key, r.status])).toEqual([[template, 'failed']]);
+    ageTries(world);
+    await cast<Private>(new GuestCheckoutReconciliationService(world.db, service)).scanOutcomeMail();
+    await settle();
+    expect(provider.calls).toHaveLength(2);
+    expect(provider.calls.map((c) => c.key)).toEqual([`guest-outcome:${gc.id}:${OUTCOME_OF[template]}`, `guest-outcome:${gc.id}:${OUTCOME_OF[template]}`]);
+    expect(provider.calls[1].body).toBe(provider.calls[0].body);
+    expect(provider.delivered).toHaveLength(1);
+    if (template === 'guest-welcome-new') expect(minted()).toBe(1);
+    expect(world.mail.map((r: Row) => r.status).sort()).toEqual(['failed', 'sent']);
+  });
+
+  it.each(TEMPLATES)('FR-1199R2B F3: %s whose answer was lost after Resend accepted it is not delivered twice', async (template) => {
+    const { world, service, provider } = await openOutcome(template, ['lose']);
+    expect(provider.delivered).toHaveLength(1);
+    expect(world.mail.map((r: Row) => r.status)).toEqual(['failed']);
+    ageTries(world);
+    const cron = new GuestCheckoutReconciliationService(world.db, service);
+    for (let tick = 0; tick < 2; tick++) await cast<Private>(cron).scanOutcomeMail();
+    await settle();
+    expect(provider.calls).toHaveLength(2);
+    expect(provider.calls[1].body).toBe(provider.calls[0].body);
+    expect(provider.delivered).toHaveLength(1);
+    expect(world.mail.map((r: Row) => r.status).sort()).toEqual(['failed', 'sent']);
+  });
+
+  it('FR-1199R2B F3: a welcome retry in another process (no kept link) whose first try Resend accepted is a 409, recorded sent, never a second email', async () => {
+    const { world, gc, provider } = await openOutcome('guest-welcome-new', ['lose']);
+    ageTries(world);
+    const { service: other } = build(world);
+    jest.spyOn(cast<any>(other), 'generateInviteLink').mockImplementation(async () => 'https://auth.example.com/confirm-other');
+    await other.sendOutcomeMail(gc.id, { paced: true });
+    await settle();
+    expect(provider.calls).toHaveLength(2);
+    expect(provider.calls[1].key).toBe(provider.calls[0].key);
+    expect(provider.delivered).toHaveLength(1);
+    expect(world.mail.map((r: Row) => r.status).sort()).toEqual(['failed', 'sent']);
+    await other.sendOutcomeMail(gc.id, { paced: true });
+    expect(provider.calls).toHaveLength(2);
+  });
+
+  it('FR-1199R2B F3: a 409 for a try still in flight (concurrent_idempotent_requests) is a failed try, retried later', async () => {
+    const { world, gc, service } = trialWorld({ status: 'failed' });
+    let first = true;
+    global.fetch = cast<typeof fetch>(jest.fn(async (_url: unknown, init?: RequestInit) => {
+      if (first) {
+        first = false;
+        return { ok: false, status: 409, json: async () => ({ statusCode: 409, name: 'concurrent_idempotent_requests' }) } as Response;
+      }
+      sent.push(JSON.parse(String(init?.body)));
+      return { ok: true, status: 200, json: async () => ({ id: 'email-first' }) } as Response;
+    }));
+    await service.sendOutcomeMail(gc.id, { opening: true });
+    expect(world.mail.map((r: Row) => [r.status, r.error])).toEqual([['failed', 'status_409']]);
+    ageTries(world);
+    await cast<Private>(new GuestCheckoutReconciliationService(world.db, service)).scanOutcomeMail();
+    expect(toBuyer(gc).map((m) => m.html.includes(TW_F1))).toEqual([true]);
+  });
 });

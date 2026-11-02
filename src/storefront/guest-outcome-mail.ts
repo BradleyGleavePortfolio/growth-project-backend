@@ -28,6 +28,15 @@ export function outcomeMailKey(checkoutId: string, outcome: GuestOutcome, attemp
   return `guest-outcome:${checkoutId}:${outcome}:${attempt}`;
 }
 
+// FR-1199R2B (LS-1199R2 B2) — the Resend Idempotency-Key of an outcome: one
+// per checkout and outcome, the same on every try. Resend keeps it 24 h and
+// keeps only a request it accepted, so a try whose answer was lost is never
+// sent twice; a 409 invalid_idempotent_request (same key, other body) means
+// an earlier try was accepted.
+export function outcomeMailRequestKey(checkoutId: string, outcome: GuestOutcome): string {
+  return `guest-outcome:${checkoutId}:${outcome}`;
+}
+
 export function outcomeMailCheckoutId(key: string): string | null {
   const parts = key.split(':');
   return parts.length === 4 && parts[0] === 'guest-outcome' ? parts[1] : null;

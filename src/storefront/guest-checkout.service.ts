@@ -51,6 +51,7 @@ import {
   guestOutcome,
   nextOutcomeTry,
   outcomeMailKey,
+  outcomeMailRequestKey,
 } from './guest-outcome-mail';
 import { packageTrialDays } from '../checkout/subscription-plan';
 import { attachTrialCard } from '../checkout/trial-card';
@@ -205,9 +206,17 @@ type CheckoutWithRelations = GuestCheckout & {
   };
 };
 
+// FR-1199R2B (LS-1199R2 B2) — a welcome retry must send the body of its first
+// try (Resend refuses the same Idempotency-Key with another body). The
+// confirm link is a credential and is never stored, so it is kept here, in
+// memory only, for as long as Resend keeps the key.
+const WELCOME_LINK_KEEP_MS = 24 * 60 * 60_000;
+const WELCOME_LINK_KEEP_MAX = 500;
+
 @Injectable()
 export class GuestCheckoutService {
   private readonly logger = new Logger(GuestCheckoutService.name);
+  private readonly welcomeLinks = new Map<string, { link: string; at: number }>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -2387,11 +2396,17 @@ ${lines}</body></html>`,
       if (attempt === null) return;
       let inviteLink = opts.inviteLink ?? null;
       if (outcome === 'welcome' && !opening && tries?.some((t) => t.template_key === 'guest-welcome-new')) {
-        // The confirm link is never stored: a retry mints a fresh one, and
-        // without one it waits (never the existing-account words).
-        inviteLink = await this.generateInviteLink(checkout.guest_email, checkout.package.share_token);
-        if (inviteLink === null) return;
+        // The confirm link is never stored: a retry sends the first try's
+        // link (kept in memory, so the body is the same). Only a retry in
+        // another process mints a fresh one (Found, not fixed), and without
+        // one it waits (never the existing-account words).
+        inviteLink = this.keptWelcomeLink(checkout.id);
+        if (inviteLink === null) {
+          inviteLink = await this.generateInviteLink(checkout.guest_email, checkout.package.share_token);
+          if (inviteLink === null) return;
+        }
       }
+      if (outcome === 'welcome' && inviteLink !== null) this.keepWelcomeLink(checkout.id, inviteLink);
       const template =
         outcome === 'welcome' ? (inviteLink !== null ? 'guest-welcome-new' : 'guest-welcome-existing') : `guest-${outcome}`;
       const key = keys[attempt - 1];
@@ -2433,7 +2448,12 @@ ${lines}</body></html>`,
         }
       }
       const mail = outcome === 'welcome' ? this.welcomeMail(checkout, inviteLink) : this.trialEndMail(checkout, outcome);
-      const failure = await this.postResend(apiKey, { from, to: checkout.guest_email, ...mail }, checkout.id);
+      const failure = await this.postResend(
+        apiKey,
+        { from, to: checkout.guest_email, ...mail },
+        checkout.id,
+        outcomeMailRequestKey(checkout.id, outcome),
+      );
       if (!recorded) return;
       await this.prisma.emailSendLog
         .update({
@@ -2492,24 +2512,64 @@ ${lines}</body></html>`,
     }
   }
 
+  private keptWelcomeLink(checkoutId: string): string | null {
+    const kept = this.welcomeLinks.get(checkoutId);
+    if (!kept) return null;
+    if (Date.now() - kept.at > WELCOME_LINK_KEEP_MS) {
+      this.welcomeLinks.delete(checkoutId);
+      return null;
+    }
+    return kept.link;
+  }
+
+  private keepWelcomeLink(checkoutId: string, link: string): void {
+    if (this.welcomeLinks.has(checkoutId)) return; // the first try's link stays
+    if (this.welcomeLinks.size >= WELCOME_LINK_KEEP_MAX) {
+      const oldest = this.welcomeLinks.keys().next().value;
+      if (oldest !== undefined) this.welcomeLinks.delete(oldest);
+    }
+    this.welcomeLinks.set(checkoutId, { link, at: Date.now() });
+  }
+
   // Resend transactional email, 8 s timeout. Returns null when sent, else a
   // short failure tag (status code or error name; never the response body,
-  // which can echo API key fragments).
+  // which can echo API key fragments). FR-1199R2B (LS-1199R2 B2): every try
+  // of one outcome carries the same Idempotency-Key and the same body.
   private async postResend(
     apiKey: string,
     body: { from: string; to: string; subject: string; html: string },
     checkoutId: string,
+    idempotencyKey: string,
   ): Promise<string | null> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8000);
     try {
       const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey,
+        },
         body: JSON.stringify(body),
         signal: controller.signal,
       });
       if (res.ok) return null;
+      if (res.status === 409) {
+        // Only the error name is read; the body is never logged.
+        const name = await res
+          .json()
+          .then((b: unknown) =>
+            b && typeof (b as { name?: unknown }).name === 'string' ? (b as { name: string }).name : null,
+          )
+          .catch(() => null);
+        if (name === 'invalid_idempotent_request') {
+          // Resend keeps a key only for a request it accepted: an earlier
+          // try of this outcome went out. Recorded as sent, never resent.
+          this.logger.warn(`Resend already accepted an earlier try for ${checkoutId}; not sent again`);
+          return null;
+        }
+      }
       this.logger.error(`Resend send failed (status=${res.status}) for ${checkoutId}`);
       return `status_${res.status}`;
     } catch (err) {
