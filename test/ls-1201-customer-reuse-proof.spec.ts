@@ -62,7 +62,9 @@ describe('LS-1201: public checkout proves account ownership before customer reus
       createCustomer: jest.fn(async () => ({ id: 'customer-new' })),
       createSubscription: jest.fn(async () => trialDays > 0 ? {
         id: 'subscription-own', status: 'trialing',
-        pending_setup_intent: { id: 'setup-own', client_secret: 'synthetic-value' },
+        pending_setup_intent: {
+          id: ['seti', 'syntheticOwnership'].join('_'), client_secret: 'synthetic-value',
+        },
       } : {
         id: 'subscription-own',
         latest_invoice: { payment_intent: { id: 'payment-own', client_secret: 'synthetic-value' } },
