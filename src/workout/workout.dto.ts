@@ -8,6 +8,7 @@ import {
   ValidateNested,
   IsDateString,
   IsNotEmpty,
+  IsUUID,
   ValidateIf,
   MaxLength,
   ArrayMaxSize,
@@ -178,6 +179,13 @@ export class CreateRoutineExerciseDto {
   @IsInt()
   @Min(0)
   order_index!: number;
+
+  // EXID-BE (#189-D4 op 1): the library exercise (ExerciseCatalogItem id) this row came from, so Watch
+  // video opens its video. Omit or send null for an exercise of the client's own. An id with no library
+  // row is saved as null and the rest of the routine still saves (WorkoutService).
+  @IsOptional()
+  @IsUUID()
+  catalog_exercise_id?: string | null;
 }
 
 export class CreateRoutineDto {
