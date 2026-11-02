@@ -240,9 +240,20 @@ const plainForm = (item: FoodResult) =>
  * mention.
  */
 function namesFood(item: FoodResult, score: number, rawQuery: string): 0 | 1 | 2 {
-  if (score === 100) return 2;
-  const [group, food] = item.name.split(',').map((part) => words(part));
   const q = words(rawQuery);
+  const [group, food, ...rest] = item.name.split(',').map((part) => words(part));
+  if (score === 100) {
+    // FR-1198R3 (LO-1198R3 B1): a head-only match whose later comma part holds
+    // the head's words inside a longer name ("Fish, fish sticks, ...",
+    // "Butter, Clarified butter (ghee)", "Pork, cured, salt pork, raw") is
+    // USDA's group-first form for that other food, so 1, not 2. "egg whole"
+    // (PLAIN_PARTS) is the plain form of the head, not another food.
+    if (sameWords(words(item.name), q)) return 2;
+    const otherFood = [food, ...rest].some(
+      (part) => !!part && part.length > group.length && containsRun(part, group) && !PLAIN_PARTS.has(part.join(' ')),
+    );
+    return otherFood ? 1 : 2;
+  }
   const sorted = (list: string[]) => [...list].sort().join(' ');
   // The query's words in another order ("yogurt greek" for "Greek yogurt, plain").
   if (sorted(group) === sorted(q)) return 1;
