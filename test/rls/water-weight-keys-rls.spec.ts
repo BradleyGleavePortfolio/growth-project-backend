@@ -87,10 +87,10 @@ function stub<T>(value: unknown): T {
   const keyColumns = () => prisma.$queryRawUnsafe<{ table_name: string; data_type: string; is_nullable: string }[]>(
     `SELECT table_name::text AS table_name, data_type::text AS data_type, is_nullable::text AS is_nullable
        FROM information_schema.columns
-      WHERE table_schema = 'public' AND table_name = ANY($1::text[]) AND column_name = 'client_uuid' ORDER BY 1 COLLATE "C"`, [...TABLES]);
+      WHERE table_schema = 'public' AND table_name = ANY($1::text[]) AND column_name = 'client_uuid' ORDER BY table_name::text COLLATE "C"`, [...TABLES]);
   const keyIndexes = () => prisma.$queryRawUnsafe<{ indexname: string; indexdef: string }[]>(
     `SELECT indexname::text AS indexname, indexdef FROM pg_indexes
-      WHERE schemaname = 'public' AND tablename = ANY($1::text[]) AND indexdef LIKE '%client_uuid%' ORDER BY 1 COLLATE "C"`, [...TABLES]);
+      WHERE schemaname = 'public' AND tablename = ANY($1::text[]) AND indexdef LIKE '%client_uuid%' ORDER BY indexname::text COLLATE "C"`, [...TABLES]);
   const waterOf = (who: string) => prisma.waterLog.findMany({ where: { user_id: who }, orderBy: { created_at: 'asc' } });
   const weightOf = (who: string) => prisma.weightLog.findMany({ where: { user_id: who }, orderBy: { logged_at: 'asc' } });
 
@@ -232,7 +232,7 @@ function stub<T>(value: unknown): T {
     const build = Reflect.get(exporter, '_buildArchive') as (u: string, e: string) => Promise<{ buffer: Buffer }>;
     const download = async (who: string): Promise<Record<string, Array<Record<string, unknown>>>> =>
       JSON.parse((await build.call(exporter, who, randomUUID())).buffer.toString('utf8'));
-    const ids = (rows: Array<{ id: unknown }>) => rows.map((r) => String(r.id)).sort();
+    const ids = (rows: Array<{ id?: unknown }>) => rows.map((r) => String(r.id)).sort();
     const aDownload = await download(a);
     expect(ids(aDownload.water_logs)).toEqual(ids(await waterOf(a)));
     expect(ids(aDownload.weight_logs)).toEqual(ids(await weightOf(a)));
