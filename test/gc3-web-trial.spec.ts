@@ -1963,6 +1963,26 @@ describe('TRIAL-WORDS-BE — the return page while a web trial starts', () => {
     expect(provider.delivered).toHaveLength(1);
   });
 
+  it.each(TEMPLATES)('LS-1199R3 B1: %s recovers when one record outage spans the whole initial send', async (template) => {
+    let restoreCreate: (() => void) | undefined;
+    const { world, gc, service, provider } = await openOutcome(template, ['503'], (w) => {
+      const create = w.db.emailSendLog.create;
+      restoreCreate = () => { w.db.emailSendLog.create = create; };
+      // One sustained store outage, not two independent outages. It
+      // affects both writes in this same delivery attempt.
+      w.db.emailSendLog.create = jest.fn().mockRejectedValue(new Error('mail record store unavailable'));
+    });
+    expect(provider.delivered).toHaveLength(0);
+    expect(world.mail).toHaveLength(0);
+    restoreCreate!();
+    // The provider double now accepts requests; the store has recovered.
+    // No process change or timing race is involved. A new checkout must
+    // not be mistaken for a historical outcome with no mail owed.
+    await recover(world, service, gc, template);
+    expect(provider.delivered).toHaveLength(1);
+    expect(world.mail.some((row: Row) => row.status === 'sent')).toBe(true);
+  });
+
   it.each(TEMPLATES)('FR-1199R2B F4: %s, record write down but the send went out: recorded as sent, never sent again', async (template) => {
     const { world, gc, service, provider } = await openOutcome(template, [], (w) => rejectOnce(w, 'create'));
     expect(provider.delivered).toHaveLength(1);
