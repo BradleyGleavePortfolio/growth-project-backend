@@ -65,6 +65,9 @@ function world() {
     coach_user_id: COACH,
     stripe_account_id: 'acct_coach',
     charges_enabled: true,
+    payouts_enabled: true, // HOLD-FU-BE: ready by the one readiness rule
+    details_submitted: true,
+    disabled_reason: null,
     deauthorized_at: null,
   });
   const packages = {

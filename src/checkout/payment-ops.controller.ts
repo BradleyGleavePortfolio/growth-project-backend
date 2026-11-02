@@ -30,6 +30,7 @@ import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
 import { PrismaService } from '../prisma.service';
 import { AdminAnalyticsService, type RollupGroupBy } from './admin-analytics.service';
 import { DunningService } from './dunning.service';
+import { NOT_HELD_RENEWAL } from './dunning-v2/coach-account-hold';
 import { PAYOUT_NOTICE_PAGE_MAX, PayoutNoticeService } from './payout-notice.service';
 import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
 import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
@@ -954,6 +955,9 @@ export class CoachPaymentOpsController {
         coach_user_id: req.user.id,
         // PF-5-BE (LS-PAYFAIL B9): the one failed-collection list, with 'unpaid'.
         OR: FAILED_PURCHASE_STATUSES.map((status) => ({ status })),
+        // HOLD-FU-BE (LS-1195 C2): a renewal held on the coach's own account is
+        // not the client failing to pay (the same rule as Money's attention list).
+        ...NOT_HELD_RENEWAL,
       },
       select: { ...COACH_PURCHASE_SELECT, dunning: { select: COACH_DUNNING_SELECT } },
       orderBy: { updated_at: 'desc' },

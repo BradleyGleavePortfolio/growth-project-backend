@@ -138,8 +138,9 @@ describe('B-CONNECT-126 recurring Buy gate', () => {
 
   it('saved row ready -> zero Stripe account reads', async () => {
     const retrieve = jest.fn(async () => STRIPE_APPROVED);
+    // HOLD-FU-BE: ready means every axis of the one rule (the pending row had a disabled reason).
     const { svc, stripe } = recurringSetup(
-      { ...pendingAccount(), charges_enabled: true, payouts_enabled: true },
+      { ...pendingAccount(), charges_enabled: true, payouts_enabled: true, disabled_reason: null },
       retrieve,
     );
     await svc.createSubscriptionIntent(CLIENT, { package_id: PKG, idempotency_key: KEY1 });
@@ -223,5 +224,41 @@ describe('B-CONNECT-126 cooldown', () => {
     const logged = JSON.stringify(warn.mock.calls);
     expect(logged).toContain('code=CONNECT_NOT_READY_SYNC_FAILED class=other');
     expect(logged).not.toContain('PRIVATE_CANARY');
+  });
+});
+
+// HOLD-FU-BE F1 (LS-1195 C1): the native subscription start reads the one
+// readiness rule (payouts, details and the disabled reason), not charges alone,
+// and a charges-on row that is not ready is re-read from Stripe before refusing.
+describe('HOLD-FU-BE recurring Buy gate reads the one readiness rule', () => {
+  const READY_ROW = { charges_enabled: true, payouts_enabled: true, details_submitted: true, disabled_reason: null };
+  it.each([
+    ['payouts off', { payouts_enabled: false }, { payouts_enabled: false }],
+    ['details not submitted', { details_submitted: false }, { details_submitted: false }],
+    [
+      'a disabled reason',
+      { disabled_reason: 'requirements.past_due' },
+      { requirements: { ...STRIPE_APPROVED.requirements, disabled_reason: 'requirements.past_due' } },
+    ],
+  ])('charges on but %s, Stripe still so -> 409 COACH_NOT_PAYOUT_READY, nothing charged', async (_n, saved, live) => {
+    const retrieve = jest.fn(async () => ({ ...STRIPE_APPROVED, ...live }));
+    const { svc, stripe } = recurringSetup({ ...pendingAccount(), ...READY_ROW, ...saved }, retrieve);
+    expect(
+      await codeOf(svc.createSubscriptionIntent(CLIENT, { package_id: PKG, idempotency_key: KEY1 })),
+    ).toBe('COACH_NOT_PAYOUT_READY');
+    expect(stripe.createSubscription).not.toHaveBeenCalled();
+    expect(retrieve).toHaveBeenCalledTimes(1);
+  });
+
+  it('charges on, payouts off saved, Stripe now ready -> re-read once and the plan starts', async () => {
+    const retrieve = jest.fn(async () => STRIPE_APPROVED);
+    const { svc, stripe, prisma } = recurringSetup(
+      { ...pendingAccount(), ...READY_ROW, payouts_enabled: false },
+      retrieve,
+    );
+    await svc.createSubscriptionIntent(CLIENT, { package_id: PKG, idempotency_key: KEY1 });
+    expect(retrieve).toHaveBeenCalledTimes(1);
+    expect(stripe.createSubscription).toHaveBeenCalledTimes(1);
+    expect(prisma._accounts[0]).toMatchObject({ payouts_enabled: true });
   });
 });
