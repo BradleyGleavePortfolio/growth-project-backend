@@ -1223,6 +1223,23 @@ export class StripeConnectApiService {
   }
 
   /**
+   * PF-7-BE: retry one open invoice off-session with the card Stripe already
+   * has (the client is not in the app). Same one-PaymentIntent rule as
+   * payInvoice: the invoice can be paid at most once; the key makes a resent
+   * call the same call.
+   */
+  async retryInvoiceOffSession(args: {
+    invoiceId: string;
+    idempotencyKey: string;
+  }): Promise<StripeInvoiceObject> {
+    return this.post<StripeInvoiceObject>(
+      `/invoices/${encodeURIComponent(args.invoiceId)}/pay`,
+      { off_session: 'true' },
+      args.idempotencyKey,
+    );
+  }
+
+  /**
    * R-DISPUTE-PAUSE: pause collection on a subscription. `void` voids every
    * invoice Stripe generates while paused, so nothing accrues or is charged
    * for the paused time; the subscription keeps its price and card.
