@@ -858,6 +858,17 @@ export function scanMemberContentReads(srcRoot = join(REPO_ROOT, 'src'), options
  * parameter of a callback or of a function no scanned code calls, a call it cannot see into, a key it cannot
  * name, `_count: true` or a count it cannot follow) where the model it applies to can reach members' content
  * (modelsReachingMemberContent); on any other model it is quiet.
+ *
+ * FR-1185R5 (LS-1185R6 B1, B2, as classes). Every write that can change a held argument counts: a field or a
+ * property of it (a class field, a key of an object literal) set or reassigned anywhere in the scanned files
+ * (`this.where.x = ...`, `this.where = {...}`, `holder.where = {...}`), Object.assign, Object.defineProperty,
+ * Object.defineProperties, Reflect.set and Reflect.defineProperty into it or into what holds it, and a call it is
+ * handed to (`f.call(t, where)` too); a call whose body the checker cannot read (a package's, a declaration only,
+ * an interface member, a library function) may write what it is handed and fails closed (an array push only adds
+ * an element, which is followed as the array's). The pass enters through one rule for every way a read is
+ * invoked (readMethod / readCall: `d.findMany`, `d['findMany']`, `d[METHOD]`, a destructured or aliased method,
+ * `.call`, `.apply`, `.bind`); an invocation it cannot read (a spread, `.apply` with a list it cannot follow) and a
+ * read method of a named delegate handed on (`run(d.findMany)`) fail closed.
  */
 function followHeldArguments(
   parsed: Parsed[],
