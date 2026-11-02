@@ -112,6 +112,17 @@ export async function seedBuiltInFoods(prisma: PrismaClient, foods: SeedFood[]):
   );
 }
 
+/** An error as one deploy-log line (Prisma's messages span several lines and start with a blank one). */
+export function oneLine(err: unknown): string {
+  const text = err instanceof Error ? err.message : String(err);
+  const line = text
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l !== '')
+    .join(' | ');
+  return line.length > 800 ? `${line.slice(0, 800)}…` : line;
+}
+
 export async function main(argv: string[]): Promise<number> {
   const file = argv[2];
   if (!file) throw new Error('usage: seed-built-in-foods <path to seed-foods.json>');
@@ -139,7 +150,7 @@ if (require.main === module) {
     (code) => process.exit(code),
     (err: unknown) => {
       // eslint-disable-next-line no-console
-      console.log(`[release] built-in foods FAILED: ${err instanceof Error ? err.message : String(err)}`);
+      console.log(`[release] built-in foods FAILED: ${oneLine(err)}`);
       process.exit(1);
     },
   );

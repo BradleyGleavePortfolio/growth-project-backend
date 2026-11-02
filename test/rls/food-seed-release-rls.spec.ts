@@ -162,8 +162,7 @@ const release = (): Run => {
     const before = await allRows();
     const r = release();
     expect(r.code).not.toBe(0);
-    expect(r.out).toContain('[release] built-in foods FAILED:');
-    expect(r.out).toContain('food seed test refusal');
+    expect(r.out).toMatch(/^\[release\] built-in foods FAILED: .*food seed test refusal/m);
     expect(r.out).toContain('built-in foods step FAILED');
     expect(r.out).toContain('Deploy ABORTED by release_command');
     expect(r.out).not.toContain('release_command completed successfully');

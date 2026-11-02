@@ -8,7 +8,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, relative } from 'path';
 import * as ts from 'typescript';
-import { foodKey, parseSeedFoods, seedFoodRow, type SeedFood } from '../scripts/seed-built-in-foods';
+import { foodKey, oneLine, parseSeedFoods, seedFoodRow, type SeedFood } from '../scripts/seed-built-in-foods';
 
 const ROOT = join(__dirname, '..');
 const SEED_FILE = 'prisma/data/seed-foods.json';
@@ -140,6 +140,14 @@ describe('seed-built-in-foods — the row the release step writes (F1)', () => {
     expect(foodKey('Oats', null)).not.toBe(foodKey('Oats', 'null'));
     expect(foodKey('Oats', null)).not.toBe(foodKey('Oats', ''));
     expect(foodKey('a","b', null)).not.toBe(foodKey('a', 'b'));
+  });
+
+  it('prints a failure as one deploy-log line, whatever the error looks like', () => {
+    expect(oneLine(new Error('\nInvalid `tx.foodItem.createMany()` invocation:\n\n\n  ERROR: refused\n'))).toBe(
+      'Invalid `tx.foodItem.createMany()` invocation: | ERROR: refused',
+    );
+    expect(oneLine('plain')).toBe('plain');
+    expect(oneLine(new Error('x'.repeat(900)))).toHaveLength(801);
   });
 
   it('refuses an empty, malformed or duplicated seed file (an empty catalog can never pass)', () => {
