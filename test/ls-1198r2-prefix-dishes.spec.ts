@@ -51,12 +51,14 @@ describe('B1: prefix dishes do not jump ahead of plain foods', () => {
     expect(results[0].id).toBe('usda_175139');
   });
 
-  it.each([false, true])('pancakes, cached=%s: pancakes before pancake syrup', async (cached) => {
+  it.each([false, true])('control: pancakes, cached=%s: pancakes before pancake syrup', async (cached) => {
     const { service, fetcher } = world('pancakes');
     if (cached) await service.search('pancakes', 50, 'viewer');
     const { results } = await service.search('pancakes', 50, 'viewer');
     expect(fetcher).toHaveBeenCalledTimes(2);
-    expect(results.some((r) => r.id === 'usda_174086')).toBe(true);
+    // searchShared asks USDA for 20 rows. The SR Legacy reduced-fat row
+    // is number 22 in the frozen response, so it is not an available choice.
+    expect(results.some((r) => r.id === 'usda_2708304')).toBe(true);
     expect(results[0].name).toMatch(/^Pancakes,/);
   });
 
