@@ -4,6 +4,19 @@ import { isMessagingCoreV2Enabled } from '../../messaging/messaging-core.feature
 import { dunningPushStillDue } from '../../checkout/dunning-v2/dunning-cycle';
 import { trialPushStillDue } from '../../packages/trials/trial-notice-truth';
 import { WorkoutDb, workoutReminderStillDue } from '../../engagement/workout-reminder-due';
+import { MONEY_NOTIFICATION_KINDS } from '../notification-kind';
+
+/**
+ * FR-1192R4 (ruling R4): a money push. A money kind, or a stored context with a
+ * payment source (a dunning cycle, a trial notice) or the money Mute all pass
+ * (the Day 7 payment alert, a payout notice). A safety alert is none of these.
+ */
+export function isMoneyPush(kind: string, context: unknown): boolean {
+  if (MONEY_NOTIFICATION_KINDS.has(kind)) return true;
+  if (!context || typeof context !== 'object' || Array.isArray(context)) return false;
+  const c = context as Record<string, unknown>;
+  return c.passesMuteAll === true || !!c.dunning || !!c.trialNotice;
+}
 
 /**
  * FR-1192 (R1): what a push about other people keeps with it, so the one

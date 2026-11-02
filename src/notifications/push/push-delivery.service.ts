@@ -22,7 +22,13 @@ import { pushStillCurrent } from '../current-coach-inbox';
 import { planRenewalPushStillDue } from '../../checkout/plan-renewal/plan-renewal.state';
 import { asSpacePushContext, spacePushExpoFields } from '../../community/space-push/space-push-policy';
 import { spacePushDropReason } from '../../community/space-push/space-push-still-due';
-import { HeldPushSource, asHeldPushSource, heldPushDropReason, heldPushStillOwed } from './held-push-source';
+import {
+  HeldPushSource,
+  asHeldPushSource,
+  heldPushDropReason,
+  heldPushStillOwed,
+  isMoneyPush,
+} from './held-push-source';
 
 // Device delivery for inbox notifications (C-643-2), through a durable
 // outbox (B-NOTIF-5: B-648-1, B-648-6, C-648-4 / OR-113-5, C-648-5).
@@ -753,6 +759,13 @@ export class PushDeliveryService {
         // Before the handoff nothing reached Expo: a database hiccup gets a
         // bounded retry instead of losing the push. After it, delivery is
         // unknown, so the row is closed (at most once).
+        // FR-1192R4 (ruling R4): for a money push, a failed read before the
+        // handoff (who may get it, or whether it may still go) is neither yes
+        // nor no: it waits like an unread source, asked again next pass.
+        if (!handedOff && isMoneyPush(row.kind, row.context)) {
+          const next = new Date(this.now().getTime() + SOURCE_RECHECK_MS);
+          return await this.later(row, next, 'source_unread', 'source-unread');
+        }
         if (!handedOff && row.attempts < MAX_ATTEMPTS) {
           const wait = RETRY_BACKOFF_MS[Math.min(row.attempts - 1, RETRY_BACKOFF_MS.length - 1)];
           return await this.later(
