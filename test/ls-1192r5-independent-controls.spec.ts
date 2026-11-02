@@ -1,6 +1,6 @@
 // LS-1192R5: independent controls for the round-4 shared catch boundary.
-// Only transport is stubbed. The real notification service, emitter, worker,
-// source checks, preference mapping and durable outbox fake run together.
+// The transport and database delegates are fakes. The real notification
+// service, emitter, worker, source checks and preference mapping run together.
 import { Logger } from '@nestjs/common';
 import { CoachAlertEmitter } from '../src/notifications/emitters/coach-alert.emitter';
 import { NotificationKind } from '../src/notifications/notification-kind';
@@ -22,7 +22,7 @@ const TOKEN = 'ExponentPushToken[ls1192r5independentcontrol]';
 const MONEY_KINDS = ['dunning_blocker', 'first_payment', 'trial_ending', 'plan_renewal', 'coach_new_purchase'];
 const MODES = ['dunning', 'trial', 'renewal', 'first payment', 'coach purchase', 'Day 7', 'hold notice', 'payout'] as const;
 type Mode = typeof MODES[number];
-type Gate = 'first preferences' | 'final preferences' | 'first token' | 'final token' | 'cap' | 'roster';
+type Gate = 'first preferences' | 'final preferences' | 'first token' | 'final token' | 'cap' | 'post-stamp cap' | 'roster';
 type UserRead = { where: { id: string }; select?: Record<string, unknown> };
 type PrefsRead = { where: { user_id: string }; select?: Record<string, unknown> };
 
@@ -69,7 +69,7 @@ async function rig(mode: Mode | 'message' | 'safety', safetyType = 'roman_crisis
   });
   const originalRecent = w.db.pushOutbox.findMany;
   const recentRead = jest.fn(async (args: Parameters<typeof originalRecent>[0]) => {
-    if (faults.gate === 'cap') fail();
+    if (faults.gate === 'cap' || (faults.gate === 'post-stamp cap' && w.rows.some((row) => row.handed_off_at))) fail();
     return originalRecent(args);
   });
   const db = {
@@ -133,7 +133,9 @@ async function rig(mode: Mode | 'message' | 'safety', safetyType = 'roman_crisis
       : NotificationKind.MESSAGE_RECEIVED;
     expect(await notifications.sendPush({
       user_id: 'reader', kind, body: 'Existing notice body',
-      deep_link: mode === 'coach purchase' ? 'tgp://coach/clients/client' : 'tgp://notifications',
+      deep_link: mode === 'first payment' ? 'tgp://coach/clients/client'
+        : mode === 'coach purchase' ? 'tgp://coach/purchases/purchase'
+        : 'tgp://notifications',
       dedupe_key: `independent:${mode}`,
       context: mode === 'dunning' ? { dunning: cycle }
         : mode === 'trial' ? { trialNotice: { noticeId: 'notice', cancelAtPeriodEnd: false } }
@@ -193,9 +195,9 @@ describe('LS-1192R5 independently drives each failed pre-handoff read', () => {
     else process.env.FEATURE_PLAN_RENEWAL = savedFlag;
     jest.restoreAllMocks();
   });
-  const gates: Gate[] = ['first preferences', 'final preferences', 'first token', 'final token', 'cap'];
+  const gates: Gate[] = ['first preferences', 'final preferences', 'first token', 'final token', 'cap', 'post-stamp cap'];
   const cases = MODES.flatMap((mode) =>
-    [...gates, ...(mode === 'Day 7' || mode === 'coach purchase' ? ['roster' as const] : [])]
+    [...gates, ...(mode === 'Day 7' || mode === 'first payment' ? ['roster' as const] : [])]
       .map((gate) => [mode, gate] as const));
   it.each(cases)('%s: %s waits without consuming provider attempts, then sends once', async (mode, gate) => {
     const r = await rig(mode);
@@ -223,7 +225,7 @@ describe('LS-1192R5 independently drives each failed pre-handoff read', () => {
     expect(r.send).toHaveBeenCalledTimes(1);
     expect(r.row).toMatchObject({ status: 'sent', attempts: 1, dedupe_key: identity });
   });
-  it.each(['dunning', 'trial', 'renewal', 'Day 7', 'coach purchase'] as const)(
+  it.each(['dunning', 'trial', 'renewal', 'Day 7', 'first payment'] as const)(
     '%s: a readable ended source or revoked reader retires after an unread pass', async (mode) => {
       const r = await rig(mode);
       r.clock.at = MORNING;
