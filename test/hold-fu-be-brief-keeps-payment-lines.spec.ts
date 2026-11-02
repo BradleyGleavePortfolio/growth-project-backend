@@ -6,7 +6,7 @@ import {
   validateClaudeNarrative,
   withCoachAccountWaiting,
 } from '../src/coach/brief/coach-brief.service';
-import type { BriefContext, BriefContextHeadCoach } from '../src/coach/brief/coach-brief.service';
+import type { BriefContext, BriefContextHeadCoach } from '../src/coach/brief/coach-brief.types';
 import { coachAccountWaitingLine } from '../src/checkout/dunning-v2/coach-account-hold';
 import { noClientDataSubject } from '../src/ai-egress/ai-egress.types';
 import {
