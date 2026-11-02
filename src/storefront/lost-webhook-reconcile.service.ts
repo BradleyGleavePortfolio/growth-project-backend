@@ -119,16 +119,18 @@ export class LostWebhookReconcileService {
   }
 
   // FR-1199R2B (LS-1199R2 B1, LO-1199R2 C1) — TW-F1 says the trial was not
-  // started, so the card save is ended at Stripe before it goes out: a
-  // cancelled SetupIntent can never succeed, and the row's checkout window
-  // is closed so no later setup_intent.succeeded can claim it. A card save
-  // that cannot be ended (still processing at Stripe) ends the row with no
-  // email and stays claimable, so a late success still converts it. If
-  // Stripe cannot be read or the cancel fails, the row stays pending and
-  // the next tick looks again. LO-1199R2 B1: a declined card
-  // (requires_payment_method) was already shown the decline on the pay page,
-  // and the buyer may have started the trial with another card (a new row),
-  // so it ends with no email too.
+  // started, so the attempt is made final before it goes out: the row's
+  // checkout window is closed in the same write that ends it, so no later
+  // setup_intent.succeeded can claim it, convert it or lift the trial end
+  // (the create-time end then stops any charge), and a card save Stripe
+  // can still cancel is cancelled first. A save still processing at Stripe
+  // cannot be cancelled; the closed window alone makes it final. If Stripe
+  // cannot be read or the cancel fails (the save may have just gone
+  // through), the row stays pending and the next tick looks again.
+  // LO-1199R2 B1: a declined card (requires_payment_method) was already
+  // shown the decline on the pay page, and the buyer may have started the
+  // trial with another card (a new row), so it ends with no email and is
+  // left claimable.
   private async endTrialAtCap(
     checkoutId: string,
     setupIntentId: string,
@@ -149,11 +151,10 @@ export class LostWebhookReconcileService {
       await this.guestCheckout.handlePaymentSucceeded(setupIntentId);
       return true;
     }
-    let ended = siStatus === 'canceled';
-    if (!ended && siStatus !== 'processing' && siStatus !== 'requires_payment_method') {
+    const ended = siStatus !== 'requires_payment_method';
+    if (siStatus === 'requires_action' || siStatus === 'requires_confirmation') {
       try {
         await this.stripe.cancelSetupIntent(setupIntentId, `guest-trial-end:${checkoutId}`);
-        ended = true;
       } catch (err) {
         this.logger.warn(
           `lost-webhook-reconcile: SetupIntent cancel failed at the cap for ${setupIntentId} (tag=${
@@ -172,7 +173,7 @@ export class LostWebhookReconcileService {
     if (moved.count > 0 && ended) await this.openTrialEndMail(checkoutId);
     this.logger.warn(
       `lost-webhook-reconcile: bailing out on ${checkoutId} after ${attempts} attempts (card save ${
-        ended ? 'ended' : String(siStatus)
+        ended ? 'closed' : 'declined'
       })`,
     );
     return true;

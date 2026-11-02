@@ -1647,21 +1647,22 @@ describe('TRIAL-WORDS-BE — the return page while a web trial starts', () => {
     expect(toBuyer(gc)).toHaveLength(0);
   });
 
-  it('FR-1199R2B F1: a card save still processing at the cap cannot be ended: no TW-F1, and its later success converts with the welcome', async () => {
+  it('FR-1199R2B F1: a card save still processing at the cap cannot be cancelled: its checkout closes before TW-F1, and its later success never converts it', async () => {
     const { world, gc, service, stripe } = trialWorld();
     atStripe(stripe, 'processing');
     await cast<Private>(capBackstop(world, stripe, service)).reconcileOne(gc.id, gc.stripe_payment_intent_id, gc.stripe_subscription_id);
     await settle();
     expect(stripe.cancelSetupIntent).not.toHaveBeenCalled();
     expect(world.state.guestCheckout[0].status).toBe('conversion_failed_terminal');
-    expect(world.state.guestCheckout[0].expires_at.getTime()).toBeGreaterThan(Date.now());
-    expect(toBuyer(gc)).toHaveLength(0);
+    expect(world.state.guestCheckout[0].expires_at.getTime()).toBeLessThanOrEqual(Date.now());
+    expect(toBuyer(gc).map((m) => m.html.includes(TW_F1))).toEqual([true]);
     atStripe(stripe, 'succeeded');
     await service.handlePaymentSucceeded(gc.stripe_payment_intent_id);
     await settle();
-    expect(world.state.guestCheckout[0].status).toBe('converted');
-    expect(liftedTrial(stripe, gc)).toBe(true);
-    expect(toBuyer(gc).map((m) => m.html.includes(TW_F1))).toEqual([false]);
+    expect(world.state.guestCheckout[0].status).toBe('conversion_failed_terminal');
+    expect(liftedTrial(stripe, gc)).toBe(false);
+    expect(world.state.clientPurchase).toHaveLength(0);
+    expect(toBuyer(gc)).toHaveLength(1);
   });
 
   it('FR-1199R2B F1: a card save Stripe already cancelled, met at the cap, gets TW-F1 once and is closed', async () => {
