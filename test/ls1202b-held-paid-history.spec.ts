@@ -18,7 +18,7 @@ describe('LS-1202B B1: held renewal must not select the installed phone never-pa
         status: 'active',
         last_failure_reason: held ? 'coach_account_not_ready' : 'card_declined',
       },
-      splits: [],
+      splits: [{ id: 'synthetic-earlier-posted-destination' }],
       refunds: [],
       disputes: [],
     };
