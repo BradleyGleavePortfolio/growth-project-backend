@@ -9,6 +9,7 @@ import { TrialUsageService } from '../src/packages/trials/trial-usage.service';
 import { TrialNoticeService } from '../src/packages/trials/trial-notice.service';
 import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
 import { ClientBillingService } from '../src/checkout/client-billing.service';
+import { PackagesService } from '../src/packages/packages.service';
 import { LostWebhookReconcileService } from '../src/storefront/lost-webhook-reconcile.service';
 import { readPayDone } from '../src/storefront/pay-done';
 import { BillingService } from '../src/billing/billing.service';
@@ -645,6 +646,50 @@ describe('GC-3 — web page trials: card saved, nothing charged that day, one tr
 
     expect(world.state.clientPurchase).toHaveLength(0);
     expect(world.state.guestCheckout[0].status).toBe('conversion_failed_retryable');
+  });
+
+  it('LS-1201 B2: a refused web trial with its subscription canceled is not an active subscriber when the coach archives', async () => {
+    const world = makeDb();
+    const { service, stripe } = build(world);
+    const gc = world.addCheckout();
+    const buyer = await world.db.user.upsert({
+      where: { supabase_id: 'sb-jane' },
+      create: {
+        supabase_id: 'sb-jane', email: gc.guest_email,
+        name: gc.guest_name, role: 'student', coach_id: COACH,
+      },
+    });
+    // The same client's earlier trial was on a DIFFERENT package.
+    world.state.clientPurchase.push({
+      id: 'earlier-ended-trial', client_user_id: buyer.id,
+      coach_user_id: COACH, package_id: 'earlier-package',
+      trial_started_at: new Date(0), status: 'canceled',
+      entitlement_active: false, idempotency_key: 'earlier-ended-trial',
+    });
+    await service.handlePaymentSucceeded(gc.stripe_payment_intent_id);
+    expect(world.state.guestCheckout[0]).toMatchObject({
+      status: 'conversion_failed_terminal', created_user_id: null,
+      last_error: 'trial_already_used',
+    });
+    expect(stripe.cancelSubscription).toHaveBeenCalledWith(gc.stripe_subscription_id);
+    expect(world.state.clientPurchase.filter((p) => p.package_id === PKG)).toEqual([]);
+
+    world.db.coachPackage = {
+      findFirst: jest.fn(async ({ where }: { where: Row }) =>
+        world.matches(world.pkg, where) ? world.pkg : null),
+      update: jest.fn(async ({ data }: { data: Row }) => ({ ...world.pkg, ...data })),
+    };
+    world.db.clientPurchase.count = jest.fn(async ({ where }: { where: Row }) =>
+      world.state.clientPurchase.filter((p) => p.package_id === where.package_id &&
+        (p.entitlement_active === true ||
+          (p.stripe_subscription_id != null &&
+            !['canceled', 'expired', 'incomplete_expired'].includes(p.status)))).length);
+    world.db.guestCheckout.count = jest.fn(async ({ where }: { where: Row }) =>
+      world.state.guestCheckout.filter((r) => world.matches(r, where)).length);
+    const packages = new PackagesService(world.db, cast({}));
+    await expect(packages.archive(COACH, PKG)).resolves.toMatchObject({
+      archived_at: expect.any(Date), is_active: false,
+    });
   });
 });
 
