@@ -288,7 +288,7 @@ liveDescribe('#661 settlement on real PostgreSQL', () => {
       await prisma.coachPackage.update({ where: { id: PKG }, data: { published_at: new Date() } });
       await prisma.user.update({ where: { id: CLIENT }, data: { coach_id: COACH } });
       await prisma.connectAccount.create({
-        data: { coach_user_id: COACH, stripe_account_id: 'acct_l661', charges_enabled: true },
+        data: { coach_user_id: COACH, stripe_account_id: 'acct_l661', charges_enabled: true, payouts_enabled: true, details_submitted: true },
       });
       await prisma.connectCustomer.create({
         data: { client_user_id: CLIENT, stripe_customer_id: 'cus_l661' },

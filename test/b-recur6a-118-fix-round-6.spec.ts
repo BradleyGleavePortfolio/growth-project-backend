@@ -31,7 +31,7 @@ function setup(trialDays = 0) {
   });
   prisma._accounts.push({
     ...{ coach_user_id: COACH, stripe_account_id: 'acct_coach' },
-    ...{ charges_enabled: true, deauthorized_at: null },
+    ...{ charges_enabled: true, payouts_enabled: true, details_submitted: true, disabled_reason: null, deauthorized_at: null },
   });
   const packages: any = {
     getById: async (id: string) => prisma._packages.find((p: any) => p.id === id),
