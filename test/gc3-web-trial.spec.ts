@@ -9,6 +9,7 @@ import { TrialUsageService } from '../src/packages/trials/trial-usage.service';
 import { TrialNoticeService } from '../src/packages/trials/trial-notice.service';
 import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
 import { LostWebhookReconcileService } from '../src/storefront/lost-webhook-reconcile.service';
+import { GuestCheckoutReconciliationService } from '../src/storefront/guest-checkout-reconciliation.service';
 import { readPayDone } from '../src/storefront/pay-done';
 import { BillingService } from '../src/billing/billing.service';
 import { renderPayDonePage } from '../src/storefront/pay-done.html';
@@ -34,6 +35,9 @@ function makeDb() {
     packageTrialUsage: [] as Row[],
     stripeProcessedEvent: [] as Row[],
   };
+  // EmailSendLog lives outside `state`: a send record is written outside any
+  // transaction, so a rolled-back transaction must not erase it (Postgres).
+  const mail: Row[] = [];
   let seq = 0;
   let lock: Promise<unknown> = Promise.resolve();
   const id = (p: string) => `${p}-${++seq}`;
@@ -42,6 +46,7 @@ function makeDb() {
       if (v && typeof v === 'object' && !(v instanceof Date)) {
         if ('in' in v) return (v.in as unknown[]).includes(row[k]);
         if ('gt' in v) return row[k] > v.gt;
+        if ('gte' in v || 'lte' in v) return (!('gte' in v) || row[k] >= v.gte) && (!('lte' in v) || row[k] <= v.lte);
         if ('not' in v) return v.not === null ? row[k] != null : row[k] !== v.not;
         if ('equals' in v) return String(row[k]).toLowerCase() === String(v.equals).toLowerCase();
         return false;
@@ -124,6 +129,18 @@ function makeDb() {
         return { count: hit.length };
       },
     },
+    emailSendLog: {
+      findMany: async ({ where }: any) => mail.filter((r) => matches(r, where)).map((r) => ({ ...r })),
+      create: async ({ data }: any) => {
+        if (mail.some((r) => r.idempotency_key === data.idempotency_key)) {
+          throw Object.assign(new Error('unique'), { code: 'P2002' });
+        }
+        const row = { id: id('mail'), created_at: new Date(), sent_at: null, error: null, ...data };
+        mail.push(row);
+        return { ...row };
+      },
+      update: async ({ where, data }: any) => Object.assign(mail.find((r) => matches(r, where))!, data),
+    },
     stripeProcessedEvent: {
       findUnique: async ({ where }: any) => state.stripeProcessedEvent.find((r) => matches(r, where)) ?? null,
       create: async ({ data }: any) => {
@@ -176,7 +193,7 @@ function makeDb() {
     state.guestCheckout.push(row);
     return row;
   };
-  return { db, addCheckout, get state() { return state; }, pkg };
+  return { db, addCheckout, get state() { return state; }, mail, pkg };
 }
 
 function build(world: ReturnType<typeof makeDb>) {
@@ -1154,5 +1171,160 @@ describe('TRIAL-WORDS-BE — the return page while a web trial starts', () => {
     });
     const page = await done();
     expect(page.html).not.toContain('Nothing is charged today.');
+  });
+
+  // FR-1199 (agent 191) — own tests beyond the auditor's B-TESTs.
+  const TW_F1 = 'Your free trial with Alex was not started, and nothing was charged. You can start again on the pay page.';
+  const PAY_URL = 'https://app.trygrowthproject.com/p/tok_trial_page_012345';
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+  const failingThen = (fails: Array<'503' | 'throw'>) => {
+    const left = [...fails];
+    const sender = jest.fn(async (_url: unknown, init?: { body?: string }) => {
+      const next = left.shift();
+      if (next === 'throw') throw new Error('mail provider unavailable');
+      if (next === '503') return { ok: false, status: 503, json: async () => ({}) } as Response;
+      sent.push(JSON.parse(init?.body ?? '{}'));
+      return { ok: true, status: 200, json: async () => ({}) } as Response;
+    });
+    global.fetch = cast<typeof fetch>(sender);
+    return sender;
+  };
+  const toBuyer = (gc: Row) => sent.filter((m) => m.to === gc.guest_email);
+
+  it('FR-1199: a web trial held because the buyer has another coach gets TW-F1 once, with the GC3-W2 subject and the pay page link', async () => {
+    const { world, gc, service } = trialWorld({ status: 'paid' });
+    await cast<Private>(service).holdForRefund({ ...gc, package: world.pkg });
+    await service.reconcilePaidCheckout(gc.id);
+    await settle();
+    expect(world.state.guestCheckout[0]).toMatchObject({ status: 'conversion_failed_terminal', last_error: 'buyer_has_other_coach' });
+    const mails = toBuyer(gc);
+    expect(mails).toHaveLength(1);
+    expect(mails[0].subject).toBe(GUEST_TRIAL_COPY.refusedSubject('Alex'));
+    expect(mails[0].html).toContain(`<p>${TW_F1}</p>`);
+    expect(mails[0].html).toContain(`href="${PAY_URL}"`);
+    expect(world.mail.map((m) => [m.template_key, m.status])).toEqual([['guest-trial-not-started', 'sent']]);
+  });
+
+  it('FR-1199: a refused second trial keeps PF-W7 (once, durable), never TW-F1', async () => {
+    const world = makeDb();
+    const { service } = build(world);
+    world.state.user.push({ id: 'user-app', supabase_id: 'sb-jane', email: 'jane@example.com', role: 'student', coach_id: COACH, created_at: new Date(0) });
+    world.state.clientPurchase.push({ id: 'purchase-app', client_user_id: 'user-app', coach_user_id: COACH, package_id: 'pkg-app', trial_started_at: null, idempotency_key: 'app-1' });
+    world.state.packageTrialUsage.push({ id: 'usage-app', client_user_id: 'user-app', coach_user_id: COACH, package_id: 'pkg-app', purchase_id: 'purchase-app', status: 'started' });
+    const gc = world.addCheckout();
+    failingThen(['503']);
+    await service.handlePaymentSucceeded(gc.stripe_payment_intent_id);
+    await service.reconcilePaidCheckout(gc.id);
+    await service.reconcilePaidCheckout(gc.id);
+    await settle();
+    const mails = toBuyer(gc);
+    expect(mails).toHaveLength(1);
+    expect(mails[0].html).toContain('so this one was not started and nothing was charged. Open the app to subscribe.');
+    expect(mails[0].html).not.toContain(TW_F1);
+    expect(world.mail.map((m) => [m.template_key, m.status])).toEqual([
+      ['guest-trial-refused', 'failed'],
+      ['guest-trial-refused', 'sent'],
+    ]);
+  });
+
+  it('FR-1199: two temporary failures in a row (reject, then throw) still end in exactly one welcome email', async () => {
+    const { world, gc, service } = trialWorld();
+    const sender = failingThen(['503', 'throw']);
+    await service.handlePaymentSucceeded(gc.stripe_payment_intent_id);
+    await settle();
+    await service.handlePaymentSucceeded(gc.stripe_payment_intent_id);
+    expect(toBuyer(gc)).toHaveLength(0);
+    await service.reconcilePaidCheckout(gc.id);
+    await service.reconcilePaidCheckout(gc.id);
+    await settle();
+    expect(sender).toHaveBeenCalledTimes(3);
+    expect(toBuyer(gc)).toHaveLength(1);
+    expect(toBuyer(gc)[0].subject).toBe('Confirm your email to start with Alex on TGP Fitness');
+    expect(world.mail.map((m) => m.status)).toEqual(['failed', 'failed', 'sent']);
+  });
+
+  it('FR-1199: the reconciliation cron, a replay and the reconcile pass at once send one welcome email', async () => {
+    const { world, gc, service } = trialWorld();
+    failingThen(['503']);
+    await service.handlePaymentSucceeded(gc.stripe_payment_intent_id);
+    await settle();
+    expect(world.mail).toHaveLength(1);
+    world.mail[0].created_at = new Date(Date.now() - 2 * 60_000);
+    const cron = new GuestCheckoutReconciliationService(world.db, service);
+    await Promise.all([
+      cast<Private>(cron).scanOutcomeMail(),
+      service.handlePaymentSucceeded(gc.stripe_payment_intent_id),
+      service.reconcilePaidCheckout(gc.id),
+      cast<Private>(cron).scanOutcomeMail(),
+    ]);
+    await settle();
+    expect(toBuyer(gc)).toHaveLength(1);
+    expect(world.mail.map((m) => m.status)).toEqual(['failed', 'sent']);
+  });
+
+  it('FR-1199: the cron paces its tries and stops after five; a done outcome is never sent again', async () => {
+    const { world, gc, service } = trialWorld({ status: 'pending' });
+    const sender = failingThen(['503', '503', '503', '503', '503', '503', '503']);
+    world.state.guestCheckout[0].status = 'failed';
+    await service.sendOutcomeMail({ id: gc.id }, { opening: true });
+    const cron = new GuestCheckoutReconciliationService(world.db, service);
+    // Too soon after the last failure: nothing.
+    await cast<Private>(cron).scanOutcomeMail();
+    expect(sender).toHaveBeenCalledTimes(1);
+    for (let n = 2; n <= 7; n++) {
+      world.mail.forEach((m) => (m.created_at = new Date(m.created_at.getTime() - 3 * 3_600_000)));
+      await cast<Private>(cron).scanOutcomeMail();
+    }
+    expect(sender).toHaveBeenCalledTimes(5);
+    expect(world.mail.map((m) => m.status)).toEqual(['failed', 'failed', 'failed', 'failed', 'failed']);
+    expect(toBuyer(gc)).toHaveLength(0);
+  });
+
+  it('FR-1199: an outcome with no try on record (rows from before this change) is never emailed by a replay, reconcile or the cron', async () => {
+    const { gc, service, world } = trialWorld({ status: 'converted', created_at: new Date(Date.now() - DAY) });
+    const second = world.addCheckout({ status: 'conversion_failed_terminal', last_error: 'conversion_cap' });
+    await service.handlePaymentSucceeded(gc.stripe_payment_intent_id);
+    await service.reconcilePaidCheckout(gc.id);
+    await service.reconcilePaidCheckout(second.id);
+    await cast<Private>(new GuestCheckoutReconciliationService(world.db, service)).scanOutcomeMail();
+    await settle();
+    expect(sent).toHaveLength(0);
+    expect(world.mail).toHaveLength(0);
+  });
+
+  it('FR-1199: a paid (not trial) checkout ending at the lost-webhook cap gets no TW-F1', async () => {
+    const { world, service, stripe } = trialWorld();
+    const paid = world.addCheckout({ stripe_payment_intent_id: 'pi_3PaidCapAAAAAAAA', stripe_subscription_id: null, reconcile_attempts: 6 });
+    world.state.guestCheckout[0].status = 'converted';
+    const backstopDb: any = {
+      guestCheckout: {
+        update: async () => ({ status: 'pending', reconcile_attempts: 6 }),
+        updateMany: world.db.guestCheckout.updateMany,
+      },
+    };
+    const backstop = new LostWebhookReconcileService(backstopDb, stripe, service);
+    await cast<Private>(backstop).reconcileOne(paid.id, paid.stripe_payment_intent_id, null);
+    await settle();
+    expect(world.state.guestCheckout[1].status).toBe('conversion_failed_terminal');
+    expect(sent).toHaveLength(0);
+  });
+
+  it('FR-1199: a converted trial still in its free period keeps the trial-day line; a stored trial end already passed drops it', async () => {
+    const { world, gc, done } = trialWorld({ status: 'converted', created_at: new Date(Date.now() - 2 * DAY) });
+    world.state.clientPurchase.push({
+      id: 'purchase-free-period',
+      stripe_subscription_id: gc.stripe_subscription_id,
+      status: 'active',
+      trial_ends_at: new Date(Date.now() + 5 * DAY),
+    });
+    const during = await done();
+    expect(during.view.kind).toBe('paid');
+    expect(during.html).toContain('Nothing is charged today.');
+    // Stripe's trial_end (mirrored on the purchase) moved earlier and passed.
+    world.state.clientPurchase[0].trial_ends_at = new Date(Date.now() - 60_000);
+    const after = await done();
+    expect(after.view.kind).toBe('paid');
+    expect(after.html).not.toContain('Nothing is charged today.');
+    expect(after.html).toContain('Your free trial has started');
   });
 });
