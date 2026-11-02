@@ -1494,4 +1494,41 @@ describe('TRIAL-WORDS-BE — the return page while a web trial starts', () => {
     for (let tick = 0; tick < 3; tick++) await cast<Private>(cron).scanOutcomeMail();
     expect(toBuyer(gc)).toHaveLength(1);
   });
+
+  it('LO-1199R2 B1: a first card declined, then a second card starts the trial: the buyer gets the welcome and never TW-F1', async () => {
+    // The pay page drops its idempotency key when Stripe declines the card
+    // (say()), so the buyer's second card is a new guest row and SetupIntent.
+    // The declined row stays pending (no setup_failed handler) with its
+    // SetupIntent at requires_payment_method.
+    const { world, gc: declined, service, stripe } = trialWorld({ created_at: new Date(Date.now() - 60_000) });
+    const second = world.addCheckout();
+    stripe.retrieveSetupIntent.mockImplementation(async (siId: string) => ({
+      id: siId,
+      status: siId === declined.stripe_payment_intent_id ? 'requires_payment_method' : 'succeeded',
+      payment_method: siId === declined.stripe_payment_intent_id ? null : 'pm_card_saved',
+      client_secret: `${siId}_secret_z`,
+    }));
+    await service.handlePaymentSucceeded(second.stripe_payment_intent_id);
+    await settle();
+    expect(world.state.guestCheckout[1].status).toBe('converted');
+    // The lost-webhook backstop then polls the declined row each minute.
+    const backstopDb: any = {
+      guestCheckout: {
+        findMany: async () => world.state.guestCheckout.filter((row) => row.status === 'pending'),
+        updateMany: world.db.guestCheckout.updateMany,
+        update: async ({ where }: any) => {
+          const row = world.state.guestCheckout.find((r) => r.id === where.id)!;
+          row.reconcile_attempts = (row.reconcile_attempts ?? 0) + 1;
+          return row;
+        },
+      },
+    };
+    const backstop = new LostWebhookReconcileService(backstopDb, stripe, service);
+    for (let poll = 0; poll < 6; poll++) await backstop.runOnce();
+    await settle();
+    expect(world.state.guestCheckout[0].status).not.toBe('pending');
+    // Her trial started: one email, the welcome. "Your free trial with Alex
+    // was not started, and nothing was charged" would be untrue.
+    expect(toBuyer(declined).map((m) => m.subject)).toEqual(['Confirm your email to start with Alex on TGP Fitness']);
+  });
 });
