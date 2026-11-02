@@ -1843,7 +1843,7 @@ describe('TRIAL-WORDS-BE — the return page while a web trial starts', () => {
     for (const row of world.mail) row.created_at = new Date(Date.now() - 3 * 60_000);
   };
   // One checkout per template, opened the way its ending opens it.
-  const openOutcome = async (template: string, plan: Array<'lose' | '503' | 'ok'>) => {
+  const openOutcome = async (template: string, plan: Array<'lose' | '503' | 'ok'>, prep?: (world: any) => void) => {
     const over: Row =
       template === 'guest-welcome-existing' ? { status: 'converted' }
         : template === 'guest-trial-refused' ? { status: 'conversion_failed_terminal', last_error: 'trial_already_used' }
@@ -1853,6 +1853,7 @@ describe('TRIAL-WORDS-BE — the return page while a web trial starts', () => {
     let minted = 0;
     jest.spyOn(cast<any>(service), 'generateInviteLink').mockImplementation(async () => `https://auth.example.com/confirm-${++minted}`);
     const provider = resendDouble(plan);
+    prep?.(world);
     if (template === 'guest-welcome-new') {
       await service.handlePaymentSucceeded(gc.stripe_payment_intent_id);
     } else {
@@ -1926,5 +1927,48 @@ describe('TRIAL-WORDS-BE — the return page while a web trial starts', () => {
     ageTries(world);
     await cast<Private>(new GuestCheckoutReconciliationService(world.db, service)).scanOutcomeMail();
     expect(toBuyer(gc).map((m) => m.html.includes(TW_F1))).toEqual([true]);
+  });
+
+  // FR-1199R2B (agent 192) — own tests: F4, a record outage at the ending.
+  const rejectOnce = (world: any, method: 'create' | 'findMany') => {
+    const real = world.db.emailSendLog[method];
+    world.db.emailSendLog[method] = jest.fn().mockRejectedValueOnce(new Error('database temporarily unavailable')).mockImplementation(real);
+  };
+  // The real recovery entry points. The replayed card-save event only for a
+  // converted row: this double says every card save succeeded, which an
+  // ended trial's would not.
+  const recover = async (world: any, service: any, gc: Row, template: string) => {
+    ageTries(world);
+    if (template.startsWith('guest-welcome')) await service.handlePaymentSucceeded(gc.stripe_payment_intent_id);
+    await service.reconcilePaidCheckout(gc.id);
+    const cron = new GuestCheckoutReconciliationService(world.db, service);
+    for (let tick = 0; tick < 3; tick++) await cast<Private>(cron).scanOutcomeMail();
+    await settle();
+  };
+
+  it.each(TEMPLATES)('FR-1199R2B F4: %s, record write down and provider down at the ending: a pending try is left and sent exactly once on recovery', async (template) => {
+    const { world, gc, service, provider } = await openOutcome(template, ['503'], (w) => rejectOnce(w, 'create'));
+    expect(provider.delivered).toHaveLength(0);
+    expect(world.mail.map((r: Row) => [r.template_key, r.status])).toEqual([[template, 'failed']]);
+    await recover(world, service, gc, template);
+    expect(provider.delivered).toHaveLength(1);
+    expect(world.mail.map((r: Row) => r.status).sort()).toEqual(['failed', 'sent']);
+  });
+
+  it.each(TEMPLATES)('FR-1199R2B F4: %s, record read down and provider down at the ending: sent exactly once on recovery', async (template) => {
+    const { world, gc, service, provider } = await openOutcome(template, ['503'], (w) => rejectOnce(w, 'findMany'));
+    expect(provider.delivered).toHaveLength(0);
+    expect(world.mail.map((r: Row) => r.status)).toEqual(['failed']);
+    await recover(world, service, gc, template);
+    expect(provider.delivered).toHaveLength(1);
+  });
+
+  it.each(TEMPLATES)('FR-1199R2B F4: %s, record write down but the send went out: recorded as sent, never sent again', async (template) => {
+    const { world, gc, service, provider } = await openOutcome(template, [], (w) => rejectOnce(w, 'create'));
+    expect(provider.delivered).toHaveLength(1);
+    expect(world.mail.map((r: Row) => [r.template_key, r.status])).toEqual([[template, 'sent']]);
+    await recover(world, service, gc, template);
+    expect(provider.delivered).toHaveLength(1);
+    expect(provider.calls).toHaveLength(1);
   });
 });

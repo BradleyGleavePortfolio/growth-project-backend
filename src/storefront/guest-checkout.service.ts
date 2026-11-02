@@ -2355,7 +2355,7 @@ ${lines}</body></html>`,
 
   // FR-1199 — one try of an outcome email (guest-outcome-mail.ts). The
   // ending opens try 1; if the record cannot be read or written then, it
-  // still sends once (as before FR-1199) and nothing retries it.
+  // still sends once and (FR-1199R2B) writes the try's record afterwards.
   private async deliverOutcomeMail(
     checkout: CheckoutWithRelations,
     outcome: GuestOutcome,
@@ -2426,7 +2426,7 @@ ${lines}</body></html>`,
         if (later === null) {
           // Unknown: hold this try (recorded as failed, unsent) so the scan
           // asks again after the gap; never send on a guess.
-          if (tries !== null) await this.holdOutcomeTry(key, template, checkout, 'later_attempt_unread');
+          if (tries !== null || opening) await this.holdOutcomeTry(key, template, checkout, 'later_attempt_unread');
           return;
         }
       }
@@ -2454,7 +2454,17 @@ ${lines}</body></html>`,
         checkout.id,
         outcomeMailRequestKey(checkout.id, outcome),
       );
-      if (!recorded) return;
+      if (!recorded) {
+        // FR-1199R2B (LS-1199R2 B3) — the try's record could not be written
+        // before the send. Write it now with the result, so a failed send
+        // leaves a pending outcome the scan, a replay or the reconcile pass
+        // carries on (and a sent one is never sent again).
+        const held = await this.holdOutcomeTry(key, template, checkout, failure ?? '', failure === null);
+        if (!held && failure !== null) {
+          this.logger.error(`${outcome} email for ${checkout.id} not sent and not recorded (last=${failure})`);
+        }
+        return;
+      }
       await this.prisma.emailSendLog
         .update({
           where: { idempotency_key: key },
@@ -2486,13 +2496,15 @@ ${lines}</body></html>`,
     return later !== null;
   }
 
-  // FR-1199R2B — a try recorded as failed without a send: the scan, a
-  // replay or the reconcile pass carries the outcome on from it.
+  // FR-1199R2B — a try written after the fact: failed (unsent, or its send
+  // failed), so the scan, a replay or the reconcile pass carries the outcome
+  // on from it; or sent, so nothing sends it again.
   private async holdOutcomeTry(
     key: string,
     template: string,
     checkout: CheckoutWithRelations,
     error: string,
+    sent = false,
   ): Promise<boolean> {
     try {
       await this.prisma.emailSendLog.create({
@@ -2500,8 +2512,7 @@ ${lines}</body></html>`,
           idempotency_key: key,
           template_key: template,
           recipient_email: checkout.guest_email.toLowerCase(),
-          status: 'failed',
-          error,
+          ...(sent ? { status: 'sent', sent_at: new Date() } : { status: 'failed', error }),
         },
       });
       return true;
