@@ -369,6 +369,9 @@ describe('ScoutService', () => {
           intent_id: 'intent-1',
           terminal_status: 'success',
         }),
+        undefined,
+        // PF-3-BE: the one send path (Mute all alone; one completion posts once).
+        { kind: 'import.complete', muteAllOnly: true, dedupeKey: 'import_complete:intent-1:success' },
       );
     });
 

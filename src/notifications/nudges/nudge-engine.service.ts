@@ -425,6 +425,13 @@ export class NudgeEngineService {
             signal_key: candidate.signal_key,
             deep_link: copy.deepLink,
           },
+          undefined,
+          // PF-3-BE: the one send path (the kind's switch and Mute all read
+          // again when it goes, quiet hours); one signal is posted once.
+          {
+            kind,
+            dedupeKey: `nudge:${candidate.trigger_type}:${candidate.signal_key}:${candidate.user_id}:push`,
+          },
         );
         if (result.delivered) delivered.push('push');
       } catch (err) {

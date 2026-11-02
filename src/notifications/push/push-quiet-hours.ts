@@ -16,8 +16,13 @@ import type { PushContext } from './lock-screen-copy';
 //     time) starts before 08:00 local + URGENT_LEAD_MS: waiting for the
 //     morning would deliver it too late to act on (a 07:30 session cancelled
 //     at 23:00).
+// Own time (PF-3-BE, owner ruling 10-30): the workout reminder goes at the
+// time the client chose for it (the "morning" slot opens at 07:00 their time,
+// workout-reminder.policy.ts), so it is never moved to 08:00.
 // Everything else (messages, milestones, check-ins, coach alerts, progress
-// updates, the 24 h reminder of a later session) waits for the morning.
+// updates, the 24 h reminder of a later session, every sender's own push:
+// payment reminders, trial and payout notices, coach check-ins, community
+// pushes, import and brief pushes) waits for the morning.
 //
 // No usable zone for the recipient (none supplied and no coach zone): the
 // window cannot be placed, so the push is sent now rather than guessed in a
@@ -37,7 +42,7 @@ const BOOKING_KINDS: ReadonlySet<string> = new Set([
 ]);
 
 export type QuietHoursOutcome =
-  | { deliverAt: Date; deferred: false; reason: 'open' | 'urgent' | 'no-zone' }
+  | { deliverAt: Date; deferred: false; reason: 'open' | 'urgent' | 'no-zone' | 'own-time' }
   | { deliverAt: Date; deferred: true; reason: 'quiet_hours' };
 
 function sessionTimes(context: PushContext | null | undefined): number[] {
@@ -62,6 +67,9 @@ export function quietHoursFor(args: {
     return { deliverAt: args.now, deferred: false, reason: 'open' };
   }
   const morning = decision.deferred_until;
+  if (args.kind === NotificationKind.WORKOUT_REMINDER) {
+    return { deliverAt: args.now, deferred: false, reason: 'own-time' };
+  }
   if (args.urgent || args.kind === NotificationKind.BOOKING_REMINDER_1H) {
     return { deliverAt: args.now, deferred: false, reason: 'urgent' };
   }

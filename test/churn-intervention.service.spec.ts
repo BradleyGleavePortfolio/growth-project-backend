@@ -738,6 +738,12 @@ describe('ChurnInterventionService.sendIntervention', () => {
       actionScreen: 'NotificationCenter',
       nudge_id: out.nudge_id,
       notification_id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+    }, undefined, {
+      // PF-3-BE: the one send path; a block with the coach while it waits stops it.
+      kind: 'coach_nudge',
+      muteAllOnly: true,
+      dedupeKey: `coach_nudge:${out.nudge_id}`,
+      otherUserId: expect.any(String),
     });
     expect(`${line.title} ${line.body}`).not.toMatch(/Alice|weigh-in|3 kg|Call me|Message from your coach/);
   });
