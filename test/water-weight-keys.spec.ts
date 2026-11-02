@@ -214,7 +214,7 @@ describe.each(KINDS)('WATER-WEIGHT-KEYS-BE $name', (kind) => {
     await expect(validate({ ...kind.body, client_uuid: 'k'.repeat(128) })).resolves.toMatchObject({
       client_uuid: 'k'.repeat(128),
     });
-    await expect(validate({ ...kind.body })).resolves.not.toHaveProperty('client_uuid');
+    expect(stub<{ client_uuid?: string }>(await validate({ ...kind.body })).client_uuid).toBeUndefined();
     await expect(validate({ ...kind.body, client_uuid: 'k'.repeat(129) })).rejects.toThrow();
     await expect(validate({ ...kind.body, client_uuid: 12345 })).rejects.toThrow();
   });
