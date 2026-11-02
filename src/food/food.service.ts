@@ -309,12 +309,16 @@ function rankFoodResults(items: FoodResult[], q: string, limit: number): FoodRes
   // named for the food (level 2) but filed under another category ranks after
   // the rows named for it at that level ("Sausage, NFS" before a "Sausage, ..."
   // row filed under legumes). A row with no category ranks as before.
+  // A built-in food is the catalog's own row for its food, so when built-in
+  // rows are named for the food their category is the basic tier's own one.
   const ownCategory = new Map<number, string>();
   for (const tier of [1, 2]) {
+    const inTier = scored.filter((s) => s.whole && s.tier === tier && categoryOf(s.item));
+    const builtInNamed = inTier.filter((s) => s.named === 2 && builtIn(s.item));
     const counts = new Map<string, number>();
-    for (const s of scored) {
+    for (const s of builtInNamed.length ? builtInNamed : inTier) {
       const category = categoryOf(s.item);
-      if (s.whole && s.tier === tier && category) counts.set(category, (counts.get(category) ?? 0) + 1);
+      counts.set(category, (counts.get(category) ?? 0) + 1);
     }
     const [top, next] = [...counts].sort((a, b) => b[1] - a[1]);
     if (top && (!next || top[1] > next[1])) ownCategory.set(tier, top[0]);
