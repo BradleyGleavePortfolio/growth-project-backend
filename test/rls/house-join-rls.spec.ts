@@ -240,7 +240,7 @@ const quiet = new Proxy({}, { get: (_t, p) => (p === 'then' ? undefined : async 
   });
 
   it('checkout, then payment, then the move: the house coach gets the client, the old coach loses them', async () => {
-    await prisma.connectAccount.create({ data: { coach_user_id: u.H, stripe_account_id: `acct_house_${u.H}`, charges_enabled: true } });
+    await prisma.connectAccount.create({ data: { coach_user_id: u.H, stripe_account_id: `acct_house_${u.H}`, charges_enabled: true, payouts_enabled: true, details_submitted: true } });
     const session = await prisma.coachingSession.create({
       data: { coach_id: u.K, client_id: u.A, status: 'scheduled', title: 'Check-in', start_at: new Date(Date.now() + 2 * DAY), end_at: new Date(Date.now() + 2 * DAY + HOUR) },
     });
@@ -403,7 +403,7 @@ const quiet = new Proxy({}, { get: (_t, p) => (p === 'then' ? undefined : async 
     beforeAll(async () => {
       await prisma.connectAccount.upsert({
         where: { coach_user_id: u.H },
-        create: { coach_user_id: u.H, stripe_account_id: `acct_house_${u.H}`, charges_enabled: true },
+        create: { coach_user_id: u.H, stripe_account_id: `acct_house_${u.H}`, charges_enabled: true, payouts_enabled: true, details_submitted: true },
         update: {},
       });
       for (const who of 'BCD') await ranOut(who, HOUR);
@@ -584,7 +584,7 @@ const quiet = new Proxy({}, { get: (_t, p) => (p === 'then' ? undefined : async 
       }
       await prisma.connectAccount.upsert({
         where: { coach_user_id: u.H },
-        create: { coach_user_id: u.H, stripe_account_id: `acct_house_${u.H}`, charges_enabled: true },
+        create: { coach_user_id: u.H, stripe_account_id: `acct_house_${u.H}`, charges_enabled: true, payouts_enabled: true, details_submitted: true },
         update: {},
       });
       const old = randomUUID();

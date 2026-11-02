@@ -385,6 +385,10 @@ describe('CheckoutService', () => {
       coach_user_id: 'coach-1',
       stripe_account_id: 'acct_coach',
       charges_enabled: true,
+      // HOLD-FU-BE: ready by the one readiness rule (every axis).
+      payouts_enabled: true,
+      details_submitted: true,
+      disabled_reason: null,
       deauthorized_at: null,
     });
     prisma._users.push({ id: 'coach-1', email: 'c@x.com', name: 'Coach' });
@@ -449,6 +453,10 @@ describe('CheckoutService', () => {
       coach_user_id: 'coach-1',
       stripe_account_id: 'acct_coach',
       charges_enabled: true,
+      // HOLD-FU-BE: ready by the one readiness rule (every axis).
+      payouts_enabled: true,
+      details_submitted: true,
+      disabled_reason: null,
       deauthorized_at: null,
     });
     prisma._users.push({ id: 'coach-1', email: 'c@x.com', name: 'Coach' });
@@ -487,6 +495,10 @@ describe('CheckoutService', () => {
       coach_user_id: 'coach-1',
       stripe_account_id: 'acct_coach',
       charges_enabled: true,
+      // HOLD-FU-BE: ready by the one readiness rule (every axis).
+      payouts_enabled: true,
+      details_submitted: true,
+      disabled_reason: null,
       deauthorized_at: null,
     });
     prisma._users.push({ id: 'coach-1', email: 'c@x.com', name: 'Coach' });
@@ -522,6 +534,10 @@ describe('CheckoutService', () => {
       coach_user_id: 'coach-1',
       stripe_account_id: 'acct_coach',
       charges_enabled: true,
+      // HOLD-FU-BE: ready by the one readiness rule (every axis).
+      payouts_enabled: true,
+      details_submitted: true,
+      disabled_reason: null,
       deauthorized_at: null,
     });
     prisma._users.push({ id: 'coach-1', email: 'c@x.com', name: 'Coach' });
@@ -581,6 +597,10 @@ describe('CheckoutService', () => {
       coach_user_id: 'coach-1',
       stripe_account_id: 'acct_coach',
       charges_enabled: true,
+      // HOLD-FU-BE: ready by the one readiness rule (every axis).
+      payouts_enabled: true,
+      details_submitted: true,
+      disabled_reason: null,
       deauthorized_at: null,
     });
     prisma._users.push({ id: 'coach-1', email: 'c@x.com', name: 'Coach' });
@@ -614,6 +634,10 @@ describe('CheckoutService', () => {
       coach_user_id: 'coach-1',
       stripe_account_id: 'acct_coach',
       charges_enabled: true,
+      // HOLD-FU-BE: ready by the one readiness rule (every axis).
+      payouts_enabled: true,
+      details_submitted: true,
+      disabled_reason: null,
       deauthorized_at: null,
     });
     prisma._users.push({ id: 'coach-1', email: 'c@x.com', name: 'Coach' });
@@ -734,6 +758,10 @@ function seedSoloCoachFixture(prisma: any) {
     coach_user_id: 'coach-x',
     stripe_account_id: 'acct_coach_x',
     charges_enabled: true,
+    // HOLD-FU-BE: ready by the one readiness rule (every axis).
+    payouts_enabled: true,
+    details_submitted: true,
+    disabled_reason: null,
     deauthorized_at: null,
   });
   prisma._users.push({
@@ -1087,6 +1115,10 @@ describe('CheckoutService.createCheckoutForClient — IDOR hard-block', () => {
       coach_user_id: 'coach-b',
       stripe_account_id: 'acct_coach_b',
       charges_enabled: true,
+      // HOLD-FU-BE: ready by the one readiness rule (every axis).
+      payouts_enabled: true,
+      details_submitted: true,
+      disabled_reason: null,
       deauthorized_at: null,
     });
     prisma._users.push({ id: 'coach-a', email: 'a@coach.com', name: 'A' });
@@ -1130,6 +1162,10 @@ describe('CheckoutService.createCheckoutForClient — IDOR hard-block', () => {
       coach_user_id: 'coach-c',
       stripe_account_id: 'acct_coach_c',
       charges_enabled: true,
+      // HOLD-FU-BE: ready by the one readiness rule (every axis).
+      payouts_enabled: true,
+      details_submitted: true,
+      disabled_reason: null,
       deauthorized_at: null,
     });
     prisma._users.push({ id: 'coach-c', email: 'c@coach.com', name: 'C' });
@@ -1224,6 +1260,10 @@ describe('CheckoutService.createPaymentIntentForClient — sub-coach fee split',
       coach_user_id: 'sub-coach-1',
       stripe_account_id: 'acct_sub_1',
       charges_enabled: true,
+      // HOLD-FU-BE: ready by the one readiness rule (every axis).
+      payouts_enabled: true,
+      details_submitted: true,
+      disabled_reason: null,
       deauthorized_at: null,
     });
     prisma._users.push({
@@ -1515,7 +1555,7 @@ describe('B-CONNECT-126 one-time Buy gate', () => {
       });
     return { ...base, svc, buy };
   }
-  const approved = { id: 'acct_coach_x', charges_enabled: true, payouts_enabled: true };
+  const approved = { id: 'acct_coach_x', charges_enabled: true, payouts_enabled: true, details_submitted: true };
 
   it('saved row not ready + Stripe approved -> the client gets a PaymentSheet', async () => {
     const retrieve = jest.fn(async () => approved);

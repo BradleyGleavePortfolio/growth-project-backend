@@ -1,7 +1,12 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
-import { isCoachAccountHoldReason, NOT_HELD_RENEWAL } from '../checkout/dunning-v2/coach-account-hold';
+import {
+  CLIENT_PLAN_DUNNING,
+  isCoachAccountHoldReason,
+  isHeldRenewal,
+  NOT_HELD_RENEWAL,
+} from '../checkout/dunning-v2/coach-account-hold';
 import { movedAwayClientIds } from '../checkout/moved-client-money';
 import { movedAwayDates } from '../checkout/plan-renewal/switch-tell';
 
@@ -178,6 +183,14 @@ export interface MoneyChargeDto {
   /** Amount the bank took back on lost disputes (0 when none). */
   charged_back_cents: number;
   created_at: string;
+  /**
+   * HOLD-FU-BE (LS-1195 C2): `coach_account` when this charge is a renewal
+   * held because the coach's own Stripe account can't take payments (PF-7).
+   * It is not the client's failed charge: its state is `pending` (still
+   * owed, never `paid`), it is left out of the `failed` list, and this field
+   * names the cause. Null otherwise.
+   */
+  waiting_on: 'coach_account' | null;
   /**
    * SWITCH-TELL-BE: when this charge's client moved to another coach (the
    * quiet "Moved to another coach · {date}" line), from the coach's own
@@ -1585,7 +1598,7 @@ export class CoachMoneyService {
       opts.status === 'paid'
         ? PAID_NOW_WHERE
         : opts.status === 'failed'
-          ? { status: { in: [...FAILED_PURCHASE_STATUSES] } }
+          ? { status: { in: [...FAILED_PURCHASE_STATUSES] }, ...NOT_HELD_RENEWAL }
           : opts.status === 'refunded'
             ? REFUNDED_WHERE
             : opts.status === 'disputed'
@@ -1687,6 +1700,7 @@ export class CoachMoneyService {
         select: { id: true },
         take: 1,
       },
+      dunning: CLIENT_PLAN_DUNNING,
     } as const;
   }
 
@@ -1710,6 +1724,7 @@ export class CoachMoneyService {
     refunds: Array<{ amount_cents: number }>;
     disputes: Array<{ status: string; amount_cents: number }>;
     splits: Array<{ id: string }>;
+    dunning?: { status: string; last_failure_reason: string | null } | null;
   }): MoneyChargeDto {
     const refunded = r.refunds.reduce((acc, x) => acc + x.amount_cents, 0);
     const openDispute = r.disputes.some((d) =>
@@ -1720,6 +1735,9 @@ export class CoachMoneyService {
     );
     const chargedBackCents = lostDisputes.reduce((acc, d) => acc + d.amount_cents, 0);
     const chargedBack = r.status === CHARGEBACK_LOST_PURCHASE_STATUS || lostDisputes.length > 0;
+    const failed = (FAILED_PURCHASE_STATUSES as readonly string[]).includes(r.status);
+    // HOLD-FU-BE (LS-1195 C2): a renewal held on the coach's account is owed, not failed.
+    const held = failed && isHeldRenewal(r.dunning);
     let state: MoneyChargeDto['state'];
     // B-641-2: a lost chargeback is checked first — the ledger keeps its
     // (reversed) destination slice, which must never read as `paid`.
@@ -1727,7 +1745,8 @@ export class CoachMoneyService {
     else if (openDispute) state = 'disputed';
     else if (refunded > 0 && refunded >= r.amount_cents) state = 'refunded';
     else if (refunded > 0) state = 'partially_refunded';
-    else if ((FAILED_PURCHASE_STATUSES as readonly string[]).includes(r.status)) state = 'failed';
+    else if (held) state = 'pending';
+    else if (failed) state = 'failed';
     else if (
       (PAID_PURCHASE_STATUSES as readonly string[]).includes(r.status) ||
       r.splits.length > 0
@@ -1747,6 +1766,7 @@ export class CoachMoneyService {
       refunded_cents: refunded,
       charged_back_cents: chargedBackCents,
       created_at: r.created_at.toISOString(),
+      waiting_on: held ? 'coach_account' : null,
       moved_away_at: null,
     };
   }

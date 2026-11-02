@@ -138,8 +138,9 @@ describe('B-CONNECT-126 recurring Buy gate', () => {
 
   it('saved row ready -> zero Stripe account reads', async () => {
     const retrieve = jest.fn(async () => STRIPE_APPROVED);
+    // HOLD-FU-BE: ready means every axis of the one rule (the pending row had a disabled reason).
     const { svc, stripe } = recurringSetup(
-      { ...pendingAccount(), charges_enabled: true, payouts_enabled: true },
+      { ...pendingAccount(), charges_enabled: true, payouts_enabled: true, disabled_reason: null },
       retrieve,
     );
     await svc.createSubscriptionIntent(CLIENT, { package_id: PKG, idempotency_key: KEY1 });
