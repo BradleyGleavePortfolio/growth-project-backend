@@ -1547,3 +1547,99 @@ describe('B-CONNECT-126 one-time Buy gate', () => {
     expect(stripe.createPaymentIntent).not.toHaveBeenCalled();
   });
 });
+
+// HOLD-FU-BE F1 (LS-1195 C1): both client checkout paths and the payout
+// gate's refresh read the one readiness rule (payouts, details and the
+// disabled reason), never charges alone.
+describe('HOLD-FU-BE one readiness rule at both checkout entry paths', () => {
+  const READY = {
+    charges_enabled: true,
+    payouts_enabled: true,
+    details_submitted: true,
+    disabled_reason: null,
+  };
+  const NOT_READY: Array<[string, Record<string, unknown>]> = [
+    ['payouts off', { payouts_enabled: false }],
+    ['details not submitted', { details_submitted: false }],
+    ['a disabled reason', { disabled_reason: 'requirements.past_due' }],
+  ];
+  function build(saved: Record<string, unknown>, retrieveAccount?: jest.Mock) {
+    const base = makeService();
+    seedSoloCoachFixture(base.prisma);
+    base.prisma._users.push({ id: 'client-ok', email: 'a@b.c', name: 'A', coach_id: 'coach-x' });
+    Object.assign(base.prisma._accounts[0], READY, saved);
+    type Where = { where: { stripe_account_id: string }; data?: Record<string, unknown> };
+    const find = ({ where }: Where) =>
+      base.prisma._accounts.find((a: Where['where']) => a.stripe_account_id === where.stripe_account_id);
+    const connectPrisma = {
+      connectAccount: {
+        findUnique: jest.fn(async (args: Where) => find(args) ?? null),
+        update: jest.fn(async (args: Where) => Object.assign(find(args), args.data)),
+      },
+    };
+    // Stripe still says what the saved row says (disabled reason under requirements).
+    const stillSo = { id: 'acct_coach_x', ...READY, ...saved, requirements: { disabled_reason: saved.disabled_reason ?? null } };
+    const retrieve = retrieveAccount ?? jest.fn(async () => stillSo);
+    const connect: ConnectService = Reflect.construct(ConnectService, [
+      connectPrisma,
+      { retrieveAccount: retrieve },
+    ]);
+    const gate = { evaluate: async () => ({ ok: true, reason: 'contracts_disabled' }) };
+    const { prisma, stripe, packages, state, feePolicy } = base;
+    const args = [prisma, stripe, packages, state, feePolicy, gate, connect];
+    const svc: CheckoutService = Reflect.construct(CheckoutService, args);
+    const sheet = () =>
+      svc.createPaymentIntentForClient('client-ok', {
+        package_id: 'pkg-x',
+        idempotency_key: '22222222-2222-4222-8222-222222222222',
+      });
+    const session = () => svc.createCheckoutForClient('client-ok', { package_id: 'pkg-x' });
+    return { ...base, svc, sheet, session, retrieve };
+  }
+  async function errorOf(p: Promise<unknown>) {
+    return p.then(
+      () => null,
+      (e: ConflictException) => e,
+    );
+  }
+
+  it.each(NOT_READY)('PaymentSheet path: charges on but %s -> 409 COACH_NOT_PAYOUT_READY, no PaymentIntent', async (_label, saved) => {
+    const { sheet, stripe, retrieve } = build(saved);
+    const err = await errorOf(sheet());
+    expect(err).toBeInstanceOf(ConflictException);
+    expect(err?.getResponse()).toMatchObject({ error: 'COACH_NOT_PAYOUT_READY' });
+    expect(stripe.createPaymentIntent).not.toHaveBeenCalled();
+    // The payout gate's refresh ran: the not-ready row was re-read once.
+    expect(retrieve).toHaveBeenCalledWith('acct_coach_x');
+  });
+
+  it.each(NOT_READY)('Checkout Session path: charges on but %s -> 409 COACH_NOT_PAYOUT_READY, no session', async (_label, saved) => {
+    const { session, stripe, retrieve } = build(saved);
+    const err = await errorOf(session());
+    expect(err).toBeInstanceOf(ConflictException);
+    expect(err?.getResponse()).toMatchObject({ error: 'COACH_NOT_PAYOUT_READY' });
+    expect(stripe.createCheckoutSession).not.toHaveBeenCalled();
+    expect(retrieve).toHaveBeenCalledWith('acct_coach_x');
+  });
+
+  it('refresh: charges on, payouts off saved, Stripe now ready -> re-read once and the sale starts', async () => {
+    const retrieve = jest.fn(async () => ({ id: 'acct_coach_x', ...READY }));
+    const { sheet, stripe, prisma } = build({ payouts_enabled: false }, retrieve);
+    const out = await sheet();
+    expect(out.client_secret).toMatch(/^pi_test_secret_/);
+    expect(retrieve).toHaveBeenCalledTimes(1);
+    expect(stripe.createPaymentIntent).toHaveBeenCalledTimes(1);
+    expect(prisma._accounts[0]).toMatchObject({ payouts_enabled: true });
+  });
+
+  it('a ready saved row on either path -> zero Stripe account reads', async () => {
+    const a = build({});
+    await a.sheet();
+    expect(a.stripe.createPaymentIntent).toHaveBeenCalledTimes(1);
+    expect(a.retrieve).not.toHaveBeenCalled();
+    const b = build({});
+    await b.session();
+    expect(b.stripe.createCheckoutSession).toHaveBeenCalledTimes(1);
+    expect(b.retrieve).not.toHaveBeenCalled();
+  });
+});
