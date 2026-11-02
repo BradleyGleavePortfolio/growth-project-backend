@@ -60,7 +60,7 @@ const writes: Form[] = [
     }`, 'read'],
   ['a holder property reassigned', `${AUTHORED}
     export function read(p: any) {
-      const holder: { where: object } = { where: {} };
+      const holder = { where: {} as object };
       holder.where = { community_posts_authored: authored };
       return p.user.findMany({ where: holder.where });
     }`, 'read'],
@@ -71,7 +71,7 @@ const writes: Form[] = [
     }`, 'HeldReader.read'],
   ['Object.assign into the holder of the held property', `${AUTHORED}
     export function read(p: any) {
-      const holder: { where: object } = { where: {} };
+      const holder = { where: {} as object };
       const filters = { community_posts_authored: authored };
       Object.assign(holder, { where: filters });
       return p.user.findMany({ where: holder.where });
@@ -150,6 +150,12 @@ const unfollowable: Form[] = [
       Reflect.set(where, key, v);
       return p.user.findMany({ where });
     }`, 'read'],
+  ['a property of a holder typed by an annotation (its value is not followed)', `${AUTHORED}
+    export function read(p: any) {
+      const holder: { where: object } = { where: {} };
+      holder.where = { community_posts_authored: authored };
+      return p.user.findMany({ where: holder.where });
+    }`, 'read'],
   ['.apply with an argument list it cannot follow', 'export const read = (p: any, args: any[]) => p.user.findMany.apply(p.user, args);', 'read'],
   ['a read method handed on as a reference', `
     declare function run(f: unknown): unknown;
@@ -192,6 +198,13 @@ const quiet: Array<[name: string, source: string]> = [
       return [p.buildWeekEnrollment['findMany']({ where }), findMany({ where }), list({ where }),
         p.buildWeekEnrollment.findMany.call(p.buildWeekEnrollment, { where }),
         p.buildWeekEnrollment.findMany.apply(p.buildWeekEnrollment, [{ where }])];
+    }`],
+  ['a held scalar filter (no relation) pushed into a list, on a model that can reach members\' content', `
+    export function read(p: any) {
+      const and: object[] = [];
+      const named = { full_name: { contains: 'query' } };
+      and.push(named);
+      return p.user.findMany({ where: { AND: and } });
     }`],
   ['a count read off a result, not a read method', `
     export async function read(p: any) {
