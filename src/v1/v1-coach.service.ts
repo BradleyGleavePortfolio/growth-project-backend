@@ -10,7 +10,7 @@ import { AuditService, AuditAction } from '../audit/audit.service';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { ConsentScope, ConsentService } from '../consent/consent.service';
 import { assertPairOpen, inBlockWith } from '../messaging/block-pair';
-import { countedMessagesFor } from '../common/count-rule';
+import { authorReadableBy, countedMessagesFor } from '../common/count-rule';
 
 // V1 BFF service for the coach console. Returns enriched payloads documented
 // in tgp-coach-console/INTEGRATION_NOTES.md. OWNER callers bypass the coach
@@ -391,8 +391,10 @@ export class V1CoachService {
     // FX-1141 (Sol B2): a chat in a block either way opens empty, no draft.
     const closed = (await inBlockWith(this.prisma, caller.id, [clientId])).size > 0;
 
+    // ACTUAL-AUTHOR-READS-BE (LS-1197R2 B1): the list's author rule, so a row
+    // the list hid stays hidden here; the removed-row behaviour is unchanged.
     const messages = closed ? [] : await this.prisma.coachMessage.findMany({
-      where: { coach_id: threadCoachId, client_id: clientId },
+      where: { coach_id: threadCoachId, client_id: clientId, AND: [authorReadableBy(caller.id)] },
       orderBy: { created_at: 'asc' },
       select: {
         id: true,
