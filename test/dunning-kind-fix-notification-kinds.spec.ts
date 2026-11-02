@@ -236,6 +236,17 @@ function pushWorld() {
       findFirst: jest.fn(async () => null),
       create: jest.fn(async (a: { data: object }) => ({ id: 'n-push', ...a.data })),
     },
+    // FR-1192R3 (ruling R4): a money push reads its dunning cycle again when it goes, and a cycle it cannot read
+    // waits; this world's cycle ('ds-pay', key '1': entered at epoch + 1 ms) is live.
+    dunningState: {
+      findUnique: jest.fn(async () => ({
+        status: 'active',
+        locked_out_at: null,
+        last_failure_reason: null,
+        client_canceled_at: null,
+        entered_at: new Date(1),
+      })),
+    },
   };
   class Clocked extends PushDeliveryService {
     protected now(): Date {
@@ -504,7 +515,9 @@ describe('FR-1154: safety alerts and money senders reach a user with Mute all on
       const out = await dunning(w.svc).dispatchStepDetailed(ctx(), undefined, { channels: ['coach_push'] });
       expect(out.results.coach_push).toEqual({ status: 'sent' });
       await w.delivery.drain();
-      expect(w.rows.map((r) => [r.kind, r.context, r.status])).toEqual([[NotificationKind.COACH_ALERT, MUTE_ALL_PASS, 'sent']]);
+      // FR-1192R2: the push also keeps its dunning cycle, checked again when it goes.
+      const context = { ...MUTE_ALL_PASS, dunning: { stateId: 'ds-pay', cycleKey: '1' } };
+      expect(w.rows.map((r) => [r.kind, r.context, r.status])).toEqual([[NotificationKind.COACH_ALERT, context, 'sent']]);
     }],
     ['dunning Day 7 client payment push: goes out (pushToUser reads no Mute all)', async () => {
       const { svc } = notifications(mutedAllOn);

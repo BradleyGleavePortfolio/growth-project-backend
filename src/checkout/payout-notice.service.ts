@@ -481,6 +481,9 @@ export class PayoutNoticeService {
           n.body,
           { type: 'payout_adjustment', notice_id: n.id, deep_link: PAYOUT_NOTICE_DEEP_LINK },
           sendWindow.signal,
+          // PF-3-BE: the one send path, same rule as the gate above; held to
+          // 08:00 in quiet hours; a retry of this notice never posts twice.
+          { kind: NotificationKind.COACH_ALERT, passesMuteAll: true, dedupeKey: `payout_notice:${n.id}:push` },
         );
       } finally {
         sendWindow.release();

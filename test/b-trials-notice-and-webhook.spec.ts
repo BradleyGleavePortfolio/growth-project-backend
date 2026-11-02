@@ -398,6 +398,14 @@ describe('B-TRIALS — delivery (push + email after commit, retried by the sweep
       // B-TRIALS-3 (B-656-2) — the push is bounded: an abort signal fires
       // when the transport outlives TRIAL_NOTICE_TRANSPORT_TIMEOUT_MS.
       expect.any(AbortSignal),
+      // PF-3-BE: the one send path; a retry of this notice posts once.
+      // FR-1192R2: it keeps its notice, checked again when a held push goes.
+      {
+        kind: 'trial_ending',
+        passesMuteAll: true,
+        dedupeKey: `trial_notice:${id}:push`,
+        trialNotice: { noticeId: id, cancelAtPeriodEnd: false },
+      },
     );
     expect(w.email.send).toHaveBeenCalledTimes(1);
     expect(w.email.send.mock.calls[0][0]).toMatchObject({
