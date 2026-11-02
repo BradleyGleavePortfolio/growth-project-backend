@@ -76,7 +76,7 @@ describe('LS-1202B independent held charge detail acceptance', () => {
       const prisma = {
         clientPurchase: { findFirst: find },
         user: { findMany: jest.fn(async () => []) },
-        ledgerEntry: { findMany: jest.fn(async () => []) },
+        splitLedgerEntry: { findMany: jest.fn(async () => []) },
       };
       const service: CoachMoneyService = Reflect.construct(CoachMoneyService, [prisma]);
       const detail = await service.getChargeBreakdown('synthetic-coach', purchase.id);
