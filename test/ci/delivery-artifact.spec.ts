@@ -785,7 +785,8 @@ describe('FOOD-SEED-BE — release step 5 and the image that carries it (F1, F2,
     expect(block).toMatch(/if ! DIRECT_URL="\$\{DIRECT_URL\}" node "\$\{FOOD_SEED_SCRIPT\}" "\$\{FOOD_SEED_FILE\}"; then/);
     expect((block.match(/exit 1/g) ?? []).length).toBe(2);
     expect(block).not.toMatch(/\|\|\s*true/);
-    expect(block).not.toMatch(/ts-node|npx/);
+    const code = block.split('\n').filter((l) => !l.trim().startsWith('#')).join('\n');
+    expect(code).not.toMatch(/ts-node|npx/);
   });
   it('the build stage compiles tsconfig.food-seed.json after nest build; the runtime check names both new files', () => {
     expect(build.indexOf('RUN npx tsc -p tsconfig.food-seed.json')).toBeGreaterThan(build.indexOf('RUN npm run build'));

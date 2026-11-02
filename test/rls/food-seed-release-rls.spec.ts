@@ -46,7 +46,16 @@ function run(cmd: string, args: string[]): Run {
   return { code: r.status, out: `${r.stdout ?? ''}\n${r.stderr ?? ''}${r.error ? `\n${r.error.message}` : ''}` };
 }
 
-const release = () => run('bash', ['scripts/release.sh']);
+let releaseNo = 0;
+// Runs the real release script and echoes its step 5 lines and exit code into the job log (the READY evidence).
+const release = (): Run => {
+  const r = run('bash', ['scripts/release.sh']);
+  releaseNo += 1;
+  const lines = r.out.split('\n').filter((l) => /^\[release\] (step 5|built-in foods)/.test(l));
+  // eslint-disable-next-line no-console
+  console.log([`release run ${releaseNo}: exit ${r.code}`, ...lines].join('\n'));
+  return r;
+};
 
 (DB_URL ? describe : describe.skip)('FOOD-SEED-BE: release.sh step 5 adds the built-in foods the shared catalog lacks', () => {
   const prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
