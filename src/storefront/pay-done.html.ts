@@ -13,6 +13,11 @@ export const GUEST_TRIAL_COPY = {
   refused: (coach: string) =>
     `You've already had a free trial with ${coach}, so this one was not started and nothing was charged. Open the app to subscribe.`,
   refusedSubject: (coach: string) => `Your free trial with ${coach} was not started`,
+  // TW-F1 (Wording needed, waits for the owner; FR-1199, LS-1199 B1): the
+  // one email for every other ending of a web trial, followed by the pay
+  // page link. Its subject is refusedSubject.
+  notStarted: (coach: string) =>
+    `Your free trial with ${coach} was not started, and nothing was charged. You can start again on the pay page.`,
 } as const;
 
 export const PAY_DONE_COPY = {

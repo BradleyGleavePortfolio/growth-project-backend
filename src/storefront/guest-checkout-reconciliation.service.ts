@@ -5,6 +5,7 @@ import {
   GuestCheckoutService,
   RECONCILIATION_MAX_ATTEMPTS,
 } from './guest-checkout.service';
+import { OUTCOME_MAIL_GAP_MS, OUTCOME_MAIL_TEMPLATES, outcomeMailCheckoutId } from './guest-outcome-mail';
 
 // Audit #3 P1-6 + P1-7 — durable reconciliation worker for paid guest
 // checkouts whose conversion didn't complete inline.
@@ -33,6 +34,9 @@ const RECONCILIATION_RETRY_BACKOFF_MS = 60_000;
 // `paid` and reconciliation). 2 minutes is more than enough for the
 // inline convert path; anything older needs operator-visible reconciliation.
 const PAID_GRACE_WINDOW_MS = 2 * 60_000;
+// FR-1199 — failed outcome-email tries older than this are left alone.
+const OUTCOME_MAIL_WINDOW_MS = 3 * 86_400_000;
+const OUTCOME_MAIL_BATCH_SIZE = 100;
 
 @Injectable()
 export class GuestCheckoutReconciliationService {
@@ -51,9 +55,10 @@ export class GuestCheckoutReconciliationService {
     try {
       const retryableCount = await this.scanRetryable();
       const orphanCount = await this.scanOrphanedPaid();
-      if (retryableCount > 0 || orphanCount > 0) {
+      const mailCount = await this.scanOutcomeMail();
+      if (retryableCount > 0 || orphanCount > 0 || mailCount > 0) {
         this.logger.log(
-          `GuestCheckoutReconciliation: processed retryable=${retryableCount} orphaned_paid=${orphanCount}`,
+          `GuestCheckoutReconciliation: processed retryable=${retryableCount} orphaned_paid=${orphanCount} outcome_mail=${mailCount}`,
         );
       }
     } catch (err) {
@@ -127,5 +132,43 @@ export class GuestCheckoutReconciliationService {
       }
     }
     return rows.length;
+  }
+
+  // FR-1199 (LS-1199 B2) — an outcome email (welcome, PF-W7, TW-F1) whose
+  // try failed or whose sender died mid-send gets its next try here, paced
+  // by OUTCOME_MAIL_GAP_MS and capped at OUTCOME_MAIL_TRIES (the service
+  // re-reads every try and decides). Only the email; never the conversion.
+  private async scanOutcomeMail(): Promise<number> {
+    const now = Date.now();
+    let tries: { idempotency_key: string }[];
+    try {
+      tries = await this.prisma.emailSendLog.findMany({
+        where: {
+          template_key: { in: OUTCOME_MAIL_TEMPLATES },
+          status: { in: ['failed', 'sending'] },
+          created_at: {
+            gte: new Date(now - OUTCOME_MAIL_WINDOW_MS),
+            lte: new Date(now - OUTCOME_MAIL_GAP_MS[0]),
+          },
+        },
+        orderBy: [{ created_at: 'desc' }],
+        // A done outcome's earlier failed tries still match; the wider
+        // batch keeps them from crowding out unfinished ones.
+        take: OUTCOME_MAIL_BATCH_SIZE,
+        select: { idempotency_key: true },
+      });
+    } catch (err) {
+      this.logger.error(`outcome email scan failed: ${(err as Error)?.message ?? String(err)}`);
+      return 0;
+    }
+    const ids = [
+      ...new Set(
+        tries.map((t) => outcomeMailCheckoutId(t.idempotency_key)).filter((id): id is string => id !== null),
+      ),
+    ];
+    for (const id of ids) {
+      await this.guestCheckout.sendOutcomeMail({ id }, { paced: true });
+    }
+    return ids.length;
   }
 }

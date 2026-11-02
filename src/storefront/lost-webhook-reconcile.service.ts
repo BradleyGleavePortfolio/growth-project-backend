@@ -109,6 +109,15 @@ export class LostWebhookReconcileService {
     return stateChanges;
   }
 
+  // FR-1199 — the ending's one email; a mail failure never fails the poll.
+  private async openTrialEndMail(checkoutId: string): Promise<void> {
+    try {
+      await this.guestCheckout.sendOutcomeMail({ id: checkoutId }, { opening: true });
+    } catch (err) {
+      this.logger.error(`lost-webhook-reconcile: outcome email for ${checkoutId} crashed (tag=${err instanceof Error ? err.name : 'unknown'})`);
+    }
+  }
+
   private async reconcileOne(
     checkoutId: string,
     paymentIntentId: string,
@@ -139,10 +148,12 @@ export class LostWebhookReconcileService {
       // the cron polled Stripe every minute burning API quota. Reusing the
       // existing valid terminal status preserves the intent (operator
       // intervention required) with zero schema change.
-      await this.prisma.guestCheckout.updateMany({
+      const moved = await this.prisma.guestCheckout.updateMany({
         where: { id: checkoutId, status: 'pending' },
         data: { status: 'conversion_failed_terminal' },
       });
+      // FR-1199 (LS-1199 B1): a web trial ending here gets TW-F1.
+      if (moved.count > 0) await this.openTrialEndMail(checkoutId);
       this.logger.warn(
         `lost-webhook-reconcile: bailing out on ${checkoutId} after ${claimed.reconcile_attempts} attempts`,
       );
@@ -169,10 +180,12 @@ export class LostWebhookReconcileService {
         return true;
       }
       if (siStatus === 'canceled') {
-        await this.prisma.guestCheckout.updateMany({
+        const moved = await this.prisma.guestCheckout.updateMany({
           where: { id: checkoutId, status: 'pending' },
           data: { status: 'failed' },
         });
+        // FR-1199 (LS-1199 B1): a cancelled card save gets TW-F1.
+        if (moved.count > 0) await this.openTrialEndMail(checkoutId);
         return true;
       }
       return false;
