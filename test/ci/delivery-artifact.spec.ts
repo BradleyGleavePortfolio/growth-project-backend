@@ -602,7 +602,25 @@ describe('release.sh — behaviour with a fake prisma runner (no database, no ne
     mkdirSync(join(root, 'prisma', 'migrations'), { recursive: true });
     writeFileSync(join(root, 'scripts', 'release.sh'), read('scripts/release.sh'));
     writeFileSync(join(root, 'scripts', 'release-required-verifiers.txt'), `${REQUIRED}\n`);
-    writeFileSync(join(root, 'bin', 'node'), '#!/usr/bin/env bash\necho v20.0.0\n');
+    // FOOD-SEED-BE: the image ships the compiled built-in foods step and its seed file; the fake `node` plays that
+    // step (logs its argv, prints the step's line, or fails when FAKE_FOODS_FAIL is set) and answers -v otherwise.
+    mkdirSync(join(root, 'dist', 'food-seed', 'scripts'), { recursive: true });
+    mkdirSync(join(root, 'prisma', 'data'), { recursive: true });
+    writeFileSync(join(root, 'dist', 'food-seed', 'scripts', 'seed-built-in-foods.js'), '// stub\n');
+    writeFileSync(join(root, 'prisma', 'data', 'seed-foods.json'), '[]\n');
+    writeFileSync(
+      join(root, 'bin', 'node'),
+      [
+        '#!/usr/bin/env bash',
+        'case "${1:-}" in',
+        '  *seed-built-in-foods.js) echo "node $* DIRECT_URL=${DIRECT_URL}" >>"${FAKE_NPX_LOG}";',
+        '    if [ -n "${FAKE_FOODS_FAIL:-}" ]; then echo "[release] built-in foods FAILED: 3 of 65 still missing from the shared catalog"; exit 1; fi;',
+        '    echo "[release] built-in foods: 65 present, 0 added"; exit 0;;',
+        'esac',
+        'echo v20.0.0',
+        '',
+      ].join('\n'),
+    );
     writeFileSync(
       join(root, 'bin', 'npx'),
       [
@@ -635,8 +653,9 @@ describe('release.sh — behaviour with a fake prisma runner (no database, no ne
         ...extraEnv,
       },
     });
-    const deployed = readFileSync(log, 'utf8').split('\n').includes('deploy-ran');
-    return { code: r.status, out: `${r.stdout}\n${r.stderr}`, deployed };
+    const calls = readFileSync(log, 'utf8').split('\n');
+    const deployed = calls.includes('deploy-ran');
+    return { code: r.status, out: `${r.stdout}\n${r.stderr}`, deployed, calls };
   };
   const verifier = (root: string, dir: string, body = '-- ok') => {
     mkdirSync(join(root, 'prisma', 'migrations', dir), { recursive: true });
@@ -710,6 +729,81 @@ describe('release.sh — behaviour with a fake prisma runner (no database, no ne
     expect(r.code).toBe(1);
     expect(r.deployed).toBe(true);
     expect(r.out).toContain('catalog verifier FAILED');
+    expect(r.calls.some((c) => c.includes('seed-built-in-foods.js'))).toBe(false); // FOOD-SEED-BE: step 5 never ran
+  });
+  // FOOD-SEED-BE (F1/F2): step 5 runs the compiled built-in foods step once, after migrate deploy and every verifier,
+  // on DIRECT_URL with the shipped seed file, and its failure fails the release before the success banner.
+  const foodCall = (calls: string[]) => calls.findIndex((c) => c.includes('seed-built-in-foods.js'));
+  it('step 5 runs the built-in foods step once, after deploy and the verifiers, on DIRECT_URL, and prints its line', () => {
+    const r = fixture((root) => verifier(root, REQUIRED));
+    expect(r.code).toBe(0);
+    const at = foodCall(r.calls);
+    expect(r.calls.filter((c) => c.includes('seed-built-in-foods.js'))).toEqual([
+      'node dist/food-seed/scripts/seed-built-in-foods.js prisma/data/seed-foods.json DIRECT_URL=postgres://fake-direct',
+    ]);
+    expect(at).toBeGreaterThan(r.calls.indexOf('deploy-ran'));
+    expect(at).toBeGreaterThan(r.calls.findIndex((c) => c.includes('db execute --url')));
+    expect(r.out).toMatch(/^\[release\] built-in foods: 65 present, 0 added$/m);
+    expect(r.out.indexOf('built-in foods: 65 present')).toBeLessThan(r.out.indexOf('release_command completed successfully'));
+  });
+  it('step 5 failing (foods still missing, or the insert refused) → exit 1, no success banner, abort banner printed', () => {
+    const r = fixture((root) => verifier(root, REQUIRED), { FAKE_FOODS_FAIL: '1' });
+    expect(r.code).toBe(1);
+    expect(r.deployed).toBe(true);
+    expect(r.out).toContain('[release] built-in foods FAILED: 3 of 65 still missing from the shared catalog');
+    expect(r.out).toContain('built-in foods step FAILED');
+    expect(r.out).toContain('Deploy ABORTED by release_command');
+    expect(r.out).not.toContain('release_command completed successfully');
+  });
+  it('step 5 refuses an image without the compiled step or the seed file → exit 1, never a silent skip', () => {
+    for (const gone of [join('dist', 'food-seed', 'scripts', 'seed-built-in-foods.js'), join('prisma', 'data', 'seed-foods.json')]) {
+      const r = fixture((root) => {
+        verifier(root, REQUIRED);
+        spawnSync('rm', [join(root, gone)]);
+      });
+      expect(r.code).toBe(1);
+      expect(foodCall(r.calls)).toBe(-1);
+      expect(r.out).toContain('is not in this image');
+      expect(r.out).not.toContain('release_command completed successfully');
+    }
+  });
+});
+
+describe('FOOD-SEED-BE — release step 5 and the image that carries it (F1, F2, F4)', () => {
+  const s = read('scripts/release.sh');
+  const df = read('Dockerfile');
+  const build = df.slice(0, df.indexOf('AS runtime'));
+  const runtime = df.slice(df.indexOf('AS runtime'));
+  it('step 5 sits after step 4 (after verifiers_passed) and before the ALL_APPLIED count and exit 0; fails closed', () => {
+    const step5 = s.indexOf('STEP 5');
+    expect(step5).toBeGreaterThan(s.indexOf('verifiers_passed = '));
+    expect(step5).toBeLessThan(s.indexOf('APPLIED_TMP=$(mktemp)'));
+    expect(step5).toBeLessThan(s.lastIndexOf('exit 0'));
+    const block = s.slice(step5, s.indexOf('APPLIED_TMP=$(mktemp)'));
+    expect(block).toContain('FOOD_SEED_SCRIPT="dist/food-seed/scripts/seed-built-in-foods.js"');
+    expect(block).toContain('FOOD_SEED_FILE="prisma/data/seed-foods.json"');
+    expect(block).toMatch(/if ! DIRECT_URL="\$\{DIRECT_URL\}" node "\$\{FOOD_SEED_SCRIPT\}" "\$\{FOOD_SEED_FILE\}"; then/);
+    expect((block.match(/exit 1/g) ?? []).length).toBe(2);
+    expect(block).not.toMatch(/\|\|\s*true/);
+    expect(block).not.toMatch(/ts-node|npx/);
+  });
+  it('the build stage compiles tsconfig.food-seed.json after nest build; the runtime check names both new files', () => {
+    expect(build.indexOf('RUN npx tsc -p tsconfig.food-seed.json')).toBeGreaterThan(build.indexOf('RUN npm run build'));
+    expect(runtime).toContain('test -f dist/food-seed/scripts/seed-built-in-foods.js');
+    expect(runtime).toContain('test -f prisma/data/seed-foods.json');
+    expect(runtime).toMatch(/^COPY prisma \.\/prisma\/$/m);
+    expect(runtime).toMatch(/COPY --from=build \/app\/dist \.\/dist/);
+    expect(runtime.indexOf('test -f prisma/data/seed-foods.json')).toBeLessThan(runtime.indexOf('artifact check OK'));
+    for (const entry of ['prisma/data/', 'prisma/data', 'prisma/data/seed-foods.json', '*.json']) {
+      expect(read('.dockerignore').split('\n')).not.toContain(entry);
+    }
+  });
+  it('the README seed:foods section says each deploy now adds the missing built-in foods', () => {
+    const readme = read('README.md');
+    const section = readme.slice(readme.indexOf('### Seeded common foods'), readme.indexOf('### Required env'));
+    expect(section).toContain('npm run seed:foods');
+    expect(section).toContain('Every deploy now does the insert for you');
+    expect(section).toContain('scripts/release.sh` step 5');
   });
 });
 
