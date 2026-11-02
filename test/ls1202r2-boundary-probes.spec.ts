@@ -56,7 +56,7 @@ const EVIDENCE: Array<[string, Entry[], boolean]> = [
   ['failed destination', [entry('destination', 'failed')], false],
   ['posted application fee only', [entry('application_fee', 'posted')], false],
   ['posted processing fee only', [entry('stripe_fee', 'posted')], false],
-  ['posted head share only', [entry('head_coach', 'posted')], false],
+  ['posted head share only', [entry('head_coach_split', 'posted')], false],
   ['posted destination', [entry('destination', 'posted')], true],
   ['reversed destination', [entry('destination', 'reversed')], true],
   ['mixed entries', [entry('destination', 'pending'), entry('destination', 'posted')], true],
