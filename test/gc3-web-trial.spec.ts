@@ -1999,4 +1999,76 @@ describe('TRIAL-WORDS-BE — the return page while a web trial starts', () => {
     expect(world.mail.filter((r: Row) => r.idempotency_key.startsWith(`guest-outcome:${other.id}:`)).map((r: Row) => r.recipient_email)).toEqual(['sam@example.com']);
     expect(world.mail.some((r: Row) => r.recipient_email === 'jane@example.com')).toBe(false);
   });
+
+  // FR-1199R2B (agent 192) — own tests: F6, the retry scan walks the backlog.
+  // The production query honored (filters, newest first, take).
+  const honorScan = (world: any) => {
+    const scans: any[] = [];
+    world.db.emailSendLog.findMany = async ({ where, orderBy, take }: any) => {
+      if (where.idempotency_key) return world.mail.filter((row: Row) => where.idempotency_key.in.includes(row.idempotency_key));
+      scans.push(where);
+      const rows = world.mail.filter((row: Row) =>
+        where.template_key.in.includes(row.template_key)
+        && where.status.in.includes(row.status)
+        && row.created_at >= where.created_at.gte && row.created_at <= where.created_at.lte);
+      if (orderBy?.[0]?.created_at === 'desc') rows.sort((a: Row, b: Row) => b.created_at.getTime() - a.created_at.getTime());
+      return rows.slice(0, take ?? rows.length);
+    };
+    return scans;
+  };
+  const finishedOutcomes = (world: any, count: number, ageMs: (n: number) => number) => {
+    const base = Date.now();
+    for (let n = 0; n < count; n++) {
+      const done = world.addCheckout({ status: 'failed', guest_email: `done${n}@example.com` });
+      for (let attempt = 1; attempt <= 5; attempt++) {
+        world.mail.push({
+          id: `done-${n}-${attempt}`, idempotency_key: `guest-outcome:${done.id}:trial-not-started:${attempt}`,
+          template_key: 'guest-trial-not-started', recipient_email: done.guest_email, status: 'failed',
+          created_at: new Date(base - ageMs(n) - attempt),
+        });
+      }
+    }
+  };
+
+  it('FR-1199R2B F6: a waiting try behind six pages of capped outcomes is sent within two ticks, at most five pages a tick', async () => {
+    const { world, gc, service } = trialWorld({ status: 'failed' });
+    finishedOutcomes(world, 120, (n) => 2 * 60_000 + n * 10);
+    world.mail.push({
+      id: 'waiting', idempotency_key: `guest-outcome:${gc.id}:trial-not-started:1`,
+      template_key: 'guest-trial-not-started', recipient_email: gc.guest_email, status: 'failed',
+      created_at: new Date(Date.now() - 60 * 60_000),
+    });
+    const scans = honorScan(world);
+    const cron = new GuestCheckoutReconciliationService(world.db, service);
+    await cast<Private>(cron).scanOutcomeMail();
+    expect(scans).toHaveLength(5);
+    expect(toBuyer(gc)).toHaveLength(0);
+    await cast<Private>(cron).scanOutcomeMail();
+    expect(toBuyer(gc).map((m) => m.html.includes(TW_F1))).toEqual([true]);
+    expect(sent).toHaveLength(1);
+  });
+
+  it('FR-1199R2B F6: after reaching the end of the window the walk starts again from the newest, so a newer failure is reached', async () => {
+    const { world, gc, service } = trialWorld({ status: 'failed' });
+    finishedOutcomes(world, 30, (n) => 2 * 60_000 + n * 10);
+    honorScan(world);
+    const cron = new GuestCheckoutReconciliationService(world.db, service);
+    await cast<Private>(cron).scanOutcomeMail();
+    expect(cast<any>(cron).outcomeMailCursor).toBeNull();
+    world.mail.push({
+      id: 'newer', idempotency_key: `guest-outcome:${gc.id}:trial-not-started:1`,
+      template_key: 'guest-trial-not-started', recipient_email: gc.guest_email, status: 'failed',
+      created_at: new Date(Date.now() - 90_000),
+    });
+    await cast<Private>(cron).scanOutcomeMail();
+    expect(toBuyer(gc).map((m) => m.html.includes(TW_F1))).toEqual([true]);
+  });
+
+  it('FR-1199R2B F6: a scan read failure keeps its place and sends nothing', async () => {
+    const { world, service } = trialWorld({ status: 'failed' });
+    world.db.emailSendLog.findMany = jest.fn().mockRejectedValue(new Error('database unavailable'));
+    const cron = new GuestCheckoutReconciliationService(world.db, service);
+    await expect(cast<Private>(cron).scanOutcomeMail()).resolves.toBe(0);
+    expect(sent).toHaveLength(0);
+  });
 });
