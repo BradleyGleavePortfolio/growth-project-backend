@@ -1327,4 +1327,52 @@ describe('TRIAL-WORDS-BE — the return page while a web trial starts', () => {
     expect(after.html).not.toContain('Nothing is charged today.');
     expect(after.html).toContain('Your free trial has started');
   });
+
+  it.each(['lost-webhook cap', 'conversion cap'])(
+    'LS-1199R2 B1: %s does not email not-started and then welcome for the same trial',
+    async (ending) => {
+      const { world, gc, service, stripe } = trialWorld();
+      const accountRead = world.db.connectAccount.findUnique;
+      const savedCard = stripe.retrieveSetupIntent.getMockImplementation();
+      if (ending === 'conversion cap') {
+        world.db.connectAccount.findUnique = jest.fn(async () => {
+          throw new Error('dependency unavailable');
+        });
+        await service.handlePaymentSucceeded(gc.stripe_payment_intent_id);
+        for (let n = 1; n < 5; n++) await service.reconcilePaidCheckout(gc.id);
+        world.db.connectAccount.findUnique = accountRead;
+      } else {
+        stripe.retrieveSetupIntent.mockImplementation(async (intent: string) => ({
+          id: intent, status: 'processing', client_secret: `${intent}_secret_z`,
+        }));
+        const backstopDb: any = {
+          guestCheckout: {
+            update: async () => {
+              const row = world.state.guestCheckout[0];
+              row.reconcile_attempts = (row.reconcile_attempts ?? 0) + 1;
+              return { ...row };
+            },
+            updateMany: world.db.guestCheckout.updateMany,
+          },
+        };
+        const backstop = new LostWebhookReconcileService(backstopDb, stripe, service);
+        for (let n = 0; n < 6; n++) {
+          await cast<Private>(backstop).reconcileOne(gc.id, gc.stripe_payment_intent_id, gc.stripe_subscription_id);
+        }
+      }
+      await settle();
+      expect(world.state.guestCheckout[0].status).toBe('conversion_failed_terminal');
+      expect(toBuyer(gc)).toHaveLength(1);
+      expect(toBuyer(gc)[0].html).toContain(TW_F1);
+
+      // The original card form is still open, and this checkout has not
+      // expired. The existing claim explicitly accepts terminal rows.
+      stripe.retrieveSetupIntent.mockImplementation(savedCard);
+      await service.handlePaymentSucceeded(gc.stripe_payment_intent_id);
+      await settle();
+      expect(world.state.guestCheckout[0].status).toBe('converted');
+      expect(toBuyer(gc)).toHaveLength(1);
+    },
+  );
+
 });
