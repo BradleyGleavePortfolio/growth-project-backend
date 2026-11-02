@@ -177,7 +177,7 @@ function makeDb() {
     state.guestCheckout.push(row);
     return row;
   };
-  return { db, addCheckout, get state() { return state; }, pkg };
+  return { db, addCheckout, matches, get state() { return state; }, pkg };
 }
 
 function build(world: ReturnType<typeof makeDb>) {
@@ -489,7 +489,7 @@ describe('GC-3 — web page trials: card saved, nothing charged that day, one tr
     );
     world.db.connectCustomer = customers;
     world.db.clientPurchase.findMany = async ({ where }: any) =>
-      world.state.clientPurchase.filter((row) => matches(row, where));
+      world.state.clientPurchase.filter((row) => world.matches(row, where));
     const { service, stripe } = build(world);
     const gc = world.addCheckout();
     await service.handlePaymentSucceeded(gc.stripe_payment_intent_id);
@@ -516,6 +516,85 @@ describe('GC-3 — web page trials: card saved, nothing charged that day, one tr
       if (oldSk === undefined) delete process.env.STRIPE_SECRET_KEY;
       else process.env.STRIPE_SECRET_KEY = oldSk;
     }
+  });
+
+  // TRIAL-FU-BE F2 — the ConnectCustomer binding, for every way a buyer becomes known.
+  const customerTable = (rows: Row[] = []) => {
+    const t = makeTable([['id'], ['client_user_id'], ['stripe_customer_id']], () => ({ id: 'customer-row' }));
+    for (const r of rows) t.rows.push({ ...r });
+    return t;
+  };
+
+  it('TRIAL-FU-BE F2: a new web buyer is bound to the customer the trial card is on (one row, nothing else touched)', async () => {
+    const world = makeDb();
+    const customers = customerTable([{ id: 'cc-other', client_user_id: 'user-other', stripe_customer_id: 'cus_other' }]);
+    world.db.connectCustomer = customers;
+    const { service } = build(world);
+    const gc = world.addCheckout();
+    await service.handlePaymentSucceeded(gc.stripe_payment_intent_id);
+    const clientId = world.state.clientPurchase[0].client_user_id;
+    expect(customers.rows).toHaveLength(2);
+    expect(customers.rows.find((r) => r.client_user_id === clientId)).toMatchObject({ stripe_customer_id: gc.stripe_customer_id });
+    expect(customers.rows.find((r) => r.client_user_id === 'user-other')).toMatchObject({ stripe_customer_id: 'cus_other' });
+    // A replayed event never adds a second row.
+    await service.handlePaymentSucceeded(gc.stripe_payment_intent_id);
+    expect(customers.rows).toHaveLength(2);
+  });
+
+  it('TRIAL-FU-BE F2: an existing client with no customer yet is bound; one who has a customer keeps it, never moved', async () => {
+    const world = makeDb();
+    world.state.user.push({ id: 'user-old', supabase_id: 'sb-jane', email: 'jane@example.com', role: 'student', coach_id: COACH, created_at: new Date(0) });
+    const customers = customerTable();
+    world.db.connectCustomer = customers;
+    const { service } = build(world);
+    const gc = world.addCheckout();
+    await service.handlePaymentSucceeded(gc.stripe_payment_intent_id);
+    expect(world.state.guestCheckout[0].status).toBe('converted');
+    expect(customers.rows).toEqual([expect.objectContaining({ client_user_id: 'user-old', stripe_customer_id: gc.stripe_customer_id })]);
+
+    const world2 = makeDb();
+    world2.state.user.push({ id: 'user-old', supabase_id: 'sb-jane', email: 'jane@example.com', role: 'student', coach_id: COACH, created_at: new Date(0) });
+    const own = customerTable([{ id: 'cc-own', client_user_id: 'user-old', stripe_customer_id: 'cus_own' }]);
+    world2.db.connectCustomer = own;
+    const built2 = build(world2);
+    const gc2 = world2.addCheckout({ stripe_customer_id: 'cus_webtrial_other' });
+    await built2.service.handlePaymentSucceeded(gc2.stripe_payment_intent_id);
+    expect(world2.state.guestCheckout[0].status).toBe('converted');
+    expect(own.rows).toEqual([expect.objectContaining({ id: 'cc-own', client_user_id: 'user-old', stripe_customer_id: 'cus_own' })]);
+  });
+
+  it.each([
+    ['a proven existing client with a customer keeps it (no second customer)', 'same_coach', 'cus_own', 0],
+    ['a new buyer gets a fresh guest customer', 'new', 'cus_guest_new', 1],
+  ] as const)('TRIAL-FU-BE F2: at checkout, %s', async (_name, verdict, customer, creates) => {
+    const db: any = {
+      user: { findFirst: jest.fn(async () => ({ id: 'user-old', role: 'student', coach_id: COACH })) },
+      connectCustomer: { findUnique: jest.fn(async () => ({ stripe_customer_id: 'cus_own' })) },
+      guestCheckout: { update: jest.fn(async () => ({})) },
+    };
+    const stripe: any = {
+      createCustomer: jest.fn(async () => ({ id: 'cus_guest_new' })),
+      createSubscription: jest.fn(async () => ({
+        id: 'sub_paid01',
+        latest_invoice: { payment_intent: { id: 'pi_paid01', client_secret: 'pi_paid01_secret_q' } },
+      })),
+    };
+    const checkout = { ensurePriceForPackage: jest.fn(async () => 'price_monthly01') };
+    const service: any = new GuestCheckoutService(db, stripe, cast({}), cast({ get: () => undefined }), cast({}), cast(checkout), cast({}));
+    const out = await service.mintRecurringForGuest({
+      pkg: { id: PKG, coach_id: COACH },
+      connectAccount: { stripe_account_id: 'acct_coach01' },
+      sentinelId: 'gc-sentinel-1',
+      idempotencyKey: 'idem-key-mint-1',
+      guestEmail: 'jane@example.com',
+      guestName: 'Jane',
+      isCombo: false,
+      trialDays: 0,
+      buyerVerdict: verdict,
+    });
+    expect(out.customerId).toBe(customer);
+    expect(stripe.createCustomer).toHaveBeenCalledTimes(creates);
+    expect(stripe.createSubscription).toHaveBeenCalledWith(expect.objectContaining({ customer }));
   });
 
   it('a legacy purchase whose trial started (no ledger row) also refuses — the in-app eligibility read', async () => {
