@@ -2568,12 +2568,13 @@ ${lines}</body></html>`,
       if (res.ok) return null;
       if (res.status === 409) {
         // Only the error name is read; the body is never logged.
-        const name = await res
-          .json()
-          .then((b: unknown) =>
-            b && typeof (b as { name?: unknown }).name === 'string' ? (b as { name: string }).name : null,
-          )
-          .catch(() => null);
+        let name: string | null = null;
+        try {
+          const parsed: unknown = await res.json();
+          if (parsed && typeof (parsed as { name?: unknown }).name === 'string') name = (parsed as { name: string }).name;
+        } catch (err) {
+          this.logger.warn(`Resend 409 answer unreadable for ${checkoutId} (tag=${safeErrorTag(err)})`);
+        }
         if (name === 'invalid_idempotent_request') {
           // Resend keeps a key only for a request it accepted: an earlier
           // try of this outcome went out. Recorded as sent, never resent.
