@@ -651,7 +651,7 @@ describe('GC-3 — web page trials: card saved, nothing charged that day, one tr
   it('LS-1201 B2: a refused web trial with its subscription canceled is not an active subscriber when the coach archives', async () => {
     const world = makeDb();
     const { service, stripe } = build(world);
-    const gc = world.addCheckout();
+    const gc = world.addCheckout({ created_user_id: null });
     const buyer = await world.db.user.upsert({
       where: { supabase_id: 'sb-jane' },
       create: {
