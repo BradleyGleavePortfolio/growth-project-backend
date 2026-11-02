@@ -72,7 +72,8 @@ const writes: Form[] = [
   ['Object.assign into the holder of the held property', `${AUTHORED}
     export function read(p: any) {
       const holder: { where: object } = { where: {} };
-      Object.assign(holder, { where: { community_posts_authored: authored } });
+      const filters = { community_posts_authored: authored };
+      Object.assign(holder, { where: filters });
       return p.user.findMany({ where: holder.where });
     }`, 'read'],
   ['Object.defineProperty with a constant key', `${AUTHORED} const KEY = 'community_posts_authored';
