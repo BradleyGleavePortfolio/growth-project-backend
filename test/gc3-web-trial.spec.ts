@@ -1380,4 +1380,37 @@ describe('TRIAL-WORDS-BE — the return page while a web trial starts', () => {
     },
   );
 
+  it.each(['response lost', 'sent receipt write lost'])(
+    'LS-1199R2 B2: an accepted outcome email is not sent twice after %s',
+    async (failure) => {
+      const { world, gc, service } = trialWorld({ status: 'failed' });
+      const accepted: string[] = [];
+      const providerKeys = new Set<string>();
+      let first = true;
+      global.fetch = cast<typeof fetch>(jest.fn(async (_url: unknown, init?: RequestInit) => {
+        const key = new Headers(init?.headers).get('Idempotency-Key');
+        if (!key || !providerKeys.has(key)) {
+          accepted.push(String(init?.body));
+          if (key) providerKeys.add(key);
+        }
+        if (first && failure === 'response lost') {
+          first = false;
+          throw new Error('response connection lost after acceptance');
+        }
+        return { ok: true, status: 200, json: async () => ({ id: 'provider-receipt' }) } as Response;
+      }));
+      if (failure === 'sent receipt write lost') {
+        const update = world.db.emailSendLog.update;
+        world.db.emailSendLog.update = jest.fn()
+          .mockRejectedValueOnce(new Error('database unavailable after acceptance'))
+          .mockImplementation(update);
+      }
+      await service.sendOutcomeMail(gc.id, { opening: true });
+      expect(accepted).toHaveLength(1);
+      world.mail[0].created_at = new Date(Date.now() - 2 * 60_000);
+      await cast<Private>(new GuestCheckoutReconciliationService(world.db, service)).scanOutcomeMail();
+      expect(accepted).toHaveLength(1);
+    },
+  );
+
 });
