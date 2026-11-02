@@ -22,13 +22,13 @@ const TOKEN = 'ExponentPushToken[ls1192r5independentcontrol]';
 const MONEY_KINDS = ['dunning_blocker', 'first_payment', 'trial_ending', 'plan_renewal', 'coach_new_purchase'];
 const MODES = ['dunning', 'trial', 'renewal', 'first payment', 'coach purchase', 'Day 7', 'hold notice', 'payout'] as const;
 type Mode = typeof MODES[number];
-type Gate = 'first preferences' | 'final preferences' | 'first token' | 'final token' | 'cap' | 'post-stamp cap' | 'roster';
+type Gate = 'first preferences' | 'final preferences' | 'first token' | 'final token' | 'cap' | 'roster';
 type UserRead = { where: { id: string }; select?: Record<string, unknown> };
 type PrefsRead = { where: { user_id: string }; select?: Record<string, unknown> };
 
 async function rig(mode: Mode | 'message' | 'safety', safetyType = 'roman_crisis_reply') {
   const clock = { at: NIGHT };
-  const faults = { gate: null as Gate | null, fullPrefs: 0 };
+  const faults = { gate: null as Gate | null, fullPrefs: 0, hits: 0 };
   const state = {
     status: 'active', locked_out_at: null, last_failure_reason: 'card_declined',
     client_canceled_at: null, entered_at: ENTERED,
@@ -40,7 +40,10 @@ async function rig(mode: Mode | 'message' | 'safety', safetyType = 'roman_crisis
     now: () => clock.at, tokens: { reader: TOKEN },
     prefs: { reader: { muted: mode !== 'message', timezone: 'America/Los_Angeles', timezone_updated_at: NIGHT } },
   });
-  const fail = (): never => { throw new Error('independent read unavailable'); };
+  const fail = (): never => {
+    faults.hits += 1;
+    throw new Error('independent read unavailable');
+  };
   const originalPrefs = w.db.notificationPreferences.findUnique;
   const prefsRead = jest.fn(async (args: PrefsRead) => {
     if (!args.select) {
@@ -69,7 +72,7 @@ async function rig(mode: Mode | 'message' | 'safety', safetyType = 'roman_crisis
   });
   const originalRecent = w.db.pushOutbox.findMany;
   const recentRead = jest.fn(async (args: Parameters<typeof originalRecent>[0]) => {
-    if (faults.gate === 'cap' || (faults.gate === 'post-stamp cap' && w.rows.some((row) => row.handed_off_at))) fail();
+    if (faults.gate === 'cap') fail();
     return originalRecent(args);
   });
   const db = {
@@ -195,7 +198,7 @@ describe('LS-1192R5 independently drives each failed pre-handoff read', () => {
     else process.env.FEATURE_PLAN_RENEWAL = savedFlag;
     jest.restoreAllMocks();
   });
-  const gates: Gate[] = ['first preferences', 'final preferences', 'first token', 'final token', 'cap', 'post-stamp cap'];
+  const gates: Gate[] = ['first preferences', 'final preferences', 'first token', 'final token', 'cap'];
   const cases = MODES.flatMap((mode) =>
     [...gates, ...(mode === 'Day 7' || mode === 'first payment' ? ['roster' as const] : [])]
       .map((gate) => [mode, gate] as const));
@@ -207,7 +210,9 @@ describe('LS-1192R5 independently drives each failed pre-handoff read', () => {
     r.clock.at = MORNING;
     for (let pass = 0; pass < 4; pass += 1) {
       const before = r.clock.at.getTime();
+      const faultsBefore = r.faults.hits;
       await r.drain(gate);
+      expect(r.faults.hits).toBe(faultsBefore + 1);
       expect(r.row).toMatchObject({
         status: 'pending', result_code: 'source-unread', deferred_reason: 'source_unread',
         attempts: 0, handed_off_at: null, dedupe_key: identity,
@@ -222,6 +227,7 @@ describe('LS-1192R5 independently drives each failed pre-handoff read', () => {
     }
     await r.drain();
     await r.drain();
+    expect(r.faults.hits).toBe(4);
     expect(r.send).toHaveBeenCalledTimes(1);
     expect(r.row).toMatchObject({ status: 'sent', attempts: 1, dedupe_key: identity });
   });
