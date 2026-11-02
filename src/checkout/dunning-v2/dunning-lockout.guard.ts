@@ -169,6 +169,31 @@ const COACH_THREAD_OPERATIONS: ReadonlyArray<readonly [method: string, path: str
 ] as const;
 
 /**
+ * The locked client's own phone (C-PF-2, PF-3-BE): registering this phone's
+ * push token and clearing it at sign-out (`PATCH users/me/push-token`, token
+ * null), the same route the age gate lets through (@AllowBeforeAgeConfirmed,
+ * FIXAGE2 R5). Without it a locked client's phone keeps no token, so the
+ * payment reminders that tell them how to unlock never reach it, and sign-out
+ * leaves the token on the account. Exact METHOD + normalized PATH; every other
+ * `users/*` route stays locked. Sign-out itself is under `auth` (above).
+ *
+ * FR-1192 (F2, LS-1192 B2): and this phone's time zone (`PUT
+ * notifications/timezone`): it writes only the signed-in user's own zone, and
+ * only a valid IANA name (NotificationsService.setTimeZone). Refused, the
+ * worker keeps the old zone and a payment reminder held for quiet hours wakes
+ * the client at night. Every other `notifications/*` route stays locked.
+ */
+const OWN_DEVICE_OPERATIONS: ReadonlyArray<readonly [method: string, path: string]> = [
+  ['PATCH', 'users/me/push-token'], // UsersController.updatePushToken
+  ['PUT', 'notifications/timezone'], // NotificationsController.setTimeZone
+] as const;
+
+/** True for the locked client's own-phone operations (OWN_DEVICE_OPERATIONS). */
+export function isOwnDeviceOperationWhileLocked(method: string | undefined, path: string): boolean {
+  return matchesOperation(OWN_DEVICE_OPERATIONS, method, path);
+}
+
+/**
  * Marked basic-function routes that still lock: AI guidance (/ai/*) is Roman's
  * guide and draws on the coach's AI pool, so it stays locked exactly as before.
  */
@@ -218,6 +243,7 @@ export class DunningLockoutGuard implements CanActivate {
     if (isCoachThreadOperationWhileLocked(req.method, path)) return true;
     if (isBasicFunctionWhileLocked(this.isMarkedOpen(context), path)) return true;
     if (isAgeConfirmationWhileLocked(req.method, path, (req as { body?: unknown }).body)) return true;
+    if (isOwnDeviceOperationWhileLocked(req.method, path)) return true;
 
     const userId = req.user?.id;
     if (!userId) return true; // unauthenticated routes are handled by auth guards

@@ -664,6 +664,24 @@ describe('mute and inbox pin (private per user)', () => {
     expect(off.messageReceived.emit).toHaveBeenCalledTimes(1);
   });
 
+  it('FR-1192 (R1): the push names its thread, so a mute while it is held stops it; flag OFF it does not', async () => {
+    on();
+    const t = build();
+    await t.messaging.sendAsClient(CLIENT, 'hi');
+    await flush();
+    await flush();
+    expect(t.messageReceived.emit).toHaveBeenCalledWith(
+      COACH,
+      expect.objectContaining({ senderId: CLIENT, coachThread: { coachId: COACH, clientId: CLIENT } }),
+    );
+    delete process.env.FEATURE_MESSAGING_CORE_V2;
+    const off = build();
+    await off.messaging.sendAsClient(CLIENT, 'hi');
+    await flush();
+    expect(off.messageReceived.emit).toHaveBeenCalledTimes(1);
+    expect(off.messageReceived.emit.mock.calls[0][1]).not.toHaveProperty('coachThread');
+  });
+
   it('inbox pins cap at 5 per user', async () => {
     const t = build();
     t.tx.coachThreadState.count.mockResolvedValueOnce(5);

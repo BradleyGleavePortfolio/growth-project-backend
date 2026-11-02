@@ -15,13 +15,20 @@ import {
 import { PushContext, SAFETY_ALERT_PUSH_BODY, lockScreenCopy } from './lock-screen-copy';
 import { androidChannelFor } from './push-channels';
 import { quietHoursFor } from './push-quiet-hours';
-import { pushAllowedByPreferences } from './push-preferences';
+import { muteAllStops, pushAllowedByPreferences } from './push-preferences';
 import { usableTimeZone } from '../local-time';
 import { resolveRecipientTimeZone } from '../recipient-timezone';
 import { pushStillCurrent } from '../current-coach-inbox';
 import { planRenewalPushStillDue } from '../../checkout/plan-renewal/plan-renewal.state';
 import { asSpacePushContext, spacePushExpoFields } from '../../community/space-push/space-push-policy';
 import { spacePushDropReason } from '../../community/space-push/space-push-still-due';
+import {
+  HeldPushSource,
+  asHeldPushSource,
+  heldPushDropReason,
+  heldPushStillOwed,
+  isMoneyPush,
+} from './held-push-source';
 
 // Device delivery for inbox notifications (C-643-2), through a durable
 // outbox (B-NOTIF-5: B-648-1, B-648-6, C-648-4 / OR-113-5, C-648-5).
@@ -82,6 +89,13 @@ import { spacePushDropReason } from '../../community/space-push/space-push-still
 //     per hour per process. iOS delivery is not affected.
 //   - Receipts are read from the outbox rows 2+ minutes after the send, so a
 //     restart loses none (C-648-5). Rows are kept RETENTION_MS, then deleted.
+//   - One send path (PF-3-BE): every device push in the app goes through this
+//     queue; NotificationsService.pushToUser enqueues here too. Such a push
+//     keeps its sender's own title, body and tap data (senderWords) and the
+//     sender's own switch rule (muteAllOnly: only Mute all stops it). A push
+//     that names another person (otherUserId) is not sent if either side
+//     blocked the other while it waited (KG-HELD-BLOCK-MESSAGE), nor
+//     (FR-1192) after a ban in its community or a mute of its thread.
 
 export const EXPO_PUSH_CLIENT = Symbol('EXPO_PUSH_CLIENT');
 export type { ExpoPushClient } from './expo-push-client';
@@ -97,6 +111,8 @@ export const RECEIPT_DEADLINE_MS = 15_000;
 export const LEASE_MS = 2 * 60_000;
 export const MAX_ATTEMPTS = 3;
 export const RETRY_BACKOFF_MS = [30_000, 2 * 60_000, 10 * 60_000];
+/** FR-1192R3: a push whose source could not be read is asked again on the next pass (the minute sweep). */
+export const SOURCE_RECHECK_MS = 60_000;
 /** Rows one drain works through at most (the next sweep takes the rest). */
 export const MAX_ROWS_PER_DRAIN = 500;
 export const RETENTION_MS = 30 * 24 * 60 * 60_000;
@@ -112,6 +128,19 @@ export interface EnqueueResult {
   notBefore: Date;
 }
 
+/**
+ * What a sender stores with its push for the moment of sending (PF-3-BE), on
+ * top of the lock-screen context.
+ */
+export interface SendPathContext extends HeldPushSource {
+  /** The lock screen shows the row's own title and body, and the tap data as given. */
+  senderWords?: true;
+  /** The sender's switch is Mute all alone (it has no per-kind switch). */
+  muteAllOnly?: true;
+}
+
+export type OutboxContext = PushContext & SendPathContext;
+
 export interface EnqueuePush {
   userId: string;
   kind: string;
@@ -119,7 +148,7 @@ export interface EnqueuePush {
   body: string;
   /** Tap routing for the mobile pushTapRouter: ids and enums only, never user text. */
   data: Record<string, unknown>;
-  context?: PushContext | null;
+  context?: OutboxContext | null;
   /** Exactly-once identity of the event, when it has one. */
   dedupeKey?: string | null;
   /** Same-conversation repeats share this key. */
@@ -144,6 +173,7 @@ export type SendOutcome =
   | 'retry-scheduled'
   | 'burst-deferred'
   | 'quiet-deferred'
+  | 'source-unread'
   | 'preference-off'
   | 'token-cleanup-pending'
   | 'lease-lost';
@@ -169,7 +199,7 @@ const REMINDER_KINDS: ReadonlySet<string> = new Set([
   NotificationKind.BOOKING_REMINDER_1H,
 ]);
 
-function asContext(v: Prisma.JsonValue | null): PushContext | null {
+function asContext(v: Prisma.JsonValue | null): OutboxContext | null {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
   const o = v as Record<string, unknown>;
   const str = (k: string) => (typeof o[k] === 'string' ? (o[k] as string) : undefined);
@@ -190,7 +220,27 @@ function asContext(v: Prisma.JsonValue | null): PushContext | null {
     ...(o.spaceAlert === true ? { spaceAlert: true as const } : {}),
     // SC-PUSH: a space chat push keeps its count, kind and space.
     ...asSpacePushContext(o.spacePush),
+    // PF-3-BE: the sender's own words, its switch rule and the other person.
+    ...(o.senderWords === true ? { senderWords: true as const } : {}),
+    ...(o.muteAllOnly === true ? { muteAllOnly: true as const } : {}),
+    // ...and (FR-1192) the people, community and thread it is about.
+    ...asHeldPushSource(o),
   };
+}
+
+/**
+ * The recipient's switches for this push, the one rule enqueue and the worker
+ * share: the kind's rule (pushAllowedByPreferences), or Mute all alone for a
+ * sender with no per-kind switch (muteAllOnly).
+ */
+export function switchesAllowPush(
+  prefs: Record<string, unknown> | null | undefined,
+  kind: string,
+  context: unknown,
+): boolean {
+  const c = context && typeof context === 'object' ? (context as SendPathContext) : null;
+  if (c?.muteAllOnly === true) return !muteAllStops(prefs, kind, 'push', context);
+  return pushAllowedByPreferences(prefs, kind, context);
 }
 
 function asData(v: Prisma.JsonValue): Record<string, unknown> {
@@ -242,14 +292,16 @@ export class PushDeliveryService {
     // The row keeps only the caller's explicit urgency; quiet hours and the
     // burst cap are re-decided when it is sent (B-648-10).
     const urgent = push.urgent === true;
+    // PF-3-BE: a sender's own push keeps its words and tap data as given.
+    const own = push.context?.senderWords === true;
     const row = {
       user_id: push.userId,
       kind: push.kind,
       dedupe_key: push.dedupeKey ?? null,
       collapse_key: push.collapseKey,
-      title: push.title.slice(0, 120),
-      body: push.body.slice(0, 160),
-      data: { ...push.data, kind: push.kind } as Prisma.InputJsonValue,
+      title: own ? push.title : push.title.slice(0, 120),
+      body: own ? push.body : push.body.slice(0, 160),
+      data: (own ? { ...push.data } : { ...push.data, kind: push.kind }) as Prisma.InputJsonValue,
       context: (push.context ?? undefined) as Prisma.InputJsonValue | undefined,
       urgent,
       time_zone: usableTimeZone(push.timeZone),
@@ -441,7 +493,7 @@ export class PushDeliveryService {
   private async later(
     row: OutboxRow,
     notBefore: Date,
-    reason: 'burst_cap' | 'provider_retry' | 'quiet_hours' | 'worker_retry',
+    reason: 'burst_cap' | 'provider_retry' | 'quiet_hours' | 'source_unread' | 'worker_retry',
     code: SendOutcome,
   ): Promise<SendOutcome> {
     const res = await this.prisma.pushOutbox.updateMany({
@@ -454,8 +506,9 @@ export class PushDeliveryService {
         lease_token: null,
         handed_off_at: null,
         result_code: code,
-        // Waiting for room or for the morning is not a delivery attempt.
-        ...(reason === 'burst_cap' || reason === 'quiet_hours'
+        // Waiting for room, for the morning or for a source read is not a
+        // delivery attempt.
+        ...(reason === 'burst_cap' || reason === 'quiet_hours' || reason === 'source_unread'
           ? { attempts: { decrement: 1 } }
           : {}),
       },
@@ -479,6 +532,20 @@ export class PushDeliveryService {
       data: { handed_off_at: now, lease_until: new Date(now.getTime() + LEASE_MS) },
     });
     return res.count === 1;
+  }
+
+  /** Whether a due push is still owed by its sender's own check; 'unread' when a read fails (ruling R4). */
+  private async stillOwed(row: OutboxRow, context: OutboxContext | null): Promise<'owed' | 'ended' | 'unread'> {
+    if (row.kind === NotificationKind.PLAN_RENEWAL) {
+      let due: boolean;
+      try {
+        due = await planRenewalPushStillDue(this.prisma, row.user_id);
+      } catch {
+        return 'unread';
+      }
+      if (!due) return 'ended';
+    }
+    return context ? heldPushStillOwed(this.prisma, row.user_id, context, this.now()) : 'owed';
   }
 
   async sendOne(row: OutboxRow): Promise<SendOutcome> {
@@ -512,13 +579,24 @@ export class PushDeliveryService {
         }
       }
 
+      // KG-HELD-BLOCK-MESSAGE (PF-3-BE): a push about another person that
+      // waited (quiet hours, burst cap, retry) is not sent once either side
+      // has blocked the other (owner 10-22: a block hides all messaging).
+      // FR-1192: nor once the reader or that person is banned from the
+      // community it came from, nor once the reader muted its thread.
+      const held = context ? await heldPushDropReason(this.prisma, row.user_id, context, this.now()) : null;
+      if (held) {
+        this.logger.log(`push dropped: row=${row.id} kind=${row.kind} reason=${held}`);
+        return await this.finish(row, 'dropped', 'obsolete');
+      }
+
       // B-648-9: the recipient's CURRENT switches, the same rule as enqueue
       // (MUTE-PAY, FR-1154: a money kind, a safety alert or a stored
       // MUTE_ALL_PASS passes muted).
       const prefs = await this.prisma.notificationPreferences.findUnique({
         where: { user_id: row.user_id },
       });
-      if (!pushAllowedByPreferences(prefs as Record<string, unknown> | null, row.kind, row.context)) {
+      if (!switchesAllowPush(prefs as Record<string, unknown> | null, row.kind, row.context)) {
         return await this.finish(row, 'dropped', 'preference-off');
       }
 
@@ -564,8 +642,20 @@ export class PushDeliveryService {
       }
       // RENEWAL-BE: a renewal push whose sequence stopped while it waited (the
       // client bought, moved, was archived or refunded) is not sent.
-      if (row.kind === NotificationKind.PLAN_RENEWAL && !(await planRenewalPushStillDue(this.prisma, row.user_id))) {
+      // FR-1192R2: nor is a payment reminder (to the client, or the coach's
+      // Day 7 alert) whose dunning cycle ended, a trial-ending push whose trial
+      // converted, ended or was canceled, or (FR-1192R3) a workout reminder
+      // its sender would no longer send, by the sender's own check. A source
+      // that could not be read waits for the next pass (ruling R4).
+      const owed = await this.stillOwed(row, context);
+      if (owed === 'ended') {
+        this.logger.log(`push dropped: row=${row.id} kind=${row.kind} reason=source-ended`);
         return await this.finish(row, 'dropped', 'obsolete');
+      }
+      if (owed === 'unread') {
+        this.logger.warn(`push held: row=${row.id} kind=${row.kind} reason=source-unread`);
+        const next = new Date(this.now().getTime() + SOURCE_RECHECK_MS);
+        return await this.later(row, next, 'source_unread', 'source-unread');
       }
       const token = user?.expo_push_token ?? null;
       if (!token) return await this.finish(row, 'dropped', 'no-token');
@@ -586,7 +676,7 @@ export class PushDeliveryService {
           select: { expo_push_token: true },
         }),
       ]);
-      if (!pushAllowedByPreferences(prefsAtSend as Record<string, unknown> | null, row.kind, row.context)) {
+      if (!switchesAllowPush(prefsAtSend as Record<string, unknown> | null, row.kind, row.context)) {
         return await this.finish(row, 'dropped', 'preference-off');
       }
       const to = userAtSend?.expo_push_token ?? null;
@@ -609,18 +699,22 @@ export class PushDeliveryService {
       handedOff = true;
 
       // B-692-1: the lock screen shows only the kind's template, whatever
-      // text the row holds.
-      const copy = lockScreenCopy(
-        row.kind,
-        row.body,
-        context ? { ...context, timeZone: timeZone ?? context.timeZone } : null,
-        sendAt,
-      );
+      // text the row holds; a sender's own push (senderWords, PF-3-BE) shows
+      // the words its sender wrote, as it did before the one send path.
+      const own = context?.senderWords === true;
+      const copy = own
+        ? { title: row.title, body: row.body }
+        : lockScreenCopy(
+            row.kind,
+            row.body,
+            context ? { ...context, timeZone: timeZone ?? context.timeZone } : null,
+            sendAt,
+          );
       const message: ExpoPushMessage = {
         to,
         title: copy.title,
         body: copy.body,
-        data: { ...asData(row.data), kind: row.kind },
+        data: own ? asData(row.data) : { ...asData(row.data), kind: row.kind },
         sound: 'default',
         channelId: androidChannelFor(row.kind),
         priority: 'high',
@@ -665,6 +759,13 @@ export class PushDeliveryService {
         // Before the handoff nothing reached Expo: a database hiccup gets a
         // bounded retry instead of losing the push. After it, delivery is
         // unknown, so the row is closed (at most once).
+        // FR-1192R4 (ruling R4): for a money push, a failed read before the
+        // handoff (who may get it, or whether it may still go) is neither yes
+        // nor no: it waits like an unread source, asked again next pass.
+        if (!handedOff && isMoneyPush(row.kind, row.context)) {
+          const next = new Date(this.now().getTime() + SOURCE_RECHECK_MS);
+          return await this.later(row, next, 'source_unread', 'source-unread');
+        }
         if (!handedOff && row.attempts < MAX_ATTEMPTS) {
           const wait = RETRY_BACKOFF_MS[Math.min(row.attempts - 1, RETRY_BACKOFF_MS.length - 1)];
           return await this.later(

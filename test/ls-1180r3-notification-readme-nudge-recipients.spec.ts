@@ -93,6 +93,7 @@ describe('LS-1180R3 B1: nudge recipients are not client-only', () => {
     });
     expect(push).toHaveBeenCalledWith(
       coach.id, expect.any(String), expect.any(String), expect.objectContaining({ kind }),
+      undefined, expect.objectContaining({ kind }), // PF-3-BE: the one send path's route
     );
 
     const readme = readFileSync(join(__dirname, '../src/notifications/README.md'), 'utf8');

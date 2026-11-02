@@ -81,7 +81,9 @@ const ROWS: Array<[string, string, string, unknown, Cls, string, string | undefi
   ['download my data', 'GET', '/api/v1/me/data-export/status', undefined, DataExportController, 'getStatus', 'answers', 'answers'],
   ['a client route the lock closes', 'PATCH', '/users/me/preferences', {}, UsersController, 'patchPreferences', AGE_CONFIRMATION_REQUIRED, LOCKED_DUNNING_CODE],
   ['a basic function the lock keeps open (food targets)', 'GET', '/api/v1/me/macros/current', undefined, ClientMacrosController, 'current', AGE_CONFIRMATION_REQUIRED, 'answers'],
-  ['sign-out clears the push token (FIXAGE2 R5)', 'PATCH', '/users/me/push-token', { token: null }, UsersController, 'updatePushToken', LOCKED_DUNNING_CODE, LOCKED_DUNNING_CODE],
+  // C-PF-2 (PF-3-BE): the lock lets the phone's own push token through too
+  // (it was LOCKED_DUNNING after the age step, so sign-out left the token).
+  ['sign-out clears the push token (FIXAGE2 R5)', 'PATCH', '/users/me/push-token', { token: null }, UsersController, 'updatePushToken', 'answers', 'answers'],
 ];
 
 describe('FIXAGE2 R8: age gate then payment lock, one locked client not yet confirmed 16+', () => {

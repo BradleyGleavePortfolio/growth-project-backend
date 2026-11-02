@@ -4,6 +4,9 @@ import { Expo, ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk';
 import { ChurnInterventionService } from '../src/coach/command-center/churn-intervention.service';
 import { NotificationsService } from '../src/notifications/notifications.service';
 import { InboxBlockRule } from '../src/notifications/inbox-block-rule';
+import type { ExpoPushClient } from '../src/notifications/push/expo-push-client';
+import { PushDeliveryService } from '../src/notifications/push/push-delivery.service';
+import { pushOutboxWorld } from './utils/push-outbox-fake';
 import { stub } from './utils/trial-fakes';
 
 // B-LSNOTIFY-2 (FR-NOTIFY2, agent 177; b#1171 AUDIT 6426427779) — contract:
@@ -14,7 +17,8 @@ import { stub } from './utils/trial-fakes';
 // the row is not listed, counted or marked; unblock brings it back.
 //
 // Real ChurnInterventionService.sendIntervention, real
-// NotificationsService.pushToUser (Expo transport spied) and the real inbox
+// NotificationsService.pushToUser, the real push outbox (PF-3-BE: the one send
+// path; its Expo transport is the fake) and the real inbox
 // reads (listNotifications / getUnreadCount, with the real current-coach inbox
 // rule). Only storage is a fake, which evaluates the inbox query's where.
 //
@@ -100,8 +104,17 @@ function world(opts: { muted?: boolean; token?: string | null } = {}) {
     coachNudge: { create: jest.fn(async (a: { data: Row }) => (nudges.push(a.data), a.data)) },
     notification,
   };
+  // PF-3-BE: the push outbox the pushes queue in (no zone known: no quiet hours).
+  const outbox = pushOutboxWorld({ now: () => new Date() });
+  // The worker's token handoff reads the same token the user row holds.
+  if (opts.token !== null) outbox.tokens[CLIENT] = opts.token === undefined ? TOKEN : opts.token;
   const db = {
+    ...outbox.db,
     ...tx,
+    // The outbox worker's lease claim is raw SQL on PushOutbox; the rest is the service's own read.
+    $queryRaw: jest.fn(async (sql: TemplateStringsArray, ...values: unknown[]) =>
+      sql.join('').includes('"PushOutbox"') ? outbox.db.$queryRaw(sql, ...values) : tx.$queryRaw(),
+    ),
     churnIntervention: {
       ...tx.churnIntervention,
       findFirst: jest.fn(async (a: { where: Row }) =>
@@ -112,8 +125,12 @@ function world(opts: { muted?: boolean; token?: string | null } = {}) {
       ),
     },
     notificationPreferences: { findUnique: jest.fn(async () => (opts.muted ? { muted: true } : null)) },
-    userBlock: { findMany: jest.fn(async (a: { where: Row }) => blocks.filter((b) => matches(b, a.where))) },
+    userBlock: {
+      findMany: jest.fn(async (a: { where: Row }) => blocks.filter((b) => matches(b, a.where))),
+      findFirst: jest.fn(async (a: { where: Row }) => blocks.find((b) => matches(b, a.where)) ?? null),
+    },
     user: {
+      ...outbox.db.user,
       findUnique: jest.fn(async () => ({
         role: 'student',
         expo_push_token: opts.token === undefined ? TOKEN : opts.token,
@@ -132,8 +149,14 @@ function world(opts: { muted?: boolean; token?: string | null } = {}) {
     }),
   };
   // As NotificationsModule wires it: the inbox's block rule (B-LONOTIFY3-1).
+  const transport = stub<ExpoPushClient>({
+    send: queuedSend,
+    getReceipts: jest.fn(async () => ({})),
+  });
+  const delivery = new PushDeliveryService(stub<ConstructorParameters<typeof PushDeliveryService>[0]>(db), transport);
+  delivery.autoDrain = false;
   const notifications = new NotificationsService(
-    stub<ConstructorParameters<typeof NotificationsService>[0]>(db), undefined, undefined, undefined,
+    stub<ConstructorParameters<typeof NotificationsService>[0]>(db), undefined, undefined, delivery,
     new InboxBlockRule(stub<ConstructorParameters<typeof InboxBlockRule>[0]>(db)),
   );
   const direct = jest.spyOn(notifications, 'pushToUser');
@@ -154,12 +177,15 @@ function world(opts: { muted?: boolean; token?: string | null } = {}) {
     /** What reached the Expo transport, after the fire-and-forget push settles. */
     delivered: async () => {
       const results = await Promise.all(direct.mock.results.map((r) => r.value));
-      return { results, sent: expoSend.mock.calls.flatMap(([chunk]) => chunk) };
+      await delivery.drain(); // PF-3-BE: the outbox sends what was queued
+      return { results, sent: queuedSend.mock.calls.flatMap(([chunk]) => chunk) };
     },
   };
 }
 
 let expoSend: jest.SpyInstance<Promise<ExpoPushTicket[]>, [ExpoPushMessage[]]>;
+/** The outbox's transport (PF-3-BE): what the one send path sent. */
+let queuedSend: jest.Mock<Promise<ExpoPushTicket[]>, [ExpoPushMessage[]]>;
 
 // A 1000-character message (the send limit) that names private things.
 const MESSAGE = `Hi Alice, your weigh-in is up 3 kg and you missed two sessions. ${'Call me tonight about the plan. '.repeat(40)}`
@@ -174,6 +200,7 @@ describe('B-LSNOTIFY-2 contract: churn nudge -> generic push -> client inbox row
     jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
   });
   beforeEach(() => {
+    queuedSend = jest.fn(async (chunk: ExpoPushMessage[]) => chunk.map(() => ({ status: 'ok' as const, id: 'ticket' })));
     expoSend = jest
       .spyOn(Expo.prototype, 'sendPushNotificationsAsync')
       .mockImplementation(async (chunk) => chunk.map(() => ({ status: 'ok' as const, id: 'ticket' })));
@@ -188,8 +215,9 @@ describe('B-LSNOTIFY-2 contract: churn nudge -> generic push -> client inbox row
     const w = world();
     const out = await w.send(MESSAGE);
     const { results, sent } = await w.delivered();
-    expect(results).toEqual([{ delivered: true, code: 'delivered' }]);
+    expect(results).toEqual([{ delivered: true, code: 'delivered', detail: 'queued' }]);
     expect(sent).toHaveLength(1);
+    expect(expoSend).not.toHaveBeenCalled(); // no direct Expo send
 
     // 1) Lock screen (CPC-W2, owner 10-27 DECISIONS #178-3): the new-message
     //    line, nothing from the message.

@@ -88,15 +88,10 @@ export interface FunnelSite {
 }
 
 export type KnownGapId =
-  | 'KG-AI-SEND-PUSH'
-  | 'KG-QH-CHURN'
-  | 'KG-QH-SCOUT'
-  | 'KG-QH-COMMUNITY'
-  | 'KG-QH-DUNNING-CLIENT'
-  | 'KG-QH-PAYOUT'
-  | 'KG-QH-TRIAL'
-  | 'KG-QH-WORKOUT-REMINDER'
-  | 'KG-HELD-BLOCK-MESSAGE';
+  // FR-1192R3 (b#1192, every push through the one outbox): KG-QH-CHURN, KG-QH-SCOUT, KG-QH-COMMUNITY,
+  // KG-QH-DUNNING-CLIENT, KG-QH-PAYOUT, KG-QH-TRIAL, KG-QH-WORKOUT-REMINDER and KG-HELD-BLOCK-MESSAGE are fixed
+  // there and deleted here (KT-4 items 4 and 7).
+  | 'KG-AI-SEND-PUSH';
 
 /** An outcome the spec measures: a push sent now, a push held to 08:00 local, or nothing. */
 export type Outcome = 'sent' | 'held' | 'none';
@@ -120,8 +115,14 @@ export interface KnownGap {
 
 /** This PR; the AUDIT link for the gaps this registry found. */
 export const THIS_PR = 'https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/1186';
-const QH_DIRECT =
-  'NotificationsService.pushToUser goes straight to Expo, not through the outbox, so quietHoursFor never runs; the funnel would hold this push to 08:00';
+/**
+ * FR-1192R3: pushToUser (and sendCommunityPush, which calls it) queues through PushDeliveryService.enqueue since
+ * b#1192, so a push inside quiet hours waits for 08:00 like every funnel push.
+ */
+const QH_OUTBOX: Rule = {
+  does: 'held',
+  why: 'held to 08:00 by the one push outbox (b#1192): pushToUser queues it, quietHoursFor (the QuietHoursPolicy window) sets not_before',
+};
 
 export const KNOWN_GAPS: Record<KnownGapId, KnownGap> = {
   'KG-AI-SEND-PUSH': {
@@ -131,83 +132,6 @@ export const KNOWN_GAPS: Record<KnownGapId, KnownGap> = {
     audit:
       'failing test on btest/LO-1180R4B-ai-send-notification-push @ 3cd02633, run https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/40929701633',
     tripwire: { file: 'src/ai/gateway/materialisers/send-notification.materialiser.ts', fn: 'SendNotificationMaterializer.materialize', has: 'notificationRow', lacks: 'sendPush' },
-  },
-  'KG-QH-CHURN': {
-    where: 'src/coach/command-center/churn-intervention.service.ts:ChurnInterventionService.sendIntervention',
-    rule: 'quiet hours',
-    why: `the coach's check-in message pushes the client at 23:30 their time; ${QH_DIRECT}`,
-    audit: THIS_PR,
-    today: 'sent',
-  },
-  'KG-QH-SCOUT': {
-    where: 'src/scout/scout.service.ts:ScoutService.notifyComplete',
-    rule: 'quiet hours',
-    why: `the import-finished push reaches the coach at 23:30 their time; ${QH_DIRECT}`,
-    audit: THIS_PR,
-    today: 'sent',
-  },
-  'KG-QH-COMMUNITY': {
-    where: 'src/community/notifications/community-notifications.service.ts:CommunityNotificationsService.sendCommunityPush',
-    rule: 'quiet hours',
-    why: `a community DM, reply, event, challenge, moderation or cohort push (FEATURE_COMMUNITY_PUSH) goes out at 23:30; ${QH_DIRECT}`,
-    audit: THIS_PR,
-    today: 'sent',
-  },
-  'KG-QH-DUNNING-CLIENT': {
-    where: 'src/checkout/dunning-v2/dunning-v2.dispatcher.ts:DunningV2Dispatcher.sendClientPush',
-    rule: 'quiet hours',
-    why: `the client's failed-payment push goes out when the webhook or sweep runs, at any local hour; ${QH_DIRECT}`,
-    audit: THIS_PR,
-    today: 'sent',
-  },
-  'KG-QH-PAYOUT': {
-    where: 'src/checkout/payout-notice.service.ts:PayoutNoticeService.deliverPush',
-    rule: 'quiet hours',
-    why: `the coach's payout notice push goes out when the refund or dispute lands, at any local hour; ${QH_DIRECT}`,
-    audit: THIS_PR,
-    tripwire: {
-      file: 'src/checkout/payout-notice.service.ts',
-      fn: 'PayoutNoticeService.deliverPush',
-      has: 'pushToUser',
-      lacks: 'sendPush',
-      textLacks: /QuietHoursPolicy|quietHoursFor/,
-    },
-  },
-  'KG-QH-TRIAL': {
-    where: 'src/packages/trials/trial-notice.service.ts:TrialNoticeService.deliverPush',
-    rule: 'quiet hours',
-    why: `the trial-ending push goes out on the 10-minute UTC sweep, at any local hour; ${QH_DIRECT}`,
-    audit: THIS_PR,
-    tripwire: {
-      file: 'src/packages/trials/trial-notice.service.ts',
-      fn: 'TrialNoticeService.deliverPush',
-      has: 'pushToUser',
-      lacks: 'sendPush',
-      textLacks: /QuietHoursPolicy|quietHoursFor/,
-    },
-  },
-  'KG-QH-WORKOUT-REMINDER': {
-    where: 'src/engagement/workout-reminder.service.ts:WorkoutReminderService.processClient',
-    rule: 'quiet hours',
-    why: `the "morning" slot opens at 07:00 local (REMINDER_SLOT_MINUTES), inside quiet hours; ${QH_DIRECT}`,
-    audit: THIS_PR,
-    tripwire: {
-      file: 'src/engagement/workout-reminder.service.ts',
-      fn: 'WorkoutReminderService.processClient',
-      has: 'pushToUser',
-      lacks: 'sendPush',
-      textLacks: /QuietHoursPolicy|quietHoursFor/,
-    },
-  },
-  'KG-HELD-BLOCK-MESSAGE': {
-    where: 'src/messaging/messaging.service.ts:MessagingService.notifyNewMessage',
-    rule: 'block and ban',
-    why: 'a coach and client message push held to 08:00 is sent even if one side blocked the other while it waited: at send time the push outbox (push-delivery.service.ts) plans again only space pushes (spacePushDropReason), so the block is never read (owner 10-22: a block hides all messaging)',
-    audit: THIS_PR,
-    // FR-1186R2 (LO-1186R2 C2): driven by the heldMessage driver through the real outbox worker (held at 23:30, the
-    // block made while it waits, sent at 08:00). The tripwire stays as a second check on the worker's text.
-    today: 'sent',
-    tripwire: { file: 'src/notifications/push/push-delivery.service.ts', textLacks: /userBlock|isEitherSideBlocked/ },
   },
 };
 
@@ -227,12 +151,10 @@ const OWN_COACH: Rule = { does: 'n/a', why: 'coach and own client on a paid rela
 const ROW_NOT_DRIVEN = 'in-app row only: the spec writes every kind through createNotification with Mute all on (row kept)';
 
 export const FUNNEL_SITES: FunnelSite[] = [
-  { file: 'src/notifications/notifications.service.ts', fn: '<module>', via: 'transport', what: 'imports the Expo SDK for pushToUser, pushToCoach and receipts' },
+  { file: 'src/notifications/notifications.service.ts', fn: '<module>', via: 'transport', what: 'imports the Expo SDK for the token check in pushToUser' },
   { file: 'src/notifications/notifications.service.ts', fn: 'NotificationsService.createNotification', via: 'notificationRow', what: 'the in-app gate: <prefix>_<channel> switches, the push-channel throttle, the push twin' },
   { file: 'src/notifications/notifications.service.ts', fn: 'NotificationsService.sendPush', via: 'transport', what: 'the funnel push: pushAllowedByPreferences, lock-screen copy, the zone, then PushDeliveryService.enqueue' },
-  { file: 'src/notifications/notifications.service.ts', fn: 'NotificationsService.pushToUser', via: 'transport', what: 'direct Expo push; reads no preference and no quiet hours (each caller is a row below)' },
-  { file: 'src/notifications/notifications.service.ts', fn: 'NotificationsService.pushToCoach', via: 'transport', what: 'direct Expo push; no caller on main' },
-  { file: 'src/notifications/notifications.service.ts', fn: 'NotificationsService.pollReceipts', via: 'transport', what: 'reads Expo receipts for direct pushes; sends nothing' },
+  { file: 'src/notifications/notifications.service.ts', fn: 'NotificationsService.pushToUser', via: 'transport', what: 'checks the token, then queues through PushDeliveryService.enqueue (b#1192); the outbox worker applies quiet hours and the send-time checks (each caller is a row below)' },
   { file: 'src/notifications/push/expo-push-client.ts', fn: '<module>', via: 'transport', what: 'the outbox worker transport (Expo SDK)' },
   { file: 'src/notifications/push/push-delivery.service.ts', fn: '<module>', via: 'transport', what: 'the outbox worker (types from the Expo SDK)' },
   { file: 'src/notifications/push/push-delivery.service.ts', fn: 'PushDeliveryService.enqueue', via: 'transport', what: 'writes the PushOutbox row: quietHoursFor sets not_before; the send step checks Mute all again' },
@@ -300,7 +222,7 @@ const COMMUNITY_VIA_RELAY = (fn: string, file: string, kind: string, recipient: 
   kinds: [kind],
   sends: 'push row + push (sendCommunityPush, FEATURE_COMMUNITY_PUSH)',
   muteAll: { does: 'stops', why: 'sendCommunityPush reads channelGate and skips the push when muted; the row stays' },
-  quietHours: { does: 'held', why: 'the rule: held to 08:00', gap: 'KG-QH-COMMUNITY' },
+  quietHours: QH_OUTBOX,
   mute: NO_MUTE,
   blockBan,
   recipient,
@@ -399,7 +321,7 @@ export const SENDERS: SenderRow[] = [
     kinds: ['dunning_payment', 'dunning_dispute (pushToUser data kinds)'],
     sends: 'push (pushToUser)',
     muteAll: { does: 'passes', why: 'money notice; pushToUser reads no preference (owner #171-3)' },
-    quietHours: { does: 'held', why: 'the rule: held to 08:00', gap: 'KG-QH-DUNNING-CLIENT' },
+    quietHours: QH_OUTBOX,
     mute: NO_MUTE,
     blockBan: NO_ACTOR,
     recipient: 'the client whose payment failed',
@@ -440,7 +362,7 @@ export const SENDERS: SenderRow[] = [
     kinds: ['coach_alert'],
     sends: 'push twin row + push (pushToUser)',
     muteAll: { does: 'passes', why: 'channelGate with MUTE_ALL_PASS (README note 1)' },
-    quietHours: { does: 'held', why: 'the rule: held to 08:00', gap: 'KG-QH-PAYOUT' },
+    quietHours: QH_OUTBOX,
     mute: NO_MUTE,
     blockBan: NO_ACTOR,
     recipient: 'the coach a refund or dispute takes money from',
@@ -549,14 +471,13 @@ export const SENDERS: SenderRow[] = [
     mute: { does: 'stops', why: 'with messaging core v2 on, a recipient who muted the thread is told nothing (isThreadMutedFor)' },
     blockBan: {
       does: 'stops',
-      why: 'the send path refuses a blocked pair either way (isEitherSideBlocked) before the message and the notice; a push held for quiet hours is not checked again',
-      gap: 'KG-HELD-BLOCK-MESSAGE',
+      why: 'the send path refuses a blocked pair either way (isEitherSideBlocked) before the message and the notice; a push held for quiet hours is checked again when it goes (b#1192: the emitter passes senderId, heldPushDropReason reads the block both ways)',
     },
     recipient: "the other side of the coach and client thread (a client's reply tells their assigned coach)",
     funnel: [{ kind: NotificationKind.MESSAGE_RECEIVED, muteAll: 'stops', quietHours: 'held', note: 'not urgent' }],
     driver: 'heldMessage',
     covered:
-      'funnel table here; heldMessage driver here (a push held at 23:30, then a block, then the real outbox worker at 08:00: KG-HELD-BLOCK-MESSAGE); test/messaging/messaging-core-v2.spec.ts drives the thread mute and the send-path block',
+      'funnel table here; heldMessage driver here (a push held at 23:30, then a block, then the real outbox worker at 08:00 sends nothing); test/messaging/messaging-core-v2.spec.ts drives the thread mute and the send-path block',
   },
   // ── Coach tools ───────────────────────────────────────────────────────────────────────────────
   {
@@ -597,7 +518,7 @@ export const SENDERS: SenderRow[] = [
     kinds: ['coach_nudge'],
     sends: 'coach nudge + its inbox row written in the send transaction (full text, b#1171) + push (pushToUser, lock screen reads as a new message)',
     muteAll: { does: 'stops', why: 'muteAllStopsNudgePush reads muted; the nudge and its inbox row stay (owner #171-3)' },
-    quietHours: { does: 'held', why: 'the rule: held to 08:00', gap: 'KG-QH-CHURN' },
+    quietHours: QH_OUTBOX,
     mute: NO_MUTE,
     blockBan: {
       does: 'stops',
@@ -614,12 +535,26 @@ export const SENDERS: SenderRow[] = [
     kinds: ['import.complete (pushToUser data kind)'],
     sends: 'push (pushToUser)',
     muteAll: { does: 'stops', why: "muteAllStops(prefs, 'import.complete', 'push')" },
-    quietHours: { does: 'held', why: 'the rule: held to 08:00', gap: 'KG-QH-SCOUT' },
+    quietHours: QH_OUTBOX,
     mute: NO_MUTE,
     blockBan: { does: 'n/a', why: "the coach is told about their own import" },
     recipient: 'the coach who ran the import',
     driver: 'scoutImport',
     covered: 'scoutImport driver here; test/mute-all-ordinary-senders.spec.ts',
+  },
+  {
+    // FR-1192R3: b#1192 moved pushToCoach off the Expo transport onto pushToUser, so it is a sender now.
+    file: 'src/notifications/notifications.service.ts',
+    fn: 'NotificationsService.pushToCoach',
+    via: ['pushToUser'],
+    kinds: ['coach_alert'],
+    sends: 'push (pushToUser)',
+    muteAll: { does: 'stops', why: 'route kind coach_alert, no Mute all pass: the outbox worker reads the switch and Mute all when it sends' },
+    quietHours: QH_OUTBOX,
+    mute: NO_MUTE,
+    blockBan: NO_ACTOR,
+    recipient: 'the coach the caller names (no caller on main, LO-1192R2 N1)',
+    covered: 'not driven here (no caller); src/notifications/notifications-category.spec.ts drives its tap data',
   },
   // ── Community ─────────────────────────────────────────────────────────────────────────────────
   COMMUNITY_VIA_RELAY('CommunityChallengesService.updateProgress', 'src/community/challenges/community-challenges.service.ts', 'community_challenge_milestone', 'the participant who reached the milestone', { does: 'n/a', why: "the participant's own progress" }),
@@ -635,7 +570,7 @@ export const SENDERS: SenderRow[] = [
     kinds: ['community_dm_received', 'community_post_replied', 'community_event_starting_soon', 'community_challenge_milestone', 'community_moderation_action_against_me', 'community_message_received'],
     sends: 'push row + push (pushToUser), behind FEATURE_COMMUNITY_PUSH',
     muteAll: { does: 'stops', why: "channelGate(recipient, kind, 'push') === 'muted' skips the push; the row stays" },
-    quietHours: { does: 'held', why: 'the rule: held to 08:00', gap: 'KG-QH-COMMUNITY' },
+    quietHours: QH_OUTBOX,
     mute: { does: 'n/a', why: 'the callers pick recipients (the cohort caller skips notify level quiet)' },
     blockBan: { does: 'n/a', why: 'the callers check blocks and bans (rows above)' },
     recipient: 'the recipient its caller names',
@@ -678,7 +613,10 @@ export const SENDERS: SenderRow[] = [
     kinds: ['workout_reminder'],
     sends: 'inapp + push (pushToUser)',
     muteAll: { does: 'stops', why: 'pushAllowedByPreferences before pushToUser; the row stays' },
-    quietHours: { does: 'held', why: 'the rule: held to 08:00', gap: 'KG-QH-WORKOUT-REMINDER' },
+    quietHours: {
+      does: 'passes',
+      why: 'own time by the owner\'s "Push: agreed" (PF-3-BE, 10-30): "The 7th, the morning workout reminder (07:00, the client\'s own answer \"morning\"), keeps 07:00." pushToUser queues it in the one outbox (b#1192), where quietHoursFor never moves workout_reminder',
+    },
     mute: NO_MUTE,
     blockBan: { does: 'n/a', why: "the client's own plan" },
     recipient: 'a client who finished onboarding, on a plan day, inside their slot window',
@@ -900,7 +838,7 @@ export const SENDERS: SenderRow[] = [
     kinds: ['trial_ending'],
     sends: 'push (pushToUser)',
     muteAll: { does: 'passes', why: 'money: pushAllowedByPreferences with MUTE_ALL_PASS' },
-    quietHours: { does: 'held', why: 'the rule: held to 08:00', gap: 'KG-QH-TRIAL' },
+    quietHours: QH_OUTBOX,
     mute: NO_MUTE,
     blockBan: NO_ACTOR,
     recipient: 'the client whose trial ends',

@@ -178,6 +178,8 @@ describe('BroadcastDispatcherService.deliverOne', () => {
     expect(h.emitter.emit).toHaveBeenCalledWith('client-1', {
       senderName: 'Coach Bradley',
       threadId: 'client-1',
+      // FR-1192 (LS C2): the author, so a held push re-checks the block.
+      senderId: 'coach-a',
     });
   });
 

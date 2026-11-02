@@ -22,6 +22,7 @@ import {
 } from './trial-copy';
 
 import { trialErrorClass, trialPushCode } from './trial-diagnostics';
+import { trialNoticeSkipCode, type TrialNoticeSkipCode } from './trial-notice-truth';
 
 export { willChargeCard } from './trial-copy';
 
@@ -126,14 +127,6 @@ type Channel = 'push' | 'email';
 
 export type TrialNoticeSource = 'trial_will_end' | 'trial_start' | 'sweep';
 
-/** B-672-3 — why a notice is retired instead of sent. */
-export type TrialNoticeSkipCode =
-  | 'purchase_canceled'
-  | 'purchase_missing'
-  | 'trial_ended'
-  | 'trial_not_started'
-  | 'trial_superseded';
-
 /** B-672-3 — retirements an out-of-order event can cause; see reopen(). */
 const REOPENABLE_SKIPS = new Set([
   'skip:trial_ended',
@@ -141,23 +134,9 @@ const REOPENABLE_SKIPS = new Set([
   'skip:trial_superseded',
 ]);
 
-/**
- * B-672-3 — does the notice still describe the purchase's current trial at
- * `at`? null when it does, else the code the notice is retired with.
- */
-export function trialNoticeSkipCode(
-  notice: { trial_ends_at: Date },
-  purchase: { status: string; entitlement_active: boolean; trial_ends_at: Date | null } | null,
-  at: Date,
-): TrialNoticeSkipCode | null {
-  if (!purchase) return 'purchase_missing';
-  if (purchase.status === 'canceled') return 'purchase_canceled';
-  const end = notice.trial_ends_at.getTime();
-  if (end <= at.getTime() || purchase.status !== 'trialing') return 'trial_ended';
-  if (!purchase.entitlement_active) return 'trial_not_started';
-  if (purchase.trial_ends_at?.getTime() !== end) return 'trial_superseded';
-  return null;
-}
+// FR-1192R2: the notice's truth check lives in trial-notice-truth.ts, so the push worker asks it too.
+export { trialNoticeSkipCode };
+export type { TrialNoticeSkipCode };
 
 /** C-672-7 — the zone a trial end is written in, and whether it is the client's. */
 export type TrialNoticeZone = { timeZone: string | null; own: boolean };
@@ -752,6 +731,15 @@ export class TrialNoticeService {
             actionScreen: TRIAL_ACTION_SCREEN,
           },
           signal,
+          // PF-3-BE: the one send path re-reads the same rule when it goes,
+          // holds it to 08:00 in quiet hours, and a retry never posts twice.
+          // FR-1192R2: it asks this notice's truth again when it goes.
+          {
+            kind: NotificationKind.TRIAL_ENDING,
+            passesMuteAll: true,
+            dedupeKey: `trial_notice:${notice.id}:push`,
+            trialNotice: { noticeId: notice.id, cancelAtPeriodEnd: ready.purchase.cancel_at_period_end },
+          },
         ),
       );
       const result = sent.result;
