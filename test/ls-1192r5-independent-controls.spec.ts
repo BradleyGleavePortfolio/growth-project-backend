@@ -138,7 +138,7 @@ async function rig(mode: Mode | 'message' | 'safety', safetyType = 'roman_crisis
       context: mode === 'dunning' ? { dunning: cycle }
         : mode === 'trial' ? { trialNotice: { noticeId: 'notice', cancelAtPeriodEnd: false } }
         : null,
-    })).toBe(true);
+    })).toEqual({ code: 'deferred', notBefore: MORNING });
   }
   expect(w.rows).toHaveLength(1);
   const row = w.rows[0];
@@ -168,7 +168,7 @@ describe('LS-1192R5 money classification against kinds, persisted context and re
   ])('%s remains identifiable after a worker restart', (_name, context) => {
     expect(isMoneyPush(NotificationKind.COACH_ALERT, context)).toBe(true);
   });
-  it.each([null, [], false, 17, 'passesMuteAll', {}, { passesMuteAll: 'true' }])(
+  it.each([null, [], false, 17, 'passesMuteAll', {}, { passesMuteAll: 'true' }].map((context) => [context] as const))(
     'does not invent a money classification from %j', (context) => {
       expect(isMoneyPush(NotificationKind.MESSAGE_RECEIVED, context)).toBe(false);
     },
@@ -176,7 +176,7 @@ describe('LS-1192R5 money classification against kinds, persisted context and re
   const registryCases = SENDERS.flatMap((sender) => (sender.funnel ?? [])
     .filter((push) => MONEY_KINDS.includes(push.kind) || push.context?.passesMuteAll === true)
     .map((push) => [`${sender.file}:${sender.fn} ${push.note}`, push] as const));
-  it('the registry money-class comparison is not empty', () => expect(registryCases.length).toBeGreaterThan(8));
+  it('compares all eight money funnel entries in this registry', () => expect(registryCases).toHaveLength(8));
   it.each(registryCases)('%s is covered by the durable money classifier', (_label, push) => {
     expect(isMoneyPush(push.kind, push.context)).toBe(true);
   });
