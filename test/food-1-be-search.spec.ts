@@ -135,10 +135,15 @@ describe('R3: the plain food first on a plain query', () => {
     const real: Row[] = JSON.parse(readFileSync(join(__dirname, 'fixtures', 'lo-food-usda-eggs.json'), 'utf8'));
     upstreams(real, []);
     const { results } = await setup().search('eggs', 50, 'viewer');
-    expect(names(results).slice(0, 3)).toEqual([
-      'Eggs, Grade A, Large, egg whole', 'Eggs, Grade A, Large, egg yolk', 'Eggs, Grade A, Large, egg white',
-    ]);
-    expect(results.slice(0, 3).every((r) => r.basic_food)).toBe(true);
+    expect(names(results)[0]).toBe('Eggs, Grade A, Large, egg whole');
+    expect(results[0].basic_food).toBe(true);
+    // FR-1198R3 (LO-1198R3 B1): "egg yolk" and "egg white" hold the head word in
+    // a longer part, so they name the egg at level 1, below the rows named for
+    // the egg ("Egg, creamed"), still before every brand.
+    for (const part of ['Eggs, Grade A, Large, egg yolk', 'Eggs, Grade A, Large, egg white']) {
+      expect(names(results).indexOf(part)).toBeGreaterThan(0);
+      expect(names(results).indexOf(part)).toBeLessThan(results.findIndex(isBrand));
+    }
     const plain = results.map((r, i) => (!isBrand(r) && hasEveryWord(r.name, 'eggs') ? i : -1)).filter((i) => i >= 0);
     expect(Math.max(...plain)).toBeLessThan(results.findIndex(isBrand));
   });
