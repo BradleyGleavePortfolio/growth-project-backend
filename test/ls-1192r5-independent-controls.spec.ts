@@ -260,7 +260,7 @@ describe('LS-1192R5 independently drives each failed pre-handoff read', () => {
         r.clock.at = new Date(r.row.not_before);
       }
     }
-    expect(r.row).toMatchObject({ status: 'dropped', result_code: 'worker-error', attempts: 3 });
+    expect(r.row).toMatchObject({ status: 'dropped', result_code: 'transport-error', attempts: 3 });
     expect(r.send).not.toHaveBeenCalled();
   });
   it.each(Object.keys(SAFETY_ALERT_PUSH_BODY))('%s keeps its established night urgency', async (type) => {
@@ -282,7 +282,7 @@ describe('LS-1192R5 independently drives each failed pre-handoff read', () => {
       expect(r.row.deferred_reason).not.toBe('source_unread');
       r.clock.at = new Date(r.row.not_before);
     }
-    expect(r.row).toMatchObject({ status: 'dropped', result_code: 'worker-error', attempts: 3 });
+    expect(r.row).toMatchObject({ status: 'dropped', result_code: 'transport-error', attempts: 3 });
     expect(r.send).not.toHaveBeenCalled();
   });
   it('source waits preserve, rather than erase, the existing provider retry count', async () => {
