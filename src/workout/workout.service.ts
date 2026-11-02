@@ -8,6 +8,7 @@ import {
   ExerciseHistoryQueryDto,
   CreateWorkoutDto,
   CreateRoutineDto,
+  CreateRoutineExerciseDto,
   UpdateRoutineDto,
   UpdateWorkoutDto,
 } from './workout.dto';
@@ -285,7 +286,27 @@ export class WorkoutService {
     });
   }
 
+  /**
+   * EXID-BE (#189-D4 op 1): keeps a routine exercise's catalog_exercise_id only when it is the id of a
+   * library row (ExerciseCatalogItem) that exists; any other id saves as null, so a stale id on a phone
+   * never blocks the save. One read per save for the distinct ids sent; none when no id is sent.
+   */
+  private async libraryIdOf(exercises: CreateRoutineExerciseDto[] = []) {
+    const sent = [
+      ...new Set(exercises.map((e) => e.catalog_exercise_id).filter((id): id is string => !!id)),
+    ];
+    const rows = sent.length
+      ? await this.prisma.exerciseCatalogItem.findMany({
+          where: { id: { in: sent } },
+          select: { id: true },
+        })
+      : [];
+    const known = new Set(rows.map((r) => r.id));
+    return (id?: string | null) => (id && known.has(id) ? id : null);
+  }
+
   async createRoutine(userId: string, data: CreateRoutineDto) {
+    const libraryId = await this.libraryIdOf(data.exercises);
     // Explicit field mapping — previously `...routineData` spread the body into
     // Prisma. creator_id is ALWAYS userId; `is_template` is deliberately NOT
     // exposed in the DTO (would let a client publish routines to every user).
@@ -304,6 +325,7 @@ export class WorkoutService {
                 default_rest_seconds: e.default_rest_seconds ?? 90,
                 video_url: e.video_url,
                 order_index: e.order_index,
+                catalog_exercise_id: libraryId(e.catalog_exercise_id),
               })),
             }
           : undefined,
@@ -315,6 +337,7 @@ export class WorkoutService {
   async updateRoutine(userId: string, id: string, data: UpdateRoutineDto) {
     const routine = await this.prisma.workoutRoutine.findUnique({ where: { id } });
     if (!routine || routine.creator_id !== userId) throw new NotFoundException('Routine not found');
+    const libraryId = await this.libraryIdOf(data.exercises);
     // UX-WORKOUT-124: `exercises` (when sent) replaces the routine's list in
     // the same transaction as the name change, so an edit never leaves the
     // routine half-written.
@@ -339,6 +362,7 @@ export class WorkoutService {
               default_rest_seconds: e.default_rest_seconds ?? 90,
               video_url: e.video_url,
               order_index: e.order_index,
+              catalog_exercise_id: libraryId(e.catalog_exercise_id),
             })),
           });
         }
