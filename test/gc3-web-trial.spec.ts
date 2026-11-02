@@ -1452,4 +1452,40 @@ describe('TRIAL-WORDS-BE — the return page while a web trial starts', () => {
     expect(world.mail.map((row) => row.recipient_email)).not.toContain(email);
   });
 
+  it.each(['sent', 'exhausted'])('LS-1199R2 B5: %s outcomes do not occupy the retry scan ahead of an unfinished email forever', async (ending) => {
+    const { world, gc, service } = trialWorld({ status: 'failed' });
+    const old = new Date(Date.now() - 10 * 60_000);
+    world.mail.push({
+      id: 'waiting', idempotency_key: `guest-outcome:${gc.id}:trial-not-started:1`,
+      template_key: 'guest-trial-not-started', recipient_email: gc.guest_email, status: 'failed', created_at: old,
+    });
+    const completedCount = ending === 'sent' ? 25 : 20;
+    for (let n = 0; n < completedCount; n++) {
+      const done = world.addCheckout({ status: 'failed' });
+      for (let attempt = 1; attempt <= 5; attempt++) {
+        const status = ending === 'sent' && attempt === 5 ? 'sent' : 'failed';
+        world.mail.push({
+          id: `finished-${n}-${attempt}`,
+          idempotency_key: `guest-outcome:${done.id}:trial-not-started:${attempt}`,
+          template_key: 'guest-trial-not-started', recipient_email: done.guest_email, status,
+          created_at: new Date(Date.now() - 2 * 60_000),
+        });
+      }
+    }
+    // The supplied fixture ignores orderBy and take. Honor the actual
+    // production query here so its bounded scan is genuinely exercised.
+    world.db.emailSendLog.findMany = async ({ where, orderBy, take }: any) => {
+      const rows = world.mail.filter((row) => {
+        if (where.idempotency_key) return where.idempotency_key.in.includes(row.idempotency_key);
+        return where.template_key.in.includes(row.template_key)
+          && where.status.in.includes(row.status)
+          && row.created_at >= where.created_at.gte && row.created_at <= where.created_at.lte;
+      });
+      if (orderBy?.[0]?.created_at === 'desc') rows.sort((a, b) => b.created_at.getTime() - a.created_at.getTime());
+      return rows.slice(0, take ?? rows.length);
+    };
+    const cron = new GuestCheckoutReconciliationService(world.db, service);
+    for (let tick = 0; tick < 3; tick++) await cast<Private>(cron).scanOutcomeMail();
+    expect(toBuyer(gc)).toHaveLength(1);
+  });
 });
