@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { createHash } from 'crypto';
 import { PrismaService } from '../prisma.service';
+import { outcomeMailKeys } from './guest-outcome-mail';
 
 // Audit #5 P1-1 — typed domain error replaces the raw `new Error(...)`
 // that previously fired from resolveSalt() when GUEST_CHECKOUT_PII_SALT
@@ -41,6 +42,10 @@ export class PiiSaltMissingError extends Error {
 //   * Replace guest_name with 'REDACTED' — a fixed sentinel because
 //     names have no useful searchable form once hashed.
 //   * Clear guest_phone (GC-PHONE) — nothing reconciles on it.
+//   * FR-1199R2B (LS-1199R2 B4, LO-1199R2 B2): hash recipient_email, the
+//     same way, on the send records of this checkout's outcome emails
+//     (keys guest-outcome:<id>:<outcome>:<try>, every outcome and try).
+//     Done first, so a failure leaves the row unscrubbed for the next run.
 //   * Stamp scrubbed_at so the next run skips this row.
 
 const SCRUB_BATCH_SIZE = 200;
@@ -103,12 +108,15 @@ export class GuestCheckoutPiiScrubService {
       select: { id: true, guest_email: true },
     });
     if (rows.length === 0) return 0;
+    const sends = await this.outcomeMailSends(rows.map((row) => row.id));
+    if (sends === null) return 0; // retried on the next run, rows untouched
     for (const row of rows) {
       // Tolerate per-row failures so one corrupt row can't freeze the
       // batch. updateMany with WHERE scrubbed_at IS NULL guards against
       // a concurrent re-run flipping the same row twice.
       const hashedEmail = this.hashEmail(row.guest_email, salt);
       try {
+        await this.scrubOutcomeMail(sends.get(row.id) ?? [], salt);
         await this.prisma.guestCheckout.updateMany({
           where: { id: row.id, scrubbed_at: null },
           data: {
@@ -125,6 +133,47 @@ export class GuestCheckoutPiiScrubService {
       }
     }
     return rows.length;
+  }
+
+  // The batch's send records, by checkout, found by each checkout's own keys
+  // only: never another recipient's records. Null when unreadable.
+  private async outcomeMailSends(
+    checkoutIds: string[],
+  ): Promise<Map<string, { idempotency_key: string; recipient_email: string }[]> | null> {
+    const keyOwner = new Map<string, string>();
+    for (const id of checkoutIds) for (const key of outcomeMailKeys(id)) keyOwner.set(key, id);
+    let found: { idempotency_key: string; recipient_email: string }[];
+    try {
+      found = await this.prisma.emailSendLog.findMany({
+        where: { idempotency_key: { in: [...keyOwner.keys()] } },
+        select: { idempotency_key: true, recipient_email: true },
+      });
+    } catch (err) {
+      this.logger.error(
+        `GuestCheckoutPiiScrub: outcome email records unreadable: ${(err as Error)?.message ?? String(err)}`,
+      );
+      return null;
+    }
+    const byCheckout = new Map<string, { idempotency_key: string; recipient_email: string }[]>();
+    for (const send of found) {
+      const owner = keyOwner.get(send.idempotency_key);
+      if (!owner) continue;
+      byCheckout.set(owner, [...(byCheckout.get(owner) ?? []), send]);
+    }
+    return byCheckout;
+  }
+
+  private async scrubOutcomeMail(
+    sends: { idempotency_key: string; recipient_email: string }[],
+    salt: string,
+  ): Promise<void> {
+    for (const send of sends) {
+      if (send.recipient_email.startsWith('sha256:')) continue;
+      await this.prisma.emailSendLog.update({
+        where: { idempotency_key: send.idempotency_key },
+        data: { recipient_email: this.hashEmail(send.recipient_email, salt) },
+      });
+    }
   }
 
   // Salt source: GUEST_CHECKOUT_PII_SALT env var. In production the

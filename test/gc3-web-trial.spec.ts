@@ -1971,4 +1971,32 @@ describe('TRIAL-WORDS-BE — the return page while a web trial starts', () => {
     expect(provider.delivered).toHaveLength(1);
     expect(provider.calls).toHaveLength(1);
   });
+
+  // FR-1199R2B (agent 192) — own tests: F5, retention.
+  it('FR-1199R2B F5: a scrubbed checkout with several outcomes and tries keeps no plain address in any send record; another buyer\'s records are untouched', async () => {
+    const { world, gc, service } = trialWorld({
+      status: 'failed', data_retention_at: new Date(Date.now() - DAY), scrubbed_at: null,
+    });
+    const other = world.addCheckout({ status: 'failed', guest_email: 'sam@example.com' });
+    failingThen(['503', '503', '503']);
+    await service.sendOutcomeMail(gc.id, { opening: true });
+    await service.sendOutcomeMail(other.id, { opening: true });
+    ageTries(world);
+    await service.sendOutcomeMail(gc.id, {});
+    ageTries(world);
+    await service.sendOutcomeMail(gc.id, {});
+    world.mail.push({
+      id: 'old-welcome', idempotency_key: `guest-outcome:${gc.id}:welcome:1`, template_key: 'guest-welcome-existing',
+      recipient_email: 'jane@example.com', status: 'failed', created_at: new Date(Date.now() - 300 * DAY),
+    });
+    expect(world.mail.filter((r: Row) => r.idempotency_key.startsWith(`guest-outcome:${gc.id}:`))).toHaveLength(4);
+    world.db.guestCheckout.findMany = async () =>
+      world.state.guestCheckout.filter((r: Row) => r.data_retention_at != null && r.data_retention_at <= new Date() && r.scrubbed_at == null);
+    await new GuestCheckoutPiiScrubService(world.db, cast({ get: () => 'test-salt' })).scrubBatch('test-salt');
+    const mine = world.mail.filter((r: Row) => r.idempotency_key.startsWith(`guest-outcome:${gc.id}:`));
+    expect(mine.map((r: Row) => r.recipient_email)).toEqual(Array(4).fill(world.state.guestCheckout[0].guest_email));
+    expect(world.state.guestCheckout[0].guest_email).toMatch(/^sha256:/);
+    expect(world.mail.filter((r: Row) => r.idempotency_key.startsWith(`guest-outcome:${other.id}:`)).map((r: Row) => r.recipient_email)).toEqual(['sam@example.com']);
+    expect(world.mail.some((r: Row) => r.recipient_email === 'jane@example.com')).toBe(false);
+  });
 });

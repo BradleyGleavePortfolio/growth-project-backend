@@ -37,6 +37,15 @@ export function outcomeMailRequestKey(checkoutId: string, outcome: GuestOutcome)
   return `guest-outcome:${checkoutId}:${outcome}`;
 }
 
+// FR-1199R2B (LS-1199R2 B4) — every send record key one checkout can have:
+// each outcome, each try.
+export function outcomeMailKeys(checkoutId: string): string[] {
+  const outcomes: GuestOutcome[] = ['welcome', 'trial-refused', 'trial-not-started'];
+  return outcomes.flatMap((outcome) =>
+    Array.from({ length: OUTCOME_MAIL_TRIES }, (_, i) => outcomeMailKey(checkoutId, outcome, i + 1)),
+  );
+}
+
 export function outcomeMailCheckoutId(key: string): string | null {
   const parts = key.split(':');
   return parts.length === 4 && parts[0] === 'guest-outcome' ? parts[1] : null;
