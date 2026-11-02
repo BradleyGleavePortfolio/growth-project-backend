@@ -5,7 +5,7 @@
  * lacks, inserts one FoodItem row exactly as prisma/seed-foods.ts would create it. "The shared catalog" is the rows
  * with created_by_user_id NULL; a food is present when a shared row has the same name and brand_or_restaurant (a NULL
  * brand matches only a NULL brand). A member's own food is never read, counted, changed or deleted, and no existing
- * row is ever updated or deleted: the only write is one INSERT of the missing rows.
+ * row is ever updated or deleted: the only write is one INSERT of the missing rows, in one transaction.
  *
  * After the insert it reads the shared catalog again. If any seed food is still missing, or the database refused the
  * insert, it prints why and exits 1, so release.sh fails and Fly keeps serving the previous image.
@@ -13,7 +13,7 @@
  * Runs in the runtime image as a compiled copy (tsconfig.food-seed.json → dist/food-seed/scripts/), with no ts-node,
  * on DIRECT_URL like the step 4 verifiers. Usage: node dist/food-seed/scripts/seed-built-in-foods.js <seed-foods.json>
  */
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { readFileSync } from 'fs';
 
 export interface SeedFood {
@@ -84,22 +84,32 @@ export interface FoodSeedResult {
   missing: number;
 }
 
-async function sharedKeys(prisma: PrismaClient, foods: SeedFood[]): Promise<Set<string>> {
-  const rows = await prisma.foodItem.findMany({
+async function sharedKeys(tx: Prisma.TransactionClient, foods: SeedFood[]): Promise<Set<string>> {
+  const rows = await tx.foodItem.findMany({
     where: { created_by_user_id: null, name: { in: [...new Set(foods.map((f) => f.name))] } },
     select: { name: true, brand_or_restaurant: true },
   });
   return new Set(rows.map((r) => foodKey(r.name, r.brand_or_restaurant)));
 }
 
-/** Insert the seed foods the shared catalog lacks, then count what is present. Never updates or deletes. */
+/**
+ * Insert the seed foods the shared catalog lacks, then count what is present. Never updates or deletes. One
+ * transaction under a transaction-scoped advisory lock, so two release runs at once cannot both add the same food
+ * (FoodItem has no unique key on name + brand), and a refused insert leaves nothing half-written.
+ */
 export async function seedBuiltInFoods(prisma: PrismaClient, foods: SeedFood[]): Promise<FoodSeedResult> {
-  const before = await sharedKeys(prisma, foods);
-  const toAdd = foods.filter((f) => !before.has(foodKey(f.name, f.brand)));
-  const added = toAdd.length > 0 ? (await prisma.foodItem.createMany({ data: toAdd.map(seedFoodRow) })).count : 0;
-  const after = await sharedKeys(prisma, foods);
-  const missing = foods.filter((f) => !after.has(foodKey(f.name, f.brand))).length;
-  return { total: foods.length, present: foods.length - missing, added, missing };
+  return prisma.$transaction(
+    async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('food-seed-be:built-in-foods'))`;
+      const before = await sharedKeys(tx, foods);
+      const toAdd = foods.filter((f) => !before.has(foodKey(f.name, f.brand)));
+      const added = toAdd.length > 0 ? (await tx.foodItem.createMany({ data: toAdd.map(seedFoodRow) })).count : 0;
+      const after = await sharedKeys(tx, foods);
+      const missing = foods.filter((f) => !after.has(foodKey(f.name, f.brand))).length;
+      return { total: foods.length, present: foods.length - missing, added, missing };
+    },
+    { maxWait: 30_000, timeout: 120_000 },
+  );
 }
 
 export async function main(argv: string[]): Promise<number> {

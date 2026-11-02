@@ -10,11 +10,12 @@
  *   3. second release adds 0 and changes nothing;
  *   4. an insert the database refuses fails the release visibly (exit non-zero, abort banner, no success line);
  *   5. a seed food still missing after the insert (a trigger that drops it) fails the release, naming how many;
- *   6. once the cause is gone the next release adds what was missing.
+ *   6. once the cause is gone the next release adds what was missing;
+ *   7. two runs of the step at once add each missing food once (advisory lock; FoodItem has no name + brand key).
  * Runs in rls-live-tests. Gate: TEST_DATABASE_URL (CI=true without it fails).
  */
 import { randomUUID } from 'crypto';
-import { spawnSync } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { PrismaClient } from '@prisma/client';
@@ -201,5 +202,29 @@ const release = (): Run => {
     for (const f of foods) expect(await sharedOf(f.name)).toHaveLength(1);
     const mine = await prisma.foodItem.findUniqueOrThrow({ where: { id: privateId } });
     expect([mine.created_by_user_id, mine.calories, mine.serving_description]).toEqual([member, 1, 'my bowl']);
+  }, STEP_MS);
+
+  it('two runs of the step at once add each missing food exactly once', async () => {
+    const gone = foods.slice(10, 15).map((f) => f.name);
+    await prisma.foodItem.deleteMany({ where: { created_by_user_id: null, name: { in: gone }, tags: { has: SEED_TAG } } });
+    const step = () =>
+      new Promise<Run>((resolve) => {
+        const child = spawn('node', ['dist/food-seed/scripts/seed-built-in-foods.js', 'prisma/data/seed-foods.json'], {
+          cwd: ROOT,
+          env: { ...process.env, DIRECT_URL: DB_URL },
+        });
+        let out = '';
+        child.stdout.on('data', (d: Buffer) => (out += d.toString()));
+        child.stderr.on('data', (d: Buffer) => (out += d.toString()));
+        child.on('close', (code) => resolve({ code, out }));
+      });
+    const [a, b] = await Promise.all([step(), step()]);
+    // eslint-disable-next-line no-console
+    console.log(`concurrent step runs: ${a.out.trim()} | ${b.out.trim()}`);
+    expect([a.code, b.code]).toEqual([0, 0]);
+    const addedBy = (r: Run) => Number(/^\[release\] built-in foods: \d+ present, (\d+) added$/m.exec(r.out)?.[1]);
+    expect(addedBy(a) + addedBy(b)).toBe(gone.length);
+    expect(await shared()).toHaveLength(N);
+    for (const name of gone) expect(await sharedOf(name)).toHaveLength(1);
   }, STEP_MS);
 });
