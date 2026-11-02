@@ -1413,4 +1413,26 @@ describe('TRIAL-WORDS-BE — the return page while a web trial starts', () => {
     },
   );
 
+  it('LS-1199R2 B3: one email-record write outage plus one provider outage does not erase the promised welcome', async () => {
+    const { world, gc, service } = trialWorld();
+    const create = world.db.emailSendLog.create;
+    world.db.emailSendLog.create = jest.fn()
+      .mockRejectedValueOnce(new Error('database temporarily unavailable'))
+      .mockImplementation(create);
+    const sender = failingThen(['503']);
+    await service.handlePaymentSucceeded(gc.stripe_payment_intent_id);
+    await settle();
+    expect(world.state.guestCheckout[0].status).toBe('converted');
+    expect(sender).toHaveBeenCalledTimes(1);
+    expect(toBuyer(gc)).toHaveLength(0);
+
+    // Both dependencies are healthy again. Exercise the real recovery
+    // entry points; none may mistake this new row for a historical row.
+    await service.handlePaymentSucceeded(gc.stripe_payment_intent_id);
+    await service.reconcilePaidCheckout(gc.id);
+    await cast<Private>(new GuestCheckoutReconciliationService(world.db, service)).scanOutcomeMail();
+    await settle();
+    expect(toBuyer(gc)).toHaveLength(1);
+  });
+
 });
