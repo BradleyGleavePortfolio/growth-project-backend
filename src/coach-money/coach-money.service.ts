@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { isCoachAccountHoldReason, NOT_HELD_RENEWAL } from '../checkout/dunning-v2/coach-account-hold';
 import { movedAwayClientIds } from '../checkout/moved-client-money';
 import { movedAwayDates } from '../checkout/plan-renewal/switch-tell';
 
@@ -1759,6 +1760,7 @@ export class CoachMoneyService {
           coach_user_id: coachId,
           source: null,
           status: { in: [...FAILED_PURCHASE_STATUSES] },
+          ...NOT_HELD_RENEWAL,
         },
         orderBy: { updated_at: 'desc' },
         take: 50,
@@ -1831,6 +1833,9 @@ export class CoachMoneyService {
     for (const p of failed) {
       if (p.client && moved.has(p.client.id)) continue;
       const d = p.dunning;
+      // PF-7-BE (R7): a renewal waiting on the coach's own Stripe account is
+      // not the client's failed payment; the coach sees it only as PF-W9.
+      if (d?.status === 'active' && isCoachAccountHoldReason(d.last_failure_reason)) continue;
       // FR-1191R2 (LS-1191R2B B1): no "Try n of m". The server has no record
       // of the bank charges that really ran on this invoice, nor of Stripe's
       // real retry limit. last_attempt_number is Stripe's invoice.attempt_count,

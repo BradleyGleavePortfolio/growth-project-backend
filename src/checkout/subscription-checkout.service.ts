@@ -527,7 +527,10 @@ export class SubscriptionCheckoutService {
       where: { id: row.id, updated_at: row.updated_at },
       data: { cancel_at_period_end: !!sub.cancel_at_period_end, current_period_end: periodEnd },
     });
-    const updated = await this.prisma.clientPurchase.findUnique({ where: { id: row.id } });
+    const updated = await this.prisma.clientPurchase.findUnique({
+      where: { id: row.id },
+      include: PLAN_COACH,
+    });
     this.logger.log(`billing.client_plan_resumed purchase=${row.id} superseded=${res.count !== 1}`);
     return planView(updated ?? row, pkg);
   }
