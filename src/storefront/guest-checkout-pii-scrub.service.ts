@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { createHash } from 'crypto';
 import { PrismaService } from '../prisma.service';
+import { describeFailure } from '../observability/log-pii';
 import { outcomeMailKeys } from './guest-outcome-mail';
 
 // Audit #5 P1-1 — typed domain error replaces the raw `new Error(...)`
@@ -150,7 +151,7 @@ export class GuestCheckoutPiiScrubService {
       });
     } catch (err) {
       this.logger.error(
-        `GuestCheckoutPiiScrub: outcome email records unreadable: ${(err as Error)?.message ?? String(err)}`,
+        `GuestCheckoutPiiScrub: outcome email records unreadable (${describeFailure(err)})`,
       );
       return null;
     }
