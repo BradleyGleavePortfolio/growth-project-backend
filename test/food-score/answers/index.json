@@ -1,0 +1,1402 @@
+{
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=2%25%20milk&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=2%25%20milk&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:27:06Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/3c3d44aa3782e5cd.br",
+  "body_encoding": "br",
+  "body_sha256": "3c3d44aa3782e5cde0f71f3542dc242ea61d022243e35aa7e5006171a965dcd1",
+  "body_bytes": 790548
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=almond%20milk&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=almond%20milk&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:27:22Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=almonds&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=almonds&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:31:34Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=apple&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=apple&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:28:41Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=avocado&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=avocado&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:28:25Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=bacon&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=bacon&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:23:44Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/de2c9a44959f0f1d.br",
+  "body_sha256": "de2c9a44959f0f1d80a1c857ce2c415aa8b92dd96a72b392b9631c2a1cb36e7e",
+  "body_bytes": 966371,
+  "body_encoding": "br"
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=bagel&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=bagel&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:35:19Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/6200343825d63b57.br",
+  "body_encoding": "br",
+  "body_sha256": "6200343825d63b57415742f02737b3293ac15023285e47df18906e0719d0e0ea",
+  "body_bytes": 881304
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=banana&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=banana&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:28:33Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=big%20mac&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=big%20mac&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:37:41Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=black%20beans&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=black%20beans&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:31:57Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=blueberries&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=blueberries&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:28:58Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=broccoli&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=broccoli&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:29:24Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=brown%20rice&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=brown%20rice&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:30:40Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=butter&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=butter&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:27:58Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/24daf4c16d8106c5.br",
+  "body_encoding": "br",
+  "body_sha256": "24daf4c16d8106c5b4706820d873938203440d586ad3d5812e7f01bf1c26f143",
+  "body_bytes": 1108378
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=carrots&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=carrots&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:29:39Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=cauliflower&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=cauliflower&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:37:33Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=cheddar%20cheese&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=cheddar%20cheese&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:27:29Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=cheese%20pizza&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=cheese%20pizza&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:36:34Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=chick%20fil%20a%20sandwich&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=chick%20fil%20a%20sandwich&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:37:56Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/c8d4879db799f528.br",
+  "body_encoding": "br",
+  "body_sha256": "c8d4879db799f5282da96918596cad85a388266c8701537d0edba879a891d30e",
+  "body_bytes": 60704
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=chicken%20breast&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=chicken%20breast&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:25:09Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/894aa9cbd99e0776.br",
+  "body_encoding": "br",
+  "body_sha256": "894aa9cbd99e077606981fea823a3f12cf4a380882eba782f938b6dd4327203d",
+  "body_bytes": 888171
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=chicken%20thigh&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=chicken%20thigh&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:25:26Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/1fe5176502cd875f.br",
+  "body_encoding": "br",
+  "body_sha256": "1fe5176502cd875f96f2e6b777f6a03d168f71940641232a33a795cfa282a409",
+  "body_bytes": 560704
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=chickpeas&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=chickpeas&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:32:12Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=coconut%20oil&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=coconut%20oil&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:28:18Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/345f9b3ea5e14260.br",
+  "body_encoding": "br",
+  "body_sha256": "345f9b3ea5e142606435a8fdc14204afdb1ca8559cd555dd0512433110263ff7",
+  "body_bytes": 760634
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=cod&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=cod&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:35:00Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/5ca078a49530f7da.br",
+  "body_encoding": "br",
+  "body_sha256": "5ca078a49530f7da0472322bdabaf9dd3cbfb8b5fb06356f5649bfd6e6dfd363",
+  "body_bytes": 721691
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=corn%20tortilla&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=corn%20tortilla&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:35:39Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/b8be2ee0cc957fa8.br",
+  "body_encoding": "br",
+  "body_sha256": "b8be2ee0cc957fa8817ee36ad747e73a66bb65f3ea713a3d0448c6dac15a9fc5",
+  "body_bytes": 895171
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=cottage%20cheese&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=cottage%20cheese&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:27:47Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=cream%20cheese&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=cream%20cheese&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:36:26Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=cucumber&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=cucumber&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:33:34Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/6f792ccbfee4984e.br",
+  "body_encoding": "br",
+  "body_sha256": "6f792ccbfee4984e01fa48815413a5d5a3f4a0de5662fd6488660eb60f16ca49",
+  "body_bytes": 893024
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=dark%20chocolate&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=dark%20chocolate&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:34:11Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/1cb79f543e1b4f4f.br",
+  "body_encoding": "br",
+  "body_sha256": "1cb79f543e1b4f4f63aea7474632017b2c94091944196092b5c3336863db4bc1",
+  "body_bytes": 1294577
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=dry%20pasta&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=dry%20pasta&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:31:09Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/54173d06f27d9264.br",
+  "body_encoding": "br",
+  "body_sha256": "54173d06f27d9264c31e3e7fbf9756b893e04d6ef67792a0ea1b46b19104a145",
+  "body_bytes": 1101816
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=egg%20white&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=egg%20white&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:26:20Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=eggs&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=eggs&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:23:35Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/d1f9f9ce500e66ab.br",
+  "body_sha256": "d1f9f9ce500e66abce9227672649c4ef0693197990dc5e9f5fa8be92f9f01691",
+  "body_bytes": 1116473,
+  "body_encoding": "br"
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=flour%20tortilla&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=flour%20tortilla&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:35:28Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/ce6aaa1cac20f473.br",
+  "body_encoding": "br",
+  "body_sha256": "ce6aaa1cac20f473ba6194078b965ea9a6d960a54fef73f2ae475d060356e0ce",
+  "body_bytes": 875399
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=flour&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=flour&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:32:57Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=french%20fries&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=french%20fries&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:36:42Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=granola&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=granola&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:36:59Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=grapes&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=grapes&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:29:16Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=green%20beans&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=green%20beans&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:35:54Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=ground%20beef%2080%2F20&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=ground%20beef%2080%2F20&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:25:50Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/9849a2b20374d70f.br",
+  "body_encoding": "br",
+  "body_sha256": "9849a2b20374d70ff8a2a6d9b8f9abaa38781e23364128f1ee65a9c452a18082",
+  "body_bytes": 253891
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=ground%20beef%2090%2F10&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=ground%20beef%2090%2F10&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:25:57Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=ground%20turkey&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=ground%20turkey&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:34:20Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/5af5631072addbe5.br",
+  "body_encoding": "br",
+  "body_sha256": "5af5631072addbe56a9ca499bfbd2924e8ad294ed18c0e7899e030604eacaa44",
+  "body_bytes": 494988
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=ham&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=ham&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:23:51Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281,
+  "body_encoding": "br"
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=hard%20boiled%20egg&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=hard%20boiled%20egg&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:34:43Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=honey&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=honey&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:32:42Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=hummus&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=hummus&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:34:00Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=kfc%20chicken%20strips&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=kfc%20chicken%20strips&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:38:34Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=lentils&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=lentils&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:32:05Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=mango&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=mango&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:37:26Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/037982833341c083.br",
+  "body_encoding": "br",
+  "body_sha256": "037982833341c083749b9fbdc6a988c089a7bddfa550ff0c5c73879a09d62707",
+  "body_bytes": 854755
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=maple%20syrup&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=maple%20syrup&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:32:49Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=mcdonalds%20fries&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=mcdonalds%20fries&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:37:49Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=mozzarella&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=mozzarella&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:27:39Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/38d1f08eb59ea815.br",
+  "body_encoding": "br",
+  "body_sha256": "38d1f08eb59ea8153fdaa78c6e8e377b364564ba2cb1ee81dc1cedc1cf7c2344",
+  "body_bytes": 1090506
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=mushrooms&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=mushrooms&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:33:52Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/d02a76f54fd5a4c0.br",
+  "body_encoding": "br",
+  "body_sha256": "d02a76f54fd5a4c0be940aa4f9e1dbe495dc27d2b32ff5f619b34542b6afe876",
+  "body_bytes": 796163
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=nonfat%20greek%20yogurt&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=nonfat%20greek%20yogurt&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:26:28Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=oats&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=oats&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:30:33Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=olive%20oil&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=olive%20oil&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:28:08Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/256a0f803a82a0c2.br",
+  "body_encoding": "br",
+  "body_sha256": "256a0f803a82a0c255e2f1a7fa2ebdc46dd074fa3ce6c0e9e821476cb855c1a7",
+  "body_bytes": 718737
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=onion&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=onion&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:30:16Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=orange%20juice&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=orange%20juice&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:36:51Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/d50f0c00965c5e5b.br",
+  "body_encoding": "br",
+  "body_sha256": "d50f0c00965c5e5bc10eb42f01db42216847b7b71a715b722f7dc84553e5e5e0",
+  "body_bytes": 677069
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=orange&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=orange&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:29:08Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/8a53b4ef00a107ee.br",
+  "body_encoding": "br",
+  "body_sha256": "8a53b4ef00a107ee3053c639bd2cf94fb091abf4055bec1549d1827466724568",
+  "body_bytes": 981437
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=parmesan&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=parmesan&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:36:19Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=pasta&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=pasta&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:30:58Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=peanut%20butter&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=peanut%20butter&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:31:42Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=peanuts&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=peanuts&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:36:11Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=peas&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=peas&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:36:04Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/ff4edcd59e4a486a.br",
+  "body_encoding": "br",
+  "body_sha256": "ff4edcd59e4a486ab6029103606853fc73b78c8660717efab3e7c43b603da11f",
+  "body_bytes": 762474
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=pineapple&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=pineapple&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:37:16Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/30324becf24b5843.br",
+  "body_encoding": "br",
+  "body_sha256": "30324becf24b584337e315a799d86fdcc06c1619e9034b712e50a277bf0f6b7e",
+  "body_bytes": 740878
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=pizza%20hut%20cheese%20pizza&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=pizza%20hut%20cheese%20pizza&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:38:27Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=plain%20yogurt&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=plain%20yogurt&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:26:46Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/3faff046a8e28dfa.br",
+  "body_encoding": "br",
+  "body_sha256": "3faff046a8e28dfacb428d766dc157b6783e9b0d0f4c8337688934cd5214708c",
+  "body_bytes": 917389
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=pork%20chop&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=pork%20chop&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:34:35Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=pork%20tenderloin&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=pork%20tenderloin&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:33:15Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=potato&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=potato&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:29:57Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=quinoa&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=quinoa&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:30:50Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/0d57c8d70d53de76.br",
+  "body_encoding": "br",
+  "body_sha256": "0d57c8d70d53de764fd30762b13e9770e301774dc7574b915bfa752bac47a4f3",
+  "body_bytes": 1012790
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=raw%20chicken%20breast&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=raw%20chicken%20breast&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:25:16Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=red%20bell%20pepper&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=red%20bell%20pepper&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:30:25Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/2605b3bed492e81f.br",
+  "body_encoding": "br",
+  "body_sha256": "2605b3bed492e81f6b71f007c219630ed4f7d41ee9007feb1ec37e6716debf7f",
+  "body_bytes": 603859
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=romaine%20lettuce&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=romaine%20lettuce&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:33:42Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/58b660337600ac17.br",
+  "body_encoding": "br",
+  "body_sha256": "58b660337600ac17cde9ad34b80b0a7740a1eb220d49617a69c22c69f5d75c93",
+  "body_bytes": 436125
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=salmon&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=salmon&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:26:05Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=sausage&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=sausage&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:24:51Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=scrambled%20eggs&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=scrambled%20eggs&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:34:51Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=shrimp&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=shrimp&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:33:24Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/242d72b0ec19edf9.br",
+  "body_encoding": "br",
+  "body_sha256": "242d72b0ec19edf9b8a8048fb86b7204529619fd319352f7d0b82bb15210f73c",
+  "body_bytes": 824088
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=skim%20milk&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=skim%20milk&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:27:14Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=spinach&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=spinach&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:29:31Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=steak&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=steak&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:24:59Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=strawberries&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=strawberries&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:28:51Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/134e7e4078c3115d.br",
+  "body_encoding": "br",
+  "body_sha256": "134e7e4078c3115d8a6540bb6152ac8da70e4c0935c3ae83e9388414d159a4fb",
+  "body_bytes": 789069
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=subway%20turkey%20sub&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=subway%20turkey%20sub&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:38:19Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=sugar&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=sugar&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:32:34Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/a14c525897a06214.br",
+  "body_encoding": "br",
+  "body_sha256": "a14c525897a06214d9e80bb98807e5ec9c84b8e80aa3478ea9f4e0fe3f778699",
+  "body_bytes": 1399861
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=sweet%20corn&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=sweet%20corn&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:35:47Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=sweet%20potato&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=sweet%20potato&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:29:49Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/4bc39045cbf755ea.br",
+  "body_encoding": "br",
+  "body_sha256": "4bc39045cbf755eadbf055c41eaea31522359eaec5b3ddcc796b8322137cec75",
+  "body_bytes": 816768
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=taco%20bell%20taco&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=taco%20bell%20taco&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:38:04Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=tilapia&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=tilapia&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:35:09Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/9860144274f0d4a8.br",
+  "body_encoding": "br",
+  "body_sha256": "9860144274f0d4a8def9641e987db0fb58b51e757cf85b751e423f9f4ed6be9e",
+  "body_bytes": 415366
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=tofu&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=tofu&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:32:23Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/a9ebfd6423d6493a.br",
+  "body_encoding": "br",
+  "body_sha256": "a9ebfd6423d6493a1387f4d13e6bb47d833e0c0f9b956c5121de0276206ac5ba",
+  "body_bytes": 991463
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=tomato&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=tomato&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:30:08Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/de9c90c72243b5e1.br",
+  "body_encoding": "br",
+  "body_sha256": "de9c90c72243b5e10ada03e836f399d4bd7f9d2f06bf6f3ee91a39f8730fb601",
+  "body_bytes": 1104954
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=tuna&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=tuna&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:26:13Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=turkey%20breast&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=turkey%20breast&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:34:28Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=walnuts&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=walnuts&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:31:50Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=watermelon&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=watermelon&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:37:06Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=wendys%20daves%20single&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=wendys%20daves%20single&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:38:12Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/5c7fe66302ca0ed3.br",
+  "body_encoding": "br",
+  "body_sha256": "5c7fe66302ca0ed3b4d3baec19f1ccf0df2fd4af0f2459fc0577b272363449f7",
+  "body_bytes": 29500
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=whey%20protein&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=whey%20protein&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:33:07Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/c83d896c753d21f8.br",
+  "body_encoding": "br",
+  "body_sha256": "c83d896c753d21f8c7d4c1a1aea0f4c1fe88833a504ebba68e6b3e55921a6d9e",
+  "body_bytes": 655734
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=white%20bread&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=white%20bread&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:31:17Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=white%20rice&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=white%20rice&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:24:43Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=whole%20milk%20greek%20yogurt&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=whole%20milk%20greek%20yogurt&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:26:35Z",
+  "status": 503,
+  "content_type": "text/html",
+  "body_file": "bodies/fa13f8614fb6b695.br",
+  "body_encoding": "br",
+  "body_sha256": "fa13f8614fb6b695b3de3ac03227804dfc6ab25b6fee4ca3eced0c5c79c63c1b",
+  "body_bytes": 25281
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=whole%20milk&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=whole%20milk&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:26:56Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/ddc2b064c529f5e4.br",
+  "body_encoding": "br",
+  "body_sha256": "ddc2b064c529f5e43964141b6c1d7bf694ebd2d0e4006c81e8d4d3978671f10e",
+  "body_bytes": 821952
+ },
+ "https://world.openfoodfacts.org/cgi/search.pl?search_terms=whole%20wheat%20bread&search_simple=1&action=process&json=1&page_size=20": {
+  "method": "GET",
+  "url": "https://world.openfoodfacts.org/cgi/search.pl?search_terms=whole%20wheat%20bread&search_simple=1&action=process&json=1&page_size=20",
+  "request_headers": {
+   "User-Agent": "TheGrowthProject/1.0"
+  },
+  "recorded_at": "2026-11-02T20:31:27Z",
+  "status": 200,
+  "content_type": "application/json; charset=utf-8",
+  "body_file": "bodies/c4cd93955cef432e.br",
+  "body_encoding": "br",
+  "body_sha256": "c4cd93955cef432e483ea62051b346b4a9082ef3679f48449f3f195cea34c6bf",
+  "body_bytes": 818379
+ }
+}

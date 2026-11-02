@@ -1,0 +1,4 @@
+{
+ "v1_floor": 0,
+ "note": "The v1 score (rows with v11 false and recorded true) the food-score test must not fall below. Raise it when search gets better; never lower it."
+}
