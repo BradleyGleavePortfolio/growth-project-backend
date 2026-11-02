@@ -261,6 +261,13 @@ function namesFood(item: FoodResult, score: number, rawQuery: string): 0 | 1 | 2
   return sameWords(food, q) || sorted([...group, ...food]) === sorted(q) ? 1 : 0;
 }
 
+/** USDA's food category of a row (a stored row keeps it as a category:<name> tag); '' when it has none. */
+function categoryOf(item: FoodResult): string {
+  const tagged = (item.tags ?? []).find((t) => t.startsWith(CATEGORY_TAG))?.slice(CATEGORY_TAG.length);
+  const category = tagged ?? item.category ?? '';
+  return category === 'generic' ? '' : category;
+}
+
 /**
  * De-duplicate by food identity (the first source listed wins), then rank.
  * R3 (LO-FOOD B1): whole-word matches come first, a basic food before any
@@ -269,8 +276,9 @@ function namesFood(item: FoodResult, score: number, rawQuery: string): 0 | 1 | 2
  * unbranded row that names the food (namesFood: its whole head first, then
  * USDA's group-first form) comes before an unbranded row that only mentions
  * it ("Oatmeal, NFS" before "Bread, oatmeal"; "Fish, sardine, ..." before
- * "Sardine sandwich"), whatever its USDA data type. The plain form, shorter
- * names and then A-Z break ties.
+ * "Sardine sandwich"), whatever its USDA data type. FR-1198R3: at each naming
+ * level a row filed under another category than the food's own rows comes
+ * after them. The plain form, shorter names and then A-Z break ties.
  */
 function rankFoodResults(items: FoodResult[], q: string, limit: number): FoodResult[] {
   const byIdentity = new Map<string, FoodResult>();
@@ -285,11 +293,38 @@ function rankFoodResults(items: FoodResult[], q: string, limit: number): FoodRes
     const { score, whole } = matchOf(item, q);
     const tier = item.basic_food ? 2 : isBranded(item) ? 0 : 1;
     const named = whole && tier > 0 ? namesFood(item, score, q) : 0;
-    return { item, score, named, group: whole ? tier : 0 };
+    return { item, score, named, tier, whole, group: whole ? tier : 0, offCategory: 0 };
   });
+
+  // FR-1198R3 (LO-1198R3 C1, owner #192-D2 op 1): USDA's food category. The
+  // basic rows (SR Legacy, Foundation and the built-in foods) are filed under
+  // USDA's food groups ("Pork Products"), the other unbranded rows (FNDDS)
+  // under its survey categories ("Sausages"), so a category is compared only
+  // inside its own tier. The food's own category in a tier is the one most of
+  // that tier's whole-word rows are filed under (a tie: none). A row that is
+  // named for the food (level 2) but filed under another category ranks after
+  // the rows named for it at that level ("Sausage, NFS" before a "Sausage, ..."
+  // row filed under legumes). A row with no category ranks as before.
+  const ownCategory = new Map<number, string>();
+  for (const tier of [1, 2]) {
+    const counts = new Map<string, number>();
+    for (const s of scored) {
+      const category = categoryOf(s.item);
+      if (s.whole && s.tier === tier && category) counts.set(category, (counts.get(category) ?? 0) + 1);
+    }
+    const [top, next] = [...counts].sort((a, b) => b[1] - a[1]);
+    if (top && (!next || top[1] > next[1])) ownCategory.set(tier, top[0]);
+  }
+  for (const s of scored) {
+    const category = categoryOf(s.item);
+    const own = ownCategory.get(s.tier);
+    s.offCategory = s.named === 2 && category && own && category !== own ? 1 : 0;
+  }
+
   scored.sort(
     (a, b) =>
       b.named - a.named ||
+      a.offCategory - b.offCategory ||
       b.group - a.group ||
       b.score - a.score ||
       plainForm(b.item) - plainForm(a.item) ||
