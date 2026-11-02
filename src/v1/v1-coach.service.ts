@@ -10,7 +10,6 @@ import { AuditService, AuditAction } from '../audit/audit.service';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { ConsentScope, ConsentService } from '../consent/consent.service';
 import { assertPairOpen, inBlockWith } from '../messaging/block-pair';
-import { countedMessagesFor } from '../common/count-rule';
 
 // V1 BFF service for the coach console. Returns enriched payloads documented
 // in tgp-coach-console/INTEGRATION_NOTES.md. OWNER callers bypass the coach
@@ -242,12 +241,8 @@ export class V1CoachService {
     // Pull every coach-message row for this coach in a single query, then
     // fold per client. We over-fetch but the dataset is small (one coach has
     // tens of threads, hundreds of messages) and one round-trip beats N+1.
-    // COUNT-DELETED-BE (LO-1197 B1, LS-1197 B1): the count rule
-    // (common/count-rule.ts): a deleted message, or one whose author is in a
-    // block with the caller either way, adds nothing to unread, is no preview
-    // and makes no row.
     const messages = await this.prisma.coachMessage.findMany({
-      where: { coach_id: messagingCoachId, ...inScope, ...countedMessagesFor(caller.id) },
+      where: { coach_id: messagingCoachId, ...inScope },
       orderBy: { created_at: 'desc' },
       select: {
         client_id: true,

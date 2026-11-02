@@ -206,39 +206,8 @@ export class ConnectService {
       }
       throw err;
     }
-    return this.writeMirror(row, stripeAccount);
-  }
-
-  // PF-7-BE: the coach's account freshly re-read from Stripe (the same mirror
-  // write as syncFromStripe). `fresh` is false when Stripe gave no answer, so
-  // the caller can tell a stale saved row from a fresh one. No row = null.
-  async freshAccountForCoach(
-    coachUserId: string,
-  ): Promise<{ row: ConnectAccount | null; fresh: boolean }> {
-    const row = await this.prisma.connectAccount.findUnique({
-      where: { coach_user_id: coachUserId },
-    });
-    if (!row) return { row: null, fresh: true };
-    if (row.deauthorized_at) return { row, fresh: true };
-    try {
-      const stripeAccount = await this.stripeConnect.retrieveAccount(row.stripe_account_id);
-      return { row: await this.writeMirror(row, stripeAccount), fresh: true };
-    } catch (err) {
-      this.logger.warn(
-        `freshAccountForCoach: no fresh read code=CONNECT_ACCOUNT_RETRIEVE_FAILED status=${
-          err instanceof StripeConnectApiError ? Number(err.httpStatus) || 0 : 0
-        }`,
-      );
-      return { row, fresh: false };
-    }
-  }
-
-  private writeMirror(
-    row: ConnectAccount,
-    stripeAccount: Awaited<ReturnType<StripeConnectApiService['retrieveAccount']>>,
-  ): Promise<ConnectAccount> {
     return this.prisma.connectAccount.update({
-      where: { stripe_account_id: row.stripe_account_id },
+      where: { stripe_account_id: stripeAccountId },
       data: {
         country: stripeAccount.country ?? row.country,
         default_currency: stripeAccount.default_currency ?? row.default_currency,

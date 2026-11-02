@@ -6,7 +6,6 @@ import * as Handlebars from 'handlebars';
 import { PrismaService } from '../prisma.service';
 import { ConsentScope, ConsentService } from '../consent/consent.service';
 import { coachSharingCheck } from '../consent/coach-sharing-gate';
-import { countedThreadsOf } from '../common/count-rule';
 import { NotificationsService } from './notifications.service';
 import { NotificationKind } from './notification-kind';
 import { ProviderFailure, describeFailure, providerErrorCode } from '../observability/log-pii';
@@ -370,12 +369,12 @@ export class DigestService {
       reason: 'No check-in in 3+ days',
     }));
 
-    // Unread messages, through the count rule (common/count-rule.ts): threads
-    // whose client is still this coach's (owner 4), in no block with the coach
-    // either way, and no deleted message (COUNT-DELETED-BE).
+    // Unread messages, in threads whose client is still this coach's: a moved
+    // client's old thread no longer counts (owner 4).
     const unreadMessages = await this.prisma.coachMessage.count({
       where: {
-        ...countedThreadsOf(coachId),
+        coach_id: coachId,
+        client: { coach_id: coachId },
         sender_id: { not: coachId },
         read_at: null,
       },

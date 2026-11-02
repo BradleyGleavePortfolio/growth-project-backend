@@ -24,7 +24,6 @@ import {
 } from '../dto/community-post.dto';
 import { CommunitySafetyService } from '../safety/community-safety.service';
 import { placeOf } from '../community-space-access';
-import { countedReactions } from '../../common/count-rule';
 import { z } from 'zod';
 import { RemovedKeys, coachRemoved, publishPostChanged, removedByOf, type Removed } from './community-post-removal';
 
@@ -142,12 +141,9 @@ export class CommunityPostsService {
         items.map((i) => [i.spaceId, i.authorId] as const),
       ),
     ]);
-    // The count rule (COUNT-DELETED-BE, common/count-rule.ts), as in
-    // CommunityReactionsService.visibleReactions: no reaction by anyone in a
-    // block with the viewer either way, banned from the community, or gone
-    // from the item's space is counted.
-    const spaceOf = new Map(items.map((i) => [i.id, i.spaceId]));
-    const visible = await countedReactions(this.safety, viewer.id, rows, (r) => [r.workspace_id, spaceOf.get(r.target_id) ?? null]);
+    // Two-way block: reactions by anyone in a block relation with the viewer
+    // are not counted (as in CommunityReactionsService.visibleReactions).
+    const visible = await this.safety.filterBlocked(viewer.id, rows, (r) => r.user_id);
     const byTarget = new Map<string, CommunityResponse[]>();
     for (const r of visible) {
       const forTarget = byTarget.get(r.target_id);

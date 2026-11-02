@@ -10,7 +10,6 @@ import {
   type StripeSubscriptionCheckoutObject,
 } from '../connect/stripe-connect-api.service';
 import { parseCheckoutTerms, planPriceFromTerms } from './subscription-terms';
-import { CLIENT_PLAN_DUNNING, clientPlanStatus } from './dunning-v2/coach-account-hold';
 
 /** pg_advisory_xact_lock namespace: ASCII 'subc'. */
 export const ADVISORY_LOCK_NAMESPACE_SUBSCRIPTION_CHECKOUT = 0x73_75_62_63;
@@ -376,18 +375,12 @@ export function sheetSecret(
   return null;
 }
 
-/**
- * COACH-GONE-DELIVERY: the plan's coach, as far as Keep plan needs him (include on plan reads).
- * FR-1195 (LO-1195 B1): and the dunning row's status and reason, so a renewal
- * waiting on the coach's account reads as active (planView).
- */
+/** COACH-GONE-DELIVERY: the plan's coach, as far as Keep plan needs him (include on plan reads). */
 export const PLAN_COACH = {
   coach: { select: { deletion_confirmed_at: true, deleted_at: true } },
-  dunning: CLIENT_PLAN_DUNNING,
 } as const;
 type PlanRow = ClientPurchase & {
   coach?: { deletion_confirmed_at: Date | null; deleted_at: Date | null } | null;
-  dunning?: { status: string; last_failure_reason: string | null } | null;
 };
 
 /**
@@ -400,10 +393,7 @@ export function keepBarred(row: PlanRow): boolean {
 }
 
 export function planView(row: PlanRow, pkg: CoachPackage | null): ClientPlanView {
-  // FR-1195 (LO-1195 B1, R1): a renewal waiting on the coach's Stripe account
-  // is no failed payment to the client: active, no card reminder. The coach's
-  // own views read the row and keep showing the hold.
-  const status = clientPlanStatus(row.status, row.dunning);
+  const status = row.status;
   const ended = status === 'canceled' || status === 'incomplete_expired' || status === 'expired';
   let state: PlanState;
   if (ended) state = 'ended';

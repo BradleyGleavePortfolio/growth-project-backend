@@ -70,11 +70,10 @@ function answerDunningSql(sql: Prisma.Sql, rows: Row[]) {
   expect(text).toMatch(/"DunningState"/);
   expect(text).toMatch(/ds\."status" = 'active'/);
   expect(sql.values).toEqual(expect.arrayContaining([DUNNING_V2_REVERSAL_REASON, FULL_REFUND_PAUSE_REASON]));
-  // inside the 10 days: not on hold, not locked, client has not ended the plan,
-  // not waiting on the coach's Stripe account (PF-7-BE, merged in MAIN-1195)
-  expect(text).toMatch(/FILTER \(WHERE NOT \(COALESCE\(ds\."last_failure_reason", ''\) IN \(\?, \?\)\) AND ds\."locked_out_at" IS NULL AND ds\."client_canceled_at" IS NULL AND NOT \(ds\."last_failure_reason" IS NOT DISTINCT FROM \?\)\)/);
+  // inside the 10 days: not on hold, not locked, client has not ended the plan
+  expect(text).toMatch(/FILTER \(WHERE NOT \(COALESCE\(ds\."last_failure_reason", ''\) IN \(\?, \?\)\) AND ds\."locked_out_at" IS NULL AND ds\."client_canceled_at" IS NULL\)/);
   // Day-10 lock: not on hold, locked
-  expect(text).toMatch(/FILTER \(WHERE NOT \(COALESCE\(ds\."last_failure_reason", ''\) IN \(\?, \?\)\) AND ds\."locked_out_at" IS NOT NULL AND NOT \(ds\."last_failure_reason" IS NOT DISTINCT FROM \?\)\)/);
+  expect(text).toMatch(/FILTER \(WHERE NOT \(COALESCE\(ds\."last_failure_reason", ''\) IN \(\?, \?\)\) AND ds\."locked_out_at" IS NOT NULL\)/);
   const active = rows.filter((r) => r.status === 'active');
   const win = active.filter((r) => !isOnHold(r) && r.locked_out_at === null && r.client_canceled_at === null);
   const lock = active.filter((r) => !isOnHold(r) && r.locked_out_at !== null);

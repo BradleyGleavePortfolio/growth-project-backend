@@ -14,7 +14,6 @@ import { DunningV2Dispatcher } from './dunning-v2.dispatcher';
 import { DunningV2Renderer } from './dunning-v2.renderer';
 import { DunningV2Service } from './dunning-v2.service';
 import { DunningV2Telemetry } from './dunning-v2.telemetry';
-import { CoachAccountHoldService } from './coach-account-hold.service';
 
 /**
  * B3 Smart Dunning v2 module (spec PR #6).
@@ -46,11 +45,9 @@ import { CoachAccountHoldService } from './coach-account-hold.service';
     DunningV2Dispatcher,
     DunningLockoutGuard,
     DunningLockoutScheduler,
-    CoachAccountHoldService,
   ],
   exports: [
     DunningV2Service,
-    CoachAccountHoldService,
     DunningV2Dispatcher,
     DunningEscalationClassifier,
     DunningV2Renderer,

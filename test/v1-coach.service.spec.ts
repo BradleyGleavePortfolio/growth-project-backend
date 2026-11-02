@@ -455,26 +455,6 @@ describe('V1CoachService', () => {
   });
 
   describe('listThreads', () => {
-    // LO-1197 B1 (b#1197 R1): MessageActionsService.delete keeps the row (deleted_at set, body and
-    // voice cleared). The console chat list must count and preview only what the count rule counts.
-    it('LO-1197 B1: a deleted client message adds nothing to unread, is no preview and makes no row', async () => {
-      await svc.sendMessage(coach('coach-A'), 'client-1', 'a1', undefined);
-      const at = Date.now();
-      prisma._messages.push(
-        { id: 'mx-live', coach_id: 'coach-A', client_id: 'client-1', sender_id: 'client-1', body: 'live reply',
-          created_at: new Date(at + 1000), read_at: null, deleted_at: null },
-        { id: 'mx-gone', coach_id: 'coach-A', client_id: 'client-1', sender_id: 'client-1', body: null,
-          voice_url: null, created_at: new Date(at + 2000), read_at: null, deleted_at: new Date(at + 3000) },
-        { id: 'mx-only', coach_id: 'coach-A', client_id: 'client-2', sender_id: 'client-2', body: null,
-          voice_url: null, created_at: new Date(at + 1000), read_at: null, deleted_at: new Date(at + 3000) },
-      );
-      const threads = await svc.listThreads(coach('coach-A'));
-      const t1 = threads.find((t) => t.clientId === 'client-1')!;
-      expect(t1.unreadCount).toBe(1);
-      expect(t1.lastMessage).toBe('live reply');
-      expect(threads.map((t) => t.clientId)).toEqual(['client-1']);
-    });
-
     it('returns one row per thread, sorted newest-first, with unread counts', async () => {
       await svc.sendMessage(coach('coach-A'), 'client-1', 'a1', undefined);
       await svc.sendMessage(coach('coach-A'), 'client-2', 'b1', undefined);

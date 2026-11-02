@@ -217,17 +217,14 @@ export class CommunityRepository {
 
   /**
    * Bounded "Today" content for a workspace, fetched concurrently (no N+1):
-   * nearest upcoming event, the pinned posts newest pin first, active challenge
-   * with the nearest ends_at; workspace-wide or in a space the rule opens to the
-   * caller. LS-1197 B2: every pin comes back, not only the newest, so getToday
-   * can apply the author rule (block, ban, departure) and keep the next pin
-   * that passes; pins are few (a coach pins each by hand).
+   * nearest upcoming event, most-recently-pinned post, active challenge with
+   * the nearest ends_at; workspace-wide or in a space the rule opens to the caller.
    */
   async findTodayContent(workspaceId: string, userId: string, now: Date) {
     const spaces = await this.prisma.communityCohort.findMany({ where: { workspace_id: workspaceId }, select: { id: true } });
     const open = await rowsWithSpaceAccess(this.prisma, spaces, (c) => [c.id, userId] as const);
     const inSpace = { OR: [{ cohort_id: null }, { cohort_id: { in: open.map((c) => c.id) } }] };
-    const [event, pinnedPosts, challenge] = await Promise.all([
+    const [event, pinnedPost, challenge] = await Promise.all([
       this.prisma.communityEvent.findFirst({
         where: {
           ...inSpace,
@@ -238,7 +235,7 @@ export class CommunityRepository {
         },
         orderBy: { starts_at: 'asc' },
       }),
-      this.prisma.communityPost.findMany({
+      this.prisma.communityPost.findFirst({
         where: {
           ...inSpace,
           workspace_id: workspaceId,
@@ -246,8 +243,7 @@ export class CommunityRepository {
           visibility: 'active',
           deleted_at: null,
         },
-        orderBy: [{ pinned_at: 'desc' }, { id: 'asc' }],
-        select: { id: true, title: true, author_id: true, workspace_id: true, cohort_id: true },
+        orderBy: { pinned_at: 'desc' },
       }),
       this.prisma.communityChallenge.findFirst({
         where: {
@@ -260,7 +256,7 @@ export class CommunityRepository {
         orderBy: { ends_at: 'asc' },
       }),
     ]);
-    return { event, pinnedPosts, challenge };
+    return { event, pinnedPost, challenge };
   }
 
   /**

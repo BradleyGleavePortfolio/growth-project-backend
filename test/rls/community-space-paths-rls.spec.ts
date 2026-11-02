@@ -220,7 +220,7 @@ const sorted = (xs: string[]) => [...xs].sort();
     for (const k of PEOPLE) {
       const today = await foundation.findTodayContent(ws[home(k)], id[k], new Date());
       const first = SPACES.find((s) => coachOf(s) === home(k) && OPEN[s].includes(k));
-      expect({ who: k, pinned: today.pinnedPosts[0]?.id ?? null }).toEqual({ who: k, pinned: first ? post[first] : null });
+      expect({ who: k, pinned: today.pinnedPost?.id ?? null }).toEqual({ who: k, pinned: first ? post[first] : null });
     }
   });
 
