@@ -1129,6 +1129,15 @@ function followHeldArguments(
     return { objs: [[{ key: a1 ? keyOf(a1) : undefined, value: /Reflect\.set$/.test(name) ? a2 : descValue(a2) }]], unknown: false, truthy: false };
   };
   /**
+   * `list.push(where)`, `list.unshift(where)` on an array: the value becomes an element of the list (followed as the
+   * list's, above), and Array.prototype.push writes nothing into it.
+   */
+  const elementOf = (call: ts.CallExpression | ts.NewExpression): boolean => {
+    const callee = unwrap(call.expression);
+    return ts.isCallExpression(call) && ts.isPropertyAccessExpression(callee) && ['push', 'unshift'].includes(callee.name.text) &&
+      checker.isArrayType(checker.getNonNullableType(checker.getTypeAtLocation(callee.expression)));
+  };
+  /**
    * The changes made at one place where the held value is named (`where`, `this.where`, `holder.where`,
    * `this['where']`): reassigned, a key set on it, a built-in that writes into it, a call it is handed to.
    */
@@ -1175,7 +1184,7 @@ function followHeldArguments(
       // handed to: what that function writes to its parameter (handedTo; one it cannot read fails closed).
       if (writesInto(p)) {
         if (p.arguments[0] === n) out = join(out, builtInWrites(p as ts.CallExpression, depth));
-      } else out = join(out, handedTo(p, p.arguments.indexOf(n as ts.Expression), depth));
+      } else if (!elementOf(p)) out = join(out, handedTo(p, p.arguments.indexOf(n as ts.Expression), depth));
     }
     return out;
   };
