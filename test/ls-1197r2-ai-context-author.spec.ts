@@ -49,7 +49,8 @@ describe('LS-1197R2 B2: structured AI preview honors the actual author block', (
         // The other context builder's sender-id check is a negative control.
         const gateway = await new ClientAIContextService(fixture.db).build(client);
         expect(JSON.stringify(gateway)).toContain(control);
-        expect(JSON.stringify(gateway)).not.toContain(hidden);
+        // R-AAR-1 (operator 192): the client's own AI keeps what the client reads; runs 41225152622, 41517180551.
+        expect(JSON.stringify(gateway)).toContain(hidden);
         const result = await structured.build(client);
         expect(JSON.stringify(result)).not.toContain(hidden);
       } finally {
