@@ -150,6 +150,8 @@ const ROWS: RegisteredReader[] = [
   // ── Community rule readers ────────────────────────────────────────────────────────────────────────
   r('community/community-space-access.ts', 'authorsWhoLeft', ['CommunityMessage', 'CommunityPost'], 'rule', 'the [space, author] pairs a reader must not see', allNa('n/a: this is the rule reader (block, ban, departure)')),
   r('community/community-access.service.ts', 'CommunityAccessService.findPost', ['CommunityPost'], 'check', 'post lookup for access checks', allNa(NA_CHECK)),
+  // MAIN-1185 (b#1185 main merge): main's PF-3-BE (b#1192, FR-1192) added the push's community lookup.
+  r('community/notifications/community-notifications.service.ts', 'CommunityNotificationsService.workspaceOf', ['CommunityPost', 'CommunityMessage'], 'check', 'push: the community a pushed post or message lives in (workspace_id only), handed to the one send path', allNa(`${NA_CHECK}: it selects workspace_id only (no words, no author); the send path (NotificationsService.pushToUser, community scope) stops a push held across a block or a ban of either person, test/ls-1192-held-community-ban.spec.ts`)),
 
   // ── Community space chat, replies, photos ────────────────────────────────────────────────────────
   r('community/messages/community-messages.repository.ts', 'CommunityMessagesRepository.listCohortMessages', ['CommunityMessage'], 'shown', 'space chat page', { block: `CommunityMessagesService.list: ${PLACE}`, ban: PLACE_BAN, removed: 'deleted_at null; a coach removal is a placeholder without words', departed: PLACE_GONE }, { behavior: 'space chat list' }),
