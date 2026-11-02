@@ -291,7 +291,7 @@ describe('B-680-4 / C-680-5 / C-680-4: trial use and attempt binding survive any
       trial_days: 7, is_active: true, archived_at: null, published_at: new Date(),
     };
     prisma._packages.push({ ...pkg, id: PKG }, { ...pkg, id: PKG2 });
-    prisma._accounts.push({ coach_user_id: COACH, stripe_account_id: 'acct_coach', charges_enabled: true, deauthorized_at: null });
+    prisma._accounts.push({ coach_user_id: COACH, stripe_account_id: 'acct_coach', charges_enabled: true, payouts_enabled: true, details_submitted: true, disabled_reason: null, deauthorized_at: null });
     const packages: any = { getById: jest.fn(async (id: string) => prisma._packages.find((p: { id: string }) => p.id === id)) };
     const fee: any = { planFor: jest.fn(async () => ({ application_fee_cents: 98, head_coach_id: null })) };
     const ready: any = { ready: true };

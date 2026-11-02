@@ -1042,8 +1042,11 @@ describe('CoachBriefService moved client — owner 4b', () => {
 
   it('SHARE-BE: an unread share card shows no preview (as the command-center inbox), never the voice label', async () => {
     const { prisma, svc } = newCoachBrief();
+    // HOLD-FU-BE: one time for both rows (two new Date() calls a millisecond
+    // apart reordered the newest-first list and made this test flaky).
+    const sentAt = new Date();
     const unread = (client_id: string, card: { id: string } | null) =>
-      ({ client_id, client: { name: client_id }, body: null, card, created_at: new Date() });
+      ({ client_id, client: { name: client_id }, body: null, card, created_at: sentAt });
     prisma.coachMessage.findMany.mockResolvedValue([unread(OTHER, { id: 'k1' }), unread(MOVED, null)]);
     await svc.generateBrief(NEW_COACH, 'America/Los_Angeles', '2026-10-12', { force: true });
     const items: Array<{ type: string; client_id: string; detail: string }> =
