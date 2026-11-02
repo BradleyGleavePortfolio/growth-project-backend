@@ -2307,7 +2307,8 @@ export class GuestCheckoutService {
       const url = token ? payPageUrl(this.config.get<string>('STOREFRONT_BASE_URL'), token) : null;
       lines = `<p>${escapeHtml(GUEST_TRIAL_COPY.notStarted(coach))}</p>`;
       if (url) {
-        lines += `\n<p><a href="${escapeAttr(url)}" style="color:#1A1A1A;text-decoration:underline;">${escapeHtml(url)}</a></p>`;
+        // The raw link is long; let it wrap on a narrow phone.
+        lines += `\n<p><a href="${escapeAttr(url)}" style="color:#1A1A1A;text-decoration:underline;word-break:break-all;overflow-wrap:anywhere;">${escapeHtml(url)}</a></p>`;
       }
     }
     return {
