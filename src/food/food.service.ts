@@ -267,6 +267,8 @@ function categoryOf(item: FoodResult): string {
   const category = tagged ?? item.category ?? '';
   return category === 'generic' ? '' : category;
 }
+const wholeName = (item: FoodResult, q: string[]) => (sameWords(words(item.name), q) ? 1 : 0);
+const builtIn = (item: FoodResult) => ((item.tags ?? []).includes(SEED_TAG) ? 1 : 0);
 
 /**
  * De-duplicate by food identity (the first source listed wins), then rank.
@@ -278,7 +280,8 @@ function categoryOf(item: FoodResult): string {
  * it ("Oatmeal, NFS" before "Bread, oatmeal"; "Fish, sardine, ..." before
  * "Sardine sandwich"), whatever its USDA data type. FR-1198R3: at each naming
  * level a row filed under another category than the food's own rows comes
- * after them. The plain form, shorter names and then A-Z break ties.
+ * after them. The exact whole name, the plain form, a built-in row, shorter
+ * names and then A-Z break ties.
  */
 function rankFoodResults(items: FoodResult[], q: string, limit: number): FoodResult[] {
   const byIdentity = new Map<string, FoodResult>();
@@ -289,6 +292,7 @@ function rankFoodResults(items: FoodResult[], q: string, limit: number): FoodRes
     else if (item.basic_food && !kept.basic_food) byIdentity.set(key, { ...kept, basic_food: true });
   }
 
+  const qWords = words(q);
   const scored = [...byIdentity.values()].map((item) => {
     const { score, whole } = matchOf(item, q);
     const tier = item.basic_food ? 2 : isBranded(item) ? 0 : 1;
@@ -327,7 +331,12 @@ function rankFoodResults(items: FoodResult[], q: string, limit: number): FoodRes
       a.offCategory - b.offCategory ||
       b.group - a.group ||
       b.score - a.score ||
+      // FR-1198R3 (LO-1198R3 C2): the row named exactly the query before a row
+      // whose head only is the query (ahead of the plain form), and a built-in
+      // row before a USDA row (ahead of the length tiebreak).
+      wholeName(b.item, qWords) - wholeName(a.item, qWords) ||
       plainForm(b.item) - plainForm(a.item) ||
+      builtIn(b.item) - builtIn(a.item) ||
       a.item.name.length - b.item.name.length ||
       a.item.name.localeCompare(b.item.name),
   );
