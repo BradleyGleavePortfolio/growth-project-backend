@@ -229,14 +229,33 @@ const plainForm = (item: FoodResult) =>
     : 0;
 
 /**
+ * FR-1198R2 (LS-1198R2 B1, LO-1198R2 C1): how a row names the food. 2: the
+ * food is the row's whole name or whole head before the first comma
+ * ("Oatmeal, NFS", "Pancakes, plain"). 1: USDA's group-first form
+ * "<Group>, <food>, <form>", a one-word group then the food ("Fish, sardine,
+ * Atlantic, ...", "Beans, black, ...", "Yogurt, Greek, ..." for "greek
+ * yogurt"). 0: a head that only begins with the food and goes on to another
+ * dish ("Sardine sandwich", "Salmon salad") or any other mention.
+ */
+function namesFood(item: FoodResult, score: number, rawQuery: string): 0 | 1 | 2 {
+  if (score === 100) return 2;
+  const [group, food] = item.name.split(',').map((part) => words(part));
+  if (!food || group.length !== 1) return 0;
+  const q = words(rawQuery);
+  const sorted = (list: string[]) => [...list].sort().join(' ');
+  return sameWords(food, q) || sorted([...group, ...food]) === sorted(q) ? 1 : 0;
+}
+
+/**
  * De-duplicate by food identity (the first source listed wins), then rank.
  * R3 (LO-FOOD B1): whole-word matches come first, a basic food before any
  * other unbranded food before a branded one, then the rest by match quality.
- * FR-1198 (LS-1198 B1, LO-1198 B1): ahead of all of those, an unbranded row
- * named for the food (score 80 or more: the query leads the name before its
- * first comma) comes before an unbranded row that only mentions it
- * ("Oatmeal, NFS" before "Bread, oatmeal"), whatever its USDA data type. The
- * plain form, shorter names and then A-Z break ties.
+ * FR-1198 (LS-1198 B1, LO-1198 B1) and FR-1198R2: ahead of all of those, an
+ * unbranded row that names the food (namesFood: its whole head first, then
+ * USDA's group-first form) comes before an unbranded row that only mentions
+ * it ("Oatmeal, NFS" before "Bread, oatmeal"; "Fish, sardine, ..." before
+ * "Sardine sandwich"), whatever its USDA data type. The plain form, shorter
+ * names and then A-Z break ties.
  */
 function rankFoodResults(items: FoodResult[], q: string, limit: number): FoodResult[] {
   const byIdentity = new Map<string, FoodResult>();
@@ -250,7 +269,7 @@ function rankFoodResults(items: FoodResult[], q: string, limit: number): FoodRes
   const scored = [...byIdentity.values()].map((item) => {
     const { score, whole } = matchOf(item, q);
     const tier = item.basic_food ? 2 : isBranded(item) ? 0 : 1;
-    const named = whole && tier > 0 && score >= 80 ? 1 : 0;
+    const named = whole && tier > 0 ? namesFood(item, score, q) : 0;
     return { item, score, named, group: whole ? tier : 0 };
   });
   scored.sort(
