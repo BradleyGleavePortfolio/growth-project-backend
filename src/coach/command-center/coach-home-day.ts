@@ -25,7 +25,7 @@
 import type { PrismaService } from '../../prisma.service';
 import { sanitizePromptInput } from '../../ai/utils/sanitize-prompt-input';
 import { clientWeek } from '../client-week';
-import { inBlockWith } from '../../messaging/block-pair';
+import { countedClients, countedMessagesFor } from '../../common/count-rule';
 
 /** The newest wins returned; `count` still counts every win this week. */
 export const HOME_WINS_MAX = 50;
@@ -311,9 +311,14 @@ async function contactRings(
   scope: HomeDayScope,
   dayFrom: Date,
   now: Date,
+  clientIds: string[],
 ): Promise<Pick<Rings, 'replies' | 'reach_outs'>> {
-  const { clientIds, ownerCoachId, needsYou } = scope;
+  const { ownerCoachId, needsYou } = scope;
   const goal = Math.min(REACH_OUT_GOAL_MAX, needsYou.length);
+  // COUNT-DELETED-BE: the count rule (common/count-rule.ts): `clientIds` is the
+  // roster loadHomeDay already ran through countedClients (a client in a block
+  // with the coach either way adds nothing to Replies), and each message read
+  // below takes countedMessagesFor (no deleted message, no author in a block).
   if (clientIds.length === 0) {
     return { replies: { answered: 0, received: 0 }, reach_outs: { contacted: 0, goal, contacted_ids: [] } };
   }
@@ -327,7 +332,7 @@ async function contactRings(
         coach_id: ownerCoachId,
         client_id: { in: clientIds },
         sender_id: { in: clientIds },
-        deleted_at: null,
+        ...countedMessagesFor(scope.coachId),
         created_at: today,
       },
       select: { client_id: true, created_at: true },
@@ -342,7 +347,7 @@ async function contactRings(
         coach_id: ownerCoachId,
         client_id: { in: clientIds },
         sender_id: { notIn: clientIds },
-        deleted_at: null,
+        ...countedMessagesFor(scope.coachId),
         broadcast_delivery: { is: null },
         automated_by: null,
         created_at: today,
@@ -387,12 +392,15 @@ export async function loadHomeDay(
   now: Date,
 ): Promise<CoachHomeDay> {
   const week = clientWeek(now, timeZone);
-  // #168-4: no reach-out or Roman win draft across a block (either way).
-  const blocked = await inBlockWith(prisma, scope.coachId, scope.clientIds);
+  // #168-4: no reach-out or Roman win draft across a block (either way), and
+  // (COUNT-DELETED-BE) no Replies count: one count-rule read per load.
+  const counted = await countedClients(prisma, scope.coachId, scope.clientIds);
+  const kept = new Set(counted);
+  const blocked = new Set(scope.clientIds.filter((id) => !kept.has(id)));
   const needsYou = scope.needsYou.filter((id) => !blocked.has(id));
   const [checkIns, contact, streaks, bests, goals] = await Promise.all([
     checkInRing(prisma, scope.habits, week.today, week.todayFrom, now),
-    contactRings(prisma, { ...scope, needsYou }, week.todayFrom, now),
+    contactRings(prisma, { ...scope, needsYou }, week.todayFrom, now, counted),
     streakWins(prisma, scope.habits, week.from, now),
     liftingWins(prisma, scope.workouts, week.start, week.today),
     goalWins(prisma, scope.weighIns, week.start, week.today),

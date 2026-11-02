@@ -30,6 +30,7 @@ import { CHURN_FACTOR_SCOPES, coachVisibleFactors } from './churn-factor-scopes'
 import { resolveRecipientTimeZone } from '../../notifications/recipient-timezone';
 import { type CoachHomeDay, loadHomeDay } from './coach-home-day';
 import { inBlockWith } from '../../messaging/block-pair';
+import { countedClients, countedMessagesFor } from '../../common/count-rule';
 import { spaceAlertCopies, spaceCopyOf, withSpaceCopies } from '../../community/space-safety-alerts';
 import type { CoachRiskBoardRow } from '../../admin/ptm/admin-ptm.service';
 import type { PtmRiskBucket } from '../../ptm/ptm.types';
@@ -530,13 +531,19 @@ export class CommandCenterService {
       // so `sender_id IN clientIds` is exactly "sent by a client"; every
       // coach-side send (head OR sub) is excluded because their ids are not
       // in the client set. Head-coach semantics are unchanged.
-      // FX-1141: a chat in a block either way counts 0 in the unread tile.
-      inBlockWith(this.prisma, coachId, clientIds).then((blocked) => {
-        const open = clientIds.filter((id) => !blocked.has(id));
-        return this.prisma.coachMessage.count({
-          where: { coach_id: ownerCoachId, client_id: { in: open }, read_at: null, sender_id: { in: open } },
-        });
-      }),
+      // FX-1141 + COUNT-DELETED-BE: the count rule (common/count-rule.ts): a
+      // chat in a block either way and a deleted message count 0 in the tile.
+      countedClients(this.prisma, coachId, clientIds).then((open) =>
+        this.prisma.coachMessage.count({
+          where: {
+            coach_id: ownerCoachId,
+            client_id: { in: open },
+            read_at: null,
+            sender_id: { in: open },
+            ...countedMessagesFor(coachId),
+          },
+        }),
+      ),
     ]);
 
     // At-risk count: fetch latest prediction per user, count those with risk > 0.3
@@ -852,8 +859,11 @@ export class CommandCenterService {
       await this.resolveScopeWithNames(coachId);
     // 10-23 "Dissapear": a chat in a block either way leaves the Inbox tab
     // (no row, no words, unread 0 in the total); unblock brings it back.
-    const blocked = await inBlockWith(this.prisma, coachId, roster);
-    const clientIds = roster.filter((id) => !blocked.has(id));
+    // COUNT-DELETED-BE: through the count rule (common/count-rule.ts), which
+    // also leaves deleted messages, and messages whose author is in a block
+    // with this coach either way (a team coach, LS-1197 B1), out of the rows,
+    // previews and unread counts; the newest message left is the preview.
+    const clientIds = await countedClients(this.prisma, coachId, roster);
     if (clientIds.length === 0) {
       return { threads: [], total_unread: 0 };
     }
@@ -873,6 +883,7 @@ export class CommandCenterService {
       where: {
         coach_id: ownerCoachId,
         client_id: { in: clientIds },
+        ...countedMessagesFor(coachId),
       },
       orderBy: { created_at: 'desc' },
       distinct: ['client_id'],
@@ -908,6 +919,7 @@ export class CommandCenterService {
         client_id: { in: clientIds },
         read_at: null,
         sender_id: { in: clientIds },
+        ...countedMessagesFor(coachId),
       },
       _count: { _all: true },
     });
