@@ -1,0 +1,10 @@
+test/fr-1192r4-money-read-wait.spec.ts
+test/ls-1192r4-coach-money-read.spec.ts
+src/notifications/__tests__/sender-registry.spec.ts
+test/(ls|lo|fr)-1192
+test/pf-3
+test/ls-payfail
+push-delivery
+coach-alerts-push-delivery
+src/notifications/push
+test/notifications
