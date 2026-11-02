@@ -209,6 +209,18 @@ Refreshing the fixture is intentionally manual: live USDA pulls drift
 over time and we want auditable diffs. To add a food, edit the JSON,
 run with `--refresh` against staging, and PR the change.
 
+Every deploy now does the insert for you: `scripts/release.sh` step 5
+runs a compiled copy of `scripts/seed-built-in-foods.ts`
+(`tsconfig.food-seed.json`, built in the Dockerfile) that adds each food in
+this file the shared catalog (`created_by_user_id` NULL) is missing, keyed on
+name + brand, as the same row `npm run seed:foods` makes. It never updates
+or deletes a row and never touches a member's own food, and it prints
+`[release] built-in foods: <n> present, <m> added`. If any seed food is still
+missing afterwards, or the database refuses the insert, the release fails and
+the previous image keeps serving. `--refresh` stays a developer tool; the
+deploy never changes an existing row. `test/food-seed-file.spec.ts` checks the
+file in CI (65 foods, unique name + brand, sane per-100 g values).
+
 ### Required env
 
 `USDA_API_KEY` is **boot-required** (was previously `optional` and

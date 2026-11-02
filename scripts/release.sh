@@ -302,6 +302,32 @@ if [[ "${VERIFIER_COUNT}" -ne "${DISCOVERED_COUNT}" || "${VERIFIER_COUNT}" -lt "
 fi
 echo "[release]   verifiers_passed = ${VERIFIER_COUNT} (discovered=${DISCOVERED_COUNT}, required=${REQUIRED_COUNT})"
 
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 5 — Built-in foods (FOOD-SEED-BE). Adds each food in
+# prisma/data/seed-foods.json that the shared catalog (FoodItem rows with
+# created_by_user_id NULL) lacks, keyed on name + brand, as the same row
+# `npm run seed:foods` makes. It never updates or deletes a row and never
+# reads a member's own food. It then checks every seed food is in the shared
+# catalog: any still missing, or an insert the database refuses, fails this
+# release like a failed verifier, so Fly keeps the previous image. A compiled
+# copy (tsconfig.food-seed.json, built in the Dockerfile) runs on DIRECT_URL;
+# the runtime image has no ts-node.
+# ─────────────────────────────────────────────────────────────────────────────
+echo "[release] step 5: built-in foods (prisma/data/seed-foods.json)..."
+FOOD_SEED_SCRIPT="dist/food-seed/scripts/seed-built-in-foods.js"
+FOOD_SEED_FILE="prisma/data/seed-foods.json"
+if [[ ! -f "${FOOD_SEED_SCRIPT}" || ! -f "${FOOD_SEED_FILE}" ]]; then
+  echo "[release] built-in foods FAILED: ${FOOD_SEED_SCRIPT} or ${FOOD_SEED_FILE} is not in this image"
+  echo "[release] Refusing to mark this release green."
+  exit 1
+fi
+if ! DIRECT_URL="${DIRECT_URL}" node "${FOOD_SEED_SCRIPT}" "${FOOD_SEED_FILE}"; then
+  echo "[release] built-in foods step FAILED (reason on the line above)."
+  echo "[release] Refusing to mark this release green."
+  echo "[release] NOTE: migrate deploy already ran; the database may now be ahead of the running code."
+  exit 1
+fi
+
 # Count successfully applied (rolled_back_at IS NULL) rows in _prisma_migrations
 # so the log emits a single grep-able line for monitoring/observability.
 #
