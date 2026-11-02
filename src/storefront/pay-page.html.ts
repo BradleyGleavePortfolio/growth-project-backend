@@ -91,10 +91,24 @@ const usd = (cents: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100);
 const cadence = (i: string, n: number) => (n > 1 ? `every ${n} ${i}s` : `a ${i}`);
 const period = (i: string, n: number) => (n > 1 ? `${n} ${i}s` : i);
-export const shortDate = (iso: string) =>
-  new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(iso));
-const longDate = (iso: string) =>
-  new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(new Date(iso));
+
+/**
+ * TRIAL-FU-BE F1 (LO-1193 C1) — the one zone every trial-end, first-charge
+ * and next-charge date on the pay page and the return page is printed in.
+ * Owner: "189-S2 - v1.1 (all my clients at launch will be PDT)": 189-S2 swaps
+ * the zone here, in one place. Never UTC: a trial started after 5 pm PDT
+ * (4 pm PST) was told its first charge a day late.
+ */
+export const BUYER_TIME_ZONE = 'America/Los_Angeles';
+
+/** A charge or trial-end instant as the buyer's calendar day ('Nov 6' / 'November 6, 2026'). */
+export function buyerChargeDay(iso: string, style: 'short' | 'long'): string {
+  const parts: Intl.DateTimeFormatOptions =
+    style === 'short' ? { month: 'short', day: 'numeric' } : { month: 'long', day: 'numeric', year: 'numeric' };
+  return new Intl.DateTimeFormat('en-US', { ...parts, timeZone: BUYER_TIME_ZONE }).format(new Date(iso));
+}
+export const shortDate = (iso: string) => buyerChargeDay(iso, 'short');
+const longDate = (iso: string) => buyerChargeDay(iso, 'long');
 
 export function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
