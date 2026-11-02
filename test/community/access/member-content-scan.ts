@@ -974,74 +974,286 @@ function followHeldArguments(
     }
     return false;
   };
+  /** The model of a delegate expression: `x.user`, `x['user']`, or a constant that holds one. */
+  const delegateModel = (e: ts.Expression, depth = 0): string | undefined => {
+    const d = unwrap(e);
+    if (ts.isPropertyAccessExpression(d) && byDelegate.has(d.name.text)) {
+      if (d.name.text === 'message' && !looksLikeClient(unwrap(d.expression).getText())) return undefined;
+      return byDelegate.get(d.name.text);
+    }
+    if (ts.isElementAccessExpression(d)) {
+      const k = keyOf(d.argumentExpression);
+      return k !== undefined ? byDelegate.get(k) : undefined;
+    }
+    if (ts.isIdentifier(d) && depth < 4) {
+      const decl = symbolOf(d)?.valueDeclaration;
+      if (decl && ts.isVariableDeclaration(decl) && decl.initializer && ts.isIdentifier(decl.name)) return delegateModel(decl.initializer, depth + 1);
+    }
+    return undefined;
+  };
+  /** The member `name` of what `holder` is typed as (undefined on a value typed any or unresolved). */
+  const memberSymbol = (holder: ts.Expression, name: string): ts.Symbol | undefined =>
+    checker.getPropertyOfType(checker.getApparentType(checker.getNonNullableType(checker.getTypeAtLocation(holder))), name);
+
+  /**
+   * FR-1185R5 B2 (LS-1185R6 B2): THE entry rule for a read, one rule for the follow pass entry and for handedTo (the
+   * read itself writes nothing to what it is handed). It names a read method every way the direct visitor and the
+   * caller resolver accept a member reference: `d.findMany`, `d['findMany']`, `d[METHOD]` (a key the checker names),
+   * `const { findMany } = d` (also renamed), an alias (`const list = d.findMany`), and `.bind` of any of them (`bound`:
+   * the argument `.bind(d, arg)` fixes). `delegate` is `d` (none for a method destructured from a parameter).
+   */
+  type ReadMethod = { name: string; delegate?: ts.Expression; bound?: ts.Expression; symbol?: ts.Symbol };
+  const readMethod = (e: ts.Expression, depth = 0): ReadMethod | undefined => {
+    const v = unwrap(e);
+    if (depth > 6) return undefined;
+    if (ts.isPropertyAccessExpression(v)) {
+      return READ_METHODS.has(v.name.text) ? { name: v.name.text, delegate: v.expression, symbol: symbolOf(v.name) } : undefined;
+    }
+    if (ts.isElementAccessExpression(v)) {
+      const k = keyOf(v.argumentExpression);
+      return k !== undefined && READ_METHODS.has(k) ? { name: k, delegate: v.expression, symbol: memberSymbol(v.expression, k) } : undefined;
+    }
+    if (ts.isCallExpression(v)) {
+      const c = unwrap(v.expression);
+      if (!ts.isPropertyAccessExpression(c) || c.name.text !== 'bind') return undefined;
+      const m = readMethod(c.expression, depth + 1);
+      return m && { ...m, bound: m.bound ?? v.arguments[1] };
+    }
+    if (!ts.isIdentifier(v)) return undefined;
+    const d = symbolOf(v)?.valueDeclaration;
+    if (d && ts.isBindingElement(d) && ts.isObjectBindingPattern(d.parent) && !d.dotDotDotToken) {
+      const key = d.propertyName ? propName(d.propertyName) : nameOf(d.name);
+      if (key === undefined || !READ_METHODS.has(key)) return undefined;
+      const holder = d.parent.parent;
+      const delegate = ts.isVariableDeclaration(holder) && holder.initializer ? holder.initializer : undefined;
+      return { name: key, delegate, symbol: delegate ? memberSymbol(delegate, key) : undefined };
+    }
+    if (d && ts.isVariableDeclaration(d) && ts.isIdentifier(d.name) && d.initializer) return readMethod(d.initializer, depth + 1);
+    return undefined;
+  };
+  /**
+   * How a call invokes a read method: `m(arg)`, `m.call(t, arg)`, `m.apply(t, [arg])` (m any form readMethod names);
+   * its argument, `unknown` when the scan cannot read it (a spread, `.apply` with a list it cannot follow).
+   */
+  type ReadCall = ReadMethod & { arg?: ts.Expression; unknown: boolean };
+  const readCall = (call: ts.CallExpression): ReadCall | undefined => {
+    const callee = unwrap(call.expression);
+    const first = (m: ReadMethod, args: readonly ts.Expression[]): ReadCall => {
+      const a = m.bound ?? args[0];
+      return a && ts.isSpreadElement(a) ? { ...m, unknown: true } : { ...m, arg: a, unknown: false };
+    };
+    const direct = readMethod(callee);
+    if (direct) return first(direct, call.arguments);
+    if (!ts.isPropertyAccessExpression(callee) || !['call', 'apply'].includes(callee.name.text)) return undefined;
+    const m = readMethod(callee.expression);
+    if (!m) return undefined;
+    if (callee.name.text === 'call' || m.bound) return first(m, call.arguments.slice(1));
+    const list = call.arguments[1] && unwrap(call.arguments[1]);
+    if (!list) return { ...m, unknown: false };
+    return ts.isArrayLiteralExpression(list) ? first(m, list.elements) : { ...m, unknown: true };
+  };
+  /** The model a read method reads: its delegate's, else ANY_MODEL (a method of the scanned code with a body is none). */
+  const modelOfRead = (m: ReadMethod): string | undefined => {
+    const own = (m.symbol?.declarations ?? []).some((d) => ts.isFunctionLike(d) && 'body' in d && !!d.body);
+    return (m.delegate && delegateModel(m.delegate)) ?? (own ? undefined : ANY_MODEL);
+  };
+  /** A wrapper (`(x)`, `x as T`, `x!`) around an expression, up to the expression its parent sees. */
+  const outer = (e: ts.Node): ts.Node => {
+    let n = e;
+    while (n.parent && (ts.isParenthesizedExpression(n.parent) || ts.isAsExpression(n.parent) || ts.isNonNullExpression(n.parent) ||
+      ts.isTypeAssertionExpression(n.parent) || ts.isSatisfiesExpression(n.parent))) n = n.parent;
+    return n;
+  };
+  /**
+   * A read method reference used other than by an invocation readCall reads (`run(d.findMany)`, `{ list: findMany }`,
+   * an alias that is): code the scan does not follow can call it, so its argument cannot be followed.
+   */
+  const handedOnRef = (e: ts.Node, depth = 0): boolean => {
+    const n = outer(e);
+    const p = n.parent;
+    if (!p || depth > 4) return false;
+    if (ts.isCallExpression(p) && p.expression === n) return false;
+    if (ts.isTypeOfExpression(p)) return false;
+    if (ts.isPropertyAccessExpression(p) && p.expression === n) {
+      if (p.name.text === 'bind' && ts.isCallExpression(p.parent) && p.parent.expression === p) return handedOnRef(p.parent, depth + 1);
+      return false; // `.call`, `.apply` (an invocation), or a property of the function (`.name`)
+    }
+    if (ts.isVariableDeclaration(p) && p.initializer === n && ts.isIdentifier(p.name)) return aliasHandedOn(p.name, depth + 1);
+    return true;
+  };
+  const aliasHandedOn = (name: ts.Identifier, depth: number): boolean => {
+    const sym = checker.getSymbolAtLocation(name);
+    const scope = ts.findAncestor(name.parent, (x) => ts.isFunctionLike(x) || ts.isSourceFile(x));
+    if (!sym || !scope) return true;
+    let out = false;
+    const look = (x: ts.Node): void => {
+      if (out) return;
+      if (ts.isIdentifier(x) && x !== name && x.text === name.text && symbolOf(x) === sym && handedOnRef(x, depth)) out = true;
+      ts.forEachChild(x, look);
+    };
+    look(scope);
+    return out;
+  };
+
   const visiting = new Set<ts.Node>();
+  const assigned = (e: ts.Node) => ts.isBinaryExpression(e.parent) && e.parent.left === e &&
+    e.parent.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && e.parent.operatorToken.kind <= ts.SyntaxKind.LastAssignment;
+  // FR-1185R5 B1: built-ins that write into their first argument, modelled key by key (Object.assign as before).
+  const ASSIGN = /(^|\.)assign$/;
+  const MUTATOR = /^(globalThis\.)?(Object\.(defineProperty|defineProperties)|Reflect\.(set|defineProperty))$/;
+  const writesInto = (call: ts.CallExpression | ts.NewExpression): boolean =>
+    ts.isCallExpression(call) && (ASSIGN.test(call.expression.getText()) || MUTATOR.test(call.expression.getText()));
+  /** A property descriptor's `value` (none for a getter or a descriptor it cannot read: a value it cannot follow). */
+  const descValue = (e: ts.Expression | undefined): ts.Expression | undefined => {
+    const d = e && unwrap(e);
+    if (!d || !ts.isObjectLiteralExpression(d)) return undefined;
+    for (const p of d.properties) if (ts.isPropertyAssignment(p) && propName(p.name) === 'value') return p.initializer;
+    return undefined;
+  };
+  /** The keys a built-in that writes into its first argument sets there (writesInto). */
+  const builtInWrites = (call: ts.CallExpression, depth: number): Shape => {
+    const name = call.expression.getText();
+    const [, a1, a2] = call.arguments;
+    if (ASSIGN.test(name)) {
+      let out = EMPTY();
+      for (const a of call.arguments.slice(1)) out = join(out, shapeOf(a, depth + 1));
+      return out;
+    }
+    if (/defineProperties$/.test(name)) {
+      const map = a1 ? shapeOf(a1, depth + 1) : UNKNOWN();
+      let out: Shape = { ...EMPTY(), unknown: map.unknown };
+      for (const obj of map.objs) out = join(out, { objs: [obj.map((p) => ({ key: p.key, value: descValue(p.value) }))], unknown: false, truthy: false });
+      return out;
+    }
+    // Object.defineProperty / Reflect.defineProperty (target, key, descriptor); Reflect.set (target, key, value)
+    return { objs: [[{ key: a1 ? keyOf(a1) : undefined, value: /Reflect\.set$/.test(name) ? a2 : descValue(a2) }]], unknown: false, truthy: false };
+  };
+  /**
+   * The changes made at one place where the held value is named (`where`, `this.where`, `holder.where`,
+   * `this['where']`): reassigned, a key set on it, a built-in that writes into it, a call it is handed to.
+   */
+  const writesAt = (occ: ts.Expression, depth: number): Shape => {
+    let out = EMPTY();
+    const n = outer(occ);
+    const p = n.parent;
+    if (!p) return out;
+    if (assigned(n)) out = join(out, shapeOf((p as ts.BinaryExpression).right, depth + 1));
+    // where.x = v, where[KEY] = v, where[key] = v (a key it cannot name), also in a loop or a branch
+    if ((ts.isPropertyAccessExpression(p) || ts.isElementAccessExpression(p)) && p.expression === n) {
+      const key = ts.isPropertyAccessExpression(p) ? p.name.text : keyOf(p.argumentExpression);
+      if (assigned(p)) out = join(out, { objs: [[{ key, value: (p.parent as ts.BinaryExpression).right }]], unknown: false, truthy: false });
+      // where.AND.push(x), where.x.y = v: a change below a key of it
+      const pp = p.parent;
+      if (ts.isPropertyAccessExpression(pp) && pp.expression === p && ts.isCallExpression(pp.parent) && pp.parent.expression === pp &&
+        ['push', 'unshift'].includes(pp.name.text)) {
+        for (const a of pp.parent.arguments) out = join(out, { objs: [[{ key, value: ts.isSpreadElement(a) ? a.expression : a }]], unknown: false, truthy: false });
+      } else if ((ts.isPropertyAccessExpression(pp) || ts.isElementAccessExpression(pp)) && pp.expression === p && assigned(pp)) {
+        out = { ...out, unknown: true };
+      }
+      // arr.push(x): another element
+      if (ts.isPropertyAccessExpression(p) && ['push', 'unshift'].includes(p.name.text) && ts.isCallExpression(p.parent) && p.parent.expression === p) {
+        for (const a of p.parent.arguments) out = join(out, shapeOf(ts.isSpreadElement(a) ? a.expression : a, depth + 1));
+      }
+    }
+    // const alias = where; alias = where: keys set through the second name are keys of this value
+    const alias = ts.isVariableDeclaration(p) && p.initializer === n && ts.isIdentifier(p.name) ? p.name
+      : ts.isBinaryExpression(p) && p.right === n && p.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isIdentifier(p.left) ? p.left
+        : undefined;
+    const aliasSym = alias ? checker.getSymbolAtLocation(alias) : undefined;
+    const own = ts.isIdentifier(occ) ? symbolOf(occ) : undefined;
+    if (alias && aliasSym && aliasSym !== own && !visiting.has(alias)) {
+      visiting.add(alias);
+      try {
+        out = join(out, writesTo(aliasSym, ts.findAncestor(alias, (x) => ts.isFunctionLike(x) || ts.isSourceFile(x)) ?? alias.getSourceFile(), depth + 1));
+      } finally {
+        visiting.delete(alias);
+      }
+    }
+    if ((ts.isCallExpression(p) || ts.isNewExpression(p)) && p.arguments?.includes(n as ts.Expression)) {
+      // Object.assign(where, other), Object.defineProperty(where, KEY, { value }), Object.defineProperties(where, {...}),
+      // Reflect.set(where, KEY, v): the keys it sets (a source of Object.assign is only read). Any other call it is
+      // handed to: what that function writes to its parameter (handedTo; one it cannot read fails closed).
+      if (writesInto(p)) {
+        if (p.arguments[0] === n) out = join(out, builtInWrites(p as ts.CallExpression, depth));
+      } else out = join(out, handedTo(p, p.arguments.indexOf(n as ts.Expression), depth));
+    }
+    return out;
+  };
   /** The changes made to a variable after its initializer, within its scope: alternatives and keys set on it. */
   const writesTo = (sym: ts.Symbol, scope: ts.Node, depth: number): Shape => {
     let out = EMPTY();
     const look = (n: ts.Node): void => {
-      if (ts.isIdentifier(n) && n.text === sym.name && symbolOf(n) === sym) {
-        const p = n.parent;
-        const assigned = (e: ts.Node) => ts.isBinaryExpression(e.parent) && e.parent.left === e &&
-          e.parent.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && e.parent.operatorToken.kind <= ts.SyntaxKind.LastAssignment;
-        if (assigned(n)) out = join(out, shapeOf((p as ts.BinaryExpression).right, depth + 1));
-        // where.x = v, where[KEY] = v, where[key] = v (a key it cannot name), also in a loop or a branch
-        if ((ts.isPropertyAccessExpression(p) || ts.isElementAccessExpression(p)) && p.expression === n) {
-          const key = ts.isPropertyAccessExpression(p) ? p.name.text : keyOf(p.argumentExpression);
-          if (assigned(p)) out = join(out, { objs: [[{ key, value: (p.parent as ts.BinaryExpression).right }]], unknown: false, truthy: false });
-          // where.AND.push(x), where.x.y = v: a change below a key of it
-          const pp = p.parent;
-          if (ts.isPropertyAccessExpression(pp) && pp.expression === p && ts.isCallExpression(pp.parent) && pp.parent.expression === pp &&
-            ['push', 'unshift'].includes(pp.name.text)) {
-            for (const a of pp.parent.arguments) out = join(out, { objs: [[{ key, value: ts.isSpreadElement(a) ? a.expression : a }]], unknown: false, truthy: false });
-          } else if ((ts.isPropertyAccessExpression(pp) || ts.isElementAccessExpression(pp)) && pp.expression === p && assigned(pp)) {
-            out = { ...out, unknown: true };
-          }
-          // arr.push(x): another element
-          if (ts.isPropertyAccessExpression(p) && ['push', 'unshift'].includes(p.name.text) && ts.isCallExpression(p.parent) && p.parent.expression === p) {
-            for (const a of p.parent.arguments) out = join(out, shapeOf(ts.isSpreadElement(a) ? a.expression : a, depth + 1));
-          }
-        }
-        // const alias = where; alias = where: keys set through the second name are keys of this value
-        const alias = ts.isVariableDeclaration(p) && p.initializer === n && ts.isIdentifier(p.name) ? p.name
-          : ts.isBinaryExpression(p) && p.right === n && p.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isIdentifier(p.left) ? p.left
-            : undefined;
-        const aliasSym = alias ? checker.getSymbolAtLocation(alias) : undefined;
-        if (alias && aliasSym && aliasSym !== sym && !visiting.has(alias)) {
-          visiting.add(alias);
-          try {
-            out = join(out, writesTo(aliasSym, ts.findAncestor(alias, (x) => ts.isFunctionLike(x) || ts.isSourceFile(x)) ?? scope, depth + 1));
-          } finally {
-            visiting.delete(alias);
-          }
-        }
-        // Object.assign(where, other)
-        if (ts.isCallExpression(p) && p.arguments[0] === n && /(^|\.)assign$/.test(p.expression.getText())) {
-          for (const a of p.arguments.slice(1)) out = join(out, shapeOf(a, depth + 1));
-        } else if ((ts.isCallExpression(p) || ts.isNewExpression(p)) && p.arguments?.includes(n as ts.Expression)) {
-          // handed to a function that may add keys to it (`addFilters(where)`): what that function writes to its
-          // parameter; a function the scan cannot see into (a package's) fails closed, one without a body (a
-          // built-in such as JSON.stringify) writes nothing
-          out = join(out, handedTo(p, p.arguments.indexOf(n as ts.Expression), depth));
-        }
-      }
+      if (ts.isIdentifier(n) && n.text === sym.name && symbolOf(n) === sym) out = join(out, writesAt(n, depth));
       ts.forEachChild(n, look);
     };
     look(scope);
     return out;
   };
+  // FR-1185R5 B1: every place a property is named (`x.where`, `x['where']`) and every built-in write call, by name,
+  // across the scanned files, built once on first use.
+  let members: Map<string, Array<ts.PropertyAccessExpression | ts.ElementAccessExpression>> | undefined;
+  const intoCalls: ts.CallExpression[] = [];
+  /**
+   * The changes made to a field or a property (a class field, a key of an object literal) after it is made,
+   * anywhere in the scanned files: each place it is named (`this.where.x = ...`, `holder.where = {...}`,
+   * Object.assign(this.where, ...)), and a built-in that writes it into what holds it (`Object.assign(holder,
+   * { where })`, `Reflect.set(holder, 'where', v)`).
+   */
+  const propertyWrites = (sym: ts.Symbol, depth: number): Shape => {
+    if (!members) {
+      members = new Map();
+      const index = members;
+      for (const { sf } of parsed) {
+        const look = (n: ts.Node): void => {
+          const name = ts.isPropertyAccessExpression(n) ? n.name.text
+            : ts.isElementAccessExpression(n) && (ts.isStringLiteral(n.argumentExpression) || ts.isNoSubstitutionTemplateLiteral(n.argumentExpression))
+              ? n.argumentExpression.text : undefined;
+          if (name !== undefined) index.set(name, [...(index.get(name) ?? []), n as ts.PropertyAccessExpression | ts.ElementAccessExpression]);
+          if (ts.isCallExpression(n) && n.arguments.length > 1 && writesInto(n)) intoCalls.push(n);
+          ts.forEachChild(n, look);
+        };
+        look(sf);
+      }
+    }
+    let out = EMPTY();
+    for (const occ of members.get(sym.name) ?? []) {
+      const s = ts.isPropertyAccessExpression(occ) ? symbolOf(occ.name)
+        : checker.getSymbolAtLocation(occ.argumentExpression) ?? memberSymbol(occ.expression, sym.name);
+      if (s === sym) out = join(out, writesAt(occ, depth + 1));
+    }
+    for (const call of intoCalls) {
+      if (memberSymbol(call.arguments[0], sym.name) === sym) out = join(out, pick(builtInWrites(call, depth + 1), sym.name, depth));
+    }
+    return out;
+  };
   /** What a called function writes to the parameter at `index` (keys set on it there). */
   const handedTo = (call: ts.CallExpression | ts.NewExpression, index: number, depth: number): Shape => {
+    if (ts.isCallExpression(call) && readCall(call)) return EMPTY(); // the read itself, however it is invoked
     const callee = unwrap(call.expression);
-    if (ts.isPropertyAccessExpression(callee) && READ_METHODS.has(callee.name.text)) return EMPTY(); // the read itself
     if (ts.isPropertyAccessExpression(callee) && WRITE_METHODS.has(callee.name.text)) return EMPTY();
+    // f.call(t, where): what f writes to its parameter one place before (the first is `this`: fails closed)
+    if (ts.isPropertyAccessExpression(callee) && callee.name.text === 'call' &&
+      (symbolOf(callee.name)?.declarations ?? []).some((d) => d.getSourceFile().hasNoDefaultLib)) {
+      return index === 0 ? UNKNOWN() : paramWrites(callee.expression, index - 1, depth);
+    }
+    return paramWrites(callee, index, depth);
+  };
+  /**
+   * What the function `callee` names writes to its parameter at `index`. FR-1185R5 B1: a function whose body the
+   * checker cannot read (a package's, a declaration only, an interface member, a library function such as
+   * Object.setPrototypeOf or Function.prototype.apply) may write what it is handed: it fails closed (an overload
+   * signature is read through its implementation).
+   */
+  const paramWrites = (calleeExpr: ts.Expression, index: number, depth: number): Shape => {
+    const callee = unwrap(calleeExpr);
     const sym = symbolOf(ts.isPropertyAccessExpression(callee) ? callee.name : ts.isElementAccessExpression(callee) ? callee.argumentExpression : callee);
     const decls = sym?.declarations ?? [];
     if (decls.length === 0) return UNKNOWN();
+    const fns = decls.map(fnOf);
+    const bodies = fns.filter((fn): fn is ts.SignatureDeclaration & { body: ts.Node } => !!fn && ts.isFunctionLike(fn) && 'body' in fn && !!fn.body);
+    if (bodies.length === 0 || fns.some((fn) => !fn || !ts.isFunctionLike(fn))) return UNKNOWN();
     let out = EMPTY();
-    for (const d of decls) {
-      const fn = fnOf(d);
-      if (!fn || !ts.isFunctionLike(fn)) return UNKNOWN();
-      if (!('body' in fn) || !fn.body) continue; // a declaration only (a built-in): writes nothing
+    for (const fn of bodies) {
       const param = fn.parameters[index];
       if (!param) continue;
       if (!ts.isIdentifier(param.name)) return UNKNOWN();
@@ -1078,8 +1290,9 @@ function followHeldArguments(
       }
       if (ts.isParameter(d)) return join(argumentsOf(d, depth), writesTo(sym, d.parent, depth));
       if (ts.isBindingElement(d)) return bindingValue(d, depth);
-      if ((ts.isPropertyAssignment(d) || ts.isPropertyDeclaration(d)) && d.initializer) return shapeOf(d.initializer, depth + 1);
-      if (ts.isShorthandPropertyAssignment(d)) return valueOf(checker.getShorthandAssignmentValueSymbol(d), depth + 1);
+      // FR-1185R5 B1: a field or a property is its initializer and every later write to it (propertyWrites)
+      if ((ts.isPropertyAssignment(d) || ts.isPropertyDeclaration(d)) && d.initializer) return join(shapeOf(d.initializer, depth + 1), propertyWrites(sym, depth));
+      if (ts.isShorthandPropertyAssignment(d)) return join(valueOf(checker.getShorthandAssignmentValueSymbol(d), depth + 1), propertyWrites(sym, depth));
       if (ts.isEnumMember(d) || ts.isGetAccessorDeclaration(d) && !d.body) return EMPTY();
       if (ts.isGetAccessorDeclaration(d) && d.body) return returnsOf(d, depth);
       return UNKNOWN();
@@ -1405,37 +1618,38 @@ function followHeldArguments(
           }
         }
       };
-      return { top: (model: string, arg: ts.Expression | undefined) => {
-        if (!arg) return;
-        const s = shapeOf(arg, 0);
-        if (s.unknown) dynamic(model);
-        for (const obj of s.objs) args(model, obj);
-      } };
-    };
-    /** The model of a delegate expression: `x.user`, `x['user']`, or a constant that holds one. */
-    const delegateModel = (e: ts.Expression, depth = 0): string | undefined => {
-      const d = unwrap(e);
-      if (ts.isPropertyAccessExpression(d) && byDelegate.has(d.name.text)) {
-        if (d.name.text === 'message' && !looksLikeClient(unwrap(d.expression).getText(sf))) return undefined;
-        return byDelegate.get(d.name.text);
-      }
-      if (ts.isElementAccessExpression(d)) {
-        const k = keyOf(d.argumentExpression);
-        return k !== undefined ? byDelegate.get(k) : undefined;
-      }
-      if (ts.isIdentifier(d) && depth < 4) {
-        const decl = symbolOf(d)?.valueDeclaration;
-        if (decl && ts.isVariableDeclaration(decl) && decl.initializer && ts.isIdentifier(decl.name)) return delegateModel(decl.initializer, depth + 1);
-      }
-      return undefined;
+      return {
+        top: (model: string, arg: ts.Expression | undefined) => {
+          if (!arg) return;
+          const s = shapeOf(arg, 0);
+          if (s.unknown) dynamic(model);
+          for (const obj of s.objs) args(model, obj);
+        },
+        /** An invocation whose argument it cannot follow (FR-1185R5 B2). */
+        fail: (model: string) => dynamic(model),
+      };
     };
     const visit = (node: ts.Node): void => {
-      if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && READ_METHODS.has(node.expression.name.text)) {
-        // A read on a delegate it cannot name is walked on ANY_MODEL (fails closed where it cannot follow)
-        // (a method of the scanned code with a body, `this.aggregate(...)`, is no delegate)
-        const own = (symbolOf(node.expression.name)?.declarations ?? []).some((d) => ts.isFunctionLike(d) && 'body' in d && !!d.body);
-        const model = delegateModel(node.expression.expression) ?? (own ? undefined : ANY_MODEL);
-        if (model) walkers(node).top(model, node.arguments[0]);
+      // FR-1185R5 B2: every invocation of a read method the entry rule names (readCall): `d.findMany(arg)`,
+      // `d['findMany'](arg)`, `d[METHOD](arg)`, a destructured or aliased method, `.call`, `.apply`, `.bind`. A read on a
+      // delegate it cannot name is walked on ANY_MODEL (fails closed where it cannot follow); a method of the scanned
+      // code with a body (`this.aggregate(...)`) is no delegate. An argument it cannot read fails closed.
+      if (ts.isCallExpression(node)) {
+        const call = readCall(node);
+        const model = call && modelOfRead(call);
+        if (call && model) {
+          if (call.unknown) walkers(node).fail(model);
+          else walkers(node).top(model, call.arg);
+        }
+      }
+      // A read method of a delegate it names, handed on (`run(d.findMany)`, an alias that is): its calls cannot be
+      // followed, so it fails closed on that model.
+      const named = ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node) ? readMethod(node)
+        : ts.isBindingElement(node) && ts.isIdentifier(node.name) && READ_METHODS.has((node.propertyName ? propName(node.propertyName) : node.name.text) ?? '')
+          ? readMethod(node.name) : undefined;
+      const delegateOf = named?.delegate && delegateModel(named.delegate);
+      if (named && delegateOf && (ts.isBindingElement(node) ? aliasHandedOn(node.name as ts.Identifier, 0) : handedOnRef(node))) {
+        walkers(node).fail(delegateOf);
       }
       ts.forEachChild(node, visit);
     };
