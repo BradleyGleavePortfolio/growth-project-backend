@@ -29,7 +29,7 @@ function world(query: string, local: unknown[] = []) {
   const fetcher = jest.spyOn(global, 'fetch').mockImplementation(async (url) =>
     stub<Response>({
       ok: true, status: 200,
-      json: async () => String(url).includes('api.nal.usda.gov')
+      json: async () => new URL(String(url)).hostname === 'api.nal.usda.gov'
         ? { foods: fixture.foods } : { products: [] },
     }),
   );

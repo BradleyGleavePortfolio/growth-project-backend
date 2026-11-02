@@ -29,7 +29,7 @@ describe('required everyday queries: real USDA rows and matching shipped seeds',
     process.env.USDA_API_KEY = 'fixture-only';
     jest.spyOn(global, 'fetch').mockImplementation(async (url) => stub<Response>({
       ok: true, status: 200,
-      json: async () => String(url).includes('api.nal.usda.gov') ? { foods } : { products: [] },
+      json: async () => new URL(String(url)).hostname === 'api.nal.usda.gov' ? { foods } : { products: [] },
     }));
     const tokens = query.split(' ').map((t) => t.replace(/s$/, ''));
     // Known matching seeds only. This double does not claim to emulate SQL
