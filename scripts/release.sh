@@ -69,6 +69,7 @@ echo "[release] ─────────────────────�
 # a green light from a half-finished release. Echoes the failing line + the
 # captured command output, then re-exits with the original status.
 # shellcheck disable=SC2317  # body runs only via the ERR/EXIT traps below — shellcheck cannot see the indirect invocation.
+# shellcheck disable=SC2329  # same reason; shellcheck 0.11 (ubuntu-latest) reports the trap-only function as SC2329.
 on_error() {
   local exit_code=$?
   # Guard 1 (clean exit): the EXIT trap fires on ALL exits, including successful
