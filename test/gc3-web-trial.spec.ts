@@ -71,6 +71,7 @@ function makeDb() {
   const db: any = {
     guestCheckout: {
       findUnique: async ({ where }: any) => withPkg(state.guestCheckout.find((r) => matches(r, where))),
+      findFirst: async ({ where }: any) => withPkg(state.guestCheckout.find((r) => matches(r, where))),
       updateMany: async ({ where, data }: any) => {
         const hit = state.guestCheckout.filter((r) => matches(r, where));
         hit.forEach((r) => Object.assign(r, data));
@@ -1725,5 +1726,84 @@ describe('TRIAL-WORDS-BE — the return page while a web trial starts', () => {
     await settle();
     expect(world.state.guestCheckout[1].status).toBe('conversion_failed_terminal');
     expect(world.state.guestCheckout[1].expires_at.getTime()).toBe(expires);
+  });
+
+  // FR-1199R2B (agent 192) — own tests: F2, a declined or abandoned card and
+  // a buyer who started again.
+  it('FR-1199R2B F2: a declined card (requires_payment_method) at the cap ends with no TW-F1 and no cancel', async () => {
+    const { world, gc, service, stripe } = trialWorld();
+    atStripe(stripe, 'requires_payment_method');
+    await cast<Private>(capBackstop(world, stripe, service)).reconcileOne(gc.id, gc.stripe_payment_intent_id, gc.stripe_subscription_id);
+    await settle();
+    expect(world.state.guestCheckout[0].status).toBe('conversion_failed_terminal');
+    expect(stripe.cancelSetupIntent).not.toHaveBeenCalled();
+    expect(toBuyer(gc)).toHaveLength(0);
+    expect(world.mail).toHaveLength(0);
+  });
+
+  it.each(['converted', 'pending', 'paid'])(
+    'FR-1199R2B F2: a card left at 3DS, then a second card on a new row (%s): the first row ends at the cap with no TW-F1',
+    async (secondStatus) => {
+      const { world, gc: first, service, stripe } = trialWorld({ created_at: new Date(Date.now() - 60_000) });
+      const second = world.addCheckout();
+      stripe.retrieveSetupIntent.mockImplementation(async (siId: string) => ({
+        id: siId,
+        status: siId === first.stripe_payment_intent_id ? 'requires_action' : 'succeeded',
+        payment_method: siId === first.stripe_payment_intent_id ? null : 'pm_card_saved',
+        client_secret: `${siId}_secret_z`,
+      }));
+      if (secondStatus === 'converted') {
+        await service.handlePaymentSucceeded(second.stripe_payment_intent_id);
+        await settle();
+      } else {
+        world.state.guestCheckout[1].status = secondStatus;
+      }
+      expect(world.state.guestCheckout[1].status).toBe(secondStatus);
+      await cast<Private>(capBackstop(world, stripe, service)).reconcileOne(first.id, first.stripe_payment_intent_id, first.stripe_subscription_id);
+      await settle();
+      expect(world.state.guestCheckout[0].status).toBe('conversion_failed_terminal');
+      expect(sent.filter((m) => m.html.includes(TW_F1))).toHaveLength(0);
+      expect(world.mail.filter((r) => r.template_key === 'guest-trial-not-started')).toHaveLength(0);
+    },
+  );
+
+  it('FR-1199R2B F2: an earlier row the buyer abandoned does not count; a later row that failed does not stop TW-F1', async () => {
+    const { world, gc, service, stripe } = trialWorld();
+    world.addCheckout({ status: 'converted', created_at: new Date(Date.now() - 60 * 60_000) });
+    world.addCheckout({ status: 'failed', created_at: new Date(Date.now() + 1000) });
+    atStripe(stripe, 'requires_action');
+    await cast<Private>(capBackstop(world, stripe, service)).reconcileOne(gc.id, gc.stripe_payment_intent_id, gc.stripe_subscription_id);
+    await settle();
+    expect(toBuyer(gc).map((m) => m.html.includes(TW_F1))).toEqual([true]);
+  });
+
+  it('FR-1199R2B F2: the conversion cap with a later converted row for the buyer sends no TW-F1', async () => {
+    const { world, gc, service } = trialWorld();
+    world.addCheckout({ status: 'converted', created_at: new Date(Date.now() + 1000) });
+    const accountRead = world.db.connectAccount.findUnique;
+    world.db.connectAccount.findUnique = jest.fn(async () => {
+      throw new Error('dependency unavailable');
+    });
+    await service.handlePaymentSucceeded(gc.stripe_payment_intent_id);
+    for (let n = 1; n < 5; n++) await service.reconcilePaidCheckout(gc.id);
+    world.db.connectAccount.findUnique = accountRead;
+    await settle();
+    expect(world.state.guestCheckout[0].status).toBe('conversion_failed_terminal');
+    expect(sent.filter((m) => m.html.includes(TW_F1))).toHaveLength(0);
+  });
+
+  it('FR-1199R2B F2: when the later-row check cannot be read, TW-F1 waits (held, unsent) and the scan sends it once it can', async () => {
+    const { world, gc, service, stripe } = trialWorld();
+    atStripe(stripe, 'canceled');
+    const findFirst = world.db.guestCheckout.findFirst;
+    world.db.guestCheckout.findFirst = jest.fn().mockRejectedValueOnce(new Error('database unavailable')).mockImplementation(findFirst);
+    await cast<Private>(capBackstop(world, stripe, service)).reconcileOne(gc.id, gc.stripe_payment_intent_id, gc.stripe_subscription_id);
+    await settle();
+    expect(toBuyer(gc)).toHaveLength(0);
+    expect(world.mail).toEqual([expect.objectContaining({ status: 'failed', error: 'later_attempt_unread', template_key: 'guest-trial-not-started' })]);
+    world.mail[0].created_at = new Date(Date.now() - 2 * 60_000);
+    const cron = new GuestCheckoutReconciliationService(world.db, service);
+    for (let tick = 0; tick < 2; tick++) await cast<Private>(cron).scanOutcomeMail();
+    expect(toBuyer(gc).map((m) => m.html.includes(TW_F1))).toEqual([true]);
   });
 });

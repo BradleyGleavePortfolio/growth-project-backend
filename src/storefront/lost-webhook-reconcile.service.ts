@@ -125,7 +125,10 @@ export class LostWebhookReconcileService {
   // that cannot be ended (still processing at Stripe) ends the row with no
   // email and stays claimable, so a late success still converts it. If
   // Stripe cannot be read or the cancel fails, the row stays pending and
-  // the next tick looks again.
+  // the next tick looks again. LO-1199R2 B1: a declined card
+  // (requires_payment_method) was already shown the decline on the pay page,
+  // and the buyer may have started the trial with another card (a new row),
+  // so it ends with no email too.
   private async endTrialAtCap(
     checkoutId: string,
     setupIntentId: string,
@@ -147,7 +150,7 @@ export class LostWebhookReconcileService {
       return true;
     }
     let ended = siStatus === 'canceled';
-    if (!ended && siStatus !== 'processing') {
+    if (!ended && siStatus !== 'processing' && siStatus !== 'requires_payment_method') {
       try {
         await this.stripe.cancelSetupIntent(setupIntentId, `guest-trial-end:${checkoutId}`);
         ended = true;
@@ -169,7 +172,7 @@ export class LostWebhookReconcileService {
     if (moved.count > 0 && ended) await this.openTrialEndMail(checkoutId);
     this.logger.warn(
       `lost-webhook-reconcile: bailing out on ${checkoutId} after ${attempts} attempts (card save ${
-        ended ? 'ended' : 'still processing'
+        ended ? 'ended' : String(siStatus)
       })`,
     );
     return true;

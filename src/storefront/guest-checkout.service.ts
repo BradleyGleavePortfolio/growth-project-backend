@@ -2395,6 +2395,26 @@ ${lines}</body></html>`,
       const template =
         outcome === 'welcome' ? (inviteLink !== null ? 'guest-welcome-new' : 'guest-welcome-existing') : `guest-${outcome}`;
       const key = keys[attempt - 1];
+      if (outcome === 'trial-not-started') {
+        // FR-1199R2B (LO-1199R2 B1) — the buyer started again (a declined
+        // card, then another card is a new row): TW-F1 would be untrue.
+        let later: boolean | null = null;
+        try {
+          later = await this.laterTrialAttempt(checkout);
+        } catch (err) {
+          this.logger.warn(`trial-not-started email for ${checkout.id}: later attempt unreadable (tag=${safeErrorTag(err)})`);
+        }
+        if (later === true) {
+          this.logger.log(`trial-not-started email for ${checkout.id} skipped: the buyer has a later checkout for this package`);
+          return;
+        }
+        if (later === null) {
+          // Unknown: hold this try (recorded as failed, unsent) so the scan
+          // asks again after the gap; never send on a guess.
+          if (tries !== null) await this.holdOutcomeTry(key, template, checkout, 'later_attempt_unread');
+          return;
+        }
+      }
       let recorded = tries !== null;
       if (recorded) {
         try {
@@ -2428,6 +2448,47 @@ ${lines}</body></html>`,
       }
     } catch (err) {
       this.logger.error(`${outcome} email failed for ${checkout.id} (tag=${safeErrorTag(err)})`);
+    }
+  }
+
+  // FR-1199R2B (LO-1199R2 B1) — the same buyer has a later checkout for the
+  // same package that is still open, paid or converted.
+  private async laterTrialAttempt(checkout: CheckoutWithRelations): Promise<boolean> {
+    const later = await this.prisma.guestCheckout.findFirst({
+      where: {
+        guest_email: { equals: checkout.guest_email, mode: 'insensitive' },
+        package_id: checkout.package_id,
+        created_at: { gt: checkout.created_at },
+        status: { in: ['pending', 'paid', 'conversion_failed_retryable', 'converted'] },
+      },
+      select: { id: true },
+    });
+    return later !== null;
+  }
+
+  // FR-1199R2B — a try recorded as failed without a send: the scan, a
+  // replay or the reconcile pass carries the outcome on from it.
+  private async holdOutcomeTry(
+    key: string,
+    template: string,
+    checkout: CheckoutWithRelations,
+    error: string,
+  ): Promise<boolean> {
+    try {
+      await this.prisma.emailSendLog.create({
+        data: {
+          idempotency_key: key,
+          template_key: template,
+          recipient_email: checkout.guest_email.toLowerCase(),
+          status: 'failed',
+          error,
+        },
+      });
+      return true;
+    } catch (err) {
+      if (this.isUniqueViolation(err)) return true; // the try is on record
+      this.logger.error(`outcome email try not recorded for ${checkout.id} (tag=${safeErrorTag(err)})`);
+      return false;
     }
   }
 
