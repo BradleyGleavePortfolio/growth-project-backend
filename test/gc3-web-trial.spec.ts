@@ -1531,4 +1531,42 @@ describe('TRIAL-WORDS-BE — the return page while a web trial starts', () => {
     // was not started, and nothing was charged" would be untrue.
     expect(toBuyer(declined).map((m) => m.subject)).toEqual(['Confirm your email to start with Alex on TGP Fitness']);
   });
+
+  it('LO-1199R2 B2: a trial that never started is scrubbed at retention: its TW-F1 send record keeps no plain guest address', async () => {
+    // The card save ends cancelled, so the backstop ends the row and sends TW-F1.
+    const { world, gc, service, stripe } = trialWorld();
+    stripe.retrieveSetupIntent.mockImplementation(async (siId: string) => ({
+      id: siId, status: 'canceled', client_secret: `${siId}_secret_z`,
+    }));
+    const backstopDb: any = {
+      guestCheckout: {
+        update: async () => ({ status: 'pending', reconcile_attempts: 1 }),
+        updateMany: world.db.guestCheckout.updateMany,
+      },
+    };
+    const backstop = new LostWebhookReconcileService(backstopDb, stripe, service);
+    await cast<Private>(backstop).reconcileOne(gc.id, gc.stripe_payment_intent_id, gc.stripe_subscription_id);
+    await settle();
+    expect(world.state.guestCheckout[0].status).toBe('failed');
+    expect(toBuyer(gc)).toHaveLength(1);
+    // Retention passes; the daily guest data scrub runs over the same rows.
+    world.state.guestCheckout[0].data_retention_at = new Date(Date.now() - DAY);
+    world.state.guestCheckout[0].scrubbed_at = null;
+    const scrubDb: any = {
+      ...world.db,
+      guestCheckout: {
+        ...world.db.guestCheckout,
+        findMany: async () =>
+          world.state.guestCheckout
+            .filter((r) => r.scrubbed_at == null && r.data_retention_at && r.data_retention_at <= new Date())
+            .map((r) => ({ id: r.id, guest_email: r.guest_email })),
+      },
+    };
+    const scrub = new GuestCheckoutPiiScrubService(scrubDb, cast({ get: () => 'test-salt' }));
+    await scrub.scrubBatch('test-salt');
+    expect(world.state.guestCheckout[0].guest_email).not.toBe('jane@example.com');
+    // The guest never got an account; once her checkout row is scrubbed no
+    // table may still hold her address in plain text next to its id.
+    expect(world.mail.filter((r) => String(r.recipient_email).toLowerCase() === 'jane@example.com')).toHaveLength(0);
+  });
 });
