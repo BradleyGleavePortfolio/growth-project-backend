@@ -564,9 +564,12 @@ describe('GC-3 — web page trials: card saved, nothing charged that day, one tr
   });
 
   it.each([
-    ['a proven existing client with a customer keeps it (no second customer)', 'same_coach', 'cus_own', 0],
-    ['a new buyer gets a fresh guest customer', 'new', 'cus_guest_new', 1],
-  ] as const)('TRIAL-FU-BE F2: at checkout, %s', async (_name, verdict, customer, creates) => {
+    ['a proven existing client with a customer keeps it (no second customer)', 'same_coach', false, 0, 'cus_own', 0],
+    ['a proven client with no coach buying a combo keeps their customer', 'no_coach', true, 0, 'cus_own', 0],
+    ['a proven client starting a 7-day trial keeps their customer', 'same_coach', false, 7, 'cus_own', 0],
+    ['a new buyer gets a fresh guest customer', 'new', false, 0, 'cus_guest_new', 1],
+    ['a new buyer starting a trial gets a fresh guest customer', 'new', false, 7, 'cus_guest_new', 1],
+  ] as const)('TRIAL-FU-BE F2: at checkout, %s', async (_name, verdict, isCombo, trialDays, customer, creates) => {
     const db: any = {
       user: { findFirst: jest.fn(async () => ({ id: 'user-old', role: 'student', coach_id: COACH })) },
       connectCustomer: { findUnique: jest.fn(async () => ({ stripe_customer_id: 'cus_own' })) },
@@ -574,12 +577,23 @@ describe('GC-3 — web page trials: card saved, nothing charged that day, one tr
     };
     const stripe: any = {
       createCustomer: jest.fn(async () => ({ id: 'cus_guest_new' })),
-      createSubscription: jest.fn(async () => ({
-        id: 'sub_paid01',
-        latest_invoice: { payment_intent: { id: 'pi_paid01', client_secret: 'pi_paid01_secret_q' } },
-      })),
+      createSubscription: jest.fn(async () =>
+        trialDays > 0
+          ? {
+              id: 'sub_webtrial02',
+              status: 'trialing',
+              pending_setup_intent: { id: 'seti_webtrial02', client_secret: 'seti_webtrial02_secret_q', status: 'requires_payment_method' },
+            }
+          : {
+              id: 'sub_paid01',
+              latest_invoice: { payment_intent: { id: 'pi_paid01', client_secret: 'pi_paid01_secret_q' } },
+            },
+      ),
     };
-    const checkout = { ensurePriceForPackage: jest.fn(async () => 'price_monthly01') };
+    const checkout = {
+      ensurePriceForPackage: jest.fn(async () => 'price_monthly01'),
+      ensureRecurringPriceForPackage: jest.fn(async () => 'price_recurring01'),
+    };
     const service: any = new GuestCheckoutService(db, stripe, cast({}), cast({ get: () => undefined }), cast({}), cast(checkout), cast({}));
     const out = await service.mintRecurringForGuest({
       pkg: { id: PKG, coach_id: COACH },
@@ -588,13 +602,22 @@ describe('GC-3 — web page trials: card saved, nothing charged that day, one tr
       idempotencyKey: 'idem-key-mint-1',
       guestEmail: 'jane@example.com',
       guestName: 'Jane',
-      isCombo: false,
-      trialDays: 0,
+      isCombo,
+      trialDays,
       buyerVerdict: verdict,
     });
     expect(out.customerId).toBe(customer);
     expect(stripe.createCustomer).toHaveBeenCalledTimes(creates);
-    expect(stripe.createSubscription).toHaveBeenCalledWith(expect.objectContaining({ customer }));
+    expect(stripe.createSubscription).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customer,
+        trialPeriodDays: trialDays > 0 ? trialDays : undefined,
+        oneTimePriceId: isCombo ? 'price_monthly01' : undefined,
+      }),
+    );
+    expect(db.guestCheckout.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ stripe_customer_id: customer }) }),
+    );
   });
 
   it('a legacy purchase whose trial started (no ledger row) also refuses — the in-app eligibility read', async () => {
