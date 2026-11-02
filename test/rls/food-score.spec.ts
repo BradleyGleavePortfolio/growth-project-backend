@@ -18,6 +18,7 @@ import { PrismaClient } from '@prisma/client';
 import { FoodService, type FoodResult } from '../../src/food/food.service';
 import type { PrismaService } from '../../src/prisma.service';
 import { liveTestDatabaseUrl } from '../utils/live-test-db';
+import { stub } from '../utils/trial-fakes';
 
 const DB_URL = liveTestDatabaseUrl();
 if (!DB_URL && process.env.CI === 'true') {
@@ -161,7 +162,7 @@ function grade(row: Row, first: FoodResult | undefined): Outcome {
 
   async function scoreOnce(): Promise<Outcome[]> {
     // A fresh service per run: its in-memory search cache starts empty, so every run calls every source.
-    const service = new FoodService(prisma as unknown as PrismaService);
+    const service = new FoodService(stub<PrismaService>(prisma));
     const viewer = randomUUID(); // a member with no foods of their own
     const out: Outcome[] = [];
     for (const row of rows.filter((r) => r.recorded)) {
