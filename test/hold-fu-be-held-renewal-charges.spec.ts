@@ -95,7 +95,9 @@ describe('HOLD-FU-BE: a held renewal is not the client\'s failed charge', () => 
     const ctrl: CoachPaymentOpsController = Reflect.construct(CoachPaymentOpsController, [
       prisma, {}, {}, {}, {}, {},
     ]);
-    const out = await ctrl.failedOnRoster({ user: { id: COACH, role: 'coach' } } as never);
-    expect(out.failed.map((p) => (p as { id: string }).id).sort()).toEqual(['client-failed', 'hold-cleared', 'unpaid-no-dunning']);
+    const out: { failed: Array<{ id: string }> } = await Reflect.apply(ctrl.failedOnRoster, ctrl, [
+      { user: { id: COACH, role: 'coach' } },
+    ]);
+    expect(out.failed.map((p) => p.id).sort()).toEqual(['client-failed', 'hold-cleared', 'unpaid-no-dunning']);
   });
 });
