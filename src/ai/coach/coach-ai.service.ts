@@ -253,7 +253,7 @@ export class CoachAIService {
     await this.assertCoachOwnsClient(coachId, input.clientId);
     const budgetCoachId = await this.assertBudget(coachId, COACH_AI_CAPABILITIES.WORKOUT_PROGRAM);
     const sharing = await this.coachSharing(coachId, input.clientId);
-    const ctx = coachScopedContext(await this.ctxSvc.build(input.clientId), sharing);
+    const ctx = coachScopedContext(await this.ctxSvc.build(input.clientId, coachId), sharing);
     const workoutCtx = coachScopedWorkoutContext(await this.loadWorkoutContext(coachId, input.clientId), sharing);
     const injuries = workoutCtx?.client?.injuries ?? toInjuryAreas(ctx.profile?.injuries);
     const prompt = WorkoutProgramPrompt;
@@ -319,7 +319,7 @@ export class CoachAIService {
     await this.assertCoachOwnsClient(coachId, input.clientId);
     const budgetCoachId = await this.assertBudget(coachId, COACH_AI_CAPABILITIES.MEAL_PLAN);
     const sharing = await this.coachSharing(coachId, input.clientId);
-    const ctx = coachScopedContext(await this.ctxSvc.build(input.clientId), sharing);
+    const ctx = coachScopedContext(await this.ctxSvc.build(input.clientId, coachId), sharing);
     const prompt = MealPlanPrompt;
     const result = await this.anthropic.completeStructured<MealPlanPayload>(
       {
@@ -372,7 +372,7 @@ export class CoachAIService {
     await this.assertCoachOwnsClient(coachId, input.clientId);
     const budgetCoachId = await this.assertBudget(coachId, COACH_AI_CAPABILITIES.INSIGHT);
     const sharing = await this.coachSharing(coachId, input.clientId);
-    const ctx = coachScopedContext(await this.ctxSvc.build(input.clientId), sharing);
+    const ctx = coachScopedContext(await this.ctxSvc.build(input.clientId, coachId), sharing);
     const prompt = ClientInsightPrompt;
     const result = await this.anthropic.completeStructured<ClientInsightPayload>(
       {

@@ -10,6 +10,7 @@ import {
   ClientContextWeightPoint,
 } from './client-context.types';
 import { notInBlockWith } from '../../messaging/block-pair';
+import { authorReadableBy } from '../../common/count-rule';
 
 // Coach AI v1 — per-client context builder.
 //
@@ -75,7 +76,11 @@ export class ClientContextService {
   // Build the per-client context snapshot. Single round trip of parallel
   // queries; everything stays under ~5KB JSON so an AIDraft.inputContext
   // snapshot fits in a single PG row comfortably.
-  async build(clientId: string): Promise<ClientContext> {
+  //
+  // `viewerId` is the coach the context is built for (ACTUAL-AUTHOR-READS-BE):
+  // a message whose author is in a block with them stays out of the excerpt.
+  // With none given it is the client's coach, whose thread it is.
+  async build(clientId: string, viewerId?: string): Promise<ClientContext> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const ninetyDaysAgo = new Date(today);
@@ -134,7 +139,14 @@ export class ClientContextService {
       user.coach_id
         ? this.prisma.coachMessage.findFirst({
             // FX-1141 (Sol B2): none from a chat in a block either way.
-            where: { coach_id: user.coach_id, client_id: clientId, coach: notInBlockWith(clientId) },
+            // ACTUAL-AUTHOR-READS-BE (LS-1197R2 B2): and none by an author in a
+            // block with the coach reading, before the newest is chosen.
+            where: {
+              coach_id: user.coach_id,
+              client_id: clientId,
+              coach: notInBlockWith(clientId),
+              AND: [authorReadableBy(viewerId ?? user.coach_id)],
+            },
             orderBy: { created_at: 'desc' },
           })
         : Promise.resolve(null),
