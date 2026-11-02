@@ -1,6 +1,12 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import {
+  CLIENT_PLAN_DUNNING,
+  isCoachAccountHoldReason,
+  isHeldRenewal,
+  NOT_HELD_RENEWAL,
+} from '../checkout/dunning-v2/coach-account-hold';
 import { movedAwayClientIds } from '../checkout/moved-client-money';
 import { movedAwayDates } from '../checkout/plan-renewal/switch-tell';
 
@@ -178,6 +184,16 @@ export interface MoneyChargeDto {
   charged_back_cents: number;
   created_at: string;
   /**
+   * HOLD-FU-BE (LS-1195 C2): `coach_account` when this charge is a renewal
+   * held because the coach's own Stripe account can't take payments (PF-7)
+   * and no payment has gone through on the sale yet (HELD_NEVER_PAID). It is
+   * not the client's failed charge: its state is `pending` (still owed, never
+   * `paid`), it is left out of the `failed` list, and this field names the
+   * cause. Null otherwise, including a held renewal on a plan paid before,
+   * which keeps `failed` with its earlier payments (FR-1202).
+   */
+  waiting_on: 'coach_account' | null;
+  /**
    * SWITCH-TELL-BE: when this charge's client moved to another coach (the
    * quiet "Moved to another coach · {date}" line), from the coach's own
    * move notification. Null otherwise, and for a client who moved by any
@@ -256,6 +272,28 @@ interface SliceRow {
 }
 
 const COUNTED_SLICE_STATUSES = ['posted', 'reversed'];
+
+/**
+ * FR-1202 (LO-1202B B1, LS-1202B B1): a sale with a counted coach slice has
+ * had a payment go through. The same rule as `chargeSelect().splits` and
+ * getChargeBreakdown's `settled`.
+ */
+const PAID_BEFORE_WHERE: Prisma.ClientPurchaseWhereInput = {
+  splits: { some: { kind: 'destination', status: { in: COUNTED_SLICE_STATUSES } } },
+};
+
+/**
+ * FR-1202: a renewal held on the coach's own account (PF-7) is shown as
+ * `pending` only while no payment has gone through on the sale. The phone
+ * installed today reads `pending` as "No payment has gone through for this
+ * yet" and hides the plan's earlier payments (mobile MoneyChargeScreen), so a
+ * held renewal on a plan paid before keeps main's `failed` row, which keeps
+ * them ("Latest payment failed ... Earlier payments are counted below").
+ * The Failed filter leaves out only the rows this marks.
+ */
+const NOT_HELD_NEVER_PAID: Prisma.ClientPurchaseWhereInput = {
+  OR: [NOT_HELD_RENEWAL, PAID_BEFORE_WHERE],
+};
 const LOST_DISPUTE_STATUS_LIST: string[] = [...LOST_DISPUTE_STATUSES];
 
 /**
@@ -1584,7 +1622,7 @@ export class CoachMoneyService {
       opts.status === 'paid'
         ? PAID_NOW_WHERE
         : opts.status === 'failed'
-          ? { status: { in: [...FAILED_PURCHASE_STATUSES] } }
+          ? { status: { in: [...FAILED_PURCHASE_STATUSES] }, ...NOT_HELD_NEVER_PAID }
           : opts.status === 'refunded'
             ? REFUNDED_WHERE
             : opts.status === 'disputed'
@@ -1686,6 +1724,7 @@ export class CoachMoneyService {
         select: { id: true },
         take: 1,
       },
+      dunning: CLIENT_PLAN_DUNNING,
     } as const;
   }
 
@@ -1709,6 +1748,7 @@ export class CoachMoneyService {
     refunds: Array<{ amount_cents: number }>;
     disputes: Array<{ status: string; amount_cents: number }>;
     splits: Array<{ id: string }>;
+    dunning?: { status: string; last_failure_reason: string | null } | null;
   }): MoneyChargeDto {
     const refunded = r.refunds.reduce((acc, x) => acc + x.amount_cents, 0);
     const openDispute = r.disputes.some((d) =>
@@ -1719,6 +1759,10 @@ export class CoachMoneyService {
     );
     const chargedBackCents = lostDisputes.reduce((acc, d) => acc + d.amount_cents, 0);
     const chargedBack = r.status === CHARGEBACK_LOST_PURCHASE_STATUS || lostDisputes.length > 0;
+    const failed = (FAILED_PURCHASE_STATUSES as readonly string[]).includes(r.status);
+    // HOLD-FU-BE (LS-1195 C2): a renewal held on the coach's account is owed, not failed.
+    // FR-1202: only while no payment has gone through (NOT_HELD_NEVER_PAID).
+    const held = failed && isHeldRenewal(r.dunning) && r.splits.length === 0;
     let state: MoneyChargeDto['state'];
     // B-641-2: a lost chargeback is checked first — the ledger keeps its
     // (reversed) destination slice, which must never read as `paid`.
@@ -1726,7 +1770,8 @@ export class CoachMoneyService {
     else if (openDispute) state = 'disputed';
     else if (refunded > 0 && refunded >= r.amount_cents) state = 'refunded';
     else if (refunded > 0) state = 'partially_refunded';
-    else if ((FAILED_PURCHASE_STATUSES as readonly string[]).includes(r.status)) state = 'failed';
+    else if (held) state = 'pending';
+    else if (failed) state = 'failed';
     else if (
       (PAID_PURCHASE_STATUSES as readonly string[]).includes(r.status) ||
       r.splits.length > 0
@@ -1746,6 +1791,7 @@ export class CoachMoneyService {
       refunded_cents: refunded,
       charged_back_cents: chargedBackCents,
       created_at: r.created_at.toISOString(),
+      waiting_on: held ? 'coach_account' : null,
       moved_away_at: null,
     };
   }
@@ -1759,6 +1805,7 @@ export class CoachMoneyService {
           coach_user_id: coachId,
           source: null,
           status: { in: [...FAILED_PURCHASE_STATUSES] },
+          ...NOT_HELD_RENEWAL,
         },
         orderBy: { updated_at: 'desc' },
         take: 50,
@@ -1831,6 +1878,9 @@ export class CoachMoneyService {
     for (const p of failed) {
       if (p.client && moved.has(p.client.id)) continue;
       const d = p.dunning;
+      // PF-7-BE (R7): a renewal waiting on the coach's own Stripe account is
+      // not the client's failed payment; the coach sees it only as PF-W9.
+      if (d?.status === 'active' && isCoachAccountHoldReason(d.last_failure_reason)) continue;
       // FR-1191R2 (LS-1191R2B B1): no "Try n of m". The server has no record
       // of the bank charges that really ran on this invoice, nor of Stripe's
       // real retry limit. last_attempt_number is Stripe's invoice.attempt_count,

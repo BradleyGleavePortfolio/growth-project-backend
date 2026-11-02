@@ -22,6 +22,10 @@ import {
   recurringCadenceOf,
 } from '../coach-money/coach-money.service';
 
+// The last_error GuestCheckoutService.refuseSecondTrial writes on a refused
+// second web trial (the return page and outcome mail read the same value).
+const GUEST_TRIAL_REFUSED = 'trial_already_used';
+
 // CoachPackage CRUD. Owns coach offers / packages.
 //
 // Stripe Price/Product creation is intentionally NOT done here — it is
@@ -700,6 +704,17 @@ export class PackagesService {
         created_user_id: null,
         stripe_subscription_id: { not: null },
         status: { not: 'failed' },
+        // FR-1201 (LS-1201 B2) — a refused second trial is not a subscriber:
+        // refuseSecondTrial gave no purchase or account and cancels the
+        // subscription, which cannot bill anyway (created with its trial end
+        // on; only a winning conversion lifts it). Every other terminal row
+        // keeps the gate (held for refund, retries ran out). Spelled as OR so
+        // a NULL last_error still counts.
+        OR: [
+          { status: { not: 'conversion_failed_terminal' } },
+          { last_error: null },
+          { last_error: { not: GUEST_TRIAL_REFUSED } },
+        ],
       },
     });
     if (activeCount > 0) {

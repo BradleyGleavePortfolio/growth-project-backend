@@ -7,6 +7,15 @@ export interface MessageReceivedPayload {
   senderName: string;
   /** Thread ID for deep-link routing. */
   threadId?: string;
+  /**
+   * PF-3-BE (KG-HELD-BLOCK-MESSAGE): the sender. A push held for quiet hours
+   * is not sent once either side has blocked the other.
+   */
+  senderId?: string;
+  /** FR-1192 (R1): the coach a team member's broadcast speaks for: a block with them stops it too. */
+  alsoUserId?: string;
+  /** FR-1192 (R1): the thread, when its sender read the reader's mute: a mute while it waited stops it. */
+  coachThread?: { coachId: string; clientId: string };
 }
 
 /**
@@ -44,6 +53,15 @@ export class MessageReceivedEmitter {
         kind: NotificationKind.MESSAGE_RECEIVED,
         body,
         deep_link: deepLink,
+        ...(payload.senderId
+          ? {
+              context: {
+                otherUserId: payload.senderId,
+                ...(payload.alsoUserId ? { alsoUserId: payload.alsoUserId } : {}),
+                ...(payload.coachThread ? { coachThread: payload.coachThread } : {}),
+              },
+            }
+          : {}),
       });
     } catch (err) {
       this.logger.warn(

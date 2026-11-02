@@ -1,4 +1,5 @@
 import type { PublicPackageData } from './storefront.types';
+import { BUYER_TIME_ZONE, buyerChargeDay } from './buyer-charge-day';
 
 // GC-1 — the guest pay page at /p/:token (#GC-DOMAIN). Server-rendered; every
 // coach-supplied string goes through esc(), and the browser config is JSON in
@@ -91,10 +92,12 @@ const usd = (cents: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100);
 const cadence = (i: string, n: number) => (n > 1 ? `every ${n} ${i}s` : `a ${i}`);
 const period = (i: string, n: number) => (n > 1 ? `${n} ${i}s` : i);
-export const shortDate = (iso: string) =>
-  new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(iso));
-const longDate = (iso: string) =>
-  new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(new Date(iso));
+
+// TRIAL-FU-BE F1 / FR-1201 — the buyer's charge day lives in one module the
+// thank-you page shares (buyer-charge-day.ts); re-exported for existing imports.
+export { BUYER_TIME_ZONE, buyerChargeDay };
+export const shortDate = (iso: string) => buyerChargeDay(iso, 'short');
+const longDate = (iso: string) => buyerChargeDay(iso, 'long');
 
 export function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');

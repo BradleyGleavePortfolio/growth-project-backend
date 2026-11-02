@@ -57,6 +57,19 @@ export interface SendCommunityPushInput {
    * column lands and the resolver starts reading the real value.
    */
   lockscreenPrivacy?: boolean;
+  /**
+   * PF-3-BE (KG-HELD-BLOCK-MESSAGE): the person who caused the push (sender,
+   * replier). A push held for quiet hours is not sent once either side has
+   * blocked the other.
+   */
+  otherUserId?: string;
+  /**
+   * FR-1192 (F1): the community the push comes from. A push held for quiet
+   * hours is not sent once the reader or `otherUserId` is banned there. A
+   * push about another person that does not name it reads it from its
+   * message or post (`targetType` 'post', else a message).
+   */
+  workspaceId?: string;
 }
 
 type SkipReason = 'flag_off' | 'preference_off' | 'muted' | 'no_token';
@@ -244,8 +257,8 @@ export class CommunityNotificationsService {
         return;
       }
 
-      // 6) Deliver via the EXISTING Expo transport. data carries IDs + enum
-      // only — never user text.
+      // 6) Deliver via the one send path (the push outbox). data carries IDs
+      // + enum only — never user text.
       const result = await this.notifications.pushToUser(
         recipientId,
         title,
@@ -255,6 +268,20 @@ export class CommunityNotificationsService {
           category: defaults.category,
           target_type: targetType,
           target_id: targetId,
+        },
+        undefined,
+        // PF-3-BE: the one send path. Mute all alone, read again when it goes
+        // (step 2b); held to 08:00 in quiet hours; a block with the sender,
+        // or (FR-1192) a ban of either in the community, while it waited
+        // stops it; one replay key is posted once.
+        {
+          kind,
+          muteAllOnly: true,
+          dedupeKey: idempotencyKey,
+          ...(input.otherUserId ? { otherUserId: input.otherUserId } : {}),
+          ...(input.workspaceId || input.otherUserId
+            ? { community: { workspaceId: input.workspaceId ?? (await this.workspaceOf(targetType, targetId)) } }
+            : {}),
         },
       );
 
@@ -291,6 +318,23 @@ export class CommunityNotificationsService {
         COMMUNITY_TELEMETRY_EVENTS.pushDeliveryFailed,
         { kind, error_code: classifyTelemetryError(err) },
       );
+    }
+  }
+
+  /**
+   * FR-1192: the community a message or post lives in, or null when it cannot
+   * be read (the worker then does not send the push: fail closed).
+   */
+  private async workspaceOf(targetType: string, targetId: string): Promise<string | null> {
+    try {
+      const row =
+        targetType === 'post'
+          ? await this.prisma.communityPost.findUnique({ where: { id: targetId }, select: { workspace_id: true } })
+          : // community_messages' key is (id, created_at): by id alone it is findFirst.
+            await this.prisma.communityMessage.findFirst({ where: { id: targetId }, select: { workspace_id: true } });
+      return row?.workspace_id ?? null;
+    } catch {
+      return null;
     }
   }
 

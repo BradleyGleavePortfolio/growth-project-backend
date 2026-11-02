@@ -41,7 +41,13 @@ import { alertCoachOfFlaggedJoinTx } from '../onboarding/flagged-join-alert';
 import { type GuestCheckoutStatus } from './guest-checkout-status';
 import { EmailSenderConfigError, resolveEmailSender } from '../email/email-sender';
 import { COACHING_COACH } from '../packages/coach-selling';
-import { BuyerHasOtherCoachError, assertBuyerMayPay, buyerVerdict } from './buyer-check';
+import {
+  BuyerHasOtherCoachError,
+  type BuyerVerdict,
+  assertBuyerMayPay,
+  buyerVerdict,
+  findBuyerAccount,
+} from './buyer-check';
 import { payPageUrl } from './storefront-links';
 import { GUEST_TRIAL_COPY } from './pay-done.html';
 import {
@@ -435,7 +441,7 @@ export class GuestCheckoutService {
     // row, idempotency replay or Stripe object: a new email passes; an
     // existing TGP email needs a fresh code proof for this email + package,
     // then must be a buyer this coach can take (#SWITCH-V1 otherwise).
-    await assertBuyerMayPay(this.prisma, this.config, {
+    const buyerVerdictNow = await assertBuyerMayPay(this.prisma, this.config, {
       shareToken: token,
       sellingCoachId: pkg.coach.id,
       email: normalisedEmail,
@@ -635,6 +641,7 @@ export class GuestCheckoutService {
           guestName: normalisedName,
           isCombo,
           trialDays,
+          buyerVerdict: buyerVerdictNow,
         });
         paymentIntent = minted.paymentIntent;
         mintedSubscriptionId = minted.subscriptionId;
@@ -765,6 +772,51 @@ export class GuestCheckoutService {
   // applySubscriptionUpdated / invoice.paid webhook handlers then claim
   // renewals and cancellations off stripe_subscription_id with no
   // divergent guest-only path.
+  /**
+   * TRIAL-FU-BE F2 — the Stripe customer of the TGP account this email
+   * belongs to (its ConnectCustomer), or null. Only called for an account
+   * assertBuyerMayPay has just proven by the email code.
+   */
+  private async provenBuyerCustomerId(email: string): Promise<string | null> {
+    const account = await findBuyerAccount(this.prisma, email);
+    if (!account) return null;
+    const row = await this.prisma.connectCustomer.findUnique({
+      where: { client_user_id: account.id },
+      select: { stripe_customer_id: true },
+    });
+    return row?.stripe_customer_id ?? null;
+  }
+
+  /**
+   * TRIAL-FU-BE F2 (LS-1193 C1) — the converted buyer's ConnectCustomer is the
+   * customer their web plan and its saved card are on, so Update card in the
+   * app (createCardSetup) finds it, and a card added there is the one the
+   * plan charges. Only ever adds the missing row: a client who already has a
+   * customer keeps it (never moved, never a second one). Best effort after
+   * commit, like the trial card attach: a failure is logged, the plan stands.
+   */
+  private async bindBuyerCustomer(clientUserId: string, stripeCustomerId: string | null): Promise<void> {
+    if (!stripeCustomerId) return;
+    try {
+      const { count } = await this.prisma.connectCustomer.createMany({
+        data: [{ client_user_id: clientUserId, stripe_customer_id: stripeCustomerId }],
+        skipDuplicates: true,
+      });
+      if (count === 1) return;
+      const row = await this.prisma.connectCustomer.findUnique({
+        where: { client_user_id: clientUserId },
+        select: { stripe_customer_id: true },
+      });
+      if (row?.stripe_customer_id !== stripeCustomerId) {
+        this.logger.warn(
+          `bindBuyerCustomer: client ${clientUserId} keeps its own customer; web plan is on another (customer=${stripeCustomerId})`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(`bindBuyerCustomer: failed for client ${clientUserId} (tag=${safeErrorTag(err)})`);
+    }
+  }
+
   private async mintRecurringForGuest(args: {
     pkg: CoachPackage;
     connectAccount: { stripe_account_id: string };
@@ -774,6 +826,8 @@ export class GuestCheckoutService {
     guestName: string;
     isCombo: boolean;
     trialDays: number;
+    /** assertBuyerMayPay's verdict: anything but 'new' is an account proven by the email code. */
+    buyerVerdict: BuyerVerdict;
   }): Promise<{
     paymentIntent: { id: string; client_secret: string };
     subscriptionId: string;
@@ -788,17 +842,25 @@ export class GuestCheckoutService {
       args;
 
     // 1. Customer. Stripe Customer is required for subscriptions; guest
-    //    has no client_user_id so we don't write a ConnectCustomer row.
-    const customer = await this.stripe.createCustomer({
-      email: guestEmail,
-      name: guestName,
-      metadata: {
-        tgp_guest_checkout_id: sentinelId,
-        tgp_package_id: pkg.id,
-        tgp_coach_user_id: pkg.coach_id,
-      },
-      idempotencyKey: `guest-customer-${idempotencyKey}`,
-    });
+    //    has no client_user_id so we don't write a ConnectCustomer row here
+    //    (convertGuestToUser binds it, TRIAL-FU-BE F2). A proven TGP client
+    //    who already has their own customer keeps it, so the web plan and
+    //    its saved card sit where Update card in the app looks (LS-1193 C1),
+    //    and one client never gets a second customer.
+    const ownCustomerId =
+      args.buyerVerdict === 'new' ? null : await this.provenBuyerCustomerId(guestEmail);
+    const customer = ownCustomerId
+      ? { id: ownCustomerId }
+      : await this.stripe.createCustomer({
+          email: guestEmail,
+          name: guestName,
+          metadata: {
+            tgp_guest_checkout_id: sentinelId,
+            tgp_package_id: pkg.id,
+            tgp_coach_user_id: pkg.coach_id,
+          },
+          idempotencyKey: `guest-customer-${idempotencyKey}`,
+        });
 
     // 2. Recurring price. Combo packages put the recurring half in the
     //    companion fields; pure-recurring puts it in the primary fields.
@@ -1764,6 +1826,7 @@ export class GuestCheckoutService {
 
     let entitledPurchaseId: string | null = null;
     let lostConversionClaim = false;
+    let convertedUserId = '';
 
     try {
       await this.prisma.$transaction(async (tx) => {
@@ -1893,6 +1956,7 @@ export class GuestCheckoutService {
             statusSnapshot = trial ? 'trialing' : 'active';
           }
           try {
+            convertedUserId = dbUser.id;
             purchaseRow = await tx.clientPurchase.create({
               data: {
                 client_user_id: dbUser.id,
@@ -2054,6 +2118,8 @@ export class GuestCheckoutService {
       );
       return;
     }
+
+    if (convertedUserId) await this.bindBuyerCustomer(convertedUserId, checkout.stripe_customer_id);
 
     // GC-3 — the trial is this buyer's: make the saved card the default,
     // which also lifts the create-time end, so the first charge (and its 2%

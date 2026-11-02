@@ -187,6 +187,9 @@ describe('BILLQUOTE — the quote equals what the checkout sends to Stripe (mock
       coach_user_id: COACH,
       stripe_account_id: 'acct_coach',
       charges_enabled: true,
+      payouts_enabled: true, // HOLD-FU-BE: ready by the one readiness rule
+      details_submitted: true,
+      disabled_reason: null,
       deauthorized_at: null,
     });
     const packages: any = { getById: jest.fn(async () => pkg) };
@@ -258,6 +261,9 @@ describe('BILLQUOTE — the quote equals what the checkout sends to Stripe (mock
         coach_user_id: COACH,
         stripe_account_id: 'acct_coach',
         charges_enabled: true,
+        payouts_enabled: true, // HOLD-FU-BE: ready by the one readiness rule
+        details_submitted: true,
+        disabled_reason: null,
         deauthorized_at: null,
       });
       const stripe: any = {
@@ -415,6 +421,9 @@ describe('FIX998 — the quote shows the dates of the attempt the checkout resum
       coach_user_id: COACH,
       stripe_account_id: 'acct_coach',
       charges_enabled: true,
+      payouts_enabled: true, // HOLD-FU-BE: ready by the one readiness rule
+      details_submitted: true,
+      disabled_reason: null,
       deauthorized_at: null,
     });
     const packages = {
