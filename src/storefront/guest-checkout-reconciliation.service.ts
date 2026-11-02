@@ -158,7 +158,7 @@ export class GuestCheckoutReconciliationService {
         select: { idempotency_key: true },
       });
     } catch (err) {
-      this.logger.error(`outcome email scan failed: ${(err as Error)?.message ?? String(err)}`);
+      this.logger.error(`outcome email scan failed (tag=${err instanceof Error ? err.name : 'unknown'})`);
       return 0;
     }
     const ids = [
@@ -167,7 +167,7 @@ export class GuestCheckoutReconciliationService {
       ),
     ];
     for (const id of ids) {
-      await this.guestCheckout.sendOutcomeMail({ id }, { paced: true });
+      await this.guestCheckout.sendOutcomeMail(id, { paced: true });
     }
     return ids.length;
   }

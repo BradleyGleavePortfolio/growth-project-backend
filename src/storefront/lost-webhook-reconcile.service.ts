@@ -112,7 +112,7 @@ export class LostWebhookReconcileService {
   // FR-1199 — the ending's one email; a mail failure never fails the poll.
   private async openTrialEndMail(checkoutId: string): Promise<void> {
     try {
-      await this.guestCheckout.sendOutcomeMail({ id: checkoutId }, { opening: true });
+      await this.guestCheckout.sendOutcomeMail(checkoutId, { opening: true });
     } catch (err) {
       this.logger.error(`lost-webhook-reconcile: outcome email for ${checkoutId} crashed (tag=${err instanceof Error ? err.name : 'unknown'})`);
     }

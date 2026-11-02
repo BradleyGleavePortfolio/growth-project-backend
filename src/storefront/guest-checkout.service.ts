@@ -1144,8 +1144,6 @@ export class GuestCheckoutService {
     }
     try {
       if (!(await this.claimPaymentSucceeded(paymentIntentId, this.prisma))) {
-        // FR-1199 (LS-1199 B2): a replay carries on a failed outcome email.
-        await this.sendOutcomeMail({ stripe_payment_intent_id: paymentIntentId });
         return;
       }
     } catch (err) {
@@ -2320,16 +2318,13 @@ ${lines}</body></html>`,
   }
 
   // FR-1199 (LS-1199 B2) — carry on a recorded, unfinished outcome email
-  // (a replay, the reconcile pass, the reconciliation cron) or, with
+  // (the reconciliation cron) or, with
   // `opening`, start the one an ending just wrote (the lost-webhook
   // backstop). Derives the outcome from the stored row; never throws.
-  async sendOutcomeMail(
-    where: { id: string } | { stripe_payment_intent_id: string },
-    opts: { opening?: boolean; paced?: boolean } = {},
-  ): Promise<void> {
+  async sendOutcomeMail(checkoutId: string, opts: { opening?: boolean; paced?: boolean } = {}): Promise<void> {
     try {
       const checkout = await this.prisma.guestCheckout.findUnique({
-        where,
+        where: { id: checkoutId },
         include: { package: { include: { coach: true } } },
       });
       if (!checkout) return;
@@ -2340,7 +2335,7 @@ ${lines}</body></html>`,
       });
       if (outcome) await this.deliverOutcomeMail(checkout, outcome, opts);
     } catch (err) {
-      this.logger.error(`outcome email crashed (tag=${safeErrorTag(err)})`);
+      this.logger.error(`outcome email crashed for ${checkoutId} (tag=${safeErrorTag(err)})`);
     }
   }
 
@@ -2500,7 +2495,7 @@ ${lines}</body></html>`,
           `GuestCheckout ${checkoutId} reached conversion_failed_terminal after ${nextCount} retries (last_error=${lastError.slice(0, 64)})`,
         );
         // FR-1199 (LS-1199 B1): a web trial ending here gets TW-F1.
-        if (moved.count > 0) void this.sendOutcomeMail({ id: checkoutId }, { opening: true });
+        if (moved.count > 0) void this.sendOutcomeMail(checkoutId, { opening: true });
       }
     } catch (err) {
       this.logger.error(

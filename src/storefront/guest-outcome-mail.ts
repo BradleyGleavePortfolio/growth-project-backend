@@ -6,7 +6,7 @@
 // Each try is one EmailSendLog row keyed checkout + outcome + try number
 // (the unique key is the claim, so two senders never send the same try).
 // A 'sent' or 'logged' try means done. Only the ending itself opens try 1;
-// a replay, the reconcile pass and the reconciliation cron only carry on an
+// the reconcile pass and the reconciliation cron only carry on an
 // outcome already on record, at most OUTCOME_MAIL_TRIES tries in all. None
 // of them reruns conversion, a charge or entitlement.
 

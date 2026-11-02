@@ -1266,7 +1266,7 @@ describe('TRIAL-WORDS-BE — the return page while a web trial starts', () => {
     const { world, gc, service } = trialWorld({ status: 'pending' });
     const sender = failingThen(['503', '503', '503', '503', '503', '503', '503']);
     world.state.guestCheckout[0].status = 'failed';
-    await service.sendOutcomeMail({ id: gc.id }, { opening: true });
+    await service.sendOutcomeMail(gc.id, { opening: true });
     const cron = new GuestCheckoutReconciliationService(world.db, service);
     // Too soon after the last failure: nothing.
     await cast<Private>(cron).scanOutcomeMail();
