@@ -73,10 +73,14 @@ describe('LS-1185 independent bite positive controls', () => {
       '',
     ],
     [
-      'covered reaction gap genuinely fixed',
+      // MAIN-1185: main's count rule (COUNT-DELETED-BE) fixed this gap, so its row is a proof row now and the old
+      // control ("covered reaction gap genuinely fixed": add the place, expect "KNOWN GAP fixed") has nothing left to
+      // fix. Its successor takes the place away again (main's line back to the block-only filter of before) and the
+      // proof row must turn red, naming the reader.
+      'covered reaction rule (now a proof row) taken away again',
       'src/community/posts/community-posts.service.ts',
-      'this.safety.filterBlocked(viewer.id, rows, (r) => r.user_id)',
-      'this.safety.filterBlocked(viewer.id, rows, (r) => r.user_id, () => [workspaceId ?? "", null])',
+      'const visible = await countedReactions(this.safety, viewer.id, rows, (r) => [r.workspace_id, spaceOf.get(r.target_id) ?? null]);',
+      'const visible = await this.safety.filterBlocked(viewer.id, rows, (r) => r.user_id);',
     ],
   ];
   it.each(mutations)('%s turns the contract red', (name, file, before, after) => {
@@ -92,7 +96,9 @@ describe('LS-1185 independent bite positive controls', () => {
       writeFileSync(runtime, mutated);
       const result = runContract(root);
       expect(result.numFailedTests).toBeGreaterThan(0);
-      if (name === 'covered reaction gap genuinely fixed') expect(result.diagnostic).toContain('KNOWN GAP fixed:');
+      if (name === 'covered reaction rule (now a proof row) taken away again') {
+        expect(result.diagnostic).toContain('CommunityReactionsRepository.listForTargets');
+      }
       console.log(`LS-1185 bite ${name}: ${result.numFailedTests} red tests; reader filename present=${result.diagnostic.includes(file)}`);
     } finally {
       writeFileSync(runtime, original);
