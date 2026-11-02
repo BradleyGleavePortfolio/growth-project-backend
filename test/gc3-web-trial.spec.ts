@@ -521,7 +521,7 @@ describe('GC-3 — web page trials: card saved, nothing charged that day, one tr
   // TRIAL-FU-BE F2 — the ConnectCustomer binding, for every way a buyer becomes known.
   const customerTable = (rows: Row[] = []) => {
     const t = makeTable([['id'], ['client_user_id'], ['stripe_customer_id']], () => ({ id: 'customer-row' }));
-    for (const r of rows) t.rows.push({ ...r });
+    for (const r of rows) t.rows.push({ ...r, id: String(r.id) });
     return t;
   };
 
