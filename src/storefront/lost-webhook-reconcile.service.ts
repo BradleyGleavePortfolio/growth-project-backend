@@ -118,6 +118,63 @@ export class LostWebhookReconcileService {
     }
   }
 
+  // FR-1199R2B (LS-1199R2 B1, LO-1199R2 C1) — TW-F1 says the trial was not
+  // started, so the card save is ended at Stripe before it goes out: a
+  // cancelled SetupIntent can never succeed, and the row's checkout window
+  // is closed so no later setup_intent.succeeded can claim it. A card save
+  // that cannot be ended (still processing at Stripe) ends the row with no
+  // email and stays claimable, so a late success still converts it. If
+  // Stripe cannot be read or the cancel fails, the row stays pending and
+  // the next tick looks again.
+  private async endTrialAtCap(
+    checkoutId: string,
+    setupIntentId: string,
+    attempts: number,
+  ): Promise<boolean> {
+    let siStatus: unknown;
+    try {
+      siStatus = (await this.stripe.retrieveSetupIntent(setupIntentId)).status;
+    } catch (err) {
+      this.logger.warn(
+        `lost-webhook-reconcile: Stripe SetupIntent retrieve failed at the cap for ${setupIntentId} (tag=${
+          err instanceof Error ? err.name : 'unknown'
+        })`,
+      );
+      return false;
+    }
+    if (siStatus === 'succeeded') {
+      await this.guestCheckout.handlePaymentSucceeded(setupIntentId);
+      return true;
+    }
+    let ended = siStatus === 'canceled';
+    if (!ended && siStatus !== 'processing') {
+      try {
+        await this.stripe.cancelSetupIntent(setupIntentId, `guest-trial-end:${checkoutId}`);
+        ended = true;
+      } catch (err) {
+        this.logger.warn(
+          `lost-webhook-reconcile: SetupIntent cancel failed at the cap for ${setupIntentId} (tag=${
+            err instanceof Error ? err.name : 'unknown'
+          }); polling again`,
+        );
+        return false;
+      }
+    }
+    const moved = await this.prisma.guestCheckout.updateMany({
+      where: { id: checkoutId, status: 'pending' },
+      data: ended
+        ? { status: 'conversion_failed_terminal', expires_at: new Date() }
+        : { status: 'conversion_failed_terminal' },
+    });
+    if (moved.count > 0 && ended) await this.openTrialEndMail(checkoutId);
+    this.logger.warn(
+      `lost-webhook-reconcile: bailing out on ${checkoutId} after ${attempts} attempts (card save ${
+        ended ? 'ended' : 'still processing'
+      })`,
+    );
+    return true;
+  }
+
   private async reconcileOne(
     checkoutId: string,
     paymentIntentId: string,
@@ -138,6 +195,9 @@ export class LostWebhookReconcileService {
     if (claimed.status !== 'pending') return false;
 
     if (claimed.reconcile_attempts > MAX_RECONCILE_ATTEMPTS) {
+      if (isGuestTrialIntent(paymentIntentId)) {
+        return this.endTrialAtCap(checkoutId, paymentIntentId, claimed.reconcile_attempts);
+      }
       // Bail out: stamp a terminal state so this row is no longer
       // picked up.  Operator dashboard surfaces 'conversion_failed_terminal'
       // so on-call can refund manually.
@@ -152,7 +212,7 @@ export class LostWebhookReconcileService {
         where: { id: checkoutId, status: 'pending' },
         data: { status: 'conversion_failed_terminal' },
       });
-      // FR-1199 (LS-1199 B1): a web trial ending here gets TW-F1.
+      // A paid (not trial) row: no outcome email (web trials end above).
       if (moved.count > 0) await this.openTrialEndMail(checkoutId);
       this.logger.warn(
         `lost-webhook-reconcile: bailing out on ${checkoutId} after ${claimed.reconcile_attempts} attempts`,

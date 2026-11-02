@@ -2219,6 +2219,10 @@ export class GuestCheckoutService {
         retry_count: RECONCILIATION_MAX_ATTEMPTS,
         last_error: 'buyer_has_other_coach',
         last_retry_at: new Date(),
+        // FR-1199R2B (LS-1199R2 B1): a held web trial gets TW-F1, so its
+        // checkout window closes first: no later card-save event can claim
+        // and convert it (the trial's create-time end stops any charge).
+        ...(isGuestTrialIntent(checkout.stripe_payment_intent_id) ? { expires_at: new Date() } : {}),
       },
     });
     this.logger.error(
@@ -2472,11 +2476,15 @@ ${lines}</body></html>`,
       // is minimal.
       const row = await this.prisma.guestCheckout.findUnique({
         where: { id: checkoutId },
-        select: { retry_count: true, status: true },
+        select: { retry_count: true, status: true, stripe_payment_intent_id: true },
       });
       if (!row) return;
       const nextCount = row.retry_count + 1;
       const terminal = nextCount >= RECONCILIATION_MAX_ATTEMPTS;
+      // FR-1199R2B (LS-1199R2 B1): a web trial ending here gets TW-F1, so
+      // its checkout window closes in the same write: a replayed card-save
+      // event can no longer claim the row, convert it and lift the trial end.
+      const closeTrial = terminal && isGuestTrialIntent(row.stripe_payment_intent_id);
       const moved = await this.prisma.guestCheckout.updateMany({
         where: {
           id: checkoutId,
@@ -2489,6 +2497,7 @@ ${lines}</body></html>`,
           retry_count: nextCount,
           last_error: lastError.slice(0, 200),
           last_retry_at: new Date(),
+          ...(closeTrial ? { expires_at: new Date() } : {}),
         },
       });
       if (terminal) {
