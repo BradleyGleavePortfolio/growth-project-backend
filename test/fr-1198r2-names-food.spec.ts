@@ -16,7 +16,9 @@
  *   G4 a source-only search (no local row at all);
  *   G5 controls: a whole-head row still leads a group-first row; a two-word
  *      group ("Fish oil, salmon") and a group-first dish ("Fish, salmon cake
- *      or patty") are mentions; oatmeal before "Bread, oatmeal".
+ *      or patty") are mentions; oatmeal before "Bread, oatmeal";
+ *   G6 reversed words: a head of the query words in another order names the
+ *      food, so a built-in food keeps its lead (red at the first fix commit).
  * Names are USDA-style test names, not claimed FDC records.
  */
 import { FoodService } from '../src/food/food.service';
@@ -160,5 +162,16 @@ describe('G5: controls', () => {
       'Yogurt, Greek, plain, lowfat'],
   ])('%s', async (query, foods, first) => {
     expect((await freshAndCached(world(foods as Usda[]), query as string))[0].name).toBe(first);
+  });
+});
+
+describe('G6: a head of the query words in another order names the food', () => {
+  it('yogurt greek: the built-in "Greek yogurt" still leads the USDA group-first row', async () => {
+    const service = world(
+      [usda('Yogurt, Greek, plain, lowfat', 'Survey (FNDDS)')],
+      [],
+      [catalogRow('seed-greek', 'Greek yogurt, plain, nonfat', ['seed:common-foods'])],
+    );
+    expect((await freshAndCached(service, 'yogurt greek'))[0].id).toBe('seed-greek');
   });
 });
