@@ -1,4 +1,5 @@
 import type { PublicPackageData } from './storefront.types';
+import { BUYER_TIME_ZONE, buyerChargeDay } from './buyer-charge-day';
 
 // GC-1 — the guest pay page at /p/:token (#GC-DOMAIN). Server-rendered; every
 // coach-supplied string goes through esc(), and the browser config is JSON in
@@ -92,21 +93,9 @@ const usd = (cents: number) =>
 const cadence = (i: string, n: number) => (n > 1 ? `every ${n} ${i}s` : `a ${i}`);
 const period = (i: string, n: number) => (n > 1 ? `${n} ${i}s` : i);
 
-/**
- * TRIAL-FU-BE F1 (LO-1193 C1) — the one zone every trial-end, first-charge
- * and next-charge date on the pay page and the return page is printed in.
- * Owner: "189-S2 - v1.1 (all my clients at launch will be PDT)": 189-S2 swaps
- * the zone here, in one place. Never UTC: a trial started after 5 pm PDT
- * (4 pm PST) was told its first charge a day late.
- */
-export const BUYER_TIME_ZONE = 'America/Los_Angeles';
-
-/** A charge or trial-end instant as the buyer's calendar day ('Nov 6' / 'November 6, 2026'). */
-export function buyerChargeDay(iso: string, style: 'short' | 'long'): string {
-  const parts: Intl.DateTimeFormatOptions =
-    style === 'short' ? { month: 'short', day: 'numeric' } : { month: 'long', day: 'numeric', year: 'numeric' };
-  return new Intl.DateTimeFormat('en-US', { ...parts, timeZone: BUYER_TIME_ZONE }).format(new Date(iso));
-}
+// TRIAL-FU-BE F1 / FR-1201 — the buyer's charge day lives in one module the
+// thank-you page shares (buyer-charge-day.ts); re-exported for existing imports.
+export { BUYER_TIME_ZONE, buyerChargeDay };
 export const shortDate = (iso: string) => buyerChargeDay(iso, 'short');
 const longDate = (iso: string) => buyerChargeDay(iso, 'long');
 
