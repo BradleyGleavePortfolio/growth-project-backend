@@ -28,7 +28,9 @@ function matches(value: unknown, filter: unknown): boolean {
 }
 
 const COACH = 'hold-coach';
-function row(id: string, status: string, dunning: { status: string; last_failure_reason: string | null } | null) {
+type Dunning = { status: string; last_failure_reason: string | null } | null;
+// paidBefore: the sale has a counted coach slice (a payment went through).
+function row(id: string, status: string, dunning: Dunning, paidBefore = true) {
   return {
     id, status, coach_user_id: COACH, client_user_id: `client-${id}`, source: null,
     amount_cents: 14900, currency: 'usd', billing_type: 'recurring',
@@ -36,14 +38,18 @@ function row(id: string, status: string, dunning: { status: string; last_failure
     updated_at: new Date('2026-10-30T09:00:00Z'),
     client: { id: `client-${id}`, name: 'Test client' },
     package: { id: 'pkg', name: 'Monthly coaching' },
-    splits: [{ id: `slice-${id}`, kind: 'destination', status: 'posted' }],
+    splits: paidBefore ? [{ id: `slice-${id}`, kind: 'destination', status: 'posted' }] : [],
     refunds: [], disputes: [],
     dunning,
   };
 }
 const HELD = { status: 'active', last_failure_reason: COACH_ACCOUNT_HOLD_REASON };
+// FR-1202: `held-renewal` is held on a plan paid before (it keeps main's
+// `failed` row and its earlier payments); `held-never-paid` is held before
+// any payment went through (for example the first charge after a trial).
 const rows = [
   row('held-renewal', 'past_due', HELD),
+  row('held-never-paid', 'past_due', HELD, false),
   row('client-failed', 'past_due', { status: 'active', last_failure_reason: 'card_declined' }),
   row('unpaid-no-dunning', 'unpaid', null),
   row('hold-cleared', 'past_due', { status: 'recovered', last_failure_reason: COACH_ACCOUNT_HOLD_REASON }),
@@ -68,24 +74,30 @@ function money() {
 }
 
 describe('HOLD-FU-BE: a held renewal is not the client\'s failed charge', () => {
-  it('Charges "failed" filter leaves the held renewal out and keeps every client failure', async () => {
+  it('Charges "failed" filter leaves out the held renewal never paid and keeps every row shown as failed', async () => {
     const failed = await money().listCharges(COACH, { status: 'failed' });
-    expect(failed.charges.map((c) => c.id).sort()).toEqual(['client-failed', 'hold-cleared', 'unpaid-no-dunning']);
+    expect(failed.charges.map((c) => c.id).sort()).toEqual([
+      'client-failed', 'held-renewal', 'hold-cleared', 'unpaid-no-dunning',
+    ]);
     expect(failed.charges.every((c) => c.state === 'failed' && waitingOn(c) === null)).toBe(true);
   });
 
-  it('Charges "all" keeps the held renewal as owed (pending, never paid) with the hold as its cause', async () => {
+  it('Charges "all" keeps the held renewal never paid as owed (pending, never paid) with the hold as its cause', async () => {
     const all = await money().listCharges(COACH, { status: 'all' });
-    const held = all.charges.find((c) => c.id === 'held-renewal');
+    const held = all.charges.find((c) => c.id === 'held-never-paid');
     expect(held).toMatchObject({ state: 'pending', waiting_on: 'coach_account', amount_cents: 14900 });
     expect(held?.state).not.toBe('paid');
     expect(held?.state).not.toBe('failed');
+    // FR-1202: on a plan paid before the row keeps main's `failed`, so the
+    // phone installed today keeps "Latest payment failed ... Earlier
+    // payments are counted below" (never "No payment has gone through").
+    expect(all.charges.find((c) => c.id === 'held-renewal')).toMatchObject({ state: 'failed', waiting_on: null });
     const client = all.charges.find((c) => c.id === 'client-failed');
     expect(client).toMatchObject({ state: 'failed', waiting_on: null });
     expect(all.charges.find((c) => c.id === 'paid')).toMatchObject({ state: 'paid', waiting_on: null });
   });
 
-  it('Charges "paid" never includes the held renewal', async () => {
+  it('Charges "paid" never includes either held renewal', async () => {
     const paid = await money().listCharges(COACH, { status: 'paid' });
     expect(paid.charges.map((c) => c.id)).toEqual(['paid']);
   });
