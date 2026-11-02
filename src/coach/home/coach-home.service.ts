@@ -27,6 +27,7 @@ import { PrismaService } from '../../prisma.service';
 import { AnalyticsService } from '../../analytics/analytics.service';
 import { Events } from '../../analytics/events';
 import { isThreeArcCountsEnabled } from './three-arc-counts.feature';
+import { countedThreadsOf } from '../../common/count-rule';
 
 // Narrow structural slice of PrismaService this service reads. Declaring the
 // dependency as this interface (rather than the full PrismaService) lets the
@@ -249,10 +250,10 @@ export class CoachHomeService {
       }),
       this.prisma.coachMessage.findMany({
         where: {
-          coach_id: coachId,
-          // Only threads whose client this coach coaches now: a moved
-          // client's old thread is not "to review" (owner 4).
-          client: { coach_id: coachId },
+          // The count rule (common/count-rule.ts): only threads whose client
+          // this coach coaches now (owner 4), in no block with the coach
+          // either way, and no deleted message (COUNT-DELETED-BE).
+          ...countedThreadsOf(coachId),
           // Client-sent: anyone other than the coach in the thread. The
           // coach's own replies are not "to review".
           NOT: { sender_id: coachId },

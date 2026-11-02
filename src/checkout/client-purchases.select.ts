@@ -1,5 +1,6 @@
 import type { Prisma } from '@prisma/client';
 import { parseCheckoutTerms, planPriceFromTerms } from './subscription-terms';
+import { CLIENT_PLAN_DUNNING, clientPlanStatus } from './dunning-v2/coach-account-hold';
 
 // OR-112-19 — explicit field allow-list for the client's own purchase reads
 // (GET /v1/checkout/purchases).
@@ -53,10 +54,13 @@ export type ClientPurchaseView = Prisma.ClientPurchaseGetPayload<{
 // C5-S1 (agent 157) — two private fields read only to say what the checkout
 // charged first. checkout_terms holds Stripe price ids and is never sent; the
 // subscription id only tells a renewing sale from a one-time one.
+// FR-1195 (LO-1195 B1): the dunning row's status and reason, read only to
+// show a renewal waiting on the coach's account as active; never sent.
 export const CLIENT_PURCHASE_LIST_SELECT = {
   ...CLIENT_PURCHASE_SELECT,
   checkout_terms: true,
   stripe_subscription_id: true,
+  dunning: CLIENT_PLAN_DUNNING,
 } as const satisfies Prisma.ClientPurchaseSelect;
 
 type ClientPurchaseListRow = Prisma.ClientPurchaseGetPayload<{
@@ -81,6 +85,14 @@ export function firstChargeCents(row: ClientPurchaseListRow): number | null {
 export function toClientPurchaseView(
   row: ClientPurchaseListRow,
 ): ClientPurchaseView & { first_charge_cents: number | null } {
-  const { checkout_terms: _terms, stripe_subscription_id: _sub, ...view } = row;
-  return { ...view, first_charge_cents: firstChargeCents(row) };
+  const { checkout_terms: _terms, stripe_subscription_id: _sub, dunning, ...view } = row;
+  // FR-1195 (LO-1195 B1, R1): a held renewal is no failed payment to the client.
+  const status = clientPlanStatus(view.status, dunning);
+  const held = status !== view.status;
+  return {
+    ...view,
+    status,
+    ...(held ? { last_error: null } : {}),
+    first_charge_cents: firstChargeCents(row),
+  };
 }

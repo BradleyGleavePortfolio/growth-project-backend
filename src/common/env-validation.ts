@@ -2052,6 +2052,13 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Dunning v2 flag.',
   },
   {
+    name: 'FEATURE_COACH_ACCOUNT_HOLD',
+    tier: 'optional',
+    default: "on (unset = on; only exactly 'false' turns it off)",
+    reason:
+      "PF-7-BE (owner #PF-STRIPE op 1): with Dunning v2 on, a renewal that fails while a fresh read says the coach's Stripe account can't take payments waits instead of starting the ten failed-payment days; the coach is told and TGP retries once the account is fixed (src/checkout/dunning-v2/coach-account-hold.ts). 'false': new failures get the normal ten days and waiting renewals start theirs at the next hourly sweep.",
+  },
+  {
     name: 'FEATURE_PLAN_RENEWAL',
     tier: 'optional',
     default: 'unset → off (only "true")',

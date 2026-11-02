@@ -45,6 +45,8 @@ export interface BriefContext {
   dunning_locked?: number;
   // Plans on hold after a full refund or a bank dispute (only the coach restarts).
   dunning_on_hold?: number;
+  // PF-7-BE: renewals waiting on this coach's Stripe account (PF-W9); set only when > 0.
+  coach_account_waiting?: number;
 
   weight_logs_flagged: number;
 
@@ -102,6 +104,8 @@ export interface BriefContextHeadCoach {
   dunning_locked_amount_cents?: number;
   // On hold after a full refund or a bank dispute.
   dunning_on_hold?: number;
+  // PF-7-BE: renewals waiting on this coach's Stripe account (PF-W9); set only when > 0.
+  coach_account_waiting?: number;
 
   sub_coach_highlights: SubCoachHighlight[];
 }
