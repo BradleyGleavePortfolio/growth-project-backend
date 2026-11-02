@@ -37,6 +37,7 @@ import { ACCESS_RULES, RULE_COLUMN, accessWorld, type AccessRule, type AccessWor
 import { COACH_READS, applyCoachRule, seedCoachMessage, type CoachRead } from './member-content-coach-reads';
 import { CommunityReactionsService } from '../../../src/community/reactions/community-reactions.service';
 import { CommunityReactionsRepository } from '../../../src/community/reactions/community-reactions.repository';
+import { placeOf } from '../../../src/community/community-space-access';
 
 const RULES = ['block', 'ban', 'removed', 'departed'] as const;
 const isGap = (rule: string) => rule.startsWith('GAP:');
@@ -569,7 +570,12 @@ const BEHAVIOR_READS: BehaviorRead[] = [
     read: (w) => {
       const repo = new CommunityReactionsRepository(stub<ConstructorParameters<typeof CommunityReactionsRepository>[0]>(w.db));
       const service = Object.assign(Object.create(CommunityReactionsService.prototype), { reactions: repo, safety: w.safety });
-      return service.visibleReactions(w.viewer, { workspaceId: w.wsId, targetType: 'post', targetId: w.postId });
+      // MAIN-1185: main's visibleReactions reads the target's place (ResolvedTarget.place, count rule); the place is
+      // made as resolveTarget makes it, placeOf(post).
+      const post = w.db.table('communityPost').find((p) => p.id === w.postId);
+      if (!post) throw new Error('one item reaction summary: no communityPost');
+      const place = placeOf(stub<Parameters<typeof placeOf>[0]>(post));
+      return service.visibleReactions(w.viewer, { workspaceId: w.wsId, targetType: 'post', targetId: w.postId, place });
     },
     shows: 'count',
     count: (out) => (Array.isArray(out) ? out.length : 0),

@@ -50,6 +50,10 @@ const TO_ONE: Record<string, [string, string, string]> = {
 };
 const TO_MANY: Record<string, [string, string]> = {
   memberships: ['communityMembership', 'workspace_id'],
+  // MAIN-1185: main's count rule (common/count-rule.ts) filters people with notInBlockWith (messaging/block-pair.ts):
+  // `blocks_set: { none }` and `blocks_received: { none }` on User.
+  blocks_set: ['userBlock', 'blocker_id'],
+  blocks_received: ['userBlock', 'blocked_id'],
 };
 
 let clock = Date.UTC(2026, 8, 1, 12, 0, 0);
@@ -284,6 +288,10 @@ export class InMemoryPrisma {
           const children = this.table(t).filter((r) => r[fk] === row.id);
           const some = obj.some as Where | undefined;
           if (some && !children.some((c) => this.matches(t, c, some))) return false;
+          const none = obj.none as Where | undefined;
+          if (none && children.some((c) => this.matches(t, c, none))) return false;
+          const every = obj.every as Where | undefined;
+          if (every && !children.every((c) => this.matches(t, c, every))) return false;
           continue;
         }
         // composite unique key (e.g. id_created_at, cohort_id_user_id)

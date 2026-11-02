@@ -100,13 +100,17 @@ export const COACH_READS: CoachRead[] = [
     file: 'src/coach/command-center/coach-home-day.ts',
     reader: 'contactRings',
     runs: [...BLOCKS, 'removed or deleted'],
-    notRun: `${NO_BAN}; the roster (and so a departure) comes from the caller's scope`,
+    notRun:
+      `${NO_BAN}; the roster (and so a departure) comes from the caller's scope. MAIN-1185: main's loadHomeDay ` +
+      'passes the roster through countedClients first; this case hands the reader the raw roster, so it shows the ' +
+      "reader's own rule (countedMessagesFor on each message) holds without the caller's",
     count: async (w, author) => {
       const contactRings = loadPrivate<
-        (p: unknown, s: unknown, from: Date, now: Date) => Promise<{ replies: { received: number } }>
+        (p: unknown, s: unknown, from: Date, now: Date, clientIds: string[]) => Promise<{ replies: { received: number } }>
       >('src/coach/command-center/coach-home-day.ts', 'contactRings');
-      const scope = { coachId: w.coach.id, ownerCoachId: w.coach.id, clientIds: [author.id, w.control.id], needsYou: [] };
-      return (await contactRings(w.db, scope, SINCE, UNTIL)).replies.received;
+      const roster = [author.id, w.control.id];
+      const scope = { coachId: w.coach.id, ownerCoachId: w.coach.id, clientIds: roster, needsYou: [] };
+      return (await contactRings(w.db, scope, SINCE, UNTIL, roster)).replies.received;
     },
   },
   {
