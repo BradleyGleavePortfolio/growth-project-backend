@@ -60,7 +60,7 @@ describe('LO-1198R3 B1: a basic row for another food does not lead the plain foo
       expect(names).toContain(other);
       expect({ pass, first: names[0], plainBeforeOther: names.indexOf(plain) < names.indexOf(other) }).toEqual({
         pass,
-        first: expect.not.stringMatching(new RegExp(`^${other.replace(/[()]/g, '\\$&')}$`)),
+        first: expect.not.stringMatching(new RegExp(`^${other.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')}$`)),
         plainBeforeOther: true,
       });
     }
