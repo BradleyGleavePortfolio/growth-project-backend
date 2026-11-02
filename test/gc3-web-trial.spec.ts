@@ -519,6 +519,78 @@ describe('GC-3 — web page trials: card saved, nothing charged that day, one tr
     }
   });
 
+  it.each([false, true])('LS-1201R2: conversion to native card confirmation; foreign SetupIntent=%s', async (foreignIntent) => {
+    const world = makeDb();
+    const customers = makeTable(
+      [['id'], ['client_user_id'], ['stripe_customer_id']],
+      () => ({ id: 'customer-row' }),
+    );
+    customers.rows.push({
+      id: 'foreign-customer-row', client_user_id: 'foreign-client',
+      stripe_customer_id: 'cus_foreign', default_payment_method_id: 'pm_foreign',
+    });
+    world.db.connectCustomer = customers;
+    world.db.clientPurchase.findMany = jest.fn(async ({ where, take }: any) =>
+      world.state.clientPurchase.filter((row) => world.matches(row, where))
+        .sort((a, b) => a.id.localeCompare(b.id)).slice(0, take));
+    world.db.clientBillingOperation = { findMany: jest.fn(async () => []) };
+    const { service, stripe } = build(world);
+    const gc = world.addCheckout();
+    await service.handlePaymentSucceeded(gc.stripe_payment_intent_id);
+    const [purchase] = world.state.clientPurchase;
+    expect(purchase).toMatchObject({ status: 'trialing', entitlement_active: true });
+    expect(customers.rows.find((row) => row.client_user_id === purchase.client_user_id))
+      .toMatchObject({ stripe_customer_id: gc.stripe_customer_id });
+    expect(stripe.setSubscriptionDefaultPaymentMethod).toHaveBeenCalledWith(
+      expect.objectContaining({ subscriptionId: gc.stripe_subscription_id, paymentMethodId: 'pm_card_saved' }),
+    );
+    const originalPurchase = structuredClone(purchase);
+    world.state.clientPurchase.push({
+      ...purchase, id: 'foreign-purchase', client_user_id: 'foreign-client',
+      coach_user_id: 'foreign-coach', stripe_subscription_id: 'sub_foreign',
+    });
+    stripe.setSubscriptionDefaultPaymentMethod.mockClear();
+    stripe.setCustomerDefaultPaymentMethod = jest.fn(async () => ({}));
+    stripe.retrievePaymentMethod = jest.fn(async () => ({
+      card: { brand: 'visa', last4: '4242', exp_month: 12, exp_year: 2030 },
+    }));
+    stripe.payInvoice = jest.fn();
+    stripe.retrieveSetupIntent.mockImplementation(async () => ({
+      id: 'seti_nativeupdate01', status: 'succeeded', payment_method: 'pm_replacement',
+      customer: foreignIntent ? 'cus_foreign' : gc.stripe_customer_id,
+      metadata: { tgp_client_user_id: foreignIntent ? 'foreign-client' : purchase.client_user_id },
+    }));
+    const billing = new ClientBillingService(world.db, stripe);
+    const request = billing.confirmCardUpdate(purchase.client_user_id, 'seti_nativeupdate01', []);
+    if (foreignIntent) {
+      await expect(request).rejects.toMatchObject({
+        response: expect.objectContaining({ error: 'SETUP_INTENT_NOT_FOUND' }),
+      });
+      expect(stripe.setCustomerDefaultPaymentMethod).not.toHaveBeenCalled();
+      expect(stripe.setSubscriptionDefaultPaymentMethod).not.toHaveBeenCalled();
+    } else {
+      await expect(request).resolves.toMatchObject({
+        outcome: 'saved', card: expect.objectContaining({ last4: '4242' }),
+      });
+      expect(stripe.setCustomerDefaultPaymentMethod).toHaveBeenCalledTimes(1);
+      expect(stripe.setCustomerDefaultPaymentMethod).toHaveBeenCalledWith(
+        expect.objectContaining({ customerId: gc.stripe_customer_id, paymentMethodId: 'pm_replacement' }),
+      );
+      expect(stripe.setSubscriptionDefaultPaymentMethod).toHaveBeenCalledTimes(1);
+      expect(stripe.setSubscriptionDefaultPaymentMethod).toHaveBeenCalledWith(
+        expect.objectContaining({ subscriptionId: gc.stripe_subscription_id, paymentMethodId: 'pm_replacement' }),
+      );
+      expect(customers.rows.find((row) => row.client_user_id === purchase.client_user_id))
+        .toMatchObject({ default_payment_method_id: 'pm_replacement', default_card_last4: '4242' });
+    }
+    expect(customers.rows.find((row) => row.client_user_id === 'foreign-client'))
+      .toMatchObject({ stripe_customer_id: 'cus_foreign', default_payment_method_id: 'pm_foreign' });
+    expect(world.state.clientPurchase[0]).toEqual(originalPurchase);
+    expect(stripe.payInvoice).not.toHaveBeenCalled();
+    expect(stripe.retrievePaymentIntent).not.toHaveBeenCalled();
+    expect(stripe.cancelSubscription).not.toHaveBeenCalled();
+  });
+
   // TRIAL-FU-BE F2 — the ConnectCustomer binding, for every way a buyer becomes known.
   const customerTable = (rows: Row[] = []) => {
     const t = makeTable([['id'], ['client_user_id'], ['stripe_customer_id']], () => ({ id: 'customer-row' }));

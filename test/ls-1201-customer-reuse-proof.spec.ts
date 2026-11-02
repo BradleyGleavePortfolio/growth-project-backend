@@ -21,10 +21,11 @@ describe('LS-1201: public checkout proves account ownership before customer reus
     ['proved non-client', 'staff', 'valid', 0, 'BUYER_NOT_CLIENT'],
     ['proved same-coach paid client', 'same', 'valid', 0, null],
     ['proved same-coach trial client', 'same', 'valid', 7, null],
+    ['proved same-coach first trial with authorized saved card', 'same', 'valid', 7, null, true],
     ['proved coachless client', 'none', 'valid', 0, null],
     ['new paid buyer', 'new', 'none', 0, null],
     ['new trial buyer', 'new', 'none', 7, null],
-  ])('%s', async (_label, kind, proof, trialDays, error) => {
+  ])('%s', async (_label, kind, proof, trialDays, error, authorizedSavedCard = false) => {
     const link = 'synthetic-share-link';
     const email = ['buyer', 'example.invalid'].join('@');
     const config = new ConfigService({ CHECKOUT_RECOVERY_SECRET: randomBytes(48).toString('hex') });
@@ -50,7 +51,10 @@ describe('LS-1201: public checkout proves account ownership before customer reus
       coachPackage: { findUnique: jest.fn(async () => pkg) },
       user: { findFirst: jest.fn(async () => account) },
       connectCustomer: {
-        findUnique: jest.fn(async () => ({ stripe_customer_id: 'customer-own' })),
+        findUnique: jest.fn(async () => ({
+          stripe_customer_id: 'customer-own',
+          default_payment_method_id: authorizedSavedCard ? 'pm_saved' : null,
+        })),
       },
       guestCheckout: {
         findUnique: jest.fn(async () => null),
@@ -60,9 +64,16 @@ describe('LS-1201: public checkout proves account ownership before customer reus
     };
     const stripe = {
       createCustomer: jest.fn(async () => ({ id: 'customer-new' })),
+      createSetupIntent: jest.fn(async () => ({
+        id: 'seti_explicitSetup', client_secret: 'synthetic-explicit-setup-value',
+      })),
       createSubscription: jest.fn(async () => trialDays > 0 ? {
         id: 'subscription-own', status: 'trialing',
-        pending_setup_intent: {
+        // A valid successful Stripe response, not an upstream error:
+        // https://docs.stripe.com/billing/subscriptions/deferred-payment
+        // Setup/auth succeeded or was unnecessary for the already saved card.
+        default_payment_method: authorizedSavedCard ? 'pm_saved' : null,
+        pending_setup_intent: authorizedSavedCard ? null : {
           id: ['seti', 'syntheticOwnership'].join('_'), client_secret: 'synthetic-value',
         },
       } : {
@@ -100,7 +111,12 @@ describe('LS-1201: public checkout proves account ownership before customer reus
         expect(stripe.createCustomer).not.toHaveBeenCalled();
         expect(stripe.createSubscription).not.toHaveBeenCalled();
       } else {
-        await request;
+        const result = await request;
+        if (trialDays > 0) {
+          expect(result).toMatchObject({
+            intent: 'setup', client_secret: expect.any(String),
+          });
+        }
         const customer = kind === 'new' ? 'customer-new' : 'customer-own';
         expect(stripe.createSubscription).toHaveBeenCalledWith(
           expect.objectContaining({
@@ -111,6 +127,25 @@ describe('LS-1201: public checkout proves account ownership before customer reus
         expect(db.guestCheckout.update).toHaveBeenCalledWith(
           expect.objectContaining({ data: expect.objectContaining({ stripe_customer_id: customer }) }),
         );
+        if (authorizedSavedCard) {
+          expect(stripe.createSetupIntent).toHaveBeenCalledWith(
+            expect.objectContaining({
+              customer: 'customer-own', onBehalfOf: 'account-own',
+              metadata: expect.objectContaining({
+                tgp_guest_checkout_id: 'guest-own', tgp_subscription_id: 'subscription-own',
+              }),
+              idempotencyKey: 'guest-trial-setup-synthetic-checkout-attempt',
+            }),
+          );
+          expect(db.guestCheckout.update).toHaveBeenCalledWith(
+            expect.objectContaining({
+              data: expect.objectContaining({
+                stripe_payment_intent_id: 'seti_explicitSetup',
+                stripe_subscription_id: 'subscription-own',
+              }),
+            }),
+          );
+        }
         if (kind === 'new') {
           expect(db.connectCustomer.findUnique).not.toHaveBeenCalled();
           expect(stripe.createCustomer).toHaveBeenCalledTimes(1);
