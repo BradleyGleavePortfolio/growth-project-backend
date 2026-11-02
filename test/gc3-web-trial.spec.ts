@@ -10,6 +10,7 @@ import { TrialNoticeService } from '../src/packages/trials/trial-notice.service'
 import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
 import { LostWebhookReconcileService } from '../src/storefront/lost-webhook-reconcile.service';
 import { GuestCheckoutReconciliationService } from '../src/storefront/guest-checkout-reconciliation.service';
+import { GuestCheckoutPiiScrubService } from '../src/storefront/guest-checkout-pii-scrub.service';
 import { readPayDone } from '../src/storefront/pay-done';
 import { BillingService } from '../src/billing/billing.service';
 import { renderPayDonePage } from '../src/storefront/pay-done.html';
@@ -1433,6 +1434,28 @@ describe('TRIAL-WORDS-BE — the return page while a web trial starts', () => {
     await cast<Private>(new GuestCheckoutReconciliationService(world.db, service)).scanOutcomeMail();
     await settle();
     expect(toBuyer(gc)).toHaveLength(1);
+  });
+
+  it('LS-1199R2 B4: guest retention also removes the new raw recipient copies for a buyer who never converted', async () => {
+    const { world, gc, service } = trialWorld({
+      status: 'failed', created_user_id: null,
+      data_retention_at: new Date(Date.now() - DAY), scrubbed_at: null,
+    });
+    const email = gc.guest_email;
+    await service.sendOutcomeMail(gc.id, { opening: true });
+    expect(world.state.user).toHaveLength(0);
+    expect(world.mail.map((row) => row.recipient_email)).toContain(email);
+    // The real scrub's selection, limited to the row whose retention
+    // deadline passed. No registered account exists to trigger deletion.
+    world.db.guestCheckout.findMany = async () =>
+      world.state.guestCheckout.filter((row) =>
+        row.data_retention_at != null && row.data_retention_at <= new Date() && row.scrubbed_at === null);
+    world.mail[0].created_at = new Date(Date.now() - 400 * DAY);
+    const scrub = new GuestCheckoutPiiScrubService(world.db, cast({ get: () => 'test-salt' }));
+    await scrub.scrubBatch('test-salt');
+    expect(world.state.guestCheckout[0].guest_email).toMatch(/^sha256:/);
+    expect(world.state.guestCheckout[0].guest_name).toBe('REDACTED');
+    expect(world.mail.map((row) => row.recipient_email)).not.toContain(email);
   });
 
 });
