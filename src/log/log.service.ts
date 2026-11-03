@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { FoodService } from '../food/food.service';
 import { LogFoodDto, UpdateLogEntryDto } from './log.dto';
@@ -20,6 +21,14 @@ export class LogService {
   ) {}
 
   async logFood(userId: string, data: LogFoodDto) {
+    // FOOD-RESEND-BE: a resend (a lost answer, a crash) carries the same client_uuid and gets the stored
+    // entry back exactly as the first answer, firing nothing (the workouts rule, WK-1-BE). No key is a
+    // plain create.
+    const key = data.client_uuid;
+    if (key) {
+      const stored = await this.entryWithKey(userId, key);
+      if (stored) return stored;
+    }
     // Mobile client may send synthetic ids ("usda_123", "off_456") returned by food search.
     // Resolve them to real FoodItem.id via upsert-on-log so the FK below can't blow up.
     // Another person's custom food resolves as not found (UX-FOOD-PRIV-124).
@@ -45,19 +54,22 @@ export class LogService {
       ...(plan_slot_id ? { plan_slot_id } : {}),
       ...(data.fills_usual_meal ? { fills_usual_meal: true } : {}),
     };
-    // Upsert on client_uuid so a flush retry after a mobile crash is idempotent.
-    // D2 (AUTHB-03): no key means a plain create. client_uuid is unique across
-    // all users, so a shared fallback key (or another person's key) used to
-    // return their entry and save nothing; such an entry is never returned.
-    const created = data.client_uuid
-      ? await this.prisma.loggedFoodEntry.upsert({
-          where: { client_uuid: data.client_uuid },
-          create: { ...entryData, client_uuid: data.client_uuid },
-          update: {}, // no-op if already exists — idempotent on retry
-          include: { food_item: true },
-        })
-      : await this.prisma.loggedFoodEntry.create({ data: entryData, include: { food_item: true } });
-    if (created.user_id !== userId) throw new NotFoundException('Entry not found');
+    // D2 (AUTHB-03): client_uuid is unique across all users, so a shared fallback key (or another person's
+    // key) must never return their entry: entryWithKey answers 404 for it, before and after the create.
+    let created;
+    try {
+      created = await this.prisma.loggedFoodEntry.create({
+        data: key ? { ...entryData, client_uuid: key } : entryData,
+        include: { food_item: true },
+      });
+    } catch (err) {
+      // Two sends of one key raced past the lookup: the unique client_uuid index kept one; answer with it.
+      if (key && err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        const stored = await this.entryWithKey(userId, key);
+        if (stored) return stored;
+      }
+      throw err;
+    }
     this.analytics.capture(userId, Events.CLIENT_FOOD_LOGGED, {
       meal_type: data.meal_type,
     });
@@ -68,6 +80,16 @@ export class LogService {
     // M2 — bust AI context cache so next chat sees the new log entry.
     this.aiContext.invalidateForUser(userId);
     return created;
+  }
+
+  /** FOOD-RESEND-BE: the caller's entry saved with this key, or null; another person's entry is a 404. */
+  private async entryWithKey(userId: string, key: string) {
+    const entry = await this.prisma.loggedFoodEntry.findUnique({
+      where: { client_uuid: key },
+      include: { food_item: true },
+    });
+    if (entry && entry.user_id !== userId) throw new NotFoundException('Entry not found');
+    return entry;
   }
 
   /**
