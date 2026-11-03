@@ -7,8 +7,10 @@ import {
 import { coachAccountWaitingLine } from '../src/checkout/dunning-v2/coach-account-hold';
 import { makeBriefContext } from './_fixtures/coach-brief-mocks';
 
-describe('LS-1195 known follow-up: long approved AI payment text is trimmed', () => {
-  it('documents that PF-W9 insertion can remove the coach-restart instruction', () => {
+// HOLD-FU-BE F3 (LS-1195 C3): this test documented the follow-up (PF-W9 put in
+// could cut the coach-restart line). Fixed: every payment line is kept.
+describe('LS-1195 follow-up fixed: long approved AI payment text keeps every payment line', () => {
+  it('PF-W9 insertion never removes the coach-restart instruction', () => {
     const context = makeBriefContext({
       dunning_in_progress: 1,
       dunning_locked: 1,
@@ -28,6 +30,6 @@ describe('LS-1195 known follow-up: long approved AI payment text is trimmed', ()
     const shown = withCoachAccountWaiting(original, context);
     expect(shown).toContain(coachAccountWaitingLine(1));
     expect(shown.length).toBeLessThanOrEqual(BRIEF_MAX_NARRATIVE_CHARS);
-    expect(shown).not.toContain(lines[lines.length - 1]);
+    for (const line of lines) expect(shown).toContain(line);
   });
 });

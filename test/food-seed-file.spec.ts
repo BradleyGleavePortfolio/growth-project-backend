@@ -8,7 +8,15 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, relative } from 'path';
 import * as ts from 'typescript';
-import { foodKey, oneLine, parseSeedFoods, seedFoodRow, type SeedFood } from '../scripts/seed-built-in-foods';
+import {
+  FOLD_SPACES,
+  foldName,
+  foodKey,
+  oneLine,
+  parseSeedFoods,
+  seedFoodRow,
+  type SeedFood,
+} from '../scripts/seed-built-in-foods';
 
 const ROOT = join(__dirname, '..');
 const SEED_FILE = 'prisma/data/seed-foods.json';
@@ -140,6 +148,39 @@ describe('seed-built-in-foods — the row the release step writes (F1)', () => {
     expect(foodKey('Oats', null)).not.toBe(foodKey('Oats', 'null'));
     expect(foodKey('Oats', null)).not.toBe(foodKey('Oats', ''));
     expect(foodKey('a","b', null)).not.toBe(foodKey('a', 'b'));
+  });
+
+  // FR-1203 (LS-1203 B1): one folding decides "same food" — lower case, each whitespace run as one space, trimmed.
+  it('folds a name one way: letter case, whitespace runs and the ends; nothing else', () => {
+    expect(foldName('  BANANA,\t\n raw \u00a0')).toBe('banana, raw');
+    expect(foldName('Egg, Whole, Raw')).toBe('egg, whole, raw');
+    expect(foldName('Chicken  breast')).toBe('chicken breast');
+    expect(foldName('Chicken\u3000breast')).toBe('chicken breast');
+    expect(foldName('Egg,whole,raw')).not.toBe(foldName('Egg, whole, raw'));
+    expect(foldName('Eggs, whole, raw')).not.toBe(foldName('Egg, whole, raw'));
+    expect(foldName(' ')).toBe('');
+  });
+
+  it('keys folded name + folded brand: case and spaces match, a different brand or a NULL brand does not', () => {
+    expect(foodKey('Banana, raw', null)).toBe(foodKey('BANANA,  RAW', null));
+    expect(foodKey('Egg, whole, raw', null)).toBe(foodKey('Egg, Whole, Raw', null));
+    expect(foodKey('Oats', 'Quaker')).toBe(foodKey('oats', ' QUAKER '));
+    expect(foodKey('Oats', 'Quaker')).not.toBe(foodKey('Oats', 'Bob'));
+    expect(foodKey('Oats', null)).not.toBe(foodKey('Oats', ' '));
+  });
+
+  it('the SQL whitespace class is exactly JavaScript\'s \\s, so the SQL filter and the key fold alike', () => {
+    const cls = new RegExp(FOLD_SPACES);
+    const differ: number[] = [];
+    for (let c = 0; c < 0x10000; c += 1) {
+      const ch = String.fromCharCode(c);
+      if (cls.test(ch) !== /\s/.test(ch)) differ.push(c);
+    }
+    expect(differ).toEqual([]);
+  });
+
+  it('refuses a seed file naming one food twice in different case or spacing', () => {
+    expect(() => parseSeedFoods(JSON.stringify([sample, { ...sample, name: ' BANANA,  RAW' }]))).toThrow(/twice/);
   });
 
   it('prints a failure as one deploy-log line, whatever the error looks like', () => {

@@ -1,4 +1,5 @@
 import type { ThankYouDropRow, ThankYouViewModel } from './thank-you.service';
+import { buyerChargeDay } from './buyer-charge-day';
 
 // PR-15A — SSR HTML renderer for the public storefront thank-you page.
 // Mirrors invite-landing's style language (quiet luxury palette,
@@ -28,10 +29,12 @@ export function renderThankYouPage(vm: ThankYouViewModel): string {
   const receiptRow = vm.amountFormatted
     ? `<p class="receipt"><span>Paid</span><strong>${escapeHtml(vm.amountFormatted)}</strong></p>`
     : '';
+  // FR-1201 (LS-1201 B1) — a charge date is the buyer's Pacific day, the
+  // same day the pay page told them; never the server's UTC day.
   const nextChargeRow =
     vm.isRecurring && vm.nextChargeAt
       ? `<p class="receipt"><span>Next charge</span><strong>${escapeHtml(
-          formatDate(vm.nextChargeAt),
+          buyerChargeDay(vm.nextChargeAt, 'medium'),
         )}</strong></p>`
       : vm.isRecurring
         ? `<p class="receipt"><span>Plan</span><strong>Recurring</strong></p>`

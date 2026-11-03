@@ -10,6 +10,7 @@ import {
 import type { ClientPurchase, CoachPackage, ConnectAccount, ConnectCustomer } from '@prisma/client';
 import { ConnectModuleState } from '../connect/connect.module-state';
 import { ConnectService } from '../connect/connect.service';
+import { isConnectAccountReadyForSale, readinessRow } from '../connect/connect-readiness';
 import { FeePolicyService } from '../connect/fees/fee-policy.service';
 import {
   StripeConnectApiError,
@@ -348,11 +349,13 @@ export class CheckoutService {
     @Optional() private readonly connect?: ConnectService,
   ) {}
 
-  // B-CONNECT-126: payout gate row. Charges already on -> untouched, no
-  // Stripe call. Not ready -> re-read from Stripe (cooldown) before refusing.
+  // B-CONNECT-126: payout gate row. Ready by the one readiness rule
+  // (HOLD-FU-BE, LS-1195 C1: payouts, details and the disabled reason, not
+  // charges alone) -> untouched, no Stripe call. Not ready -> re-read from
+  // Stripe (cooldown) before refusing.
   async payoutGateRow(row: ConnectAccount): Promise<ConnectAccount> {
-    if (row.charges_enabled || row.deauthorized_at || !this.connect) return row;
-    return this.connect.refreshNotReady(row);
+    if (row.deauthorized_at) return row;
+    return readinessRow(row, this.connect);
   }
 
   /**
@@ -459,7 +462,7 @@ export class CheckoutService {
       });
     }
     const connectAccount = await this.payoutGateRow(savedAccount);
-    if (!connectAccount.charges_enabled || connectAccount.deauthorized_at) {
+    if (!isConnectAccountReadyForSale(connectAccount)) {
       throw new ConflictException({
         error: 'COACH_NOT_PAYOUT_READY',
         message:
@@ -783,7 +786,7 @@ export class CheckoutService {
       });
     }
     const connectAccount = await this.payoutGateRow(savedAccount);
-    if (!connectAccount.charges_enabled || connectAccount.deauthorized_at) {
+    if (!isConnectAccountReadyForSale(connectAccount)) {
       throw new ConflictException({
         error: 'COACH_NOT_PAYOUT_READY',
         message:
