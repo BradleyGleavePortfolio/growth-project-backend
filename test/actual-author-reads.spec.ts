@@ -117,6 +117,10 @@ describe('ACTUAL-AUTHOR-READS-BE: readers of thread words honor the actual autho
       { reader: 'client own AI context', block, read: selfAi, hides: ['team'], keeps: ['head', 'client'] },
       { reader: 'Roman client context (control)', block, read: roman, hides: ['team'], keeps: [] },
       { reader: 'Roman timeline (control)', block, read: timeline, hides: ['team'], keeps: [] },
+      // FR-1205 (LO-1205 B1): the team coach's own pair with the client closes
+      // the excerpt for them; the head, in no block, still reads the newest.
+      { reader: 'coach AI context, team coach', block, read: () => excerpt('team'), hides: ['team', 'head', 'client'], keeps: [] },
+      { reader: 'coach AI context, head coach', block, read: () => excerpt('head'), hides: [], keeps: ['team'] },
     );
   }
   // No block: nobody's words are lost.
