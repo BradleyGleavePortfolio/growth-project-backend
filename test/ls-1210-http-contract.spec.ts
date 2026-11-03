@@ -40,6 +40,10 @@ jest.mock('@supabase/supabase-js', () => ({
     },
   })),
 }));
+jest.mock('crypto', () => ({
+  ...jest.requireActual('crypto'),
+  randomUUID: () => '22222222-2222-4222-8222-222222222222',
+}));
 
 type Surface = 'signup' | 'google' | 'apple' | 'role' | 'role-alias' | 'attach-invite' | 'attach-coach' | 'redeem' | 'check';
 type Cause = 'ok' | 'coach-blocks' | 'buyer-blocks' | 'deletion-lock' | 'soft-deleted' | 'empty-name';
@@ -148,13 +152,30 @@ async function fixture(cause: Cause, kind: typeof KINDS[number], amount = 4900, 
     const value: Body = await response.json();
     return { status: response.status, body: value, requestId: response.headers.get('x-request-id') };
   };
-  return { db, code, app, post, mod };
+  const emitAllowed = (surface: Surface, out: Awaited<ReturnType<typeof post>>) => {
+    console.info('LS1210_ALLOWED', JSON.stringify({
+      kind, surface, amount, status: out.status, body: out.body,
+      user: db.state.user.find((u) => u.id === 'buyer'),
+      purchases: db.state.clientPurchase,
+      redemptions: db.state.inviteRedemption,
+      coachRedemptions: db.state.coachCodeRedemption,
+      codes: db.state.inviteCode,
+      packages: db.state.coachPackage,
+    }));
+  };
+  return { db, code, app, post, mod, emitAllowed };
 }
 
 describe('LS-1210 independent HTTP contract', () => {
   const original = { ...process.env };
   let active: INestApplication | undefined;
   beforeEach(() => {
+    // Only Date is faked. HTTP, native fetch, timers and the event loop stay real.
+    jest.useFakeTimers({
+      now: new Date('2026-11-03T20:00:00.000Z'),
+      doNotFake: ['hrtime', 'nextTick', 'performance', 'queueMicrotask',
+        'setImmediate', 'clearImmediate', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'],
+    });
     process.env.FEATURE_COACHLESS_HOME = 'true';
     process.env.FEATURE_CONTRACTS_ENABLED = 'false';
     process.env.APPLE_NONCE_REQUIRED = 'false';
@@ -163,6 +184,7 @@ describe('LS-1210 independent HTTP contract', () => {
   afterEach(async () => {
     await active?.close();
     active = undefined;
+    jest.useRealTimers();
     for (const key of ['FEATURE_COACHLESS_HOME', 'FEATURE_CONTRACTS_ENABLED', 'APPLE_NONCE_REQUIRED', 'COACH_CODE_GATE_ENABLED']) {
       if (original[key] === undefined) delete process.env[key];
       else process.env[key] = original[key];
@@ -226,6 +248,7 @@ describe('LS-1210 independent HTTP contract', () => {
         expect(out.body).toMatchObject({ valid: true, coach: { id: COACH_B, name: 'Coach B' } });
         expect(out.body).not.toHaveProperty('join');
         expect(f.db.state.clientPurchase).toEqual([]);
+        f.emitAllowed(surface, out);
         return;
       }
       const join = AUTH_SURFACES.includes(surface) || surface.startsWith('role')
@@ -243,6 +266,7 @@ describe('LS-1210 independent HTTP contract', () => {
       expect(f.db.state.user.find((u) => u.id === 'buyer')!.coach_id).toBeNull();
       expect(f.db.state.clientPurchase).toEqual([]);
       expect(f.db.state.inviteRedemption).toEqual([]);
+      f.emitAllowed(surface, out);
     });
 
     it.each(SURFACES.filter((s) => s !== 'check'))('%s: an allowed free join writes one attachment and real entitlement', async (surface) => {
@@ -255,6 +279,7 @@ describe('LS-1210 independent HTTP contract', () => {
       expect(f.db.state.clientPurchase[0]).toMatchObject({ client_user_id: 'buyer', coach_user_id: COACH_B, package_id: 'package', amount_cents: 0, entitlement_active: true });
       expect(f.db.state.inviteRedemption).toHaveLength(1);
       expect(f.db.state.inviteCode.every((row) => row.used_count === 1)).toBe(true);
+      f.emitAllowed(surface, out);
     });
   });
 
