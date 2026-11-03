@@ -18,6 +18,7 @@ import { MealPlansService } from '../src/meal-plans/meal-plans.service';
 import { WorkoutBuilderService } from '../src/workout-builder/workout-builder.service';
 import { ls1197Database } from './ls-1197-live-fixture';
 import { stub } from './utils/trial-fakes';
+import type { AuthedRequest } from '../src/auth/auth-request';
 
 type Surface = 'get' | 'edit' | 'approve' | 'reject';
 type Direction = 'head blocks team' | 'team blocks head' | 'no block';
@@ -32,7 +33,7 @@ describe('LS-1205 B1: saved insight rechecks the message author at every respons
   const client = randomUUID();
   const blockedWords = 'LS1205 team author: take a recovery walk today';
   const allowedWords = 'LS1205 client own recovery update';
-  const req = { user: { id: head, role: 'coach' } };
+  const req = stub<AuthedRequest>({ user: { id: head, role: 'coach' } });
 
   beforeAll(async () => {
     fixture = await ls1197Database();

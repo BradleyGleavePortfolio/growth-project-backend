@@ -15,6 +15,7 @@ import { PrivateContextService } from '../src/ai/gateway/private-context.service
 import { ls1197Database } from './ls-1197-live-fixture';
 import { grantAllEgress } from './ai-egress/ai-egress.fakes';
 import { stub } from './utils/trial-fakes';
+import type { AuthedRequest } from '../src/auth/auth-request';
 
 describe('LS-1205 B4: persisted gateway drafts recheck source-author visibility', () => {
   let fixture: Awaited<ReturnType<typeof ls1197Database>>;
@@ -24,7 +25,7 @@ describe('LS-1205 B4: persisted gateway drafts recheck source-author visibility'
   const team = randomUUID();
   const client = randomUUID();
   const teamWords = 'LS1205 team author recommends a recovery walk today';
-  const req = { user: { id: head, role: 'coach', coach_id: null }, headers: {} };
+  const req = stub<AuthedRequest>({ user: { id: head, role: 'coach', coach_id: null }, headers: {} });
 
   beforeAll(async () => {
     fixture = await ls1197Database();
