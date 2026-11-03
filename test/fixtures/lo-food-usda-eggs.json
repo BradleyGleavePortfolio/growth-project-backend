@@ -1,0 +1,618 @@
+[
+ {
+  "fdcId": 2575422,
+  "description": "EGGS",
+  "dataType": "Branded",
+  "brandOwner": "Mars Chocolate North America LLC",
+  "foodCategory": "Candy",
+  "servingSize": 40.0,
+  "servingSizeUnit": "GRM",
+  "householdServingFullText": "1 EGG",
+  "foodNutrients": [
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 7.5
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 27.5
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 60.0
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 525
+   }
+  ]
+ },
+ {
+  "fdcId": 577532,
+  "description": "EGGS",
+  "dataType": "Branded",
+  "brandOwner": "Safeway, Inc.",
+  "foodCategory": "Eggs & Egg Substitutes",
+  "servingSize": 44.0,
+  "servingSizeUnit": "g",
+  "householdServingFullText": "1 EGG",
+  "foodNutrients": [
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 0.0
+   },
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 13.6
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 9.09
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 136
+   }
+  ]
+ },
+ {
+  "fdcId": 578455,
+  "description": "EGGS",
+  "dataType": "Branded",
+  "brandOwner": "SUN HARVEST",
+  "foodCategory": "Eggs & Egg Substitutes",
+  "servingSize": 50.0,
+  "servingSizeUnit": "g",
+  "householdServingFullText": "1 EGG",
+  "foodNutrients": [
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 0.0
+   },
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 12.0
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 10.0
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 140
+   }
+  ]
+ },
+ {
+  "fdcId": 2498468,
+  "description": "EGGS",
+  "dataType": "Branded",
+  "brandOwner": "Mars Chocolate North America LLC",
+  "foodCategory": "Chocolate",
+  "servingSize": 28.0,
+  "servingSizeUnit": "MG",
+  "householdServingFullText": "1 EGG",
+  "foodNutrients": [
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 3.57
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 35.7
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 57.1
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 571
+   }
+  ]
+ },
+ {
+  "fdcId": 1663044,
+  "description": "EGGS",
+  "dataType": "Branded",
+  "brandOwner": "Oakdell Egg Farms, Inc.",
+  "foodCategory": "Eggs & Egg Substitutes",
+  "servingSize": 63.0,
+  "servingSizeUnit": "g",
+  "householdServingFullText": "1 EGG",
+  "foodNutrients": [
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 12.7
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 9.52
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 0.0
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 143
+   }
+  ]
+ },
+ {
+  "fdcId": 2096834,
+  "description": "EGGS",
+  "dataType": "Branded",
+  "brandOwner": "Costco Companies Inc.",
+  "foodCategory": "Eggs & Egg Substitutes",
+  "servingSize": 56.0,
+  "servingSizeUnit": "g",
+  "householdServingFullText": "1 EGG",
+  "foodNutrients": [
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 12.5
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 8.93
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 0.0
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 143
+   }
+  ]
+ },
+ {
+  "fdcId": 1663084,
+  "description": "EGGS",
+  "dataType": "Branded",
+  "brandOwner": "Kreider Farms",
+  "foodCategory": "Eggs & Egg Substitutes",
+  "servingSize": 56.0,
+  "servingSizeUnit": "g",
+  "householdServingFullText": "1 EGG",
+  "foodNutrients": [
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 12.5
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 8.93
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 0.0
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 143
+   }
+  ]
+ },
+ {
+  "fdcId": 1664337,
+  "description": "EGGS",
+  "dataType": "Branded",
+  "brandOwner": "Raley's",
+  "foodCategory": "Eggs & Egg Substitutes",
+  "servingSize": 50.0,
+  "servingSizeUnit": "g",
+  "householdServingFullText": "1 EGG",
+  "foodNutrients": [
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 12.0
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 10.0
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 0.0
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 140
+   }
+  ]
+ },
+ {
+  "fdcId": 2057892,
+  "description": "EGGS",
+  "dataType": "Branded",
+  "brandOwner": "Mr. Beverages Old Time Cocktail Mixes",
+  "foodCategory": "Eggs & Egg Substitutes",
+  "servingSize": 38.0,
+  "servingSizeUnit": "g",
+  "householdServingFullText": "1 EGG",
+  "foodNutrients": [
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 13.2
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 10.5
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 2.63
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 158
+   }
+  ]
+ },
+ {
+  "fdcId": 511826,
+  "description": "EGGS",
+  "dataType": "Branded",
+  "brandOwner": "Pete and Gerry's Organics",
+  "foodCategory": "Eggs & Egg Substitutes",
+  "servingSize": 50.0,
+  "servingSizeUnit": "g",
+  "householdServingFullText": "1 EGG",
+  "foodNutrients": [
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 0.0
+   },
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 12.0
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 10.0
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 140
+   }
+  ]
+ },
+ {
+  "fdcId": 1662945,
+  "description": "EGGS",
+  "dataType": "Branded",
+  "brandOwner": "Oakdell Egg Farms, Inc.",
+  "foodCategory": "Eggs & Egg Substitutes",
+  "servingSize": 44.0,
+  "servingSizeUnit": "g",
+  "householdServingFullText": "1 EGG",
+  "foodNutrients": [
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 13.6
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 9.09
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 0.0
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 136
+   }
+  ]
+ },
+ {
+  "fdcId": 442160,
+  "description": "EGGS",
+  "dataType": "Branded",
+  "brandOwner": "LUCERNE",
+  "foodCategory": "Eggs & Egg Substitutes",
+  "servingSize": 50.0,
+  "servingSizeUnit": "g",
+  "householdServingFullText": "1 EGG",
+  "foodNutrients": [
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 12.0
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 10.0
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 0.0
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 140
+   }
+  ]
+ },
+ {
+  "fdcId": 511760,
+  "description": "EGGS",
+  "dataType": "Branded",
+  "brandOwner": "Pete and Gerry's Organics",
+  "foodCategory": "Eggs & Egg Substitutes",
+  "servingSize": 56.0,
+  "servingSizeUnit": "g",
+  "householdServingFullText": "1 EGG",
+  "foodNutrients": [
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 0.0
+   },
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 12.5
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 8.93
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 143
+   }
+  ]
+ },
+ {
+  "fdcId": 578453,
+  "description": "EGGS",
+  "dataType": "Branded",
+  "brandOwner": "SUN HARVEST",
+  "foodCategory": "Eggs & Egg Substitutes",
+  "servingSize": 50.0,
+  "servingSizeUnit": "g",
+  "householdServingFullText": "1 EGG",
+  "foodNutrients": [
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 0.0
+   },
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 12.0
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 10.0
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 140
+   }
+  ]
+ },
+ {
+  "fdcId": 747997,
+  "description": "Eggs, Grade A, Large, egg white",
+  "dataType": "Foundation",
+  "foodCategory": "Dairy and Egg Products",
+  "foodNutrients": [
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 10.7
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 0.0
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 55.0
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 2.36
+   }
+  ]
+ },
+ {
+  "fdcId": 748967,
+  "description": "Eggs, Grade A, Large, egg whole",
+  "dataType": "Foundation",
+  "foodCategory": "Dairy and Egg Products",
+  "foodNutrients": [
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 148
+   },
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 12.4
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 9.96
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 0.96
+   }
+  ]
+ },
+ {
+  "fdcId": 748236,
+  "description": "Eggs, Grade A, Large, egg yolk",
+  "dataType": "Foundation",
+  "foodCategory": "Dairy and Egg Products",
+  "foodNutrients": [
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 28.8
+   },
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 16.2
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 1.02
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 334
+   }
+  ]
+ },
+ {
+  "fdcId": 2707180,
+  "description": "Egg, Benedict",
+  "dataType": "Survey (FNDDS)",
+  "foodCategory": "Eggs and omelets",
+  "foodNutrients": [
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 13.81
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 22.1
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 8.48
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 288
+   }
+  ]
+ },
+ {
+  "fdcId": 2707179,
+  "description": "Egg, creamed",
+  "dataType": "Survey (FNDDS)",
+  "foodCategory": "Eggs and omelets",
+  "foodNutrients": [
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 7.79
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 10.35
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 5.52
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 148
+   }
+  ]
+ },
+ {
+  "fdcId": 2707181,
+  "description": "Egg, deviled",
+  "dataType": "Survey (FNDDS)",
+  "foodCategory": "Eggs and omelets",
+  "foodNutrients": [
+   {
+    "nutrientName": "Protein",
+    "unitName": "G",
+    "value": 11.52
+   },
+   {
+    "nutrientName": "Total lipid (fat)",
+    "unitName": "G",
+    "value": 15.9
+   },
+   {
+    "nutrientName": "Carbohydrate, by difference",
+    "unitName": "G",
+    "value": 1.07
+   },
+   {
+    "nutrientName": "Energy",
+    "unitName": "KCAL",
+    "value": 198
+   }
+  ]
+ }
+]
