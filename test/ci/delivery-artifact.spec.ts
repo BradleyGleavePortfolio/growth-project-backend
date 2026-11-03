@@ -620,8 +620,8 @@ describe('release.sh — behaviour with a fake prisma runner (no database, no ne
         '    if [ -n "${FAKE_FOODS_FAIL:-}" ]; then echo "[release] built-in foods FAILED: 3 of 65 still missing from the shared catalog"; exit 1; fi;',
         '    echo "[release] built-in foods: 65 present, 0 added"; exit 0;;',
         '  *load-usda-foods.js) echo "node $* DIRECT_URL=${DIRECT_URL}" >>"${FAKE_NPX_LOG}";',
-        '    if [ -n "${FAKE_USDA_FAIL:-}" ]; then echo "[release] USDA foods FAILED: 12 of 8116 still missing from the shared catalog"; exit 1; fi;',
-        '    echo "[release] USDA foods: 8116 present, 0 added (900 ms)"; exit 0;;',
+        '    if [ -n "${FAKE_USDA_FAIL:-}" ]; then echo "[release] USDA foods FAILED: 12 of 8060 still missing from the shared catalog"; exit 1; fi;',
+        '    echo "[release] USDA foods: 8060 present, 0 added (900 ms)"; exit 0;;',
         'esac',
         'echo v20.0.0',
         '',
@@ -785,15 +785,15 @@ describe('release.sh — behaviour with a fake prisma runner (no database, no ne
       'node dist/food-seed/scripts/load-usda-foods.js prisma/data/usda-foods.jsonl.gz DIRECT_URL=postgres://fake-direct',
     ]);
     expect(usdaCall(r.calls)).toBeGreaterThan(foodCall(r.calls));
-    expect(r.out).toMatch(/^\[release\] USDA foods: 8116 present, 0 added \(900 ms\)$/m);
-    expect(r.out.indexOf('USDA foods: 8116 present')).toBeGreaterThan(r.out.indexOf('built-in foods: 65 present'));
-    expect(r.out.indexOf('USDA foods: 8116 present')).toBeLessThan(r.out.indexOf('release_command completed successfully'));
+    expect(r.out).toMatch(/^\[release\] USDA foods: 8060 present, 0 added \(900 ms\)$/m);
+    expect(r.out.indexOf('USDA foods: 8060 present')).toBeGreaterThan(r.out.indexOf('built-in foods: 65 present'));
+    expect(r.out.indexOf('USDA foods: 8060 present')).toBeLessThan(r.out.indexOf('release_command completed successfully'));
   });
   it('step 6 failing (foods still missing, or the insert refused) → exit 1, no success banner, abort banner printed', () => {
     const r = fixture((root) => verifier(root, REQUIRED), { FAKE_USDA_FAIL: '1' });
     expect(r.code).toBe(1);
     expect(r.out).toContain('[release] built-in foods: 65 present, 0 added');
-    expect(r.out).toContain('[release] USDA foods FAILED: 12 of 8116 still missing from the shared catalog');
+    expect(r.out).toContain('[release] USDA foods FAILED: 12 of 8060 still missing from the shared catalog');
     expect(r.out).toContain('USDA foods step FAILED');
     expect(r.out).toContain('Deploy ABORTED by release_command');
     expect(r.out).not.toContain('release_command completed successfully');

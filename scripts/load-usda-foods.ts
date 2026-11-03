@@ -4,8 +4,9 @@
  * Reads prisma/data/usda-foods.jsonl.gz (built from USDA's own SR Legacy and Foundation CSV files by
  * scripts/usda-foods/build.py) and, for each food the shared catalog lacks, inserts one FoodItem row exactly as the
  * live import (FoodService.upsertFromUSDA) stores one: brand NULL, category 'generic', the USDA nutrients per 100 g,
- * and the tags usda:<fdcId>, category:<USDA category> and basic-food. The one difference is the portion: the live
- * import says 100 g, this row says the food's first measured USDA portion ("1 large", 50 g) when USDA lists one.
+ * and the tags usda:<fdcId>, category:<USDA category> and basic-food. Two differences: the portion (the live import
+ * says 100 g, this row says the food's first measured USDA portion, "1 large" 50 g, when USDA lists one) and the fat
+ * kinds (saturated, mono, poly), which this row carries from USDA's file and the live import leaves empty.
  *
  * "The shared catalog" is the rows with created_by_user_id NULL; a food is present when a shared row carries its
  * usda:<fdcId> tag, which is also the key upsertFromUSDA reads, so a food the live import already stored is not added
@@ -33,6 +34,9 @@ export interface UsdaFood {
   protein_g: number;
   carbs_g: number;
   fat_g: number;
+  saturated_fat_g: number | null;
+  mono_fat_g: number | null;
+  poly_fat_g: number | null;
   fiber_g: number | null;
   sugar_g: number | null;
   sodium_mg: number | null;
@@ -60,6 +64,9 @@ export function usdaFoodRow(food: UsdaFood) {
     protein_g: food.protein_g,
     carbs_g: food.carbs_g,
     fat_g: food.fat_g,
+    saturated_fat_g: food.saturated_fat_g,
+    mono_fat_g: food.mono_fat_g,
+    poly_fat_g: food.poly_fat_g,
     fiber_g: food.fiber_g,
     sugar_g: food.sugar_g,
     sodium_mg: food.sodium_mg,
@@ -96,7 +103,7 @@ export function parseUsdaFoods(gz: Buffer): UsdaFood[] {
       typeof f.name === 'string' && f.name.trim() !== '' &&
       (f.usda_category === null || typeof f.usda_category === 'string') &&
       [f.calories, f.protein_g, f.carbs_g, f.fat_g].every(isNumber) &&
-      [f.fiber_g, f.sugar_g, f.sodium_mg].every(isNumberOrNull) &&
+      [f.saturated_fat_g, f.mono_fat_g, f.poly_fat_g, f.fiber_g, f.sugar_g, f.sodium_mg].every(isNumberOrNull) &&
       ((f.serving_description === null && f.serving_size_grams === null) ||
         (typeof f.serving_description === 'string' && f.serving_description !== '' &&
           isNumber(f.serving_size_grams) && f.serving_size_grams > 0));

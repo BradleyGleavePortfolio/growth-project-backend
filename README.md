@@ -221,9 +221,10 @@ the previous image keeps serving. `--refresh` stays a developer tool; the
 deploy never changes an existing row. `test/food-seed-file.spec.ts` checks the
 file in CI (65 foods, unique name + brand, sane per-100 g values).
 
-Step 6 then adds the USDA foods: `prisma/data/usda-foods.jsonl.gz` holds every
-USDA SR Legacy and Foundation food (8,116), built from USDA's own CSV downloads
-by `scripts/usda-foods/build.py` (the file's first line names both files and
+Step 6 then adds the USDA foods: `prisma/data/usda-foods.jsonl.gz` holds the
+USDA SR Legacy and Foundation foods (8,060: SR Legacy less the 56 that a
+built-in food already stands for, listed in `prisma/data/usda-built-in-map.json`,
+plus Foundation), built from USDA's own CSV downloads by `scripts/usda-foods/build.py` (the file's first line names both files and
 their sha256; run the script again to rebuild it byte for byte). A compiled
 copy of `scripts/load-usda-foods.ts` adds each one the shared catalog lacks,
 keyed on its `usda:<fdcId>` tag, as the row the live USDA import stores, and
