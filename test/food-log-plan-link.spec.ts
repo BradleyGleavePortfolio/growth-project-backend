@@ -78,6 +78,11 @@ function setup() {
       upsert: jest.fn(async ({ where, create }: Row) =>
         withFood(entries.find((r) => r.client_uuid === where.client_uuid) ?? insert(create)),
       ),
+      // FOOD-1-BE R6: logFood looks a key up first.
+      findUnique: jest.fn(async ({ where }: Row) => {
+        const found = entries.find((r) => r.client_uuid === where.client_uuid);
+        return found ? withFood(found) : null;
+      }),
       findMany: jest.fn(async ({ where }: Row) =>
         entries
           .filter((e) => e.user_id === where.user_id && e.date.getTime() === where.date.getTime())

@@ -170,6 +170,15 @@ export class MessagingInboxService {
 
     // One indexed seek per thread: DISTINCT ON over (coach_id, client_id,
     // created_at) returns each thread's newest row.
+    // FR-1205 (LS-1205 B2): with blocks, rows by an author in a block with
+    // this coach sort after every readable row before DISTINCT ON picks, so
+    // the preview is the newest row this coach may read. A thread with only
+    // such rows keeps its row with no preview (below).
+    const hiddenAuthors = [...blocked].filter((id) => id !== coachId);
+    const readableFirst =
+      hiddenAuthors.length > 0
+        ? Prisma.sql`(m."sender_id" = ANY(${hiddenAuthors}::text[])) IS TRUE,`
+        : Prisma.empty;
     const last = await this.prisma.$queryRaw<LastRow[]>(Prisma.sql`
       SELECT DISTINCT ON (m."client_id")
              m."id", m."client_id", m."sender_id", m."body", m."voice_url",
@@ -179,7 +188,7 @@ export class MessagingInboxService {
         FROM "CoachMessage" m
        WHERE m."coach_id" = ${threadCoachId}
          AND m."client_id" = ANY(${clientIds}::text[])
-       ORDER BY m."client_id", m."created_at" DESC, m."id" DESC`);
+       ORDER BY m."client_id", ${readableFirst} m."created_at" DESC, m."id" DESC`);
     if (last.length === 0) return { items: [], next_cursor: null, total_unread: 0, closed_client_ids };
 
     const ids = last.map((r) => r.client_id);
