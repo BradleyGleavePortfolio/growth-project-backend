@@ -213,7 +213,8 @@ Every deploy now does the insert for you: `scripts/release.sh` step 5
 runs a compiled copy of `scripts/seed-built-in-foods.ts`
 (`tsconfig.food-seed.json`, built in the Dockerfile) that adds each food in
 this file the shared catalog (`created_by_user_id` NULL) is missing, keyed on
-name + brand, as the same row `npm run seed:foods` makes. It never updates
+name + brand with letter case and spacing folded (so a USDA import named
+`BANANA,  RAW` counts as `Banana, raw`), as the same row `npm run seed:foods` makes. It never updates
 or deletes a row and never touches a member's own food, and it prints
 `[release] built-in foods: <n> present, <m> added`. If any seed food is still
 missing afterwards, or the database refuses the insert, the release fails and

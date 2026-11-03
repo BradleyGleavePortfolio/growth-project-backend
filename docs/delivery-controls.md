@@ -173,7 +173,8 @@ gate, and interpolated its `app` input directly into shell.
   `dist/food-seed/scripts/seed-built-in-foods.js` on `DIRECT_URL`: it adds,
   in one transaction under an advisory lock, each food in
   `prisma/data/seed-foods.json` that the shared catalog (`FoodItem` rows
-  with `created_by_user_id` NULL) lacks, keyed on name + brand, and never
+  with `created_by_user_id` NULL) lacks, keyed on name + brand with letter
+  case and whitespace runs folded the same way in its SQL and its key, and never
   updates or deletes a row or reads a member's own food. Normal line:
   `[release] built-in foods: 65 present, 0 added`. Any seed food still
   missing afterwards, a refused insert (the transaction writes nothing) or
