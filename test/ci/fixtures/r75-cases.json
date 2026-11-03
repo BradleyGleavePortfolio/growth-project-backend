@@ -1,5 +1,5 @@
 {
-  "note": "Hostile vectors for the R75 / R100.A2 gate. Every banned literal lives HERE, as JSON data, because .json is not an executable extension in .github/r75-policy.json — so the regression suite can exercise real banned tokens without becoming a violation itself. Fixture DATA only. Test sources the production build leaves out (test/, top-level __tests__/, src/ files ending spec.ts) are outside the scan by owner ruling #192-D6 op 1; the literals stay here so no suite depends on that skip. Cases without a legacyExit are ones whose pre-repair behaviour has not been executed, so no expectation is stated for them rather than a guessed one.",
+  "note": "Hostile vectors for the R75 / R100.A2 gate. Every banned literal lives HERE, as JSON data, because .json is not an executable extension in .github/r75-policy.json — so the regression suite can exercise real banned tokens without becoming a violation itself. Fixture DATA only. Test sources the production build leaves out (test/, top-level __tests__/, src/ files ending .spec.ts) are outside the scan by owner ruling #192-D6 op 1 (ruling R-R75-1: the dot keeps app code such as src/scout/reconstruct/mapping-spec.ts scanned); the literals stay here so no suite depends on that skip. Cases without a legacyExit are ones whose pre-repair behaviour has not been executed, so no expectation is stated for them rather than a guessed one.",
   "policyExpectations": {
     "suppressionToken": "@ts-expect-error",
     "emptyCatchClasses": ["empty-catch-null", "empty-catch-undefined", "empty-catch-block"],
@@ -186,7 +186,7 @@
         "scripts/ci/tool.spec.js",
         "dangerfile.js"
       ],
-      "why": "The build compiles every src/ file not ending spec.ts, including test helpers under src/**/__tests__/; scripts/ and dangerfile.js run in CI. None of them is skipped, and the spec skip does not reach scripts/."
+      "why": "The build compiles every src/ file not ending .spec.ts, including test helpers under src/**/__tests__/; scripts/ and dangerfile.js run in CI. None of them is skipped, and the spec skip does not reach scripts/."
     },
     {
       "name": "the same cast in app code, compiled src helpers, scripts/ and dangerfile.js still fails (staged)",
@@ -233,7 +233,38 @@
         "src/widget.spec.mts",
         "src/widget.specs.ts"
       ],
-      "why": "The skip mirrors the build glob **/*spec.ts exactly: a name must END in spec.ts. Other extensions and longer names keep the full scan."
+      "why": "The skip is the build glob with the dot, src/**/*.spec.ts (ruling R-R75-1): a name must END in .spec.ts. Other extensions and longer names keep the full scan."
+    },
+    {
+      "name": "R-R75-1: src/ app files ending spec.ts without the dot stay scanned (range)",
+      "mode": "range",
+      "base": {
+        "src/keep.ts": ["export const keep = 1;"]
+      },
+      "head": {
+        "src/scout/reconstruct/mapping-spec.ts": ["const a = v as unknown as string;"],
+        "src/widget-spec.ts": ["const b = v as unknown as string;"]
+      },
+      "expectExit": 1,
+      "expectNet": {
+        "as unknown as": 2
+      },
+      "expectEvidenceFiles": ["src/scout/reconstruct/mapping-spec.ts", "src/widget-spec.ts"],
+      "why": "mapping-spec.ts is app code: src/scout files import it, so tsc compiles it although tsconfig.build.json's exclude names **/*spec.ts. Only a .spec.ts name is a test file the build leaves out."
+    },
+    {
+      "name": "R-R75-1: src/ app files ending spec.ts without the dot stay scanned (staged)",
+      "mode": "staged",
+      "staged": {
+        "src/scout/reconstruct/mapping-spec.ts": ["const a = v as unknown as string;"],
+        "src/widget-spec.ts": ["const b = v as unknown as string;"]
+      },
+      "expectExit": 1,
+      "expectNet": {
+        "as unknown as": 2
+      },
+      "expectEvidenceFiles": ["src/scout/reconstruct/mapping-spec.ts", "src/widget-spec.ts"],
+      "why": "The pre-commit hook scans the same app files as CI."
     },
     {
       "name": "top-level source file is scanned",

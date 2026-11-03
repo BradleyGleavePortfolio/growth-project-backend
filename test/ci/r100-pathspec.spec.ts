@@ -201,6 +201,10 @@ describe('R100 workflow delegates measurement scope to the committed checker and
     expect(inPolicyScope('src/extension-pair/__tests__/test-doubles.test.ts')).toBe(true);
     expect(inPolicyScope('src/community/ack/ack.test-fixtures.ts')).toBe(true);
     expect(inPolicyScope('scripts/tool.spec.js')).toBe(true);
+    // R-R75-1: app code whose name ends in spec.ts without the dot is compiled
+    // by the build (app code under src/scout imports mapping-spec.ts), so it stays scanned.
+    expect(inPolicyScope('src/scout/reconstruct/mapping-spec.ts')).toBe(true);
+    expect(inPolicyScope('src/widget-spec.ts')).toBe(true);
     expect(inPolicyScope('.github/workflows/gate.yml')).toBe(false);
     expect(inPolicyScope('.github/r75-policy.json')).toBe(false);
   });
