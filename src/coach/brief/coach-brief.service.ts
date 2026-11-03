@@ -557,28 +557,84 @@ export function buildFallbackNarrative(
 
 /**
  * PF-7-BE (R4/R7): PF-W9 in every brief while a renewal waits on the coach's
- * Stripe account, as the second sentence (after the greeting), the rest cut
- * by whole sentences to stay within the cap. Names no client.
+ * Stripe account, as the second sentence (after the greeting). Names no client.
+ * HOLD-FU-BE (LS-1195 C3, LO-1195 C1): to stay within the cap only optional
+ * sentences are cut, never an approved payment line (`paymentLines`, by
+ * default the lines this context's brief carries) and never the greeting.
  */
 export function withCoachAccountWaiting(
   narrative: string,
   ctx: Pick<BriefContext | BriefContextHeadCoach, 'coach_account_waiting'>,
+  paymentLines: readonly string[] = briefPaymentLines(
+    ctx as BriefContext | BriefContextHeadCoach,
+  ),
 ): string {
   const waiting = ctx.coach_account_waiting ?? 0;
   if (!(waiting > 0)) return narrative;
   const line = coachAccountWaitingLine(waiting);
   if (narrative.includes(line)) return narrative;
-  const room = BRIEF_MAX_NARRATIVE_CHARS - line.length - 1;
-  const kept: string[] = [];
-  let length = 0;
-  for (const sentence of splitSentences(narrative)) {
-    const next = length === 0 ? sentence.length : length + 1 + sentence.length;
-    if (next > room) break;
-    kept.push(sentence);
-    length = next;
+  const [first, ...rest] = briefUnits(narrative, paymentLines);
+  if (!first) return line;
+  // Reserve the greeting, PF-W9 and every payment line first.
+  let length = [first.text, line, ...rest.filter((u) => u.keep).map((u) => u.text)]
+    .join(' ').length;
+  // Even the greeting does not fit beside them: PF-W9 and the payment lines
+  // alone (an AI reply then fails the final check and the fallback is used).
+  if (length > BRIEF_MAX_NARRATIVE_CHARS) {
+    return [line, ...[first, ...rest].filter((u) => u.keep).map((u) => u.text)].join(' ');
   }
-  if (kept.length === 0) return line;
-  return [kept[0], line, ...kept.slice(1)].join(' ');
+  const kept = rest.filter((unit) => {
+    if (unit.keep) return true;
+    if (length + 1 + unit.text.length > BRIEF_MAX_NARRATIVE_CHARS) return false;
+    length += 1 + unit.text.length;
+    return true;
+  });
+  return [first.text, line, ...kept.map((u) => u.text)].join(' ');
+}
+
+/**
+ * HOLD-FU-BE (LS-1195 C3): the brief as the coach will see it, with PF-W9 put
+ * in, is checked again: still within the cap, every payment line and PF-W9
+ * word for word. `null` when it passes; otherwise the reason (the AI reply is
+ * then repaired or the deterministic brief is used).
+ */
+export function shownBriefViolation(
+  narrative: string,
+  ctx: Pick<BriefContext | BriefContextHeadCoach, 'coach_account_waiting'>,
+  coachFirstName: string,
+  paymentLines: readonly string[],
+): string | null {
+  const waiting = ctx.coach_account_waiting ?? 0;
+  if (!(waiting > 0)) return null;
+  const shown = withCoachAccountWaiting(narrative, ctx, paymentLines);
+  const reason = validateClaudeNarrative(shown, coachFirstName, [
+    ...paymentLines,
+    coachAccountWaitingLine(waiting),
+  ]);
+  return reason ? `with_coach_account_line:${reason}` : null;
+}
+
+// The brief as whole sentences, each approved payment line one unit kept whole.
+function briefUnits(
+  narrative: string,
+  paymentLines: readonly string[],
+): Array<{ text: string; keep: boolean }> {
+  const units: Array<{ text: string; keep: boolean }> = [];
+  let rest = narrative.replace(/\s+/g, ' ').trim();
+  while (rest) {
+    let at = -1;
+    let hit = '';
+    for (const paymentLine of paymentLines) {
+      const i = paymentLine ? rest.indexOf(paymentLine) : -1;
+      if (i >= 0 && (at < 0 || i < at)) [at, hit] = [i, paymentLine];
+    }
+    const before = at < 0 ? rest : rest.slice(0, at);
+    for (const text of splitSentences(before)) units.push({ text, keep: false });
+    if (at < 0) break;
+    units.push({ text: hit, keep: true });
+    rest = rest.slice(at + hit.length).trim();
+  }
+  return units;
 }
 
 const FULL_DETAILS = 'The full details are below.';
@@ -1900,13 +1956,14 @@ export class CoachBriefService {
       userPrompt,
     );
     if (firstAttempt.kind === 'success') {
-      const violation = validateClaudeNarrative(
-        firstAttempt.narrative,
-        safeCoachFirstName,
-        paymentLines,
-      );
+      const violation =
+        validateClaudeNarrative(firstAttempt.narrative, safeCoachFirstName, paymentLines) ??
+        shownBriefViolation(firstAttempt.narrative, ctx, safeCoachFirstName, paymentLines);
       if (!violation) {
-        return { narrative: withCoachAccountWaiting(firstAttempt.narrative, ctx), generated_by: 'ai' };
+        return {
+          narrative: withCoachAccountWaiting(firstAttempt.narrative, ctx, paymentLines),
+          generated_by: 'ai',
+        };
       }
       this.logger.warn(
         `CoachBrief Claude output failed contract (${violation}) for ${logRef}; attempting one repair`,
@@ -1921,14 +1978,12 @@ export class CoachBriefService {
         repairPrompt,
       );
       if (secondAttempt.kind === 'success') {
-        const violation2 = validateClaudeNarrative(
-          secondAttempt.narrative,
-          safeCoachFirstName,
-          paymentLines,
-        );
+        const violation2 =
+          validateClaudeNarrative(secondAttempt.narrative, safeCoachFirstName, paymentLines) ??
+          shownBriefViolation(secondAttempt.narrative, ctx, safeCoachFirstName, paymentLines);
         if (!violation2) {
           return {
-            narrative: withCoachAccountWaiting(secondAttempt.narrative, ctx),
+            narrative: withCoachAccountWaiting(secondAttempt.narrative, ctx, paymentLines),
             generated_by: 'ai',
           };
         }

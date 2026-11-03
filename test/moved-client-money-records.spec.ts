@@ -171,6 +171,8 @@ function expectMoneyRecordsOnly(r: Reads, before: Reads) {
     amount_cents: 4900, currency: 'usd', created_at: at(1).toISOString(),
     billing_type: 'recurring', billing_interval: null, billing_interval_count: null,
     state: before.charges[0].state, refunded_cents: 0, charged_back_cents: 0,
+    // HOLD-FU-BE: not a renewal held on the coach's account.
+    waiting_on: null,
     // SWITCH-TELL-BE: only a move to the house coach tells the coach (and dates the line).
     moved_away_at: null,
   };

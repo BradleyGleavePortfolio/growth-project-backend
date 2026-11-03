@@ -10,6 +10,7 @@ describe('GuestCheckoutPiiScrubService', () => {
   let service: GuestCheckoutPiiScrubService;
   let prisma: {
     guestCheckout: { findMany: jest.Mock; updateMany: jest.Mock };
+    emailSendLog: { findMany: jest.Mock; update: jest.Mock };
   };
   let config: { get: jest.Mock };
 
@@ -18,6 +19,10 @@ describe('GuestCheckoutPiiScrubService', () => {
       guestCheckout: {
         findMany: jest.fn(),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      emailSendLog: {
+        findMany: jest.fn().mockResolvedValue([]),
+        update: jest.fn().mockResolvedValue({}),
       },
     };
     config = {
@@ -117,5 +122,52 @@ describe('GuestCheckoutPiiScrubService', () => {
     // No findMany call was made because resolveSalt() threw first.
     expect(prisma.guestCheckout.findMany).not.toHaveBeenCalled();
     process.env.NODE_ENV = prevEnv;
+  });
+
+  // FR-1199R2B (LS-1199R2 B4, LO-1199R2 B2) — the outcome emails' send
+  // records of a scrubbed checkout keep no plain address.
+  it('FR-1199R2B F5: hashes recipient_email on every outcome send record of the scrubbed checkout, by its own keys only', async () => {
+    prisma.guestCheckout.findMany
+      .mockResolvedValueOnce([{ id: 'gc-old', guest_email: 'jane@example.com' }])
+      .mockResolvedValueOnce([]);
+    prisma.emailSendLog.findMany.mockResolvedValueOnce([
+      { idempotency_key: 'guest-outcome:gc-old:trial-not-started:1', recipient_email: 'jane@example.com' },
+      { idempotency_key: 'guest-outcome:gc-old:trial-not-started:2', recipient_email: 'jane@example.com' },
+      { idempotency_key: 'guest-outcome:gc-old:welcome:1', recipient_email: 'jane@example.com' },
+      { idempotency_key: 'guest-outcome:gc-old:welcome:2', recipient_email: 'sha256:already' },
+    ]);
+    await service.run();
+    const keys: string[] = prisma.emailSendLog.findMany.mock.calls[0][0].where.idempotency_key.in;
+    expect(keys).toHaveLength(15);
+    expect(keys.every((k) => k.startsWith('guest-outcome:gc-old:'))).toBe(true);
+    expect(keys).toEqual(expect.arrayContaining([
+      'guest-outcome:gc-old:welcome:1', 'guest-outcome:gc-old:trial-refused:5', 'guest-outcome:gc-old:trial-not-started:3',
+    ]));
+    const hash = 'sha256:' + createHash('sha256').update('jane@example.com').update('test-salt').digest('hex');
+    expect(prisma.emailSendLog.update.mock.calls.map(([a]: any[]) => [a.where.idempotency_key, a.data.recipient_email])).toEqual([
+      ['guest-outcome:gc-old:trial-not-started:1', hash],
+      ['guest-outcome:gc-old:trial-not-started:2', hash],
+      ['guest-outcome:gc-old:welcome:1', hash],
+    ]);
+    expect(prisma.guestCheckout.updateMany.mock.calls[0][0].data.guest_email).toBe(hash);
+  });
+
+  it('FR-1199R2B F5: a send record that cannot be hashed leaves its checkout unscrubbed, for the next run', async () => {
+    prisma.guestCheckout.findMany
+      .mockResolvedValueOnce([{ id: 'gc-a', guest_email: 'a@example.com' }, { id: 'gc-b', guest_email: 'b@example.com' }])
+      .mockResolvedValueOnce([]);
+    prisma.emailSendLog.findMany.mockResolvedValueOnce([
+      { idempotency_key: 'guest-outcome:gc-a:welcome:1', recipient_email: 'a@example.com' },
+    ]);
+    prisma.emailSendLog.update.mockRejectedValueOnce(new Error('boom'));
+    await service.run();
+    expect(prisma.guestCheckout.updateMany.mock.calls.map(([a]: any[]) => a.where.id)).toEqual(['gc-b']);
+  });
+
+  it('FR-1199R2B F5: unreadable send records scrub nothing in that batch', async () => {
+    prisma.guestCheckout.findMany.mockResolvedValueOnce([{ id: 'gc-a', guest_email: 'a@example.com' }]);
+    prisma.emailSendLog.findMany.mockRejectedValueOnce(new Error('boom'));
+    await expect(service.run()).resolves.toBeUndefined();
+    expect(prisma.guestCheckout.updateMany).not.toHaveBeenCalled();
   });
 });
