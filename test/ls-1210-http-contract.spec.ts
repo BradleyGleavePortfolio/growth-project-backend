@@ -94,9 +94,9 @@ async function fixture(cause: Cause, kind: typeof KINDS[number], amount = 4900, 
   };
   if (seedPackage) db.state.coachPackage.push(pkg);
   if (kind === 'profile') Object.assign(db.state.coachProfile.find((p) => p.user_id === COACH_B)!, {
-    invite_code_package_id: pkg.id, invite_code_grant_mode: amount === 0 ? 'free' : 'none',
+    invite_code_package_id: seedPackage ? pkg.id : null, invite_code_grant_mode: amount === 0 ? 'free' : 'none',
   });
-  else addRowCode(db, { code, package_id: pkg.id, grant_mode: amount === 0 ? 'free' : 'none' });
+  else addRowCode(db, { code, package_id: seedPackage ? pkg.id : null, grant_mode: amount === 0 ? 'free' : 'none' });
   const audit = fakeAudit();
   const verifier = {
     isConfigured: () => true, getAudiences: () => ['test-audience'],
