@@ -5,6 +5,7 @@ import {
   GuestCheckoutService,
   RECONCILIATION_MAX_ATTEMPTS,
 } from './guest-checkout.service';
+import { OUTCOME_MAIL_GAP_MS, OUTCOME_MAIL_TEMPLATES, outcomeMailCheckoutId } from './guest-outcome-mail';
 
 // Audit #3 P1-6 + P1-7 — durable reconciliation worker for paid guest
 // checkouts whose conversion didn't complete inline.
@@ -33,10 +34,17 @@ const RECONCILIATION_RETRY_BACKOFF_MS = 60_000;
 // `paid` and reconciliation). 2 minutes is more than enough for the
 // inline convert path; anything older needs operator-visible reconciliation.
 const PAID_GRACE_WINDOW_MS = 2 * 60_000;
+// FR-1199 — failed outcome-email tries older than this are left alone.
+const OUTCOME_MAIL_WINDOW_MS = 3 * 86_400_000;
+const OUTCOME_MAIL_BATCH_SIZE = 100;
+// FR-1199R2B (LS-1199R2 B5) — pages of the backlog walked per tick.
+const OUTCOME_MAIL_PAGES = 5;
 
 @Injectable()
 export class GuestCheckoutReconciliationService {
   private readonly logger = new Logger(GuestCheckoutReconciliationService.name);
+  // FR-1199R2B (LS-1199R2 B5) — where the outcome email walk stopped.
+  private outcomeMailCursor: Date | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -51,9 +59,10 @@ export class GuestCheckoutReconciliationService {
     try {
       const retryableCount = await this.scanRetryable();
       const orphanCount = await this.scanOrphanedPaid();
-      if (retryableCount > 0 || orphanCount > 0) {
+      const mailCount = await this.scanOutcomeMail();
+      if (retryableCount > 0 || orphanCount > 0 || mailCount > 0) {
         this.logger.log(
-          `GuestCheckoutReconciliation: processed retryable=${retryableCount} orphaned_paid=${orphanCount}`,
+          `GuestCheckoutReconciliation: processed retryable=${retryableCount} orphaned_paid=${orphanCount} outcome_mail=${mailCount}`,
         );
       }
     } catch (err) {
@@ -127,5 +136,57 @@ export class GuestCheckoutReconciliationService {
       }
     }
     return rows.length;
+  }
+
+  // FR-1199 (LS-1199 B2) — an outcome email (welcome, PF-W7, TW-F1) whose
+  // try failed or whose sender died mid-send gets its next try here, paced
+  // by OUTCOME_MAIL_GAP_MS and capped at OUTCOME_MAIL_TRIES (the service
+  // re-reads every try and decides). Only the email; never the conversion.
+  //
+  // FR-1199R2B (LS-1199R2 B5) — a sent or capped outcome's failed tries
+  // still match this query, so the newest page can hold only finished
+  // outcomes. The scan walks the window newest first, up to
+  // OUTCOME_MAIL_PAGES pages a tick, and keeps its place (just older than
+  // the oldest try it reached) for the next tick; at the end of the window
+  // it starts again from the newest. Every unfinished try is reached within
+  // one walk. A try in the same millisecond as a page boundary may wait for
+  // the next walk.
+  private async scanOutcomeMail(): Promise<number> {
+    const now = Date.now();
+    const oldest = new Date(now - OUTCOME_MAIL_WINDOW_MS);
+    const newest = new Date(now - OUTCOME_MAIL_GAP_MS[0]);
+    const seen = new Set<string>();
+    for (let page = 0; page < OUTCOME_MAIL_PAGES; page++) {
+      const cursor = this.outcomeMailCursor;
+      const upTo = cursor && cursor < newest && cursor >= oldest ? cursor : newest;
+      let tries: { idempotency_key: string; created_at: Date }[];
+      try {
+        tries = await this.prisma.emailSendLog.findMany({
+          where: {
+            template_key: { in: OUTCOME_MAIL_TEMPLATES },
+            status: { in: ['failed', 'sending'] },
+            created_at: { gte: oldest, lte: upTo },
+          },
+          orderBy: [{ created_at: 'desc' }],
+          take: OUTCOME_MAIL_BATCH_SIZE,
+          select: { idempotency_key: true, created_at: true },
+        });
+      } catch (err) {
+        this.logger.error(`outcome email scan failed (tag=${err instanceof Error ? err.name : 'unknown'})`);
+        return seen.size;
+      }
+      for (const t of tries) {
+        const id = outcomeMailCheckoutId(t.idempotency_key);
+        if (id === null || seen.has(id)) continue;
+        seen.add(id);
+        await this.guestCheckout.sendOutcomeMail(id, { paced: true });
+      }
+      if (tries.length < OUTCOME_MAIL_BATCH_SIZE) {
+        this.outcomeMailCursor = null; // the walk reached the end of the window
+        break;
+      }
+      this.outcomeMailCursor = new Date(new Date(tries[tries.length - 1].created_at).getTime() - 1);
+    }
+    return seen.size;
   }
 }
