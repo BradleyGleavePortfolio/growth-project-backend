@@ -11,6 +11,7 @@ import { UNTRUSTED_TEXT_RULE, fenceUntrusted } from '../utils/untrusted-text';
 import { ConsentService } from '../../consent/consent.service';
 import { seesWeight, weightIfShared } from '../../consent/coach-sharing-gate';
 import { notInBlockWith } from '../../messaging/block-pair';
+import { authorReadableBy } from '../../common/count-rule';
 
 // B-AIB3-126 (plan section 1, SAFE 2): the workout capabilities get the minimised block — no name, body weight, height,
 // preferred snacks or coach message excerpt (the message row is not even read).
@@ -76,7 +77,12 @@ export class PrivateContextService {
           // Owner 4b (HIST3): only the thread with the client's CURRENT coach;
           // a former coach's chat never reaches the new coach's AI context.
           // FX-1141 (Sol B2): and not a chat in a block either way.
-          where: { coach: { students: { some: { id: subjectUserId } }, ...notInBlockWith(subjectUserId) } },
+          // ACTUAL-AUTHOR-READS-BE (LS-1197R2 B2): and none by an author in a
+          // block with the caller, before `take` picks the newest.
+          where: {
+            coach: { students: { some: { id: subjectUserId } }, ...notInBlockWith(subjectUserId) },
+            AND: [authorReadableBy(caller.id)],
+          },
           orderBy: { created_at: 'desc' },
           take: workout ? 0 : 1,
         },
