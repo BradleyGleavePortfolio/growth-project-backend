@@ -74,7 +74,7 @@ describe('LS-1205 B1: saved insight rechecks the message author at every respons
       context, stub<MealPlansService>({}), new WorkoutBuilderService(fixture.db),
       undefined, undefined, consent,
     );
-    controller = new CoachAIController(service);
+    controller = new CoachAIController(service, stub<CoachAIStateService>({ isReady: () => true }));
   }, 240_000);
 
   afterEach(async () => {
@@ -106,9 +106,9 @@ describe('LS-1205 B1: saved insight rechecks the message author at every respons
     }
 
     const response = surface === 'get' ? await controller.getDraft(req, generated.draftId)
-      : surface === 'edit' ? await controller.editDraft(req, generated.draftId, { patch: { wins: [] } })
-      : surface === 'approve' ? await controller.approveDraft(req, generated.draftId)
-      : await controller.rejectDraft(req, generated.draftId, { reason: 'Coach dismissed this draft' });
+      : surface === 'edit' ? await controller.edit(req, generated.draftId, { patch: { wins: [] } })
+      : surface === 'approve' ? await controller.approve(req, generated.draftId)
+      : await controller.reject(req, generated.draftId, { reason: 'Coach dismissed this draft' });
     expect(response).not.toHaveProperty('inputContext');
     if (direction === 'no block') expect(JSON.stringify(response)).toContain(blockedWords);
     else expect(JSON.stringify(response)).not.toContain(blockedWords);
