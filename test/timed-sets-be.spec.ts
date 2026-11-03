@@ -188,7 +188,6 @@ describe('every plan copy keeps seconds', () => {
     'src/roman/context/roman-client-context.service.ts:e': "Roman's context (AI only): found, not fixed",
     'src/roman/context/roman-client-context.service.ts:select': "Roman's context (AI only): found, not fixed",
     'src/ai/context/workout-context.service.ts:select': 'AI context reads the plan: found, not fixed',
-    'src/onboarding/onboarding.service.ts:e': 'consultation rows: program-writer.ts reads the unit from the program note',
   };
   const files = (dir: string): string[] =>
     readdirSync(dir, { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? files(join(dir, d.name)) : d.name.endsWith('.ts') ? [join(dir, d.name)] : []));
