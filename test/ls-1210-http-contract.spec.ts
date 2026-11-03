@@ -22,7 +22,7 @@ import { PrismaService } from '../src/prisma.service';
 import { AnalyticsService } from '../src/analytics/analytics.service';
 import { AuditService } from '../src/audit/audit.service';
 import { EmailService } from '../src/email/email.service';
-import { COACH_A, COACH_B, addRowCode, addUser, buildAttachDb, fakeAnalytics, fakeAudit, fakeEmail } from './support/attach-fixture';
+import { COACH_B, addRowCode, addUser, buildAttachDb, fakeAnalytics, fakeAudit, fakeEmail } from './support/attach-fixture';
 
 // Supabase is the external identity/session boundary. The join, auth outcome,
 // controller routing, validation, HTTP serialization and error filter are real.
@@ -66,6 +66,7 @@ async function fixture(cause: Cause, kind: typeof KINDS[number], amount = 4900) 
   db.listRelations.blocks_as_blocked = (row) => db.state.block.filter((b) => b.blocked_id === row.id);
   db.relations.profile = (row) => db.state.userProfile.find((p) => p.user_id === row.id) ?? null;
   db.relations.coach_profile = (row) => db.state.coachProfile.find((p) => p.user_id === row.id) ?? null;
+  db.relations.coach = (row) => db.state.user.find((u) => u.id === row.coach_id) ?? null;
   Object.assign(db.state.user.find((u) => u.id === COACH_B)!, {
     name: 'Coach B', deleted_at: null, deletion_scheduled_at: null, deletion_confirmed_at: null,
   });
@@ -155,14 +156,14 @@ describe('LS-1210 independent HTTP contract', () => {
   let active: INestApplication | undefined;
   beforeEach(() => {
     process.env.FEATURE_COACHLESS_HOME = 'true';
-    process.env.FEATURE_CONTRACTS = 'false';
+    process.env.FEATURE_CONTRACTS_ENABLED = 'false';
     process.env.APPLE_NONCE_REQUIRED = 'false';
     process.env.COACH_CODE_GATE_ENABLED = 'false';
   });
   afterEach(async () => {
     await active?.close();
     active = undefined;
-    for (const key of ['FEATURE_COACHLESS_HOME', 'FEATURE_CONTRACTS', 'APPLE_NONCE_REQUIRED', 'COACH_CODE_GATE_ENABLED']) {
+    for (const key of ['FEATURE_COACHLESS_HOME', 'FEATURE_CONTRACTS_ENABLED', 'APPLE_NONCE_REQUIRED', 'COACH_CODE_GATE_ENABLED']) {
       if (original[key] === undefined) delete process.env[key];
       else process.env[key] = original[key];
     }
@@ -208,6 +209,12 @@ describe('LS-1210 independent HTTP contract', () => {
       active = f.app;
       const out = await f.post(surface);
       expect(out.status).toBe(surface === 'signup' ? 201 : 200);
+      if (surface === 'check') {
+        expect(out.body).toMatchObject({ valid: true, coach: { id: COACH_B, name: 'Coach B' } });
+        expect(out.body).not.toHaveProperty('join');
+        expect(f.db.state.clientPurchase).toEqual([]);
+        return;
+      }
       const join = AUTH_SURFACES.includes(surface) || surface.startsWith('role')
         ? out.body.invite_join : out.body.join;
       expect(join).toEqual({
