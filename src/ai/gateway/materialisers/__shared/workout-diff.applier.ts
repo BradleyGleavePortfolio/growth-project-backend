@@ -115,6 +115,52 @@ function indexOfRef(
   return exercises.findIndex((e) => e.client_ref === ref);
 }
 
+/**
+ * FR-1211R1 (LS-1211 B2): the row an add op produces. Exported so the AI
+ * validator checks the very row this applier writes (unit, count, bounds).
+ */
+export function addedRow(op: AddExerciseOp, order: number): PlanExerciseSnapshot {
+  return {
+    client_ref: op.client_ref,
+    exercise_external_id: op.exercise_external_id,
+    order,
+    sets: op.sets,
+    reps_or_duration_seconds: op.reps_or_duration_seconds,
+    unit: unitOf(op),
+    weight_lbs: op.weight_lbs ?? null,
+    rest_seconds: op.rest_seconds ?? null,
+    superset_group_id: op.superset_group_id ?? null,
+    notes: op.notes ?? null,
+  };
+}
+
+/**
+ * FR-1211R1 (LS-1211 B2): the row an update op produces from `before`, on a
+ * deep copy (I1). Shared with the AI validator for the same reason as addedRow.
+ */
+export function patchedRow(before: PlanExerciseSnapshot, op: UpdateExerciseOp): PlanExerciseSnapshot {
+  const row = cloneExercise(before);
+  // Patch ONLY the fields the op carries (true patch, not replace). `notes`,
+  // `weight_lbs`, `rest_seconds`, `superset_group_id` are explicitly nullable,
+  // so we distinguish "field omitted" (undefined → leave as-is) from "field set
+  // to null" (clear it). zod gives us `undefined` for omitted optionals.
+  if (op.exercise_external_id !== undefined) {
+    row.exercise_external_id = op.exercise_external_id;
+  }
+  if (op.sets !== undefined) row.sets = op.sets;
+  if (op.reps_or_duration_seconds !== undefined) {
+    row.reps_or_duration_seconds = op.reps_or_duration_seconds;
+  }
+  if (op.weight_lbs !== undefined) row.weight_lbs = op.weight_lbs;
+  if (op.rest_seconds !== undefined) row.rest_seconds = op.rest_seconds;
+  if (op.superset_group_id !== undefined) {
+    row.superset_group_id = op.superset_group_id;
+  }
+  if (op.notes !== undefined) row.notes = op.notes;
+  if (op.unit !== undefined) row.unit = op.unit;
+  return row;
+}
+
 function applyAdd(
   exercises: PlanExerciseSnapshot[],
   op: AddExerciseOp,
@@ -127,20 +173,9 @@ function applyAdd(
       opIndex,
     );
   }
-  exercises.push({
-    client_ref: op.client_ref,
-    exercise_external_id: op.exercise_external_id,
-    // order is set authoritatively by renumber() below; this placeholder is
-    // overwritten before the snapshot is returned.
-    order: exercises.length,
-    sets: op.sets,
-    reps_or_duration_seconds: op.reps_or_duration_seconds,
-    unit: unitOf(op),
-    weight_lbs: op.weight_lbs ?? null,
-    rest_seconds: op.rest_seconds ?? null,
-    superset_group_id: op.superset_group_id ?? null,
-    notes: op.notes ?? null,
-  });
+  // order is set authoritatively by renumber() below; this placeholder is
+  // overwritten before the snapshot is returned.
+  exercises.push(addedRow(op, exercises.length));
   renumber(exercises);
 }
 
@@ -167,25 +202,7 @@ function applyUpdate(
       opIndex,
     );
   }
-  const row = exercises[i];
-  // Patch ONLY the fields the op carries (true patch, not replace). `notes`,
-  // `weight_lbs`, `rest_seconds`, `superset_group_id` are explicitly nullable,
-  // so we distinguish "field omitted" (undefined → leave as-is) from "field set
-  // to null" (clear it). zod gives us `undefined` for omitted optionals.
-  if (op.exercise_external_id !== undefined) {
-    row.exercise_external_id = op.exercise_external_id;
-  }
-  if (op.sets !== undefined) row.sets = op.sets;
-  if (op.reps_or_duration_seconds !== undefined) {
-    row.reps_or_duration_seconds = op.reps_or_duration_seconds;
-  }
-  if (op.weight_lbs !== undefined) row.weight_lbs = op.weight_lbs;
-  if (op.rest_seconds !== undefined) row.rest_seconds = op.rest_seconds;
-  if (op.superset_group_id !== undefined) {
-    row.superset_group_id = op.superset_group_id;
-  }
-  if (op.notes !== undefined) row.notes = op.notes;
-  if (op.unit !== undefined) row.unit = op.unit;
+  exercises[i] = patchedRow(exercises[i], op);
   // No structural change → order is unaffected, but renumber is cheap and keeps
   // the post-condition (I2) unconditional. Position is unchanged so orders are
   // identical; we still call it for uniformity.
