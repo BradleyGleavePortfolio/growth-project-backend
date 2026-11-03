@@ -84,7 +84,8 @@ function cloneExercise(e: PlanExerciseSnapshot): PlanExerciseSnapshot {
     superset_group_id: e.superset_group_id,
     notes: e.notes,
     alternative_external_ids: alternativesOf(e),
-    unit: unitOf(e),
+    // A snapshot row already carries its unit (snapshotFromRevisionJson reads it with unitOf); copied as is.
+    unit: e.unit,
   };
 }
 
