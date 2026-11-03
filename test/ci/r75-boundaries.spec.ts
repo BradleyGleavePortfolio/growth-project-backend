@@ -1,5 +1,6 @@
 // Adversarial boundary tests run the shipped checker against real Git objects.
-// Inputs stay in JSON data; this executable test remains inside the scan scope.
+// Inputs stay in JSON data. Test files the production build leaves out are
+// outside the scan (owner ruling #192-D6 op 1); the literals stay in data anyway.
 import { spawnSync } from 'child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
@@ -15,6 +16,8 @@ interface BoundaryData {
   reasons: { input: string; exit: number }[];
   authoredPaths: string[];
   outsidePaths: string[];
+  skippedTestPaths: string[];
+  keptTestPaths: string[];
   linkPaths: string[];
   emptyHeads: string[];
   placeholderCases: TokenVector[];
@@ -133,6 +136,26 @@ describe.each<Mode>(['range', 'staged'])('R75 lexical and path boundaries: %s', 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('OK');
     expect(result.stdout).not.toContain(path);
+  });
+
+  it.each(vectors.skippedTestPaths)('skips %s, which the production build leaves out', (path) => {
+    const repo = repository();
+    write(repo, path, vectors.tokens[0].input);
+    stage(repo, mode);
+    const result = run(repo, mode);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('OK');
+    expect(result.stdout).not.toContain(path);
+  });
+
+  it.each(vectors.keptTestPaths)('still scans %s, which the build compiles or CI runs', (path) => {
+    const repo = repository();
+    write(repo, path, vectors.tokens[0].input);
+    stage(repo, mode);
+    const result = run(repo, mode);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(path);
+    expect(result.stdout).toContain(`${vectors.tokens[0].name}: +1 -0 net +1`);
   });
 
   it.each(vectors.linkPaths)('fails closed on an authored symlink at %s', (path) => {
