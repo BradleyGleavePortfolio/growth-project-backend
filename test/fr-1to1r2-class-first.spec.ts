@@ -104,7 +104,7 @@ describe('FR-1TO1R2 class: the join writer publishes and grants nothing for a re
   it.each(rows)('new join refused: %s', async (_l, seed) => {
     const { db, invites, before } = await fixture(seed);
     await expect(invites.attachUserToCoachByCode('buyer', 'GP-AAAAAA'))
-      .rejects.toMatchObject({ response: { error: 'PACKAGE_NOT_FOUND' } });
+      .rejects.toMatchObject({ response: { code: 'coach_not_accepting_clients' } });
     expect(user(db, 'buyer').coach_id).toBeNull();
     expect(db.state.clientPurchase).toHaveLength(0);
     expect(db.state.coachPackage).toEqual(before);
