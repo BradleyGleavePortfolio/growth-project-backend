@@ -1,0 +1,793 @@
+{
+ "crab": [
+  {
+   "fdcId": 2706344,
+   "description": "Crab",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Shellfish",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 17.88
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 0.74
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 83
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 395
+    }
+   ]
+  },
+  {
+   "fdcId": 475600,
+   "description": "CRAB",
+   "dataType": "Branded",
+   "brandOwner": "OCEAN CROWN",
+   "foodCategory": "Canned Seafood",
+   "householdServingFullText": "2 ONZ",
+   "servingSize": 57.0,
+   "servingSizeUnit": "g",
+   "foodNutrients": [
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 22.8
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 1.23
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 118
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 374
+    }
+   ]
+  },
+  {
+   "fdcId": 2706843,
+   "description": "Crab salad made with imitation crab",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Seafood mixed dishes",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 4.07
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 16.28
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 8.66
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 197
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.6
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 530
+    }
+   ]
+  },
+  {
+   "fdcId": 2706549,
+   "description": "Crab, cake",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Seafood mixed dishes",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 14.4
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 14.97
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 4.48
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 214
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.3
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 430
+    }
+   ]
+  },
+  {
+   "fdcId": 2706824,
+   "description": "Crab salad",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Seafood mixed dishes",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 9.4
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 15.89
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 1.27
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 188
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.4
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 462
+    }
+   ]
+  },
+  {
+   "fdcId": 2706345,
+   "description": "Crab, canned",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Shellfish",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 17.88
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 0.74
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 83
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 563
+    }
+   ]
+  },
+  {
+   "fdcId": 171967,
+   "description": "Crustaceans, crab, blue, crab cakes, home recipe",
+   "dataType": "SR Legacy",
+   "foodCategory": "Finfish and Shellfish Products",
+   "foodNutrients": [
+    {
+     "nutrientName": "Energy",
+     "unitName": "kJ",
+     "value": 649
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 7.52
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0.48
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 155
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 330
+    },
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 20.2
+    }
+   ]
+  },
+  {
+   "fdcId": 2708967,
+   "description": "Sushi, topped with crab",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Egg rolls, dumplings, sushi",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 3.85
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 0.28
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 18.58
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 95
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.8
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 474
+    }
+   ]
+  },
+  {
+   "fdcId": 2707022,
+   "description": "Crab cake sandwich",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Seafood sandwiches",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 12.74
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 11.18
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 19.39
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 231
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 1
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 436
+    }
+   ]
+  },
+  {
+   "fdcId": 2706346,
+   "description": "Crab, soft shell",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Shellfish",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 15.51
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 12.73
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 11.72
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 227
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.5
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 643
+    }
+   ]
+  },
+  {
+   "fdcId": 2706562,
+   "description": "Flounder with crab stuffing",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Seafood mixed dishes",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 15.07
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 5.52
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 5.73
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 136
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.3
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 427
+    }
+   ]
+  },
+  {
+   "fdcId": 2706568,
+   "description": "Imitation crab meat",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Fish",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 7.62
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 0.46
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 15
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 95
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.5
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 529
+    }
+   ]
+  },
+  {
+   "fdcId": 2706566,
+   "description": "Shrimp with crab stuffing",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Seafood mixed dishes",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 16.39
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 9.01
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 6.16
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 174
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.3
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 537
+    }
+   ]
+  },
+  {
+   "fdcId": 171966,
+   "description": "Crustaceans, crab, blue, canned",
+   "dataType": "SR Legacy",
+   "foodCategory": "Finfish and Shellfish Products",
+   "foodNutrients": [
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 563
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 0.74
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 83.0
+    },
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 17.9
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "kJ",
+     "value": 347
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.0
+    }
+   ]
+  },
+  {
+   "fdcId": 174204,
+   "description": "Crustaceans, crab, blue, raw",
+   "dataType": "SR Legacy",
+   "foodCategory": "Finfish and Shellfish Products",
+   "foodNutrients": [
+    {
+     "nutrientName": "Energy",
+     "unitName": "kJ",
+     "value": 364
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 1.08
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0.04
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 87.0
+    },
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 18.1
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 293
+    }
+   ]
+  },
+  {
+   "fdcId": 171968,
+   "description": "Crustaceans, crab, dungeness, raw",
+   "dataType": "SR Legacy",
+   "foodCategory": "Finfish and Shellfish Products",
+   "foodNutrients": [
+    {
+     "nutrientName": "Energy",
+     "unitName": "kJ",
+     "value": 360
+    },
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 17.4
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 295
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 0.97
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0.74
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 86.0
+    }
+   ]
+  },
+  {
+   "fdcId": 171969,
+   "description": "Crustaceans, crab, queen, raw",
+   "dataType": "SR Legacy",
+   "foodCategory": "Finfish and Shellfish Products",
+   "foodNutrients": [
+    {
+     "nutrientName": "Energy",
+     "unitName": "kJ",
+     "value": 377
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 1.18
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 90.0
+    },
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 18.5
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 539
+    }
+   ]
+  },
+  {
+   "fdcId": 175164,
+   "description": "Crustaceans, crab, alaska king, raw",
+   "dataType": "SR Legacy",
+   "foodCategory": "Finfish and Shellfish Products",
+   "foodNutrients": [
+    {
+     "nutrientName": "Energy",
+     "unitName": "kJ",
+     "value": 351
+    },
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 18.3
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 836
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 0.6
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 84.0
+    }
+   ]
+  },
+  {
+   "fdcId": 2708943,
+   "description": "Macaroni or pasta salad with crab meat",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Pasta mixed dishes, excludes macaroni and cheese",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 6.48
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 9.9
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 20.94
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 201
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 1.2
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 233
+    }
+   ]
+  },
+  {
+   "fdcId": 2747670,
+   "description": "Snow crab, legs only, frozen  ",
+   "dataType": "Foundation",
+   "foodCategory": "Finfish and Shellfish Products",
+   "foodNutrients": [
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 728
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 0.294
+    },
+    {
+     "nutrientName": "Energy (Atwater General Factors)",
+     "unitName": "KCAL",
+     "value": 69.2
+    },
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 15.5
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 1.11
+    }
+   ]
+  }
+ ]
+}
