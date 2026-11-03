@@ -34,6 +34,7 @@ import { applyProgramSafety, toInjuryAreas } from '../gateway/workout-builder/tr
 import { ConsentScope, ConsentService } from '../../consent/consent.service';
 import { coachSharingCheck } from '../../consent/coach-sharing-gate';
 import { lockClientsForDraftWrite } from '../../coach/moved-client-drafts';
+import { inBlockWith } from '../../messaging/block-pair';
 
 /** B-872-SOL-H-131-1 — the Coach sharing switches a stored weekly insight can hold logs of. */
 const INSIGHT_SHARING_SCOPES: readonly string[] = [
@@ -253,7 +254,7 @@ export class CoachAIService {
     await this.assertCoachOwnsClient(coachId, input.clientId);
     const budgetCoachId = await this.assertBudget(coachId, COACH_AI_CAPABILITIES.WORKOUT_PROGRAM);
     const sharing = await this.coachSharing(coachId, input.clientId);
-    const ctx = coachScopedContext(await this.ctxSvc.build(input.clientId), sharing);
+    const ctx = coachScopedContext(await this.ctxSvc.build(input.clientId, coachId), sharing);
     const workoutCtx = coachScopedWorkoutContext(await this.loadWorkoutContext(coachId, input.clientId), sharing);
     const injuries = workoutCtx?.client?.injuries ?? toInjuryAreas(ctx.profile?.injuries);
     const prompt = WorkoutProgramPrompt;
@@ -319,7 +320,7 @@ export class CoachAIService {
     await this.assertCoachOwnsClient(coachId, input.clientId);
     const budgetCoachId = await this.assertBudget(coachId, COACH_AI_CAPABILITIES.MEAL_PLAN);
     const sharing = await this.coachSharing(coachId, input.clientId);
-    const ctx = coachScopedContext(await this.ctxSvc.build(input.clientId), sharing);
+    const ctx = coachScopedContext(await this.ctxSvc.build(input.clientId, coachId), sharing);
     const prompt = MealPlanPrompt;
     const result = await this.anthropic.completeStructured<MealPlanPayload>(
       {
@@ -372,7 +373,7 @@ export class CoachAIService {
     await this.assertCoachOwnsClient(coachId, input.clientId);
     const budgetCoachId = await this.assertBudget(coachId, COACH_AI_CAPABILITIES.INSIGHT);
     const sharing = await this.coachSharing(coachId, input.clientId);
-    const ctx = coachScopedContext(await this.ctxSvc.build(input.clientId), sharing);
+    const ctx = coachScopedContext(await this.ctxSvc.build(input.clientId, coachId), sharing);
     const prompt = ClientInsightPrompt;
     const result = await this.anthropic.completeStructured<ClientInsightPayload>(
       {
@@ -459,7 +460,9 @@ export class CoachAIService {
    * reads every log; hand-built unit tests without ConsentService keep their all-shared fixtures.
    */
   private async shareSafe(coachId: string, draft: AIDraft): Promise<AIDraft> {
-    if (draft.type !== 'INSIGHT' || !this.consent) return draft;
+    if (draft.type !== 'INSIGHT') return draft;
+    if (await this.quotesBlockedAuthor(coachId, draft)) return { ...draft, generatedPayload: null };
+    if (!this.consent) return draft;
     // FR-1141 (Sol B4): an insight written before a block, either way, may quote that chat; it comes
     // back without content while the block stands, and whole again once it is lifted.
     const blocked = await this.prisma.userBlock.findFirst({
@@ -474,6 +477,42 @@ export class CoachAIService {
       select: { id: true },
     });
     return withdrawn ? { ...draft, generatedPayload: null } : draft;
+  }
+
+  /**
+   * FR-1205 (LS-1205 B1): an insight may quote the newest chat message its
+   * context read. While that message's author is in a block (either way) with
+   * the reader, the insight comes back without content; whole again after
+   * unblock. A snapshot saved before the author was recorded falls back to any
+   * other author in that thread up to the draft's time (fail closed).
+   */
+  private async quotesBlockedAuthor(readerId: string, draft: AIDraft): Promise<boolean> {
+    const isObject = (v: Prisma.JsonValue | undefined): v is Prisma.JsonObject =>
+      !!v && typeof v === 'object' && !Array.isArray(v);
+    const ctx = draft.inputContext;
+    if (!isObject(ctx)) return false;
+    const coach = ctx.coach;
+    if (!isObject(coach) || !coach.last_coach_message_excerpt) return false;
+    let authors: string[];
+    if ('excerpt_author_id' in ctx) {
+      const author = ctx.excerpt_author_id;
+      authors = typeof author === 'string' ? [author] : [];
+    } else {
+      const rows = await this.prisma.coachMessage.findMany({
+        where: {
+          coach_id: typeof coach.coach_id === 'string' ? coach.coach_id : undefined,
+          client_id: draft.clientId,
+          created_at: { lte: draft.createdAt },
+          sender_id: { not: null },
+        },
+        distinct: ['sender_id'],
+        select: { sender_id: true },
+      });
+      authors = rows.flatMap((r) => (r.sender_id ? [r.sender_id] : []));
+    }
+    authors = authors.filter((id) => id !== readerId);
+    if (authors.length === 0) return false;
+    return (await inBlockWith(this.prisma, readerId, authors)).size > 0;
   }
 
   /** The stored draft for this service's own reads (edit, reject, approve); responses go through shareSafe. */
