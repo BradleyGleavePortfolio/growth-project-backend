@@ -64,7 +64,7 @@ describe('LO-1211 B1: a consultation master row keeps the unit the coach set in 
       workoutProgramRevision: { create: jest.fn(async () => ({ id: 'prog-rev' })) },
     };
     const svc = Object.create(OnboardingService.prototype) as Record<string, unknown>;
-    svc.workoutBuilder = { writeProgramAssignmentsInTx: jest.fn(async () => []) };
+    svc.workoutBuilder = { writeProgramAssignmentsInTx: jest.fn(async () => ({ assignments: [], first_plan_id: 'plan-0' })) };
     const sel = { program_key: 'considered-strength', rule_priority: 1, requested_days: 3, selected_days: 3, equipment_variant: 'gym', overlay: null, coach_review_required: false, inputs: {} };
     await (svc.materialiseAndAssignInTx as (...a: unknown[]) => Promise<unknown>).call(
       svc, tx, { id: 'K', tenant_id: 'K' }, 'K', 'client-1', 'master', sel, fx.materialisation, '2026-11-09',
