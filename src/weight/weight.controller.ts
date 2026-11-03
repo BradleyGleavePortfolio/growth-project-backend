@@ -6,6 +6,7 @@ import { JwtAuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { OpenToCoachlessClient } from '../common/decorators/open-to-coachless-client.decorator';
+import { keepRomanContextFor } from '../roman/context/roman-context-invalidation';
 import { LogWeightDto, UpdateWeightDto } from './weight.dto';
 
 @ApiTags('weight')
@@ -20,7 +21,8 @@ export class WeightController {
 
   @Post()
   async logWeight(@Request() req: AuthedRequest, @Body() body: LogWeightDto) {
-    return this.weightService.logWeight(req.user.id, body);
+    // A keyed resend stores nothing new, so it keeps Roman's context.
+    return this.weightService.logWeight(req.user.id, body, () => keepRomanContextFor(req));
   }
 
   @Get('history')

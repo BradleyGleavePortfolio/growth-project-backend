@@ -18,14 +18,22 @@ import { NotFoundException } from '@nestjs/common';
  *
  * `create` runs only when no row holds the key, and its effects only after
  * its insert succeeds.
+ *
+ * `onResend` runs when the answer is this member's row that was already
+ * stored (a resend, or the loser of two sends at once): nothing new was saved.
+ * The caller uses it to skip the request's own after-write effects, such as the
+ * global Roman context bust (keepRomanContextFor in
+ * src/roman/context/roman-context-invalidation.ts). It never changes the answer.
  */
 export async function saveOnce<T extends { user_id: string }>(
   userId: string,
   findByKey: () => Promise<T | null>,
   create: () => Promise<T>,
+  onResend?: () => void,
 ): Promise<T> {
   const stored = (row: T | null): T => {
     if (!row || row.user_id !== userId) throw new NotFoundException('Entry not found');
+    onResend?.();
     return row;
   };
   const first = await findByKey();

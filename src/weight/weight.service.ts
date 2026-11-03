@@ -19,11 +19,12 @@ export class WeightService {
     private aiContext: ClientAIContextService,
   ) {}
 
-  async logWeight(userId: string, data: LogWeightDto) {
+  async logWeight(userId: string, data: LogWeightDto, onResend?: () => void) {
     // WATER-WEIGHT-KEYS-BE: no key is a plain create, as before, and its answer
     // keeps its shape (the new column is left out). With a key, a resend
     // answers with the first row and stores nothing, so it emits no second
-    // 'weight_logged' and busts nothing; another member's key is a 404
+    // 'weight_logged' and busts nothing (onResend lets the controller skip the
+    // request's global Roman bust); another member's key is a 404
     // (src/common/save-once.ts).
     const key = data.client_uuid;
     if (!key) {
@@ -35,6 +36,7 @@ export class WeightService {
       userId,
       () => this.prisma.weightLog.findUnique({ where: { client_uuid: key } }),
       () => this.createWeight(userId, data, (row) => this.prisma.weightLog.create({ data: { ...row, client_uuid: key } })),
+      onResend,
     );
   }
 
