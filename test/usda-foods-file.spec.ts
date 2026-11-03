@@ -72,8 +72,8 @@ describe('prisma/data/usda-foods.jsonl.gz — the USDA SR Legacy and Foundation 
       '70457ee9d9342f43bda2010318c85f04210c689fdeb9cd2da4c513b0e8dbc655',
     ]);
     expect(header.files.map((f) => f.foods)).toEqual([7793, 323]);
-    expect(foods).toHaveLength(8060);
-    expect(header.foods).toBe(8060);
+    expect(foods).toHaveLength(8056);
+    expect(header.foods).toBe(8056);
     // SR Legacy less the foods a built-in food stands for, plus Foundation.
     expect(foods.filter((f) => f.data_type === 'SR Legacy')).toHaveLength(7793 - header.left_out_built_in.length);
     expect(foods.filter((f) => f.data_type === 'Foundation')).toHaveLength(323);

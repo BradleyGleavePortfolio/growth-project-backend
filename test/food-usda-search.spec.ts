@@ -1,5 +1,5 @@
 // FOOD-USDA-BE (U3, U4, U6): the catalog's word search, catalog first, without a database. The live proof over the
-// real 8,060 loaded USDA rows (the seven foods, chick, the injection cases) is test/rls/food-usda-release-rls.spec.ts.
+// real 8,056 loaded USDA rows (the seven foods, chick, the injection cases) is test/rls/food-usda-release-rls.spec.ts.
 //   - the typed text reaches SQL only as bound parameters, never inside the SQL text, whatever it holds;
 //   - the words and tsquery texts hold letters, digits, " & " and ":*" only;
 //   - catalog first: with LOCAL_ENOUGH_WHOLE whole-word catalog matches, USDA and Open Food Facts are not asked;

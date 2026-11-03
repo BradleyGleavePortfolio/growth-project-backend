@@ -187,7 +187,7 @@ gate, and interpolated its `app` input directly into shell.
   files by `scripts/usda-foods/build.py`) that the shared catalog lacks,
   keyed on its `usda:<fdcId>` tag, as the row the live USDA import stores,
   and never updates or deletes a row or reads a member's own food. Normal
-  line: `[release] USDA foods: 8060 present, 0 added (… ms)`. Any food still
+  line: `[release] USDA foods: 8056 present, 0 added (… ms)`. Any food still
   missing afterwards, a refused insert or a missing/bad data file fails the
   release_command with a `[release] USDA foods FAILED: …` line.
 
