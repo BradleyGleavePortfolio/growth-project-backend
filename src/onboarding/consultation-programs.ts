@@ -27,6 +27,8 @@ export interface ExerciseRow {
   rest_seconds: number | null;
   superset_group_id: string | null;
   notes: string | null;
+  /** FR-1211R1 (LS-1211 B1, LO-1211 B1): the unit a master row states; absent on fixture rows (their note gives it). */
+  unit?: PlanExerciseUnitValue;
 }
 
 /**
@@ -379,10 +381,17 @@ export function materialiseClientPlans(
         plan.data.type === 'strength'
           ? overrides?.[plan.data.week_index]?.[row.exercise_external_id]
           : undefined;
-      if (patch) Object.assign(row, patch);
+      if (patch) {
+        // FR-1211R1: a home swap that sets the count or changes the note's REPS./SECONDS. word replaces the prescription,
+        // so the unit follows the patched note. Any other swap keeps the unit the master row states.
+        const prescribes = patch.reps_or_duration_seconds !== undefined ||
+          (patch.notes !== undefined && consultationUnit({ notes: patch.notes ?? null }) !== consultationUnit(row));
+        Object.assign(row, patch);
+        if (prescribes && patch.unit === undefined) delete row.unit;
+      }
       if (overlay && row.notes && WORK_RE.test(row.notes)) {
         row.sets = overlay.native_patch.sets;
-        const timed = consultationUnit(row) === 'seconds';
+        const timed = unitOf(row) === 'seconds';
         row.reps_or_duration_seconds = Math.min(
           row.reps_or_duration_seconds,
           timed ? overlay.max_duration_seconds : overlay.max_reps,

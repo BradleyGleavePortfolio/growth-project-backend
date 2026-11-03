@@ -7,7 +7,7 @@
  */
 import { Prisma } from '@prisma/client';
 import { alternativesOf, unitOf } from '../workout-builder/plan-exercise-fields';
-import { consultationUnit, type PlanContent } from './consultation-programs';
+import { type PlanContent } from './consultation-programs';
 
 export interface ProgramTreeInput {
   tenantCoachId: string;
@@ -70,11 +70,11 @@ export async function writeProgramTree(
         version: 1,
       },
     });
-    // TIMED-SETS-BE: each row and the first revision carry the unit its program note gives.
+    // TIMED-SETS-BE: each row and the first revision carry the row's unit: the one a master row states, else its note's.
     const rows = plan.exercises
       .slice()
       .sort((a, b) => a.order - b.order)
-      .map((e) => ({ ...e, unit: consultationUnit(e) }));
+      .map((e) => ({ ...e, unit: unitOf(e) }));
     await tx.workoutPlanExercise.createMany({
       data: rows.map((e) => ({
         workout_plan_id: created.id,
