@@ -145,6 +145,9 @@ export class ClientContextService {
               coach_id: user.coach_id,
               client_id: clientId,
               coach: notInBlockWith(clientId),
+              // FR-1205 (LO-1205 B1): and none while the client is in a block
+              // with the coach reading (a team coach's own pair).
+              client: notInBlockWith(viewerId ?? user.coach_id),
               AND: [authorReadableBy(viewerId ?? user.coach_id)],
             },
             orderBy: { created_at: 'desc' },
@@ -155,6 +158,9 @@ export class ClientContextService {
         : Promise.resolve(null),
     ]);
 
+    const excerpt = lastCoachMessage?.body
+      ? sanitizePromptInput(clampStr(lastCoachMessage.body, 240) ?? '') || null
+      : null;
     const profile = user.profile;
     const profileBlock: ClientContextProfile = {
       height_cm: profile?.height_cm ?? null,
@@ -255,10 +261,12 @@ export class ClientContextService {
         coach_id: user.coach_id ?? null,
         coach_name: coachUser ? firstNameOf(coachUser.name) : null,
         has_coach: !!user.coach_id,
-        last_coach_message_excerpt: lastCoachMessage?.body
-          ? sanitizePromptInput(clampStr(lastCoachMessage.body, 240) ?? '') || null
-          : null,
+        last_coach_message_excerpt: excerpt,
       },
+      // FR-1205 (LS-1205 B1): who wrote the excerpt, kept beside the stored
+      // snapshot (no prompt reads it) so a saved draft can be withheld later
+      // while that author is in a block with the reader.
+      excerpt_author_id: excerpt ? (lastCoachMessage?.sender_id ?? null) : null,
       generated_at: new Date().toISOString(),
     };
   }
