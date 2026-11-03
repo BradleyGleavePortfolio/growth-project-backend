@@ -3,9 +3,12 @@
  *
  * Reads prisma/data/seed-foods.json (the same file `npm run seed:foods` uses) and, for each food the shared catalog
  * lacks, inserts one FoodItem row exactly as prisma/seed-foods.ts would create it. "The shared catalog" is the rows
- * with created_by_user_id NULL; a food is present when a shared row has the same name and brand_or_restaurant (a NULL
- * brand matches only a NULL brand). A member's own food is never read, counted, changed or deleted, and no existing
- * row is ever updated or deleted: the only write is one INSERT of the missing rows, in one transaction.
+ * with created_by_user_id NULL; a food is present when a shared row has the same name and brand_or_restaurant after
+ * one folding (foldName: lower case, each run of whitespace as one space, none at either end), so a
+ * USDA import named "BANANA,  RAW" counts as "Banana, raw". A NULL brand matches only a NULL brand; a different brand
+ * is a different food. The SQL filter and the in-memory key use the same folding (FOLD_SPACES is shared by both). A
+ * member's own food is never read, counted, changed or deleted, and no existing row is ever updated or deleted: the
+ * only write is one INSERT of the missing rows, in one transaction.
  *
  * After the insert it reads the shared catalog again. If any seed food is still missing, or the database refused the
  * insert, it prints why and exits 1, so release.sh fails and Fly keeps serving the previous image.
@@ -53,9 +56,25 @@ export function seedFoodRow(food: SeedFood) {
   };
 }
 
-/** name + brand as one key; JSON keeps a NULL brand distinct from any string brand. */
+/**
+ * Whitespace for foldName: the characters JavaScript's \s matches (ASCII space, tab, line breaks, no-break space and
+ * the Unicode spaces), listed one by one as real characters so JavaScript and PostgreSQL read the same class. sharedKeys
+ * passes this same string to regexp_replace.
+ */
+export const FOLD_SPACES =
+  '[ \t\n\v\f\r\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+';
+
+/**
+ * The one folding step 5 uses to decide "same food" (LS-1203 B1): lower case, each whitespace run as one space, no
+ * space at either end. sharedKeys' SQL is the same: btrim(regexp_replace(lower(x), FOLD_SPACES, ' ', 'g'), ' ').
+ */
+export function foldName(text: string): string {
+  return text.toLowerCase().replace(new RegExp(FOLD_SPACES, 'g'), ' ').replace(/^ | $/g, '');
+}
+
+/** Folded name + brand as one key; JSON keeps a NULL brand distinct from any string brand, blank included. */
 export function foodKey(name: string, brand: string | null): string {
-  return JSON.stringify([name, brand]);
+  return JSON.stringify([foldName(name), brand === null ? null : foldName(brand)]);
 }
 
 /** Parse the seed file; refuses an empty or malformed list so an empty catalog can never pass. */
@@ -84,11 +103,13 @@ export interface FoodSeedResult {
   missing: number;
 }
 
+/** Keys of the shared rows whose folded name is a seed food's folded name. Reads shared rows (owner NULL) only. */
 async function sharedKeys(tx: Prisma.TransactionClient, foods: SeedFood[]): Promise<Set<string>> {
-  const rows = await tx.foodItem.findMany({
-    where: { created_by_user_id: null, name: { in: [...new Set(foods.map((f) => f.name))] } },
-    select: { name: true, brand_or_restaurant: true },
-  });
+  const names = [...new Set(foods.map((f) => foldName(f.name)))];
+  const rows = await tx.$queryRaw<{ name: string; brand_or_restaurant: string | null }[]>`
+    SELECT "name", "brand_or_restaurant" FROM "FoodItem"
+    WHERE "created_by_user_id" IS NULL
+      AND btrim(regexp_replace(lower("name"), ${FOLD_SPACES}, ' ', 'g'), ' ') = ANY(${names}::text[])`;
   return new Set(rows.map((r) => foodKey(r.name, r.brand_or_restaurant)));
 }
 
