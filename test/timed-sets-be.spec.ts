@@ -130,7 +130,7 @@ describe('the builder keeps seconds', () => {
       ],
     });
     const { snapshot } = await svc['applyOps'](fakeOf(tx), plan.id, batch.ops);
-    expect(snapshot.map((r: Row) => [r.exercise_external_id, r.unit])).toEqual([['plank', 'seconds'], ['wall-sit', 'seconds'], ['squat', 'reps']]);
+    expect(snapshot.map((r) => [r.exercise_external_id, r.unit])).toEqual([['plank', 'seconds'], ['wall-sit', 'seconds'], ['squat', 'reps']]);
     expect(createMany.mock.calls[0][0].data.map((r: Row) => r.unit)).toEqual(['seconds', 'seconds', 'reps']);
     expect(() => AutosaveBatchSchema.parse({ ...batch, ops: [{ op: 'upsert_exercise', payload: { exercise_external_id: 'x', order: 1, sets: 1, reps_or_duration_seconds: 1, unit: 'minutes' } }] })).toThrow();
   });
