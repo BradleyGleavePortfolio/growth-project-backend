@@ -1,7 +1,8 @@
 // FOOD-SEED-BE: compiled copy of scripts/seed-built-in-foods.ts for scripts/release.sh
 // step 5. The Dockerfile build stage runs it after nest build; output lands at
 // dist/food-seed/scripts/seed-built-in-foods.js. It reads prisma/data/seed-foods.json,
-// which the runtime stage ships with prisma/.
+// which the runtime stage ships with prisma/. FOOD-USDA-BE adds
+// scripts/load-usda-foods.ts (step 6, reads prisma/data/usda-foods.jsonl.gz).
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
@@ -10,6 +11,6 @@
     "declaration": false,
     "sourceMap": false
   },
-  "include": ["scripts/seed-built-in-foods.ts"],
+  "include": ["scripts/seed-built-in-foods.ts", "scripts/load-usda-foods.ts"],
   "exclude": ["node_modules", "dist", "test"]
 }

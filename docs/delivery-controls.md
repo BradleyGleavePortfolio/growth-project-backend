@@ -179,6 +179,16 @@ gate, and interpolated its `app` input directly into shell.
   missing afterwards, a refused insert (the transaction writes nothing) or
   a missing/empty seed file fails the release_command (stage B above) with a
   `[release] built-in foods FAILED: …` line naming the reason.
+- **step 6** (after step 5; FOOD-USDA-BE) runs the compiled
+  `dist/food-seed/scripts/load-usda-foods.js` on `DIRECT_URL`: it adds, in
+  one transaction under its own advisory lock, each USDA SR Legacy and
+  Foundation food in `prisma/data/usda-foods.jsonl.gz` (built from USDA's CSV
+  files by `scripts/usda-foods/build.py`) that the shared catalog lacks,
+  keyed on its `usda:<fdcId>` tag, as the row the live USDA import stores,
+  and never updates or deletes a row or reads a member's own food. Normal
+  line: `[release] USDA foods: 8116 present, 0 added (… ms)`. Any food still
+  missing afterwards, a refused insert or a missing/bad data file fails the
+  release_command with a `[release] USDA foods FAILED: …` line.
 
 Ownership: the contract *file* and runner are S2's; the verifier *content*
 (role/grant/RLS postconditions) is S1's. When a migration ships a
