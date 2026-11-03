@@ -12,6 +12,7 @@
  *   5. The data export.
  * The live forward / down / forward run is test/rls/timed-sets-unit-migration-rls.spec.ts.
  */
+import 'reflect-metadata';
 import { existsSync, readdirSync, readFileSync } from 'fs';
 import { join, relative } from 'path';
 import { plainToInstance } from 'class-transformer';
@@ -44,12 +45,16 @@ const plank = { exercise_external_id: 'plank', order: 1, sets: 3, reps_or_durati
 const squat = { exercise_external_id: 'squat', order: 2, sets: 3, reps_or_duration_seconds: 8, weight_lbs: 95, rest_seconds: 90, superset_group_id: null, notes: null };
 
 describe('a row with no unit reads reps', () => {
-  it('unitOf: only an explicit "seconds" is seconds', () => {
+  it('unitOf: a stated unit wins; without one, seconds only where the program note starts SECONDS. (as the migration reads rows)', () => {
     expect(unitOf({})).toBe('reps');
     expect(unitOf(null)).toBe('reps');
     expect(unitOf({ unit: 'minutes' })).toBe('reps');
     expect(unitOf({ unit: 'reps' })).toBe('reps');
     expect(unitOf({ unit: 'seconds' })).toBe('seconds');
+    expect(unitOf({ reps_or_duration_seconds: 60, notes: 'Hold it' })).toBe('reps');
+    expect(unitOf({ notes: 'SECONDS. WORK. RPE 3.' })).toBe('seconds');
+    expect(unitOf({ notes: 'seconds. a coach note' })).toBe('reps');
+    expect(unitOf({ unit: 'reps', notes: 'SECONDS. WORK.' })).toBe('reps');
   });
 
   it('an older revision, assignment snapshot or frozen day without a unit reads reps; seconds stays seconds', () => {
@@ -256,7 +261,7 @@ describe('the migration', () => {
     const down = strip(sql('down.sql'));
     expect(down).toContain('ALTER TABLE "WorkoutPlanExercise" DROP COLUMN IF EXISTS "unit";');
     expect(down).toContain('DROP TYPE IF EXISTS "PlanExerciseUnit";');
-    expect(down.match(/ALTER TABLE|UPDATE|CREATE|DROP|DELETE|INSERT/g)).toEqual(['ALTER TABLE', 'DROP']);
+    expect(down.match(/ALTER TABLE|UPDATE|CREATE|DROP|DELETE|INSERT/g)).toEqual(['ALTER TABLE', 'DROP', 'DROP']);
   });
 
   it('the schema declares it', () => {
