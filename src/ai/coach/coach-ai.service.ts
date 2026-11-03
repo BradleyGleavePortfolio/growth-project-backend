@@ -487,15 +487,20 @@ export class CoachAIService {
    * other author in that thread up to the draft's time (fail closed).
    */
   private async quotesBlockedAuthor(readerId: string, draft: AIDraft): Promise<boolean> {
-    const ctx = draft.inputContext as unknown as Partial<ClientContext> | null;
-    if (!ctx?.coach?.last_coach_message_excerpt) return false;
+    const isObject = (v: Prisma.JsonValue | undefined): v is Prisma.JsonObject =>
+      !!v && typeof v === 'object' && !Array.isArray(v);
+    const ctx = draft.inputContext;
+    if (!isObject(ctx)) return false;
+    const coach = ctx.coach;
+    if (!isObject(coach) || !coach.last_coach_message_excerpt) return false;
     let authors: string[];
-    if (ctx.excerpt_author_id !== undefined) {
-      authors = ctx.excerpt_author_id ? [ctx.excerpt_author_id] : [];
+    if ('excerpt_author_id' in ctx) {
+      const author = ctx.excerpt_author_id;
+      authors = typeof author === 'string' ? [author] : [];
     } else {
       const rows = await this.prisma.coachMessage.findMany({
         where: {
-          coach_id: ctx.coach.coach_id ?? undefined,
+          coach_id: typeof coach.coach_id === 'string' ? coach.coach_id : undefined,
           client_id: draft.clientId,
           created_at: { lte: draft.createdAt },
           sender_id: { not: null },
