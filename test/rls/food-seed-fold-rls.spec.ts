@@ -144,7 +144,8 @@ function serviceView(p: unknown): PrismaService {
     });
     const kept = [usdaEgg, usdaBreast, usdaOther, mine];
     expect(usdaEgg.created_by_user_id).toBeNull();
-    expect(usdaEgg.tags).toEqual(['usda:171287']);
+    // A normal USDA import: it carries its usda:<fdcId> tag (main also adds a category:<USDA category> tag, allowed).
+    expect(usdaEgg.tags).toContain('usda:171287');
 
     const first = await seedBuiltInFoods(prisma, foods);
     const second = await seedBuiltInFoods(prisma, foods);
