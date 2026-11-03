@@ -1,5 +1,5 @@
 {
-  "note": "Hostile vectors for the R75 / R100.A2 gate. Every banned literal lives HERE, as JSON data, because .json is not an executable extension in .github/r75-policy.json — so the regression suite can exercise real banned tokens without becoming a violation itself. Fixture DATA only: the executable spec that reads this file IS scanned, as is every other test source. Cases without a legacyExit are ones whose pre-repair behaviour has not been executed, so no expectation is stated for them rather than a guessed one.",
+  "note": "Hostile vectors for the R75 / R100.A2 gate. Every banned literal lives HERE, as JSON data, because .json is not an executable extension in .github/r75-policy.json — so the regression suite can exercise real banned tokens without becoming a violation itself. Fixture DATA only. Test sources the production build leaves out (test/, top-level __tests__/, src/ files ending spec.ts) are outside the scan by owner ruling #192-D6 op 1; the literals stay here so no suite depends on that skip. Cases without a legacyExit are ones whose pre-repair behaviour has not been executed, so no expectation is stated for them rather than a guessed one.",
   "policyExpectations": {
     "suppressionToken": "@ts-expect-error",
     "emptyCatchClasses": ["empty-catch-null", "empty-catch-undefined", "empty-catch-block"],
@@ -99,7 +99,7 @@
       "why": "grep -c counts matching LINES, so two of the three introduced casts were free."
     },
     {
-      "name": "changed test and co-located spec sources are scanned",
+      "name": "test-root and src spec sources are skipped; a src .test.ts the build compiles is scanned",
       "mode": "range",
       "base": {
         "src/keep.ts": ["export const keep = 1;"]
@@ -111,16 +111,129 @@
       },
       "expectExit": 1,
       "expectNet": {
-        "as unknown as": 3
+        "as unknown as": 1
       },
-      "expectEvidenceFiles": [
-        "test/ci/thing.spec.ts",
-        "src/top.spec.ts",
-        "src/nested/deep.test.ts"
-      ],
+      "expectEvidenceFiles": ["src/nested/deep.test.ts"],
+      "expectAbsentFiles": ["test/ci/thing.spec.ts", "src/top.spec.ts"],
       "legacyExit": 0,
       "control": "verdict",
-      "why": "R131 records R75 being misread as src-only; the old spec/test excludes left every changed test unscanned."
+      "why": "Owner ruling #192-D6 op 1 skips exactly the test files the production build leaves out. tsconfig.build.json compiles src/nested/deep.test.ts, so it stays scanned; the old blanket spec/test suffix exclude skipped it."
+    },
+    {
+      "name": "a banned cast added only in skipped test files is not counted (range)",
+      "mode": "range",
+      "base": {
+        "src/keep.ts": ["export const keep = 1;"]
+      },
+      "head": {
+        "test/community/access/caller-forms.spec.ts": ["const p = v as unknown as string;"],
+        "__tests__/top-level.ts": ["const q = v as unknown as string;"],
+        "src/community/access/access.spec.ts": ["const r = v as unknown as string;"]
+      },
+      "expectExit": 0,
+      "expectNet": {
+        "as unknown as": 0
+      },
+      "expectAbsentFiles": [
+        "test/community/access/caller-forms.spec.ts",
+        "__tests__/top-level.ts",
+        "src/community/access/access.spec.ts"
+      ],
+      "why": "test/, top-level __tests__/ and src/<dir>/<name>.spec.ts are left out of the production build, so a shortcut there cannot reach clients."
+    },
+    {
+      "name": "a banned cast added only in skipped test files is not counted (staged)",
+      "mode": "staged",
+      "staged": {
+        "test/community/access/caller-forms.spec.ts": ["const p = v as unknown as string;"],
+        "__tests__/top-level.ts": ["const q = v as unknown as string;"],
+        "src/community/access/access.spec.ts": ["const r = v as unknown as string;"]
+      },
+      "expectExit": 0,
+      "expectNet": {
+        "as unknown as": 0
+      },
+      "expectAbsentFiles": [
+        "test/community/access/caller-forms.spec.ts",
+        "__tests__/top-level.ts",
+        "src/community/access/access.spec.ts"
+      ],
+      "why": "The pre-commit hook applies the same skip as CI, from the same policy data."
+    },
+    {
+      "name": "the same cast in app code, compiled src helpers, scripts/ and dangerfile.js still fails (range)",
+      "mode": "range",
+      "base": {
+        "src/keep.ts": ["export const keep = 1;"]
+      },
+      "head": {
+        "src/community/access/access.service.ts": ["const a = v as unknown as string;"],
+        "src/extension-pair/__tests__/test-doubles.test.ts": ["const b = v as unknown as string;"],
+        "src/community/ack/ack.test-fixtures.ts": ["const c = v as unknown as string;"],
+        "src/community/voice/__tests__/test-user.factory.ts": ["const d = v as unknown as string;"],
+        "scripts/ci/tool.spec.js": ["const e = v as unknown as string;"],
+        "dangerfile.js": ["const f = v as unknown as string;"]
+      },
+      "expectExit": 1,
+      "expectNet": {
+        "as unknown as": 6
+      },
+      "expectEvidenceFiles": [
+        "src/community/access/access.service.ts",
+        "src/extension-pair/__tests__/test-doubles.test.ts",
+        "src/community/ack/ack.test-fixtures.ts",
+        "src/community/voice/__tests__/test-user.factory.ts",
+        "scripts/ci/tool.spec.js",
+        "dangerfile.js"
+      ],
+      "why": "The build compiles every src/ file not ending spec.ts, including test helpers under src/**/__tests__/; scripts/ and dangerfile.js run in CI. None of them is skipped, and the spec skip does not reach scripts/."
+    },
+    {
+      "name": "the same cast in app code, compiled src helpers, scripts/ and dangerfile.js still fails (staged)",
+      "mode": "staged",
+      "staged": {
+        "src/community/access/access.service.ts": ["const a = v as unknown as string;"],
+        "src/extension-pair/__tests__/test-doubles.test.ts": ["const b = v as unknown as string;"],
+        "src/community/ack/ack.test-fixtures.ts": ["const c = v as unknown as string;"],
+        "src/community/voice/__tests__/test-user.factory.ts": ["const d = v as unknown as string;"],
+        "scripts/ci/tool.spec.js": ["const e = v as unknown as string;"],
+        "dangerfile.js": ["const f = v as unknown as string;"]
+      },
+      "expectExit": 1,
+      "expectNet": {
+        "as unknown as": 6
+      },
+      "expectEvidenceFiles": [
+        "src/community/access/access.service.ts",
+        "src/extension-pair/__tests__/test-doubles.test.ts",
+        "src/community/ack/ack.test-fixtures.ts",
+        "src/community/voice/__tests__/test-user.factory.ts",
+        "scripts/ci/tool.spec.js",
+        "dangerfile.js"
+      ],
+      "why": "The pre-commit hook keeps biting everything the build ships or CI runs."
+    },
+    {
+      "name": "near-miss spec names under src/ stay scanned",
+      "mode": "range",
+      "base": {},
+      "head": {
+        "src/widget.spec.tsx": ["const a = v as unknown as string;"],
+        "src/widget.spec.d.ts": ["declare const b: typeof v as unknown as string;"],
+        "src/widget.spec.mts": ["const c = v as unknown as string;"],
+        "src/widget.specs.ts": ["const d = v as unknown as string;"]
+      },
+      "expectExit": 1,
+      "expectNet": {
+        "as unknown as": 4
+      },
+      "expectEvidenceFiles": [
+        "src/widget.spec.tsx",
+        "src/widget.spec.d.ts",
+        "src/widget.spec.mts",
+        "src/widget.specs.ts"
+      ],
+      "why": "The skip mirrors the build glob **/*spec.ts exactly: a name must END in spec.ts. Other extensions and longer names keep the full scan."
     },
     {
       "name": "top-level source file is scanned",
@@ -437,7 +550,7 @@
       "name": "a reason on a later line does not authorize an undocumented directive",
       "mode": "staged",
       "staged": {
-        "test/suppression.spec.ts": ["// @ts-expect-error", "// explained on the wrong line"]
+        "src/suppression.ts": ["// @ts-expect-error", "// explained on the wrong line"]
       },
       "expectExit": 1,
       "expectNet": {
@@ -552,37 +665,65 @@
       "name": "policy with no positive selector cannot return green",
       "args": ["--mode=staged"],
       "expectExit": 2,
-      "stagePolicy": "{\"scan\":{\"includeExtensions\":[\".ts\"],\"includeRoots\":[],\"includeFiles\":[],\"excludeSuffixes\":[],\"excludeSegments\":[]},\"tokens\":[{\"name\":\"as any\",\"pattern\":\"as any\"}]}"
+      "stagePolicy": "{\"scan\":{\"excludeRootGlobs\":[],\"includeExtensions\":[\".ts\"],\"includeRoots\":[],\"includeFiles\":[],\"excludeSuffixes\":[],\"excludeSegments\":[]},\"tokens\":[{\"name\":\"as any\",\"pattern\":\"as any\"}]}"
     },
     {
       "name": "policy with an empty excludeSegments selector cannot silently exclude everything",
       "args": ["--mode=staged"],
       "expectExit": 2,
-      "stagePolicy": "{\"scan\":{\"includeExtensions\":[\".ts\"],\"includeRoots\":[\"src/\"],\"includeFiles\":[],\"excludeSuffixes\":[],\"excludeSegments\":[\"\"]},\"tokens\":[{\"name\":\"as any\",\"pattern\":\"as any\"}]}"
+      "stagePolicy": "{\"scan\":{\"excludeRootGlobs\":[],\"includeExtensions\":[\".ts\"],\"includeRoots\":[\"src/\"],\"includeFiles\":[],\"excludeSuffixes\":[],\"excludeSegments\":[\"\"]},\"tokens\":[{\"name\":\"as any\",\"pattern\":\"as any\"}]}"
     },
     {
       "name": "policy with no tokens cannot return green",
       "args": ["--mode=staged"],
       "expectExit": 2,
-      "stagePolicy": "{\"scan\":{\"includeExtensions\":[\".ts\"],\"includeRoots\":[\"src/\"],\"includeFiles\":[],\"excludeSuffixes\":[],\"excludeSegments\":[]}}"
+      "stagePolicy": "{\"scan\":{\"excludeRootGlobs\":[],\"includeExtensions\":[\".ts\"],\"includeRoots\":[\"src/\"],\"includeFiles\":[],\"excludeSuffixes\":[],\"excludeSegments\":[]}}"
     },
     {
       "name": "policy with an empty-matching pattern is rejected",
       "args": ["--mode=staged"],
       "expectExit": 2,
-      "stagePolicy": "{\"scan\":{\"includeExtensions\":[\".ts\"],\"includeRoots\":[\"src/\"],\"includeFiles\":[],\"excludeSuffixes\":[],\"excludeSegments\":[]},\"tokens\":[{\"name\":\"x\",\"pattern\":\"a*\"}]}"
+      "stagePolicy": "{\"scan\":{\"excludeRootGlobs\":[],\"includeExtensions\":[\".ts\"],\"includeRoots\":[\"src/\"],\"includeFiles\":[],\"excludeSuffixes\":[],\"excludeSegments\":[]},\"tokens\":[{\"name\":\"x\",\"pattern\":\"a*\"}]}"
     },
     {
       "name": "policy with an invalid regex is rejected",
       "args": ["--mode=staged"],
       "expectExit": 2,
-      "stagePolicy": "{\"scan\":{\"includeExtensions\":[\".ts\"],\"includeRoots\":[\"src/\"],\"includeFiles\":[],\"excludeSuffixes\":[],\"excludeSegments\":[]},\"tokens\":[{\"name\":\"x\",\"pattern\":\"([\"}]}"
+      "stagePolicy": "{\"scan\":{\"excludeRootGlobs\":[],\"includeExtensions\":[\".ts\"],\"includeRoots\":[\"src/\"],\"includeFiles\":[],\"excludeSuffixes\":[],\"excludeSegments\":[]},\"tokens\":[{\"name\":\"x\",\"pattern\":\"([\"}]}"
     },
     {
       "name": "policy naming a suppression for an unknown token is rejected",
       "args": ["--mode=staged"],
       "expectExit": 2,
-      "stagePolicy": "{\"scan\":{\"includeExtensions\":[\".ts\"],\"includeRoots\":[\"src/\"],\"includeFiles\":[],\"excludeSuffixes\":[],\"excludeSegments\":[]},\"suppressions\":[{\"token\":\"@ts-nope\"}],\"tokens\":[{\"name\":\"as any\",\"pattern\":\"as any\"}]}"
+      "stagePolicy": "{\"scan\":{\"excludeRootGlobs\":[],\"includeExtensions\":[\".ts\"],\"includeRoots\":[\"src/\"],\"includeFiles\":[],\"excludeSuffixes\":[],\"excludeSegments\":[]},\"suppressions\":[{\"token\":\"@ts-nope\"}],\"tokens\":[{\"name\":\"as any\",\"pattern\":\"as any\"}]}"
+    },
+    {
+      "name": "a policy without the excludeRootGlobs selector fails",
+      "args": ["--mode=staged"],
+      "expectExit": 2,
+      "stagePolicy": "{\"scan\":{\"includeExtensions\":[\".ts\"],\"includeRoots\":[\"src/\"],\"includeFiles\":[],\"excludeSuffixes\":[],\"excludeSegments\":[]},\"tokens\":[{\"name\":\"as any\",\"pattern\":\"as any\"}]}",
+      "expectStderr": "policy must provide the six selector arrays"
+    },
+    {
+      "name": "an exclude glob that is not the build's <root>**/*<suffix> form fails",
+      "args": ["--mode=staged"],
+      "expectExit": 2,
+      "stagePolicy": "{\"scan\":{\"excludeRootGlobs\":[\"src/*spec.ts\"],\"includeExtensions\":[\".ts\"],\"includeRoots\":[\"src/\"],\"includeFiles\":[],\"excludeSuffixes\":[],\"excludeSegments\":[]},\"tokens\":[{\"name\":\"as any\",\"pattern\":\"as any\"}]}",
+      "expectStderr": "unsupported exclude glob"
+    },
+    {
+      "name": "an exclude glob with no name suffix cannot skip a whole root",
+      "args": ["--mode=staged"],
+      "expectExit": 2,
+      "stagePolicy": "{\"scan\":{\"excludeRootGlobs\":[\"src/**/*\"],\"includeExtensions\":[\".ts\"],\"includeRoots\":[\"src/\"],\"includeFiles\":[],\"excludeSuffixes\":[],\"excludeSegments\":[]},\"tokens\":[{\"name\":\"as any\",\"pattern\":\"as any\"}]}",
+      "expectStderr": "unsupported exclude glob"
+    },
+    {
+      "name": "an exclude glob with a path in its suffix fails",
+      "args": ["--mode=staged"],
+      "expectExit": 2,
+      "stagePolicy": "{\"scan\":{\"excludeRootGlobs\":[\"src/**/*nested/spec.ts\"],\"includeExtensions\":[\".ts\"],\"includeRoots\":[\"src/\"],\"includeFiles\":[],\"excludeSuffixes\":[],\"excludeSegments\":[]},\"tokens\":[{\"name\":\"as any\",\"pattern\":\"as any\"}]}",
+      "expectStderr": "unsupported exclude glob"
     }
   ]
 }

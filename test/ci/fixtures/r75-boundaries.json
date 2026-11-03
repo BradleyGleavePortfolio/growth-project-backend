@@ -40,7 +40,7 @@
   ],
   "authoredPaths": [
     "src/vendor/module.ts",
-    "test/generated/case.ts",
+    "scripts/generated/case.ts",
     "src/build/module.ts",
     "scripts/dist/tool.js",
     "src/node_modules/authored.ts",
@@ -52,7 +52,25 @@
     "src/module.min.js"
   ],
   "outsidePaths": ["node_modules/library/index.js", "docs/example.ts", "dist/main.js"],
-  "linkPaths": ["src/module.ts", "src/imported", "test/linked"],
+  "skippedTestPaths": [
+    "test/generated/case.ts",
+    "test/community/access/caller-forms.spec.ts",
+    "__tests__/module.ts",
+    "src/module.spec.ts",
+    "src/community/access/access.spec.ts"
+  ],
+  "keptTestPaths": [
+    "src/extension-pair/__tests__/test-doubles.test.ts",
+    "src/community/ack/ack.test-fixtures.ts",
+    "src/community/voice/__tests__/test-user.factory.ts",
+    "src/module.test.ts",
+    "src/module.spec.tsx",
+    "src/__tests__/module.ts",
+    "scripts/tool.spec.js",
+    "scripts/__tests__/tool.ts",
+    "dangerfile.js"
+  ],
+  "linkPaths": ["src/module.ts", "src/imported", "scripts/linked", "src/linked.spec.ts"],
   "emptyHeads": ["--head=", "--head=   "],
   "placeholderCases": [
     { "name": "Coming soon", "input": "const label = 'Coming Soon';" },

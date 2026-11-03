@@ -131,6 +131,7 @@ describe('R100 workflow delegates measurement scope to the committed checker and
       includeFiles: string[];
       excludeSuffixes: string[];
       excludeSegments: string[];
+      excludeRootGlobs: string[];
     };
   };
 
@@ -141,7 +142,11 @@ describe('R100 workflow delegates measurement scope to the committed checker and
     const { scan } = policy;
     if (
       scan.excludeSegments.some((part) => path.startsWith(part) || path.includes(`/${part}`)) ||
-      scan.excludeSuffixes.some((suffix) => path.endsWith(suffix))
+      scan.excludeSuffixes.some((suffix) => path.endsWith(suffix)) ||
+      scan.excludeRootGlobs.some((glob) => {
+        const [root, suffix] = glob.split('**/*');
+        return path.startsWith(root) && path.endsWith(suffix);
+      })
     ) {
       return false;
     }
@@ -187,9 +192,15 @@ describe('R100 workflow delegates measurement scope to the committed checker and
     }
   });
 
-  it('policy scope includes test sources (R75 applies to tests) and never a workflow file', () => {
-    expect(inPolicyScope('test/top.spec.ts')).toBe(true);
-    expect(inPolicyScope('src/top.spec.ts')).toBe(true);
+  it('policy scope skips test files the build leaves out, never a workflow file', () => {
+    expect(inPolicyScope('test/top.spec.ts')).toBe(false);
+    expect(inPolicyScope('__tests__/top.ts')).toBe(false);
+    expect(inPolicyScope('src/top.spec.ts')).toBe(false);
+    expect(inPolicyScope('src/nested/deep.spec.ts')).toBe(false);
+    // Test helpers the build compiles, and scripts, stay scanned.
+    expect(inPolicyScope('src/extension-pair/__tests__/test-doubles.test.ts')).toBe(true);
+    expect(inPolicyScope('src/community/ack/ack.test-fixtures.ts')).toBe(true);
+    expect(inPolicyScope('scripts/tool.spec.js')).toBe(true);
     expect(inPolicyScope('.github/workflows/gate.yml')).toBe(false);
     expect(inPolicyScope('.github/r75-policy.json')).toBe(false);
   });

@@ -7,8 +7,9 @@
 // gate survived.
 //
 // Every banned literal used as input lives in fixtures/r75-cases.json, because
-// .json is not an executable extension in .github/r75-policy.json. This file,
-// being executable test source, IS in the gate's scan scope.
+// .json is not an executable extension in .github/r75-policy.json. Test files
+// the production build leaves out are outside the scan (owner ruling #192-D6
+// op 1), but this suite still keeps every banned literal in fixture data.
 //
 // Each repaired defect also carries a negative control: the deleted pre-repair
 // shell algorithm is reproduced from fixture data and asserted to DISAGREE with
@@ -24,6 +25,7 @@ const REPO_ROOT = join(__dirname, '..', '..');
 const CHECKER = join(REPO_ROOT, 'scripts', 'check-r75.js');
 const POLICY_IN_REPO = '.github/r75-policy.json';
 const POLICY = join(REPO_ROOT, POLICY_IN_REPO);
+const BUILD_TSCONFIG = join(REPO_ROOT, 'tsconfig.build.json');
 const WORKFLOW = join(REPO_ROOT, '.github', 'workflows', 'r100-quality-gate.yml');
 const HOOKS = join(REPO_ROOT, 'lefthook.yml');
 
@@ -45,6 +47,8 @@ interface GateCase {
   expectNet?: { [token: string]: number };
   expectOffenders?: string[];
   expectEvidenceFiles?: string[];
+  // Paths whose added casts must not appear in the checker's evidence at all.
+  expectAbsentFiles?: string[];
   legacyExit?: number;
   control?: 'verdict' | 'undercount';
   controlToken?: string;
@@ -59,6 +63,8 @@ interface OperationalCase {
   // override flag, so an unusable policy is exercised through the production
   // path: staged bytes at .github/r75-policy.json.
   stagePolicy?: string;
+  // The fail-closed reason, when the case proves one specific validation.
+  expectStderr?: string;
 }
 
 interface LegacyPolicy {
@@ -268,8 +274,25 @@ describe('R75 gate — policy data', () => {
   it('the policy declares scan scope and tokens as data', () => {
     const policy = JSON.parse(REAL_POLICY);
     expect(policy.scan.includeExtensions.length).toBeGreaterThan(0);
-    expect(policy.scan.includeRoots).toContain('test/');
+    expect(policy.scan.includeRoots).toEqual(['src/', 'scripts/']);
+    expect(policy.scan.includeFiles).toEqual(['dangerfile.js']);
     expect(policy.tokens.length).toBeGreaterThan(0);
+  });
+
+  it('the skipped test files are exactly the ones the production build leaves out', () => {
+    // Owner ruling #192-D6 op 1: skip only what cannot reach clients. The build
+    // compiles src/**/* except **/*spec.ts; test/ and top-level __tests__/ are
+    // never inside it. Anything wider (for example *.test.ts, or a src/
+    // __tests__/ helper the build compiles) must stay scanned.
+    const build = JSON.parse(readFileSync(BUILD_TSCONFIG, 'utf8'));
+    expect(build.include).toEqual(['src/**/*']);
+    expect(build.exclude).toEqual(expect.arrayContaining(['test', '**/*spec.ts']));
+    const scan = JSON.parse(REAL_POLICY).scan;
+    expect(scan.excludeRootGlobs).toEqual(['src/**/*spec.ts']);
+    expect(scan.includeRoots).not.toContain('test/');
+    expect(scan.includeRoots).not.toContain('__tests__/');
+    expect(scan.excludeSuffixes).toEqual([]);
+    expect(scan.excludeSegments).toEqual([]);
   });
 
   it('the swallowed-error returns are three distinct token classes', () => {
@@ -342,6 +365,9 @@ describe('R75 gate — repository checker against real Git repositories', () => 
       }
       for (const file of testCase.expectEvidenceFiles ?? []) {
         expect(result.stdout).toContain(file);
+      }
+      for (const file of testCase.expectAbsentFiles ?? []) {
+        expect(result.stdout).not.toContain(file);
       }
       if (testCase.expectExit === 1) {
         // Diagnostics must survive: a bare non-zero exit is not actionable.
@@ -417,6 +443,7 @@ describe('R75 gate — operational failures never degrade to a green pass', () =
       expect(result.status).toBe(testCase.expectExit);
       expect(result.status).not.toBe(0);
       expect(result.stderr).toContain('operational failure');
+      if (testCase.expectStderr) expect(result.stderr).toContain(testCase.expectStderr);
       expect(result.stdout).not.toContain('OK —');
     },
   );
