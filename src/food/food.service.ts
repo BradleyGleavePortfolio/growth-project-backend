@@ -135,6 +135,49 @@ function visibleFoodsWhere(viewerId: string): Prisma.FoodItemWhereInput {
   return { OR: [{ created_by_user_id: null }, { created_by_user_id: viewerId }] };
 }
 
+/**
+ * FOOD-USDA-BE: a shared row release step 6 (scripts/load-usda-foods.ts) or the live USDA import stores for a USDA
+ * SR Legacy / Foundation food carries this tag (b#1198's BASIC_TAG). The fewer-than-2-characters list leaves those
+ * rows out, so it stays the built-in foods, the other imports and the viewer's own, never 8,000 USDA rows A to Z.
+ */
+const BASIC_TAG = 'basic-food';
+const SEED_TAG = 'seed:common-foods';
+
+/**
+ * FOOD-USDA-BE (U3): the words of a typed search, letters and digits only, lower-cased, at most 8. Everything else
+ * (quotes, colons, &, |, !, backslashes, emoji, %) separates words and never reaches SQL or tsquery syntax.
+ */
+export function foodSearchWords(query: string): string[] {
+  return (query.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).slice(0, 8);
+}
+
+/**
+ * The two tsquery texts for the typed words, passed to to_tsquery('english', $n) as bound parameters: `whole` needs
+ * every word as a whole (stemmed) word; `typing` lets the last one be the start of a word, because the phone searches
+ * as the client types (LogScreen sends q after a 600 ms pause from 2 characters on), so "chick" finds chicken.
+ * Built from foodSearchWords only: letters, digits, " & " and a final ":*".
+ */
+export function foodWordQueries(query: string): { whole: string; typing: string } {
+  const words = foodSearchWords(query);
+  return {
+    whole: words.join(' & '),
+    typing: words.map((w, i) => (i === words.length - 1 ? `${w}:*` : w)).join(' & '),
+  };
+}
+
+/**
+ * Rows the word search hands to rankFoodResults (U3): more than a page, because the SQL order (how well the words
+ * match, then built-in foods, then shorter names) is not rankFoodResults' order, and the right food must be among
+ * them. Set from the score (PR body): every right answer the catalog holds was within the first 40.
+ */
+export const LOCAL_SEARCH_TAKE = 40;
+
+/**
+ * U4: when the catalog already has this many shared rows holding every typed word as a whole word, the shared search
+ * answers from the catalog alone and does not wait on USDA or Open Food Facts (set from the score, PR body).
+ */
+export const LOCAL_ENOUGH_WHOLE = 5;
+
 function canSeeFood(item: { created_by_user_id?: string | null }, viewerId: string): boolean {
   return item.created_by_user_id == null || item.created_by_user_id === viewerId;
 }
@@ -216,7 +259,9 @@ function rankFoodResults(items: FoodResult[], q: string, limit: number): FoodRes
 // 24h TTL on cached search results — USDA/OFF data is effectively static at
 // the per-day level and the upstream APIs are slow + rate-limited.
 const SEARCH_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const SEARCH_CACHE_KEY_PREFIX = 'food:search:v1:';
+// v3 (FOOD-USDA-BE): the catalog's word search and catalog-first answers; v1 and
+// b#1198's v2 entries are never served after this change.
+const SEARCH_CACHE_KEY_PREFIX = 'food:search:v3:';
 
 @Injectable()
 export class FoodService implements OnModuleInit {
@@ -267,7 +312,8 @@ export class FoodService implements OnModuleInit {
 
     if (!rawQ || rawQ.length < 2) {
       const defaults = await this.prisma.foodItem.findMany({
-        where: visibleFoodsWhere(viewerId),
+        // FOOD-USDA-BE (U6): not the loaded USDA rows (shared + basic-food).
+        where: { AND: [visibleFoodsWhere(viewerId), { NOT: { created_by_user_id: null, tags: { has: BASIC_TAG } } }] },
         take: limit,
         orderBy: { name: 'asc' },
       });
@@ -306,18 +352,20 @@ export class FoodService implements OnModuleInit {
     };
   }
 
-  /** USDA + OpenFoodFacts + the shared local catalog, ranked and cached. */
+  /**
+   * The shared local catalog, then USDA + OpenFoodFacts only for gaps (FOOD-USDA-BE U4), ranked and cached. When the
+   * catalog has LOCAL_ENOUGH_WHOLE rows holding every typed word as a whole word, it answers alone.
+   */
   private async searchShared(q: string, limit: number, cacheKey: string): Promise<FoodResult[]> {
-    // Run all 3 sources in parallel
-    const [usdaResults, offResults, localResults] = await Promise.allSettled([
-      this.searchUSDA(q, 20),
-      this.searchOpenFoodFacts(q, 20),
-      this.searchLocalDB(q, 10, null),
-    ]);
-
-    const usda = usdaResults.status === 'fulfilled' ? usdaResults.value : [];
-    const off = offResults.status === 'fulfilled' ? offResults.value : [];
-    const local = localResults.status === 'fulfilled' ? localResults.value : [];
+    const catalog = await this.searchCatalog(q, LOCAL_SEARCH_TAKE, null).catch(() => ({ rows: [], whole: 0 }));
+    const local = catalog.rows;
+    let usda: FoodResult[] = [];
+    let off: FoodResult[] = [];
+    if (catalog.whole < LOCAL_ENOUGH_WHOLE) {
+      const [usdaResults, offResults] = await Promise.allSettled([this.searchUSDA(q, 20), this.searchOpenFoodFacts(q, 20)]);
+      usda = usdaResults.status === 'fulfilled' ? usdaResults.value : [];
+      off = offResults.status === 'fulfilled' ? offResults.value : [];
+    }
 
     // Merge: local catalog first, then USDA (reliable nutrition), then OFF (images)
     const results = rankFoodResults([...local, ...usda, ...off], q, limit);
@@ -377,64 +425,68 @@ export class FoodService implements OnModuleInit {
    * (cacheable); a user id: that user's own custom foods only.
    */
   private async searchLocalDB(query: string, limit: number, ownerId: string | null): Promise<FoodResult[]> {
-    const owner =
-      ownerId === null
-        ? Prisma.sql`"created_by_user_id" IS NULL`
-        : Prisma.sql`"created_by_user_id" = ${ownerId}`;
-    try {
-      const trgmResults = await this.prisma.$queryRaw<FoodItemRow[]>`
-        SELECT
-          id, name, brand_or_restaurant, category, serving_description,
-          serving_size_grams, calories, protein_g, carbs_g, fat_g,
-          fiber_g, sugar_g, sodium_mg, tags, search_aliases, image_url,
-          nutrient_basis,
-          similarity(
-            lower(name) || ' ' ||
-            lower(coalesce(brand_or_restaurant, '')) || ' ' ||
-            lower(array_to_string(search_aliases, ' ')),
-            lower(${query})
-          ) AS score
-        FROM "FoodItem"
-        WHERE ${owner} AND
-          similarity(
-            lower(name) || ' ' ||
-            lower(coalesce(brand_or_restaurant, '')) || ' ' ||
-            lower(array_to_string(search_aliases, ' ')),
-            lower(${query})
-          ) > 0.08
-        ORDER BY score DESC
-        LIMIT ${limit}
-      `;
-      return trgmResults.map(this.toResult);
-    } catch {
-      // pg_trgm not installed — try ILIKE fallback
-      try {
-        const likeQ = `%${query}%`;
-        const ilikeResults = await this.prisma.$queryRaw<FoodItemRow[]>`
-          SELECT DISTINCT
-            id, name, brand_or_restaurant, category, serving_description,
-            serving_size_grams, calories, protein_g, carbs_g, fat_g,
-            fiber_g, sugar_g, sodium_mg, tags, search_aliases, image_url,
-            nutrient_basis
-          FROM "FoodItem"
-          WHERE ${owner} AND (
-            lower(name) LIKE lower(${likeQ})
-            OR lower(coalesce(brand_or_restaurant, '')) LIKE lower(${likeQ})
-            OR EXISTS (
-              SELECT 1 FROM unnest(search_aliases) AS alias
-              WHERE lower(alias) LIKE lower(${likeQ})
-            )
-          )
-          ORDER BY
-            CASE WHEN lower(name) LIKE lower(${likeQ}) THEN 0 ELSE 1 END,
-            name
-          LIMIT ${limit}
-        `;
-        return ilikeResults.map(this.toResult);
-      } catch {
-        return [];
-      }
-    }
+    // As before, a query the database refuses finds nothing rather than failing the search.
+    return (await this.searchCatalog(query, limit, ownerId).catch(() => ({ rows: [] }))).rows;
+  }
+
+  /**
+   * FOOD-USDA-BE (U3): the word search. A row matches when every typed word is among its words (name, brand,
+   * search_aliases) under Postgres's built-in 'english' text search, so "eggs" finds "Egg", in any order, the last
+   * word also as the start of a word ("chick" finds "Chicken"); or, for text the word search drops (2%, 80/20, a lone
+   * stop word), when it contains the typed text, as the ILIKE fallback matched before. Ordered by how well the words
+   * match (all whole words, then the last as a word start, then contains only; the name's first part holding the first
+   * word first), then built-in foods, then shorter names. The words reach SQL only as bound parameters (foodWordQueries).
+   *
+   * Without an index (U3): the to_tsvector of every row is the cost (about 55 ms over the 8,000-row catalog), so a
+   * cheap LIKE first keeps it to the rows holding each typed word's English stem ("chick", "egg", "berr" for berry:
+   * a stem ending in i or e loses that letter, which stemming may have changed, as in berry -> berri). A row the word
+   * search matches holds a word with that stem, and a row containing the typed text holds the typed words, so the
+   * LIKE never drops a match. Stop words have no stem, so they ask nothing. The patterns are built in SQL from the
+   * stems of the letters-and-digits words (a bound parameter), so no wildcard the member typed reaches them.
+   *
+   * The pg_trgm similarity query that stood here is gone: production and CI have no pg_trgm extension, so it failed
+   * on every search, and its ILIKE fallback failed too (SELECT DISTINCT with an ORDER BY outside the select list), so
+   * the shared catalog answered no search at all. No extension is needed now.
+   * `whole` counts the rows that hold every typed word as a whole word, for U4.
+   */
+  private async searchCatalog(
+    query: string,
+    limit: number,
+    ownerId: string | null,
+  ): Promise<{ rows: FoodResult[]; whole: number }> {
+    const { whole, typing } = foodWordQueries(query);
+    const first = foodSearchWords(query)[0];
+    const lead = first ? `${first}:*` : '';
+    const words = foodSearchWords(query).join(' ');
+    const contains = `%${query}%`;
+    const owner = ownerId === null ? Prisma.sql`f."created_by_user_id" IS NULL` : Prisma.sql`f."created_by_user_id" = ${ownerId}`;
+    const doc = Prisma.sql`to_tsvector('english'::regconfig, f."name" || ' ' || coalesce(f."brand_or_restaurant", '') || ' ' ||
+      array_to_string(f."search_aliases", ' '))`;
+    const rows = await this.prisma.$queryRaw<(FoodItemRow & { word_match: number })[]>`
+      SELECT f."id", f."name", f."brand_or_restaurant", f."category", f."serving_description",
+             f."serving_size_grams", f."calories", f."protein_g", f."carbs_g", f."fat_g",
+             f."fiber_g", f."sugar_g", f."sodium_mg", f."tags", f."search_aliases", f."image_url", f."nutrient_basis",
+             CASE WHEN numnode(to_tsquery('english', ${whole})) > 0 AND ${doc} @@ to_tsquery('english', ${whole}) THEN 0
+                  WHEN numnode(to_tsquery('english', ${typing})) > 0 AND ${doc} @@ to_tsquery('english', ${typing}) THEN 1
+                  ELSE 2 END AS word_match
+      FROM "FoodItem" f
+      WHERE ${owner}
+        AND lower(f."name" || ' ' || coalesce(f."brand_or_restaurant", '') || ' ' || array_to_string(f."search_aliases", ' '))
+            LIKE ALL (ARRAY(SELECT '%' || CASE WHEN right(l, 1) IN ('i', 'e') THEN left(l, length(l) - 1) ELSE l END || '%'
+                            FROM unnest(tsvector_to_array(to_tsvector('english', ${words}))) AS l))
+        AND ((numnode(to_tsquery('english', ${typing})) > 0 AND ${doc} @@ to_tsquery('english', ${typing}))
+             OR lower(f."name") LIKE lower(${contains})
+             OR lower(coalesce(f."brand_or_restaurant", '')) LIKE lower(${contains})
+             OR EXISTS (SELECT 1 FROM unnest(f."search_aliases") a WHERE lower(a) LIKE lower(${contains})))
+      ORDER BY word_match,
+               CASE WHEN numnode(to_tsquery('english', ${lead})) > 0
+                         AND to_tsvector('english'::regconfig, split_part(f."name", ',', 1)) @@ to_tsquery('english', ${lead})
+                    THEN 0 ELSE 1 END,
+               CASE WHEN f."tags" @> ARRAY[${SEED_TAG}]::text[] THEN 0 ELSE 1 END,
+               length(f."name"), f."name", f."id"
+      LIMIT ${limit}
+    `;
+    return { rows: rows.map(this.toResult), whole: rows.filter((r) => Number(r.word_match) === 0).length };
   }
 
   private async searchUSDA(query: string, limit: number = 20): Promise<FoodResult[]> {

@@ -37,6 +37,7 @@ import hashlib
 import io
 import json
 import math
+import os
 import sys
 import zipfile
 
@@ -75,6 +76,8 @@ def tenth(x):
 
 
 def sha256(path):
+    if os.path.isdir(path):
+        return None
     h = hashlib.sha256()
     with open(path, 'rb') as f:
         for chunk in iter(lambda: f.read(1 << 20), b''):
@@ -83,12 +86,20 @@ def sha256(path):
 
 
 class Release:
+    """One USDA CSV download: the zip, or a folder of the same CSV files (the test fixture, test/fixtures/usda-foods)."""
+
     def __init__(self, path):
         self.path = path
-        self.zip = zipfile.ZipFile(path)
-        self.names = {n.rsplit('/', 1)[-1]: n for n in self.zip.namelist()}
+        self.dir = path if os.path.isdir(path) else None
+        self.zip = None if self.dir else zipfile.ZipFile(path)
+        listing = os.listdir(path) if self.dir else self.zip.namelist()
+        self.names = {n.rsplit('/', 1)[-1]: n for n in listing}
 
     def rows(self, name):
+        if self.dir:
+            with open(os.path.join(self.dir, self.names[name]), encoding='utf-8', newline='') as f:
+                yield from csv.DictReader(f)
+            return
         with self.zip.open(self.names[name]) as raw:
             yield from csv.DictReader(io.TextIOWrapper(raw, encoding='utf-8', newline=''))
 
@@ -220,9 +231,12 @@ def main(argv):
         built_in = {r['sr_legacy_fdc_id']: r['built_in'] for r in json.load(f)['foods'] if r['sr_legacy_fdc_id']}
     sr_ids = {f['fdc_id'] for f in sr}
     unknown = sorted(i for i in built_in if i not in sr_ids)
-    if unknown:
+    # (A fixture folder holds a cut of SR Legacy, so the full map names foods it lacks.)
+    if unknown and not os.path.isdir(sr_path):
         sys.exit(f'usda-built-in-map.json names fdc ids that are not SR Legacy foods: {unknown}')
-    stands_for = [{'fdc_id': f['fdc_id'], 'name': f['name'], 'built_in': built_in[f['fdc_id']]}
+    # With the USDA numbers, so test/usda-foods-file.spec.ts can check each pair against the built-in food's.
+    stands_for = [{'fdc_id': f['fdc_id'], 'name': f['name'], 'built_in': built_in[f['fdc_id']],
+                   'calories': f['calories'], 'protein_g': f['protein_g'], 'carbs_g': f['carbs_g'], 'fat_g': f['fat_g']}
                   for f in sr if f['fdc_id'] in built_in]
     foods = sorted([f for f in sr if f['fdc_id'] not in built_in] + fd, key=lambda f: f['fdc_id'])
     ids = [f['fdc_id'] for f in foods]
