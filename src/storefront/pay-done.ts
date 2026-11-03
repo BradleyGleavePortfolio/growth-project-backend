@@ -4,6 +4,7 @@ import type { StripeConnectApiService } from '../connect/stripe-connect-api.serv
 import { SHARE_TOKEN_REGEX } from '../share-link/share-link.service';
 import { payKeyTag, type PayDoneView } from './pay-done.html';
 import { payPageUrl } from './storefront-links';
+import { isGuestTrialIntent } from './guest-checkout.service';
 
 // GC-2 — read-only: which state /p/:token/done shows. Stripe's query alone is
 // never trusted: the PaymentIntent must belong to a guest checkout of this
@@ -46,7 +47,7 @@ export interface PayDoneQuery {
 }
 
 export interface PayDoneDeps {
-  db: Pick<PrismaService, 'guestCheckout' | 'user' | 'chargeDispute'>;
+  db: Pick<PrismaService, 'guestCheckout' | 'user' | 'chargeDispute' | 'clientPurchase'>;
   stripe: Pick<StripeConnectApiService, 'retrievePaymentIntent' | 'retrieveCharge'> &
     Partial<Pick<StripeConnectApiService, 'retrieveSetupIntent'>>;
   storefrontBase: string | undefined;
@@ -162,6 +163,31 @@ export async function readPayDone(
 // the state Stripe's. Saved card = the trial started (the webhook converts);
 // nothing was charged in any state. The first charge line is the pay page's
 // PF-W5, from the row's own snapshot (plan amount, trial days from the start).
+// FR-1199 (LS-1199 B3) — a converted trial's free period is over once its
+// stored end has passed: the purchase's trial_ends_at (mirrors Stripe's
+// trial_end) or the snapshot's created_at + trial_days, whichever is first.
+// Then "Nothing is charged today" is no longer true and the line is left
+// out. Stored rows only, never the link; an unreadable purchase falls back
+// to the snapshot.
+async function trialEnded(
+  deps: PayDoneDeps,
+  subscriptionId: string | null,
+  snapshotEnd: number | null,
+): Promise<boolean> {
+  const now = Date.now();
+  if (snapshotEnd !== null && snapshotEnd <= now) return true;
+  if (!subscriptionId) return false;
+  try {
+    const purchase = await deps.db.clientPurchase.findFirst({
+      where: { stripe_subscription_id: subscriptionId },
+      select: { trial_ends_at: true },
+    });
+    return purchase?.trial_ends_at != null && purchase.trial_ends_at.getTime() <= now;
+  } catch {
+    return false;
+  }
+}
+
 async function readTrialDone(
   deps: PayDoneDeps,
   token: string,
@@ -187,6 +213,8 @@ async function readTrialDone(
       last_error: true,
       expires_at: true,
       idempotency_key: true,
+      stripe_payment_intent_id: true,
+      stripe_subscription_id: true,
       package_snapshot: true,
       package: { select: { share_token: true, name: true, coach: { select: { name: true } } } },
     },
@@ -222,7 +250,15 @@ async function readTrialDone(
         n: String(k),
       }).toString()}`;
     return {
-      view: { kind: 'confirming', email: row.guest_email, again, checkUrl: at(0) },
+      // TRIAL-WORDS-BE (#189-D1 op 1) — the trial's words come from the row:
+      // its stored intent is the trial's SetupIntent, as every guest path reads it.
+      view: {
+        kind: 'confirming',
+        email: row.guest_email,
+        again,
+        checkUrl: at(0),
+        trial: isGuestTrialIntent(row.stripe_payment_intent_id),
+      },
       refresh: again ? at(done + 1) : null,
     };
   };
@@ -241,6 +277,8 @@ async function readTrialDone(
       where: { email: { equals: row.guest_email, mode: 'insensitive' } },
       select: { created_at: true },
     });
+    const firstChargeAt = days !== null ? row.created_at.getTime() + days * DAY_MS : null;
+    const ended = await trialEnded(deps, row.stripe_subscription_id, firstChargeAt);
     return {
       view: {
         kind: 'paid',
@@ -250,11 +288,8 @@ async function readTrialDone(
         packageName: row.package.name,
         amountCents: null,
         trial:
-          cents !== null && days !== null
-            ? {
-                firstChargeCents: cents,
-                firstChargeAt: new Date(row.created_at.getTime() + days * DAY_MS).toISOString(),
-              }
+          cents !== null && firstChargeAt !== null && !ended
+            ? { firstChargeCents: cents, firstChargeAt: new Date(firstChargeAt).toISOString() }
             : { firstChargeCents: null, firstChargeAt: null },
       },
       refresh: null,

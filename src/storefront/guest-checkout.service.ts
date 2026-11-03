@@ -50,6 +50,15 @@ import {
 } from './buyer-check';
 import { payPageUrl } from './storefront-links';
 import { GUEST_TRIAL_COPY } from './pay-done.html';
+import {
+  type GuestOutcome,
+  OUTCOME_MAIL_TRIES,
+  type OutcomeTry,
+  guestOutcome,
+  nextOutcomeTry,
+  outcomeMailKey,
+  outcomeMailRequestKey,
+} from './guest-outcome-mail';
 import { packageTrialDays } from '../checkout/subscription-plan';
 import { attachTrialCard } from '../checkout/trial-card';
 import { TrialUsageService } from '../packages/trials/trial-usage.service';
@@ -203,9 +212,17 @@ type CheckoutWithRelations = GuestCheckout & {
   };
 };
 
+// FR-1199R2B (LS-1199R2 B2) — a welcome retry must send the body of its first
+// try (Resend refuses the same Idempotency-Key with another body). The
+// confirm link is a credential and is never stored, so it is kept here, in
+// memory only, for as long as Resend keeps the key.
+const WELCOME_LINK_KEEP_MS = 24 * 60 * 60_000;
+const WELCOME_LINK_KEEP_MAX = 500;
+
 @Injectable()
 export class GuestCheckoutService {
   private readonly logger = new Logger(GuestCheckoutService.name);
+  private readonly welcomeLinks = new Map<string, { link: string; at: number }>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -2125,12 +2142,9 @@ export class GuestCheckoutService {
     }
 
     // Fire-and-forget welcome email. Resend failures must never roll
-    // back the conversion.
-    this.sendWelcomeEmail(checkout, inviteLink).catch((err) => {
-      this.logger.error(
-        `Welcome email failed for ${checkout.id} (tag=${safeErrorTag(err)})`,
-      );
-    });
+    // back the conversion. FR-1199: a failed send is retried from its
+    // EmailSendLog record (guest-outcome-mail.ts).
+    void this.sendWelcomeEmail(checkout, inviteLink);
   }
 
   // P2-5 — resolve the coach's Connect account id at conversion time so
@@ -2280,12 +2294,20 @@ export class GuestCheckoutService {
         retry_count: RECONCILIATION_MAX_ATTEMPTS,
         last_error: 'buyer_has_other_coach',
         last_retry_at: new Date(),
+        // FR-1199R2B (LS-1199R2 B1): a held web trial gets TW-F1, so its
+        // checkout window closes first: no later card-save event can claim
+        // and convert it (the trial's create-time end stops any charge).
+        ...(isGuestTrialIntent(checkout.stripe_payment_intent_id) ? { expires_at: new Date() } : {}),
       },
     });
     this.logger.error(
       `GuestCheckout ${checkout.id} held for refund (last_error=buyer_has_other_coach): refund pi=${checkout.stripe_payment_intent_id} in Stripe; charge.refunded closes the row`,
     );
     if (moved.count === 0) return;
+    // FR-1199 (LS-1199 B1): a held web trial is a trial not started (TW-F1).
+    if (isGuestTrialIntent(checkout.stripe_payment_intent_id)) {
+      await this.deliverOutcomeMail(checkout, 'trial-not-started', { opening: true });
+    }
     await this.notifications
       .createNotification({
         user_id: checkout.package.coach_id,
@@ -2347,39 +2369,290 @@ export class GuestCheckoutService {
         );
       });
     }
-    await this.sendTrialRefusedEmail(checkout).catch((err) => {
-      this.logger.error(`trial-refused email failed for ${checkout.id} (tag=${safeErrorTag(err)})`);
-    });
+    await this.deliverOutcomeMail(checkout, 'trial-refused', { opening: true });
   }
 
-  private async sendTrialRefusedEmail(checkout: CheckoutWithRelations): Promise<void> {
-    const apiKey = this.config.get<string>('RESEND_API_KEY');
-    if (!apiKey) return;
-    let from: string;
-    try {
-      from = resolveEmailSender(this.config, 'resend');
-    } catch (err) {
-      if (!(err instanceof EmailSenderConfigError)) throw err;
-      this.logger.error(`Trial-refused email not sent for ${checkout.id}: EMAIL_FROM_ADDRESS is not set to a valid sender address`);
-      return;
-    }
+  // GC-3 PF-W7 (refused) and FR-1199 TW-F1 (not started): a web trial's
+  // ending email. Subject GC3-W2 for both; TW-F1 is followed by the pay
+  // page link.
+  private trialEndMail(
+    checkout: CheckoutWithRelations,
+    outcome: 'trial-refused' | 'trial-not-started',
+  ): { subject: string; html: string } {
     const coach = checkout.package.coach.name?.trim() || 'your coach';
+    let lines = `<p>${escapeHtml(GUEST_TRIAL_COPY.refused(coach))}</p>`;
+    if (outcome === 'trial-not-started') {
+      const token = checkout.package.share_token;
+      const url = token ? payPageUrl(this.config.get<string>('STOREFRONT_BASE_URL'), token) : null;
+      lines = `<p>${escapeHtml(GUEST_TRIAL_COPY.notStarted(coach))}</p>`;
+      if (url) {
+        // The raw link is long; let it wrap on a narrow phone.
+        lines += `\n<p><a href="${escapeAttr(url)}" style="color:#1A1A1A;text-decoration:underline;word-break:break-all;overflow-wrap:anywhere;">${escapeHtml(url)}</a></p>`;
+      }
+    }
+    return {
+      subject: GUEST_TRIAL_COPY.refusedSubject(coach),
+      html: `<!doctype html><html><body style="font-family:Inter,Arial,sans-serif;background:#F5F0E8;margin:0;padding:24px;">
+${lines}</body></html>`,
+    };
+  }
+
+  // FR-1199 (LS-1199 B2) — carry on a recorded, unfinished outcome email
+  // (the reconciliation cron) or, with
+  // `opening`, start the one an ending just wrote (the lost-webhook
+  // backstop). Derives the outcome from the stored row; never throws.
+  async sendOutcomeMail(checkoutId: string, opts: { opening?: boolean; paced?: boolean } = {}): Promise<void> {
+    try {
+      const checkout = await this.prisma.guestCheckout.findUnique({
+        where: { id: checkoutId },
+        include: { package: { include: { coach: true } } },
+      });
+      if (!checkout) return;
+      const outcome = guestOutcome({
+        status: checkout.status,
+        last_error: checkout.last_error,
+        trial: isGuestTrialIntent(checkout.stripe_payment_intent_id),
+      });
+      if (outcome) await this.deliverOutcomeMail(checkout, outcome, opts);
+    } catch (err) {
+      this.logger.error(`outcome email crashed for ${checkoutId} (tag=${safeErrorTag(err)})`);
+    }
+  }
+
+  // FR-1199 — one try of an outcome email (guest-outcome-mail.ts). The
+  // ending opens try 1; if the record cannot be read or written then, it
+  // still sends once and (FR-1199R2B) writes the try's record afterwards.
+  private async deliverOutcomeMail(
+    checkout: CheckoutWithRelations,
+    outcome: GuestOutcome,
+    opts: { opening?: boolean; paced?: boolean; inviteLink?: string | null },
+  ): Promise<void> {
+    const opening = opts.opening === true;
+    try {
+      const apiKey = this.config.get<string>('RESEND_API_KEY');
+      if (!apiKey) {
+        this.logger.warn(`RESEND_API_KEY unset — skipping ${outcome} email for ${checkout.id}`);
+        return;
+      }
+      let from: string;
+      try {
+        from = resolveEmailSender(this.config, 'resend');
+      } catch (err) {
+        if (!(err instanceof EmailSenderConfigError)) throw err;
+        this.logger.error(
+          `${outcome === 'welcome' ? 'Welcome' : outcome === 'trial-refused' ? 'Trial-refused' : 'Trial-not-started'} email not sent for ${checkout.id}: EMAIL_FROM_ADDRESS is not set to a valid sender address`,
+        );
+        return;
+      }
+      const keys = Array.from({ length: OUTCOME_MAIL_TRIES }, (_, i) => outcomeMailKey(checkout.id, outcome, i + 1));
+      let tries: (OutcomeTry & { template_key: string })[] | null = null;
+      try {
+        tries = await this.prisma.emailSendLog.findMany({
+          where: { idempotency_key: { in: keys } },
+          select: { status: true, created_at: true, template_key: true },
+        });
+      } catch (err) {
+        this.logger.warn(`${outcome} email record unreadable for ${checkout.id} (tag=${safeErrorTag(err)})`);
+      }
+      if (!Array.isArray(tries)) {
+        if (!opening) return;
+        tries = null;
+      }
+      const attempt = tries ? nextOutcomeTry(tries, Date.now(), { opening, paced: opts.paced === true }) : 1;
+      if (attempt === null) return;
+      let inviteLink = opts.inviteLink ?? null;
+      if (outcome === 'welcome' && !opening && tries?.some((t) => t.template_key === 'guest-welcome-new')) {
+        // The confirm link is never stored: a retry sends the first try's
+        // link (kept in memory, so the body is the same). Only a retry in
+        // another process mints a fresh one (Found, not fixed), and without
+        // one it waits (never the existing-account words).
+        inviteLink = this.keptWelcomeLink(checkout.id);
+        if (inviteLink === null) {
+          inviteLink = await this.generateInviteLink(checkout.guest_email, checkout.package.share_token);
+          if (inviteLink === null) return;
+        }
+      }
+      if (outcome === 'welcome' && inviteLink !== null) this.keepWelcomeLink(checkout.id, inviteLink);
+      const template =
+        outcome === 'welcome' ? (inviteLink !== null ? 'guest-welcome-new' : 'guest-welcome-existing') : `guest-${outcome}`;
+      const key = keys[attempt - 1];
+      if (outcome === 'trial-not-started') {
+        // FR-1199R2B (LO-1199R2 B1) — the buyer started again (a declined
+        // card, then another card is a new row): TW-F1 would be untrue.
+        let later: boolean | null = null;
+        try {
+          later = await this.laterTrialAttempt(checkout);
+        } catch (err) {
+          this.logger.warn(`trial-not-started email for ${checkout.id}: later attempt unreadable (tag=${safeErrorTag(err)})`);
+        }
+        if (later === true) {
+          this.logger.log(`trial-not-started email for ${checkout.id} skipped: the buyer has a later checkout for this package`);
+          return;
+        }
+        if (later === null) {
+          // Unknown: hold this try (recorded as failed, unsent) so the scan
+          // asks again after the gap; never send on a guess.
+          if (tries !== null || opening) await this.holdOutcomeTry(key, template, checkout, 'later_attempt_unread');
+          return;
+        }
+      }
+      let recorded = tries !== null;
+      if (recorded) {
+        try {
+          await this.prisma.emailSendLog.create({
+            data: {
+              idempotency_key: key,
+              template_key: template,
+              recipient_email: checkout.guest_email.toLowerCase(),
+              status: 'sending',
+            },
+          });
+        } catch (err) {
+          if (this.isUniqueViolation(err) || !opening) return; // another sender holds this try
+          recorded = false;
+          this.logger.warn(`${outcome} email record not written for ${checkout.id} (tag=${safeErrorTag(err)})`);
+        }
+      }
+      const mail = outcome === 'welcome' ? this.welcomeMail(checkout, inviteLink) : this.trialEndMail(checkout, outcome);
+      const failure = await this.postResend(
+        apiKey,
+        { from, to: checkout.guest_email, ...mail },
+        checkout.id,
+        outcomeMailRequestKey(checkout.id, outcome),
+      );
+      if (!recorded) {
+        // FR-1199R2B (LS-1199R2 B3) — the try's record could not be written
+        // before the send. Write it now with the result, so a failed send
+        // leaves a pending outcome the scan, a replay or the reconcile pass
+        // carries on (and a sent one is never sent again).
+        const held = await this.holdOutcomeTry(key, template, checkout, failure ?? '', failure === null);
+        if (!held && failure !== null) {
+          this.logger.error(`${outcome} email for ${checkout.id} not sent and not recorded (last=${failure})`);
+        }
+        return;
+      }
+      await this.prisma.emailSendLog
+        .update({
+          where: { idempotency_key: key },
+          data: failure === null ? { status: 'sent', sent_at: new Date() } : { status: 'failed', error: failure },
+        })
+        .catch((err) => {
+          this.logger.error(`${outcome} email record update failed for ${checkout.id} (tag=${safeErrorTag(err)})`);
+        });
+      if (failure !== null && attempt >= OUTCOME_MAIL_TRIES) {
+        this.logger.error(`${outcome} email for ${checkout.id} not sent after ${attempt} tries (last=${failure})`);
+      }
+    } catch (err) {
+      this.logger.error(`${outcome} email failed for ${checkout.id} (tag=${safeErrorTag(err)})`);
+    }
+  }
+
+  // FR-1199R2B (LO-1199R2 B1) — the same buyer has a later checkout for the
+  // same package that is still open, paid or converted.
+  private async laterTrialAttempt(checkout: CheckoutWithRelations): Promise<boolean> {
+    const later = await this.prisma.guestCheckout.findFirst({
+      where: {
+        guest_email: { equals: checkout.guest_email, mode: 'insensitive' },
+        package_id: checkout.package_id,
+        created_at: { gt: checkout.created_at },
+        status: { in: ['pending', 'paid', 'conversion_failed_retryable', 'converted'] },
+      },
+      select: { id: true },
+    });
+    return later !== null;
+  }
+
+  // FR-1199R2B — a try written after the fact: failed (unsent, or its send
+  // failed), so the scan, a replay or the reconcile pass carries the outcome
+  // on from it; or sent, so nothing sends it again.
+  private async holdOutcomeTry(
+    key: string,
+    template: string,
+    checkout: CheckoutWithRelations,
+    error: string,
+    sent = false,
+  ): Promise<boolean> {
+    try {
+      await this.prisma.emailSendLog.create({
+        data: {
+          idempotency_key: key,
+          template_key: template,
+          recipient_email: checkout.guest_email.toLowerCase(),
+          ...(sent ? { status: 'sent', sent_at: new Date() } : { status: 'failed', error }),
+        },
+      });
+      return true;
+    } catch (err) {
+      if (this.isUniqueViolation(err)) return true; // the try is on record
+      this.logger.error(`outcome email try not recorded for ${checkout.id} (tag=${safeErrorTag(err)})`);
+      return false;
+    }
+  }
+
+  private keptWelcomeLink(checkoutId: string): string | null {
+    const kept = this.welcomeLinks.get(checkoutId);
+    if (!kept) return null;
+    if (Date.now() - kept.at > WELCOME_LINK_KEEP_MS) {
+      this.welcomeLinks.delete(checkoutId);
+      return null;
+    }
+    return kept.link;
+  }
+
+  private keepWelcomeLink(checkoutId: string, link: string): void {
+    if (this.welcomeLinks.has(checkoutId)) return; // the first try's link stays
+    if (this.welcomeLinks.size >= WELCOME_LINK_KEEP_MAX) {
+      const oldest = this.welcomeLinks.keys().next().value;
+      if (oldest !== undefined) this.welcomeLinks.delete(oldest);
+    }
+    this.welcomeLinks.set(checkoutId, { link, at: Date.now() });
+  }
+
+  // Resend transactional email, 8 s timeout. Returns null when sent, else a
+  // short failure tag (status code or error name; never the response body,
+  // which can echo API key fragments). FR-1199R2B (LS-1199R2 B2): every try
+  // of one outcome carries the same Idempotency-Key and the same body.
+  private async postResend(
+    apiKey: string,
+    body: { from: string; to: string; subject: string; html: string },
+    checkoutId: string,
+    idempotencyKey: string,
+  ): Promise<string | null> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8000);
     try {
       const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          from,
-          to: checkout.guest_email,
-          subject: GUEST_TRIAL_COPY.refusedSubject(coach),
-          html: `<!doctype html><html><body style="font-family:Inter,Arial,sans-serif;background:#F5F0E8;margin:0;padding:24px;">
-<p>${escapeHtml(GUEST_TRIAL_COPY.refused(coach))}</p></body></html>`,
-        }),
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey,
+        },
+        body: JSON.stringify(body),
         signal: controller.signal,
       });
-      if (!res.ok) this.logger.error(`Resend send failed (status=${res.status}) for ${checkout.id}`);
+      if (res.ok) return null;
+      if (res.status === 409) {
+        // Only the error name is read; the body is never logged.
+        let name: string | null = null;
+        try {
+          const parsed: unknown = await res.json();
+          if (parsed && typeof (parsed as { name?: unknown }).name === 'string') name = (parsed as { name: string }).name;
+        } catch (err) {
+          this.logger.warn(`Resend 409 answer unreadable for ${checkoutId} (tag=${safeErrorTag(err)})`);
+        }
+        if (name === 'invalid_idempotent_request') {
+          // Resend keeps a key only for a request it accepted: an earlier
+          // try of this outcome went out. Recorded as sent, never resent.
+          this.logger.warn(`Resend already accepted an earlier try for ${checkoutId}; not sent again`);
+          return null;
+        }
+      }
+      this.logger.error(`Resend send failed (status=${res.status}) for ${checkoutId}`);
+      return `status_${res.status}`;
+    } catch (err) {
+      this.logger.error(`Resend send crashed for ${checkoutId} (tag=${safeErrorTag(err)})`);
+      return `send_${safeErrorTag(err)}`.slice(0, 64);
     } finally {
       clearTimeout(timer);
     }
@@ -2402,12 +2675,16 @@ export class GuestCheckoutService {
       // is minimal.
       const row = await this.prisma.guestCheckout.findUnique({
         where: { id: checkoutId },
-        select: { retry_count: true, status: true },
+        select: { retry_count: true, status: true, stripe_payment_intent_id: true },
       });
       if (!row) return;
       const nextCount = row.retry_count + 1;
       const terminal = nextCount >= RECONCILIATION_MAX_ATTEMPTS;
-      await this.prisma.guestCheckout.updateMany({
+      // FR-1199R2B (LS-1199R2 B1): a web trial ending here gets TW-F1, so
+      // its checkout window closes in the same write: a replayed card-save
+      // event can no longer claim the row, convert it and lift the trial end.
+      const closeTrial = terminal && isGuestTrialIntent(row.stripe_payment_intent_id);
+      const moved = await this.prisma.guestCheckout.updateMany({
         where: {
           id: checkoutId,
           status: { in: ['paid', 'conversion_failed_retryable'] },
@@ -2419,12 +2696,15 @@ export class GuestCheckoutService {
           retry_count: nextCount,
           last_error: lastError.slice(0, 200),
           last_retry_at: new Date(),
+          ...(closeTrial ? { expires_at: new Date() } : {}),
         },
       });
       if (terminal) {
         this.logger.error(
           `GuestCheckout ${checkoutId} reached conversion_failed_terminal after ${nextCount} retries (last_error=${lastError.slice(0, 64)})`,
         );
+        // FR-1199 (LS-1199 B1): a web trial ending here gets TW-F1.
+        if (moved.count > 0) void this.sendOutcomeMail(checkoutId, { opening: true });
       }
     } catch (err) {
       this.logger.error(
@@ -2455,7 +2735,14 @@ export class GuestCheckoutService {
       checkout.status !== 'paid' &&
       checkout.status !== 'conversion_failed_retryable'
     ) {
-      // Already converted or terminal — nothing to do.
+      // Already converted or terminal — nothing to convert. FR-1199
+      // (LS-1199 B2): carry on its outcome email if a try failed.
+      const outcome = guestOutcome({
+        status: checkout.status,
+        last_error: checkout.last_error,
+        trial: isGuestTrialIntent(checkout.stripe_payment_intent_id),
+      });
+      if (outcome) await this.deliverOutcomeMail(checkout, outcome, {});
       return;
     }
     if (checkout.status === 'conversion_failed_retryable') {
@@ -2537,30 +2824,22 @@ export class GuestCheckoutService {
   // EMAIL_FROM_ADDRESS sender (src/email/email-sender.ts), the same one
   // every other email uses; with no valid sender nothing is sent and the
   // log line names the variable.
+  // FR-1199: the conversion opens the welcome outcome (never throws).
   private async sendWelcomeEmail(
     checkout: CheckoutWithRelations,
     inviteLink: string | null,
   ): Promise<void> {
-    const apiKey = this.config.get<string>('RESEND_API_KEY');
-    if (!apiKey) {
-      this.logger.warn(
-        `RESEND_API_KEY unset — skipping welcome email for ${checkout.id}`,
-      );
-      return;
-    }
+    await this.deliverOutcomeMail(checkout, 'welcome', { opening: true, inviteLink });
+  }
+
+  // FR-1199: the body only; deliverOutcomeMail sends and records it.
+  private welcomeMail(
+    checkout: CheckoutWithRelations,
+    inviteLink: string | null,
+  ): { subject: string; html: string } {
     // Audit #5 P2-3 — customer-facing copy uses the brand name
     // "Growth Project", never the internal abbreviation "TGP" (the body
     // line "added X to your existing ... account" and the subject line).
-    let fromAddress: string;
-    try {
-      fromAddress = resolveEmailSender(this.config, 'resend');
-    } catch (err) {
-      if (!(err instanceof EmailSenderConfigError)) throw err;
-      this.logger.error(
-        `Welcome email not sent for ${checkout.id}: EMAIL_FROM_ADDRESS is not set to a valid sender address`,
-      );
-      return;
-    }
 
     const coachName = checkout.package.coach.name?.trim() || 'Your coach';
     const packageName = checkout.package.name;
@@ -2596,9 +2875,7 @@ export class GuestCheckoutService {
           )}" style="color:#1A1A1A;text-decoration:underline;">View your receipt</a></p>`
         : '';
 
-    const body = {
-      from: fromAddress,
-      to: checkout.guest_email,
+    return {
       subject:
         inviteLink !== null
           ? `Confirm your email to start with ${coachName} on TGP Fitness`
@@ -2612,29 +2889,6 @@ ${receiptLine}
 <a href="${escapeAttr(playStoreUrl)}" style="background:#C9A84C;color:#1A1A1A;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">Download for Android</a></p>
 </body></html>`,
     };
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 8000);
-    try {
-      const res = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-      if (!res.ok) {
-        // Don't read the body — it can echo our API key fragments in
-        // verbose error responses. Log status only.
-        this.logger.error(
-          `Resend send failed (status=${res.status}) for ${checkout.id}`,
-        );
-      }
-    } finally {
-      clearTimeout(timer);
-    }
   }
 
   private isUniqueViolation(err: unknown): boolean {
