@@ -18,7 +18,9 @@ name: R100 Quality Gate
 #
 # Measurement scope for the banned-cast diff is NOT defined in this workflow:
 # it is the `scan` block of `.github/r75-policy.json` (roots, extensions,
-# includeFiles, exclusions; application AND test sources are in scope), which
+# includeFiles, exclusions; app code, scripts/ and dangerfile.js are in scope,
+# test files the production build leaves out are skipped: test/, top-level
+# __tests__/ and src/ files ending .spec.ts), which
 # test/ci/r75-boundaries.spec.ts and test/ci/r100-pathspec.spec.ts assert.
 on:
   pull_request:

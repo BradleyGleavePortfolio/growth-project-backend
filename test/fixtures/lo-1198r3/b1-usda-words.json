@@ -1,0 +1,3120 @@
+{
+ "butter": [
+  {
+   "fdcId": 2542726,
+   "description": "BUTTER",
+   "dataType": "Branded",
+   "brandOwner": "Foodtown, Inc.",
+   "foodCategory": "Butter & Spread",
+   "householdServingFullText": "1 Tbsp",
+   "servingSize": 14.0,
+   "servingSizeUnit": "GRM",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 78.6
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 714
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 0.0
+    }
+   ]
+  },
+  {
+   "fdcId": 1920273,
+   "description": "BUTTER",
+   "dataType": "Branded",
+   "brandOwner": "Taylor Fresh Foods, Inc.",
+   "foodCategory": "Pre-Packaged Fruit & Vegetables",
+   "householdServingFullText": "3 ONZ",
+   "servingSize": 85.0,
+   "servingSizeUnit": "g",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 1.18
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 2.35
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 12.0
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 1.2
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 0.0
+    }
+   ]
+  },
+  {
+   "fdcId": 2103635,
+   "description": "BUTTER",
+   "dataType": "Branded",
+   "brandOwner": "Mr. Beverages Old Time Cocktail Mixes",
+   "foodCategory": "Butter & Spread",
+   "householdServingFullText": "1 Tbsp",
+   "servingSize": 14.0,
+   "servingSizeUnit": "g",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 78.6
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 714
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 600
+    }
+   ]
+  },
+  {
+   "fdcId": 1932883,
+   "description": "BUTTER",
+   "dataType": "Branded",
+   "brandOwner": "Turner & Pease Company",
+   "foodCategory": "Butter & Spread",
+   "householdServingFullText": "1 Tbsp",
+   "servingSize": 14.0,
+   "servingSizeUnit": "g",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 78.6
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 714
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 643
+    }
+   ]
+  },
+  {
+   "fdcId": 2070614,
+   "description": "BUTTER",
+   "dataType": "Branded",
+   "brandOwner": "Humpty Dumpty Eggs, Inc.",
+   "foodCategory": "Butter & Spread",
+   "householdServingFullText": "1 Tbsp",
+   "servingSize": 14.0,
+   "servingSizeUnit": "g",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 78.6
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 714
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 643
+    }
+   ]
+  },
+  {
+   "fdcId": 2094280,
+   "description": "BUTTER",
+   "dataType": "Branded",
+   "brandOwner": "Prairie Farms Dairy, Inc.",
+   "foodCategory": "Butter & Spread",
+   "householdServingFullText": "1 Tbsp",
+   "servingSize": 14.0,
+   "servingSizeUnit": "g",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 7.14
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 78.6
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 714
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 679
+    }
+   ]
+  },
+  {
+   "fdcId": 2055697,
+   "description": "BUTTER",
+   "dataType": "Branded",
+   "brandOwner": "Dean Foods Company",
+   "foodCategory": "Butter & Spread",
+   "householdServingFullText": "1 Tbsp",
+   "servingSize": 14.0,
+   "servingSizeUnit": "g",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 78.6
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 714
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 643
+    }
+   ]
+  },
+  {
+   "fdcId": 440079,
+   "description": "BUTTER",
+   "dataType": "Branded",
+   "brandOwner": "Land O'Lakes, Inc.",
+   "foodCategory": "Butter & Spread",
+   "householdServingFullText": "1 Tbsp",
+   "servingSize": 14.0,
+   "servingSizeUnit": "g",
+   "foodNutrients": [
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 78.6
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 714
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 643
+    }
+   ]
+  },
+  {
+   "fdcId": 2378745,
+   "description": "BUTTER",
+   "dataType": "Branded",
+   "brandOwner": "Gracie's Enterprises Ltd",
+   "foodCategory": "Butter & Spread",
+   "householdServingFullText": "1 Tbsp",
+   "servingSize": 14.0,
+   "servingSizeUnit": "g",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 78.6
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 714
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 643
+    }
+   ]
+  },
+  {
+   "fdcId": 1884291,
+   "description": "BUTTER",
+   "dataType": "Branded",
+   "brandOwner": "Shullsburg Creamery II, LLC",
+   "foodCategory": "Butter & Spread",
+   "householdServingFullText": "1 Tbsp",
+   "servingSize": 14.0,
+   "servingSizeUnit": "g",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 78.6
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 714
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 643
+    }
+   ]
+  },
+  {
+   "fdcId": 2037166,
+   "description": "BUTTER",
+   "dataType": "Branded",
+   "brandOwner": "Prosperity Organic Foods",
+   "foodCategory": "Butter & Spread",
+   "householdServingFullText": "1 tbsp",
+   "servingSize": 14.0,
+   "servingSizeUnit": "g",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 64.3
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 571
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 571
+    }
+   ]
+  },
+  {
+   "fdcId": 2012863,
+   "description": "BUTTER",
+   "dataType": "Branded",
+   "brandOwner": "Emixshow Magazine, Inc.",
+   "foodCategory": "Butter & Spread",
+   "householdServingFullText": "1 Tbsp",
+   "servingSize": 15.0,
+   "servingSizeUnit": "g",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 93.3
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 800
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 167
+    }
+   ]
+  },
+  {
+   "fdcId": 2061630,
+   "description": "BUTTER",
+   "dataType": "Branded",
+   "brandOwner": "Milk Products Holdings (North America) Inc.",
+   "foodCategory": "Butter & Spread",
+   "householdServingFullText": "1 Tbsp",
+   "servingSize": 14.0,
+   "servingSizeUnit": "g",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 78.6
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 714
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 571
+    }
+   ]
+  },
+  {
+   "fdcId": 2370448,
+   "description": "BUTTER",
+   "dataType": "Branded",
+   "brandOwner": "Bunker Hill Cheese Company Inc.",
+   "foodCategory": "Butter & Spread",
+   "householdServingFullText": "1 Tbsp",
+   "servingSize": 14.0,
+   "servingSizeUnit": "g",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 78.6
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 714
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 821
+    }
+   ]
+  },
+  {
+   "fdcId": 171314,
+   "description": "Butter, Clarified butter (ghee)",
+   "dataType": "SR Legacy",
+   "foodCategory": "Dairy and Egg Products",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "kJ",
+     "value": 3770.0
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 100
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 900
+    }
+   ]
+  },
+  {
+   "fdcId": 2710302,
+   "description": "Fruit butter",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Jams, syrups, toppings",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 0.39
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 0.3
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 42.47
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 173
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 1.5
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 15
+    }
+   ]
+  },
+  {
+   "fdcId": 2710156,
+   "description": "Butter, tub",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Butter and animal fats",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 0.49
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 78.3
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 731
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 583
+    }
+   ]
+  },
+  {
+   "fdcId": 2710157,
+   "description": "Butter, light",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Butter and animal fats",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 3.3
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 55.1
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 499
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 450
+    }
+   ]
+  },
+  {
+   "fdcId": 2707533,
+   "description": "Almond butter",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Nuts and seeds",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 20.67
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 52.72
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 21.11
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 641
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 9.6
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 232
+    }
+   ]
+  },
+  {
+   "fdcId": 2710154,
+   "description": "Butter, NFS",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Butter and animal fats",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 0.85
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 82.2
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0.06
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 743
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 524
+    }
+   ]
+  }
+ ],
+ "fish": [
+  {
+   "fdcId": 174195,
+   "description": "Fish, fish sticks, frozen, prepared",
+   "dataType": "SR Legacy",
+   "foodCategory": "Finfish and Shellfish Products",
+   "foodNutrients": [
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 16.2
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 21.7
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 277
+    },
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 11.0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "kJ",
+     "value": 1160.0
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 1.5
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 402
+    }
+   ]
+  },
+  {
+   "fdcId": 171606,
+   "description": "Fish broth",
+   "dataType": "SR Legacy",
+   "foodCategory": "Soups, Sauces, and Gravies",
+   "foodNutrients": [
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 0.6
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0.4
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 16.0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "kJ",
+     "value": 67.0
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 2.0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 200
+    }
+   ]
+  },
+  {
+   "fdcId": 2706460,
+   "description": "Fish curry",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Seafood mixed dishes",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 4.94
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 5.42
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 6.65
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 93
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 1.4
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 351
+    }
+   ]
+  },
+  {
+   "fdcId": 2706457,
+   "description": "Fish sauce",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Soy-based condiments",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 5.06
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 0.01
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 3.64
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 35
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 7851
+    }
+   ]
+  },
+  {
+   "fdcId": 2706232,
+   "description": "Fish, anchovy",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Fish",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 28.89
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 9.71
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 210
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 3668
+    }
+   ]
+  },
+  {
+   "fdcId": 2706229,
+   "description": "Fish, canned",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Fish",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 23.19
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 6.3
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 156
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 379
+    }
+   ]
+  },
+  {
+   "fdcId": 2706233,
+   "description": "Fish, carp",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Fish",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 19.97
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 10.72
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 7.79
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 213
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.3
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 314
+    }
+   ]
+  },
+  {
+   "fdcId": 2706246,
+   "description": "Fish, croaker",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Fish",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 19.92
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 8.17
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 7.79
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 189
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.3
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 322
+    }
+   ]
+  },
+  {
+   "fdcId": 2706247,
+   "description": "Fish, eel",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Fish",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 20.61
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 17.07
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 7.79
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 273
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.3
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 317
+    }
+   ]
+  },
+  {
+   "fdcId": 2706260,
+   "description": "Fish, halibut",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Fish",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 20.73
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 6.24
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 7.79
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 175
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.3
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 334
+    }
+   ]
+  },
+  {
+   "fdcId": 2706261,
+   "description": "Fish, herring",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Fish",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 20.1
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 14.32
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 7.79
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 245
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.3
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 357
+    }
+   ]
+  },
+  {
+   "fdcId": 2706269,
+   "description": "Fish, mullet",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Fish",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 21.56
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 8.82
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 7.79
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 202
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.3
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 331
+    }
+   ]
+  },
+  {
+   "fdcId": 2706224,
+   "description": "Fish, NFS",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Fish",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 19.32
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 14.52
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 6.64
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 238
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.3
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 350
+    }
+   ]
+  },
+  {
+   "fdcId": 2706262,
+   "description": "Fish, pickled",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Fish",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 14.19
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 18
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 9.64
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 262
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 870
+    }
+   ]
+  },
+  {
+   "fdcId": 2706276,
+   "description": "Fish, pike",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Fish",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 21.47
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 5.58
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 7.79
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 172
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.3
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 304
+    }
+   ]
+  },
+  {
+   "fdcId": 2706223,
+   "description": "Fish, raw",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Fish",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 17.22
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 2.34
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 94
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 83
+    }
+   ]
+  },
+  {
+   "fdcId": 2706300,
+   "description": "Fish, shark",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Fish",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 23.27
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 9.58
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 7.79
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 216
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.3
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 346
+    }
+   ]
+  },
+  {
+   "fdcId": 2706230,
+   "description": "Fish, smoked",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Fish",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 25.23
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 0.96
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 116
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 763
+    }
+   ]
+  },
+  {
+   "fdcId": 2706283,
+   "description": "Fish, snapper",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Fish",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 22.78
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 6.26
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 7.79
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 185
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.3
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 330
+    }
+   ]
+  },
+  {
+   "fdcId": 2706231,
+   "description": "Fish, stick",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Fish",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 11.01
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 16.23
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 21.66
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 277
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 1.5
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 402
+    }
+   ]
+  }
+ ],
+ "beans": [
+  {
+   "fdcId": 1886220,
+   "description": "BEANS",
+   "dataType": "Branded",
+   "brandOwner": "Gulf Rice Milling, Inc.",
+   "foodCategory": "Vegetable and Lentil Mixes",
+   "householdServingFullText": "0.25 cup",
+   "servingSize": 50.0,
+   "servingSizeUnit": "g",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 22.0
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 3.0
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 70.0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 340
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 26.0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 10.0
+    }
+   ]
+  },
+  {
+   "fdcId": 2707400,
+   "description": "Bean dip, made with refried beans",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Dips, gravies, other sauces",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 5.44
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 3.7
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 15.89
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 119
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 4.9
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 443
+    }
+   ]
+  },
+  {
+   "fdcId": 2707428,
+   "description": "Bean chips",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Tortilla, corn, other chips",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 14.6
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 21.58
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 53.12
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 448
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 9.7
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 410
+    }
+   ]
+  },
+  {
+   "fdcId": 2707453,
+   "description": "Soup, bean",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Soups, broth-based",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 3.76
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 0.76
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 11.62
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 67
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 4
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 244
+    }
+   ]
+  },
+  {
+   "fdcId": 2710009,
+   "description": "Bean salad, yellow and/or green string beans",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Coleslaw, non-lettuce salads",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 3.52
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 5
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 13
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 109
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 3.4
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 266
+    }
+   ]
+  },
+  {
+   "fdcId": 2707390,
+   "description": "Baked beans",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Beans, peas, legumes",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 4.52
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 0.89
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 21.57
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 105
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 4.4
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 391
+    }
+   ]
+  },
+  {
+   "fdcId": 2707396,
+   "description": "Refried beans",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Beans, peas, legumes",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 4.98
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 2.01
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 13.55
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 90
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 3.7
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 370
+    }
+   ]
+  },
+  {
+   "fdcId": 2707409,
+   "description": "Bean cake",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Bean, pea, legume dishes",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 5.8
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 21.41
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 49.88
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 414
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 3
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 186
+    }
+   ]
+  },
+  {
+   "fdcId": 2707405,
+   "description": "Beans and franks",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Beans, peas, legumes",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 6.74
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 5.22
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 17.29
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 138
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 3.3
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 438
+    }
+   ]
+  },
+  {
+   "fdcId": 2707347,
+   "description": "Beans, NFS",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Beans, peas, legumes",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 8.34
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 7.08
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 23.78
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 189
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 8.3
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 217
+    }
+   ]
+  },
+  {
+   "fdcId": 2708588,
+   "description": "Chimichanga, with beans",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Other Mexican mixed dishes",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 7.36
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 13.78
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 26.81
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 260
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 4.4
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 409
+    }
+   ]
+  },
+  {
+   "fdcId": 2708584,
+   "description": "Gordita, with beans",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Other Mexican mixed dishes",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 5.83
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 11.81
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 20.17
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 207
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 2.9
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 365
+    }
+   ]
+  },
+  {
+   "fdcId": 2708582,
+   "description": "Nachos, with beans",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Nachos",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 4.62
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 11.37
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 23.28
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 210
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 2.5
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 434
+    }
+   ]
+  },
+  {
+   "fdcId": 2707406,
+   "description": "Pork and beans",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Beans, peas, legumes",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 4.52
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 0.89
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 21.57
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 105
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 4.4
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 391
+    }
+   ]
+  },
+  {
+   "fdcId": 2708609,
+   "description": "Pupusa, with beans",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Other Mexican mixed dishes",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 5.59
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 9.01
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 31.5
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 229
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 5.8
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 305
+    }
+   ]
+  },
+  {
+   "fdcId": 169885,
+   "description": "Beans, liquid from stewed kidney beans",
+   "dataType": "SR Legacy",
+   "foodCategory": "Legumes and Legume Products",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 1.8
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "kJ",
+     "value": 197
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.1
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 2.0
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 3.2
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 2.8
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 47.0
+    }
+   ]
+  },
+  {
+   "fdcId": 2709769,
+   "description": "Green beans, raw",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "String beans",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 1.97
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 0.28
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 7.41
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 40
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 3
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 0
+    }
+   ]
+  },
+  {
+   "fdcId": 2707368,
+   "description": "Lima beans, NFS",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Beans, peas, legumes",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 7.25
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 6.86
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 19.4
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 165
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 6.5
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 218
+    }
+   ]
+  },
+  {
+   "fdcId": 2710309,
+   "description": "Bean paste, sweetened",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Jams, syrups, toppings",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 6.22
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 0.47
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 49.98
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 226
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 5.3
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 124
+    }
+   ]
+  },
+  {
+   "fdcId": 2706425,
+   "description": "Chili with chicken and beans",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Poultry mixed dishes",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 10.2
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 2.08
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 10.25
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 99
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 3
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 341
+    }
+   ]
+  }
+ ],
+ "pork": [
+  {
+   "fdcId": 1945366,
+   "description": "PORK",
+   "dataType": "Branded",
+   "brandOwner": "Clyde Evans Smokehouse",
+   "foodCategory": "Canned Meat",
+   "householdServingFullText": "3 ONZ",
+   "servingSize": 85.0,
+   "servingSizeUnit": "g",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 21.2
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 4.12
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 1.18
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 118
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 212
+    }
+   ]
+  },
+  {
+   "fdcId": 2135930,
+   "description": "PORK",
+   "dataType": "Branded",
+   "brandOwner": "Keystone Brand Meats Inc",
+   "foodCategory": "Canned Meat",
+   "householdServingFullText": "2 ONZ",
+   "servingSize": 56.0,
+   "servingSizeUnit": "g",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 21.4
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 4.46
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 125
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 214
+    }
+   ]
+  },
+  {
+   "fdcId": 2157167,
+   "description": "PORK",
+   "dataType": "Branded",
+   "brandOwner": "Pacific Island Secialties",
+   "foodCategory": "Seasoning Mixes, Salts, Marinades & Tenderizers",
+   "householdServingFullText": "1/4 Tbsp",
+   "servingSize": 0.8999999761581421,
+   "servingSizeUnit": "g",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 111
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 556
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 0.0
+    }
+   ]
+  },
+  {
+   "fdcId": 2038521,
+   "description": "PORK",
+   "dataType": "Branded",
+   "brandOwner": "Keystone Brand Meats Inc",
+   "foodCategory": "Canned Meat",
+   "householdServingFullText": "2 ONZ",
+   "servingSize": 56.0,
+   "servingSizeUnit": "g",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 21.4
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 4.46
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 125
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 214
+    }
+   ]
+  },
+  {
+   "fdcId": 2093406,
+   "description": "PORK",
+   "dataType": "Branded",
+   "brandOwner": "Taylor Fresh Foods, Inc.",
+   "foodCategory": "Other Deli",
+   "householdServingFullText": "1 CONTAINER, AS PACKAGED",
+   "servingSize": 234.0,
+   "servingSizeUnit": "g",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 6.41
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 2.14
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 18.8
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 128
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 1.7
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 1180.0
+    }
+   ]
+  },
+  {
+   "fdcId": 169157,
+   "description": "Pork, pickled pork hocks",
+   "dataType": "SR Legacy",
+   "foodCategory": "Pork Products",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 19.1
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "kJ",
+     "value": 716
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 1050.0
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 10.5
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 171
+    }
+   ]
+  },
+  {
+   "fdcId": 168287,
+   "description": "Pork, cured, salt pork, raw",
+   "dataType": "SR Legacy",
+   "foodCategory": "Pork Products",
+   "foodNutrients": [
+    {
+     "nutrientName": "Energy",
+     "unitName": "kJ",
+     "value": 3130.0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 2680.0
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 5.05
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 80.5
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 748
+    }
+   ]
+  },
+  {
+   "fdcId": 2705895,
+   "description": "Pork, cracklings",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Pork",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 45.03
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 41.74
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 569
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 1289
+    }
+   ]
+  },
+  {
+   "fdcId": 2705901,
+   "description": "Pork, belly",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Pork",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 26.58
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 32.24
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 404
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 448
+    }
+   ]
+  },
+  {
+   "fdcId": 2705897,
+   "description": "Pork, bones",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Pork",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 26.15
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 13.78
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 236
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 364
+    }
+   ]
+  },
+  {
+   "fdcId": 2705864,
+   "description": "Pork, carnitas",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Pork",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 24.57
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 18.33
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 271
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 440
+    }
+   ]
+  },
+  {
+   "fdcId": 2705896,
+   "description": "Pork, ears",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Pork",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 26.15
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 13.78
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 236
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 364
+    }
+   ]
+  },
+  {
+   "fdcId": 2705863,
+   "description": "Pork, ground",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Pork",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 26.92
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 21.22
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 299
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 395
+    }
+   ]
+  },
+  {
+   "fdcId": 2705862,
+   "description": "Pork, NFS",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Pork",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 27.14
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 8.67
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 192
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 348
+    }
+   ]
+  },
+  {
+   "fdcId": 2705894,
+   "description": "Pork, ribs",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Pork",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 16.22
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 15.12
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 12.13
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 254
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.3
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 678
+    }
+   ]
+  },
+  {
+   "fdcId": 2705882,
+   "description": "Pork, roast",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Pork",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 26.63
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 7.49
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 181
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 353
+    }
+   ]
+  },
+  {
+   "fdcId": 2705877,
+   "description": "Pork, tenderloin",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Pork",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 24.65
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 3.38
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0.09
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 134
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 339
+    }
+   ]
+  },
+  {
+   "fdcId": 173856,
+   "description": "Bologna, pork",
+   "dataType": "SR Legacy",
+   "foodCategory": "Sausages and Luncheon Meats",
+   "foodNutrients": [
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 907
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 19.9
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0.73
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 247
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.0
+    },
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 15.3
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "kJ",
+     "value": 1030.0
+    }
+   ]
+  },
+  {
+   "fdcId": 2708567,
+   "description": "Enchilada, pork",
+   "dataType": "Survey (FNDDS)",
+   "foodCategory": "Other Mexican mixed dishes",
+   "foodNutrients": [
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 9.54
+    },
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 10.74
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 14.64
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 192
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 2.3
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 456
+    }
+   ]
+  },
+  {
+   "fdcId": 172964,
+   "description": "Frankfurter, pork",
+   "dataType": "SR Legacy",
+   "foodCategory": "Sausages and Luncheon Meats",
+   "foodNutrients": [
+    {
+     "nutrientName": "Total lipid (fat)",
+     "unitName": "G",
+     "value": 23.7
+    },
+    {
+     "nutrientName": "Carbohydrate, by difference",
+     "unitName": "G",
+     "value": 0.28
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "KCAL",
+     "value": 269
+    },
+    {
+     "nutrientName": "Protein",
+     "unitName": "G",
+     "value": 12.8
+    },
+    {
+     "nutrientName": "Fiber, total dietary",
+     "unitName": "G",
+     "value": 0.1
+    },
+    {
+     "nutrientName": "Sodium, Na",
+     "unitName": "MG",
+     "value": 816
+    },
+    {
+     "nutrientName": "Energy",
+     "unitName": "kJ",
+     "value": 1130.0
+    }
+   ]
+  }
+ ]
+}

@@ -21,6 +21,7 @@ import {
   LeaderboardSummary,
 } from './client-ai-context.types';
 import { everyoneInBlockWith, notInBlockWith } from '../messaging/block-pair';
+import { authorReadableBy } from '../common/count-rule';
 
 // Token-budget knobs. Picked so the assembled context stays well under
 // ~3KB of JSON in the typical case (a 7-day, 5-workout user). Exported
@@ -196,7 +197,15 @@ export class ClientAIContextService {
       user.coach_id
         ? this.prisma.coachMessage.findMany({
             // FX-1141 (Sol B2): none from a chat in a block either way.
-            where: { coach_id: user.coach_id, client_id: userId, coach: notInBlockWith(userId) },
+            // ACTUAL-AUTHOR-READS-BE: and none by an author in a block with the
+            // client, as their chat shows it, before `take` (R-AAR-1: only the
+            // client's own blocks; a head <-> team coach block keeps the words).
+            where: {
+              coach_id: user.coach_id,
+              client_id: userId,
+              coach: notInBlockWith(userId),
+              AND: [authorReadableBy(userId)],
+            },
             orderBy: { created_at: 'desc' },
             take: 5,
           })
