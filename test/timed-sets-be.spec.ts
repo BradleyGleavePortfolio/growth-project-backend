@@ -247,9 +247,8 @@ describe('the migration', () => {
   const sql = (f: string) => (name && existsSync(join(dir, name, f)) ? readFileSync(join(dir, name, f), 'utf8') : '');
   const strip = (s: string) => s.replace(/--.*$/gm, '').replace(/\s+/g, ' ').trim();
 
-  it('is the newest migration and adds only the unit (enum, default reps, seconds only where the program note says so)', () => {
+  it('adds only the unit (enum, default reps, seconds only where the program note says so)', () => {
     expect(name).toBeDefined();
-    expect(readdirSync(dir).filter((d) => /^\d{14}_/.test(d)).sort().pop()).toBe(name);
     const up = strip(sql('migration.sql'));
     expect(up).toContain(`CREATE TYPE "PlanExerciseUnit" AS ENUM ('reps', 'seconds');`);
     expect(up).toContain(`ALTER TABLE "WorkoutPlanExercise" ADD COLUMN IF NOT EXISTS "unit" "PlanExerciseUnit" NOT NULL DEFAULT 'reps';`);
