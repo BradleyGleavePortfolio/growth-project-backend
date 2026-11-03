@@ -42,13 +42,14 @@ jest.mock('@supabase/supabase-js', () => ({
 }));
 
 type Surface = 'signup' | 'google' | 'apple' | 'role' | 'role-alias' | 'attach-invite' | 'attach-coach' | 'redeem' | 'check';
-type Cause = 'ok' | 'coach-blocks' | 'buyer-blocks' | 'deletion-lock' | 'soft-deleted' | 'nameless' | 'empty-name';
+type Cause = 'ok' | 'coach-blocks' | 'buyer-blocks' | 'deletion-lock' | 'soft-deleted' | 'empty-name';
 type Body = Record<string, unknown>;
 const SURFACES: Surface[] = ['signup', 'google', 'apple', 'role', 'role-alias', 'attach-invite', 'attach-coach', 'redeem', 'check'];
-const CAUSES: Cause[] = ['coach-blocks', 'buyer-blocks', 'deletion-lock', 'soft-deleted', 'nameless', 'empty-name'];
+const CAUSES: Cause[] = ['coach-blocks', 'buyer-blocks', 'deletion-lock', 'soft-deleted', 'empty-name'];
 const KINDS = ['profile', 'row'] as const;
 const KEY = '11111111-1111-4111-8111-111111111111';
 const MESSAGE = 'This coach is not currently accepting new clients.';
+const COACHLESS_MESSAGE = 'This coach is not taking new clients right now. Try again later or use another coach code.';
 const AUTH_SURFACES: Surface[] = ['signup', 'google', 'apple'];
 const paths: Record<Surface, string> = {
   signup: 'auth/signup-with-code', google: 'auth/google', apple: 'auth/apple',
@@ -57,13 +58,13 @@ const paths: Record<Surface, string> = {
   redeem: 'coachless/coach-code/redeem', check: 'coachless/coach-code/check',
 };
 
-async function fixture(cause: Cause, kind: typeof KINDS[number], amount = 4900) {
+async function fixture(cause: Cause, kind: typeof KINDS[number], amount = 4900, seedPackage = true) {
   const db = buildAttachDb();
   for (const model of ['coachPackage', 'clientPurchase', 'coachCodeRedemption', 'featuredCoachConfig', 'userProfile', 'block']) {
     db.model(model);
   }
-  db.listRelations.blocks_as_blocker = (row) => db.state.block.filter((b) => b.blocker_id === row.id);
-  db.listRelations.blocks_as_blocked = (row) => db.state.block.filter((b) => b.blocked_id === row.id);
+  db.listRelations.blocks_set = (row) => db.state.block.filter((b) => b.blocker_id === row.id);
+  db.listRelations.blocks_received = (row) => db.state.block.filter((b) => b.blocked_id === row.id);
   db.relations.profile = (row) => db.state.userProfile.find((p) => p.user_id === row.id) ?? null;
   db.relations.coach_profile = (row) => db.state.coachProfile.find((p) => p.user_id === row.id) ?? null;
   db.relations.coach = (row) => db.state.user.find((u) => u.id === row.coach_id) ?? null;
@@ -75,7 +76,6 @@ async function fixture(cause: Cause, kind: typeof KINDS[number], amount = 4900) 
   if (cause === 'buyer-blocks') db.state.block.push({ blocker_id: 'buyer', blocked_id: COACH_B });
   if (cause === 'deletion-lock') coach.deletion_scheduled_at = new Date('2026-10-01');
   if (cause === 'soft-deleted') coach.deleted_at = new Date('2026-10-01');
-  if (cause === 'nameless') coach.name = null;
   if (cause === 'empty-name') coach.name = '';
   addUser(db, { id: 'buyer', email: 'buyer@example.test' });
   db.state.user.find((u) => u.id === 'buyer')!.supabase_id = 'supa-buyer';
@@ -88,7 +88,7 @@ async function fixture(cause: Cause, kind: typeof KINDS[number], amount = 4900) 
     is_active: true, archived_at: null, published_at: new Date('2026-10-01'),
     created_at: new Date('2026-10-01'),
   };
-  db.state.coachPackage.push(pkg);
+  if (seedPackage) db.state.coachPackage.push(pkg);
   if (kind === 'profile') Object.assign(db.state.coachProfile.find((p) => p.user_id === COACH_B)!, {
     invite_code_package_id: pkg.id, invite_code_grant_mode: amount === 0 ? 'free' : 'none',
   });
@@ -183,13 +183,13 @@ describe('LS-1210 independent HTTP contract', () => {
           expect(out.body).not.toHaveProperty('invite_grant');
         } else if (surface === 'check') {
           expect(out.status).toBe(200);
-          expect(out.body).toMatchObject({ valid: false, code: 'coach_not_accepting', message: MESSAGE });
+          expect(out.body).toMatchObject({ valid: false, code: 'coach_not_accepting', message: COACHLESS_MESSAGE });
         } else {
           expect(out.status).toBe(surface === 'redeem' ? 409 : 400);
           expect(out.body).toMatchObject({
             code: surface === 'redeem' ? 'coach_not_accepting' : 'coach_not_accepting_clients',
             message: surface === 'redeem'
-              ? 'This coach is not taking new clients right now. Try again later or use another coach code.'
+              ? COACHLESS_MESSAGE
               : MESSAGE,
             request_id: 'ls1210-http',
           });
@@ -202,6 +202,19 @@ describe('LS-1210 independent HTTP contract', () => {
         expect(JSON.stringify(f.db.state.coachPackage)).toBe(initialPackage);
         expect(JSON.stringify(out.body)).not.toMatch(/blocker_id|blocked_id|deletion_scheduled_at|deleted_at|nameless/);
       });
+    });
+
+    it.each(SURFACES)('%s: a refused coach with no package never publishes Getting started', async (surface) => {
+      const f = await fixture('coach-blocks', kind, 4900, false);
+      active = f.app;
+      const out = await f.post(surface);
+      const code = AUTH_SURFACES.includes(surface) ? out.body.invite_attach_error : out.body.code;
+      expect(code).toBe(surface === 'check' || surface === 'redeem'
+        ? 'coach_not_accepting' : 'coach_not_accepting_clients');
+      expect(f.db.state.coachPackage).toEqual([]);
+      expect(f.db.state.clientPurchase).toEqual([]);
+      expect(f.db.state.inviteRedemption).toEqual([]);
+      expect(f.db.state.user.find((u) => u.id === 'buyer')!.coach_id).toBeNull();
     });
 
     it.each(SURFACES)('%s: an allowed paid join still supplies checkout without attaching', async (surface) => {
