@@ -62,15 +62,22 @@ function readPolicy(source) {
   const scan = policy.scan;
   if (
     Object.keys(scan).sort().join() !==
-    'excludeSegments,excludeSuffixes,includeExtensions,includeFiles,includeRoots'
+    'excludeRootGlobs,excludeSegments,excludeSuffixes,includeExtensions,includeFiles,includeRoots'
   )
-    fail('policy must provide the five selector arrays');
+    fail('policy must provide the six selector arrays');
   for (const values of Object.values(scan))
     if (!Array.isArray(values) || values.some((value) => typeof value !== 'string' || !value))
       fail('unusable policy selector');
   if (!scan.includeExtensions.length || !(scan.includeRoots.length + scan.includeFiles.length)) {
     fail('policy needs extensions and a positive path selector');
   }
+  // Root globs use the build's own `<root>**/*<suffix>` form: one root, any
+  // depth, a non-empty name suffix. Anything else fails closed.
+  const excludeRootGlobs = scan.excludeRootGlobs.map((glob) => {
+    const match = /^([^*]+\/)\*\*\/\*([^*/]+)$/.exec(glob);
+    if (!match) fail(`unsupported exclude glob: ${glob}`);
+    return { root: match[1], suffix: match[2] };
+  });
   const tokens = policy.tokens.map(({ name, pattern, flags = '' }) => {
     if (typeof name !== 'string' || !name || typeof pattern !== 'string' || !pattern)
       fail('invalid token name or pattern');
@@ -88,13 +95,14 @@ function readPolicy(source) {
   const suppressed = new Set((policy.suppressions || []).map((entry) => entry.token));
   if ([...suppressed].some((token) => !names.has(token)))
     fail('suppression names an unknown token');
-  return { scan, tokens, suppressed };
+  return { scan: { ...scan, excludeRootGlobs }, tokens, suppressed };
 }
 
 function inScope(path, scan) {
   if (
     scan.excludeSegments.some((part) => path.startsWith(part) || path.includes(`/${part}`)) ||
-    scan.excludeSuffixes.some((suffix) => path.endsWith(suffix))
+    scan.excludeSuffixes.some((suffix) => path.endsWith(suffix)) ||
+    scan.excludeRootGlobs.some(({ root, suffix }) => path.startsWith(root) && path.endsWith(suffix))
   )
     return false;
   return (
