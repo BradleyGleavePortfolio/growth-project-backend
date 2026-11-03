@@ -2919,7 +2919,7 @@ model WorkoutPlanExercise {
   exercise_external_id     String
   order                    Int
   sets                     Int
-  // Dual-purpose: rep count (e.g. 12) or time-based duration (e.g. 60 seconds).
+  // The count, read in `unit`: a rep count (e.g. 12) or a time in seconds (e.g. 60).
   reps_or_duration_seconds Int
   weight_lbs               Float?
   rest_seconds             Int?
@@ -2929,6 +2929,8 @@ model WorkoutPlanExercise {
   archived_at              DateTime?
   // C1V2-C1: the coach's chosen swaps (ids as exercise_external_id holds them), first choice first.
   alternative_external_ids String[]    @default([])
+  // TIMED-SETS-BE: whether reps_or_duration_seconds is reps or seconds. Rows saved without one are reps.
+  unit                     PlanExerciseUnit @default(reps)
 
   // (workout_plan_id, order) uniqueness is a *partial* unique index
   // declared in raw SQL (WHERE archived_at IS NULL) — Prisma cannot
@@ -2936,6 +2938,12 @@ model WorkoutPlanExercise {
   @@index([workout_plan_id])
   @@index([workout_plan_id, archived_at])
   @@index([exercise_external_id])
+}
+
+/// TIMED-SETS-BE: what a plan exercise's number counts.
+enum PlanExerciseUnit {
+  reps
+  seconds
 }
 
 model ClientWorkoutAssignment {

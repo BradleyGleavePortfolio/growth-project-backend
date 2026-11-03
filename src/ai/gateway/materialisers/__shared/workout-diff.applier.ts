@@ -46,7 +46,7 @@ import {
   planMetaOpChangesAField,
   updateExerciseOpChangesAField,
 } from './workout-diff.types';
-import { alternativesOf } from '../../../../workout-builder/plan-exercise-fields';
+import { alternativesOf, unitOf } from '../../../../workout-builder/plan-exercise-fields';
 
 /**
  * Thrown when a diff op is internally consistent (passes zod) but cannot be
@@ -84,6 +84,7 @@ function cloneExercise(e: PlanExerciseSnapshot): PlanExerciseSnapshot {
     superset_group_id: e.superset_group_id,
     notes: e.notes,
     alternative_external_ids: alternativesOf(e),
+    unit: unitOf(e),
   };
 }
 
@@ -133,6 +134,7 @@ function applyAdd(
     order: exercises.length,
     sets: op.sets,
     reps_or_duration_seconds: op.reps_or_duration_seconds,
+    unit: unitOf(op),
     weight_lbs: op.weight_lbs ?? null,
     rest_seconds: op.rest_seconds ?? null,
     superset_group_id: op.superset_group_id ?? null,
@@ -182,6 +184,7 @@ function applyUpdate(
     row.superset_group_id = op.superset_group_id;
   }
   if (op.notes !== undefined) row.notes = op.notes;
+  if (op.unit !== undefined) row.unit = op.unit;
   // No structural change → order is unaffected, but renumber is cheap and keeps
   // the post-condition (I2) unconditional. Position is unchanged so orders are
   // identical; we still call it for uniformity.

@@ -16,6 +16,7 @@ import {
   type ProgramSelection,
   type WhyTemplates,
 } from './program-rules';
+import { unitOf, type PlanExerciseUnitValue } from '../workout-builder/plan-exercise-fields';
 
 export interface ExerciseRow {
   exercise_external_id: string;
@@ -26,6 +27,15 @@ export interface ExerciseRow {
   rest_seconds: number | null;
   superset_group_id: string | null;
   notes: string | null;
+}
+
+/**
+ * TIMED-SETS-BE: a consultation program row's unit is its note. Every row's
+ * note starts "REPS." or "SECONDS."; the home equipment swap can change both
+ * the exercise and the note, so the writer reads it from the final note only.
+ */
+export function consultationUnit(row: { notes: string | null }): PlanExerciseUnitValue {
+  return unitOf({ notes: row.notes });
 }
 
 export interface PlanData {
@@ -372,7 +382,7 @@ export function materialiseClientPlans(
       if (patch) Object.assign(row, patch);
       if (overlay && row.notes && WORK_RE.test(row.notes)) {
         row.sets = overlay.native_patch.sets;
-        const timed = row.notes.startsWith('SECONDS.');
+        const timed = consultationUnit(row) === 'seconds';
         row.reps_or_duration_seconds = Math.min(
           row.reps_or_duration_seconds,
           timed ? overlay.max_duration_seconds : overlay.max_reps,

@@ -4,6 +4,8 @@
  * is derived by comparing each snapshot with its direct predecessor. Only
  * counts and the cause are used: no notes, no client data, no free text.
  */
+import { unitOf } from './plan-exercise-fields';
+
 export const REVISIONS_LIST_DEFAULT_LIMIT = 20;
 export const REVISIONS_LIST_MAX_LIMIT = 50;
 
@@ -40,7 +42,8 @@ function readRows(json: unknown): SnapshotRow[] {
   );
 }
 
-const rowKey = (r: SnapshotRow): string => COMPARED.map((k) => String(r[k] ?? null)).join('|');
+// TIMED-SETS-BE: the unit counts too, read as unitOf reads a row frozen before units.
+const rowKey = (r: SnapshotRow): string => [...COMPARED.map((k) => String(r[k] ?? null)), unitOf(r)].join('|');
 
 /** "Edited: 1 added, 2 changed. 6 exercises." Rows match by exercise id, pair by pair. */
 export function summariseRevision(cause: string, before: SnapshotRow[] | null, after: SnapshotRow[]): string {

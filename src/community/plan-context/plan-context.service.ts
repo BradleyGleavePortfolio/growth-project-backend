@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import type { User } from '@prisma/client';
 import { PlanContextRepository } from './plan-context.repository';
+import { unitOf, type PlanExerciseUnitValue } from '../../workout-builder/plan-exercise-fields';
 import {
   PlanContextSnapshot,
   PlanContextSnapshotSchema,
@@ -130,6 +131,7 @@ export class PlanContextService {
           order: number;
           sets: number;
           reps_or_duration_seconds: number;
+          unit: PlanExerciseUnitValue;
         };
         if (query.exercise_id) {
           const row = await this.repo.findWorkoutPlanExercise(
@@ -143,6 +145,7 @@ export class PlanContextService {
             order: row.order,
             sets: row.sets,
             reps_or_duration_seconds: row.reps_or_duration_seconds,
+            unit: unitOf(row),
           };
         }
         return PlanContextSnapshotSchema.parse({

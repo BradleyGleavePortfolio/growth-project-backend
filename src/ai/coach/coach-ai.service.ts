@@ -34,6 +34,7 @@ import { applyProgramSafety, toInjuryAreas } from '../gateway/workout-builder/tr
 import { ConsentScope, ConsentService } from '../../consent/consent.service';
 import { coachSharingCheck } from '../../consent/coach-sharing-gate';
 import { lockClientsForDraftWrite } from '../../coach/moved-client-drafts';
+import { unitOf } from '../../workout-builder/plan-exercise-fields';
 
 /** B-872-SOL-H-131-1 — the Coach sharing switches a stored weekly insight can hold logs of. */
 const INSIGHT_SHARING_SCOPES: readonly string[] = [
@@ -645,6 +646,7 @@ export class CoachAIService {
             order: row.order,
             sets: row.sets,
             reps_or_duration_seconds: row.reps_or_duration_seconds,
+            unit: unitOf(row),
             weight_lbs: row.weight_lbs ?? undefined,
             rest_seconds: row.rest_seconds ?? undefined,
             superset_group_id: row.superset_group_id ?? undefined,

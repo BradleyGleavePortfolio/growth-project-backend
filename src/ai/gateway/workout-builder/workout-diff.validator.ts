@@ -96,7 +96,9 @@ function checkChange(op: WorkoutDiffOp, before: PlanExerciseSnapshot | null, ex:
   // U1: a workout name the client may see never carries a medical claim.
   if (op.kind === 'plan_meta' && op.name !== undefined && MEDICAL_CLAIM_PATTERN.test(op.name)) return 'Workout names cannot make medical claims.';
   if (op.kind !== 'add_exercise' && op.kind !== 'update_exercise') return null;
-  const timed = isTimed(ex, current);
+  // TIMED-SETS-BE: a unit the op or the row states is certain; the name guess stays for a row without one.
+  const unit = op.unit ?? (op.kind === 'update_exercise' && before?.unit === 'seconds' ? 'seconds' : undefined);
+  const timed = unit ? unit === 'seconds' : isTimed(ex, current);
   const err = boundsError(op, timed);
   if (err) return err;
   if (op.notes != null) op.notes = stripMedicalClaims(op.notes, B.notesMax) || null;
