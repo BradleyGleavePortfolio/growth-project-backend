@@ -58,10 +58,13 @@ if (!url && process.env.CI === 'true') {
     const update = (target: string) => asCoach((tx) => kind === 'swap'
       ? tx.$executeRaw`UPDATE "MealTemplate" SET "swap_template_ids" = ARRAY[${target}]::TEXT[] WHERE "id" = ${own}`
       : tx.$executeRaw`UPDATE "MealTemplate" SET "recipe_id" = ${target} WHERE "id" = ${own}`);
-    const visible = kind === 'swap'
-      ? await asCoach((tx) => tx.mealTemplate.count({ where: { id: foreignSwap } }))
-      : await asCoach((tx) => tx.recipe.count({ where: { id: foreignRecipe } }));
-    expect(visible).toBe(0);
+    if (kind === 'swap') {
+      expect(await asCoach((tx) => tx.mealTemplate.count({ where: { id: foreignSwap } }))).toBe(0);
+    } else {
+      // Recipe is server-only for API roles. Denied SELECT is the expected
+      // control, not a failure of this probe's foreign-link assertion.
+      await expect(asCoach((tx) => tx.recipe.count({ where: { id: foreignRecipe } }))).rejects.toThrow();
+    }
     expect(await update(kind === 'swap' ? ownSwap : ownRecipe)).toBe(1);
     await expect(update(kind === 'swap' ? foreignSwap : foreignRecipe)).rejects.toThrow();
   });
