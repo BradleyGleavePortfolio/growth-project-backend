@@ -208,9 +208,7 @@ const release = (): Run => {
   }, STEP_MS);
 
   it('two runs of the step at once add each missing food exactly once', async () => {
-    // FOOD-USDA-BE: foods 12-16, not 10-14: food 11 (Yogurt, plain, whole milk) has the name of a USDA Foundation food
-    // step 6 adds, and this step counts a shared row of the same name and brand as present (reported in the PR).
-    const gone = foods.slice(12, 17).map((f) => f.name);
+    const gone = foods.slice(10, 15).map((f) => f.name);
     await prisma.foodItem.deleteMany({ where: { created_by_user_id: null, name: { in: gone }, tags: { has: SEED_TAG } } });
     const step = () =>
       new Promise<Run>((resolve) => {
