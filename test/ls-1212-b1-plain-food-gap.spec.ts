@@ -16,7 +16,7 @@ const plainResponse: unknown[] = JSON.parse(
 );
 const catalog = parseUsdaFoods(
   readFileSync(join(__dirname, '..', 'prisma', 'data', 'usda-foods.jsonl.gz')),
-).foods
+)
   .filter((f) => /\boatmeal\b/i.test(f.name))
   .sort((a, b) => a.name.length - b.name.length || a.name.localeCompare(b.name))
   .slice(0, 40)
