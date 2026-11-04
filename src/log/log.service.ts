@@ -20,6 +20,20 @@ export class LogService {
   ) {}
 
   async logFood(userId: string, data: LogFoodDto) {
+    // R6 (LO-FOOD B6, LS-FOOD B3): a repeat of a keyed save whose answer was
+    // lost returns the stored entry and does nothing else — no food import, no
+    // second entry, no analytics event or meal_logged signal. Another
+    // person's key reads as not found (D2 below).
+    if (data.client_uuid) {
+      const earlier = await this.prisma.loggedFoodEntry.findUnique({
+        where: { client_uuid: data.client_uuid },
+        include: { food_item: true },
+      });
+      if (earlier) {
+        if (earlier.user_id !== userId) throw new NotFoundException('Entry not found');
+        return earlier;
+      }
+    }
     // Mobile client may send synthetic ids ("usda_123", "off_456") returned by food search.
     // Resolve them to real FoodItem.id via upsert-on-log so the FK below can't blow up.
     // Another person's custom food resolves as not found (UX-FOOD-PRIV-124).
@@ -49,14 +63,31 @@ export class LogService {
     // D2 (AUTHB-03): no key means a plain create. client_uuid is unique across
     // all users, so a shared fallback key (or another person's key) used to
     // return their entry and save nothing; such an entry is never returned.
-    const created = data.client_uuid
-      ? await this.prisma.loggedFoodEntry.upsert({
-          where: { client_uuid: data.client_uuid },
-          create: { ...entryData, client_uuid: data.client_uuid },
-          update: {}, // no-op if already exists — idempotent on retry
-          include: { food_item: true },
-        })
-      : await this.prisma.loggedFoodEntry.create({ data: entryData, include: { food_item: true } });
+    const write = () =>
+      data.client_uuid
+        ? this.prisma.loggedFoodEntry.upsert({
+            where: { client_uuid: data.client_uuid },
+            create: { ...entryData, client_uuid: data.client_uuid },
+            update: {}, // no-op if already exists — idempotent on retry
+            include: { food_item: true },
+          })
+        : this.prisma.loggedFoodEntry.create({ data: entryData, include: { food_item: true } });
+    let created: Awaited<ReturnType<typeof write>>;
+    try {
+      created = await write();
+    } catch (err) {
+      // FR-1198 (LO-1198 C1): two saves with one key at once both miss the
+      // read above, and the loser's insert hits the unique key (P2002). The
+      // loser answers with the stored entry, like the saved-meal route.
+      if (!data.client_uuid || (err as { code?: string } | null)?.code !== 'P2002') throw err;
+      const stored = await this.prisma.loggedFoodEntry.findUnique({
+        where: { client_uuid: data.client_uuid },
+        include: { food_item: true },
+      });
+      if (!stored) throw err;
+      if (stored.user_id !== userId) throw new NotFoundException('Entry not found');
+      return stored;
+    }
     if (created.user_id !== userId) throw new NotFoundException('Entry not found');
     this.analytics.capture(userId, Events.CLIENT_FOOD_LOGGED, {
       meal_type: data.meal_type,

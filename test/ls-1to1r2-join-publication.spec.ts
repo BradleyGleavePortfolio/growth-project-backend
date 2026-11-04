@@ -54,7 +54,7 @@ describe('LS-1TO1R2: every publisher obeys the named coaching rule', () => {
   it('a nameless coach code must not publish a fallback package when its grant is refused', async () => {
     const { db, invites } = await fixture('');
     await expect(invites.attachUserToCoachByCode('new-client', 'GP-AAAAAA'))
-      .rejects.toMatchObject({ response: { error: 'PACKAGE_NOT_FOUND' } });
+      .rejects.toMatchObject({ response: { code: 'coach_not_accepting_clients' } });
     expect(user(db, 'new-client').coach_id).toBeNull();
     expect(db.state.clientPurchase).toHaveLength(0);
     // The sale gate alone is insufficient: no ACTIVE, PUBLISHED row may survive.

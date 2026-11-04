@@ -9,8 +9,8 @@ import { SupabaseService } from '../supabase/supabase.service';
 import { AuditService, AuditAction } from '../audit/audit.service';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { ConsentScope, ConsentService } from '../consent/consent.service';
-import { assertPairOpen, inBlockWith } from '../messaging/block-pair';
-import { countedMessagesFor } from '../common/count-rule';
+import { assertPairOpen, everyoneInBlockWith, inBlockWith } from '../messaging/block-pair';
+import { authorReadableBy, countedMessagesFor } from '../common/count-rule';
 
 // V1 BFF service for the coach console. Returns enriched payloads documented
 // in tgp-coach-console/INTEGRATION_NOTES.md. OWNER callers bypass the coach
@@ -391,8 +391,10 @@ export class V1CoachService {
     // FX-1141 (Sol B2): a chat in a block either way opens empty, no draft.
     const closed = (await inBlockWith(this.prisma, caller.id, [clientId])).size > 0;
 
+    // ACTUAL-AUTHOR-READS-BE (LS-1197R2 B1): the list's author rule, so a row
+    // the list hid stays hidden here; the removed-row behaviour is unchanged.
     const messages = closed ? [] : await this.prisma.coachMessage.findMany({
-      where: { coach_id: threadCoachId, client_id: clientId },
+      where: { coach_id: threadCoachId, client_id: clientId, AND: [authorReadableBy(caller.id)] },
       orderBy: { created_at: 'asc' },
       select: {
         id: true,
@@ -416,7 +418,9 @@ export class V1CoachService {
         metadata: { message_count: messages.length },
       });
     }
-    const draft = closed ? null : await this.prisma.messageDraft.findUnique({
+    const draft = closed || !(await this.draftReadable(caller.id, threadCoachId, clientId))
+      ? null
+      : await this.prisma.messageDraft.findUnique({
       where: {
         MessageDraft_coach_client_key: {
           coach_id: threadCoachId,
@@ -610,6 +614,7 @@ export class V1CoachService {
     const threadCoachId = client.coach_id ?? coachId;
     // FX-1141: a closed chat resumes with no composer, so no draft either.
     if ((await inBlockWith(this.prisma, caller.id, [clientId])).size > 0) return null;
+    if (!(await this.draftReadable(caller.id, threadCoachId, clientId))) return null;
     const draft = await this.prisma.messageDraft.findUnique({
       where: {
         MessageDraft_coach_client_key: {
@@ -627,6 +632,30 @@ export class V1CoachService {
           updatedAt: draft.updated_at,
         }
       : null;
+  }
+
+  /**
+   * FR-1205 (LS-1205 B5): the thread's composer autosave is one shared row
+   * per (thread coach, client) with no writer column, so its words may be any
+   * coach's on that thread: the head, a sub-coach assigned to the client (now
+   * or before), or an owner. While the reader is in a block (either way) with
+   * any of them, the row is withheld (fail closed); the row itself is kept and
+   * reads again after unblock.
+   */
+  private async draftReadable(readerId: string, threadCoachId: string, clientId: string) {
+    const hidden = new Set(await everyoneInBlockWith(this.prisma, readerId));
+    hidden.delete(readerId);
+    if (hidden.size === 0) return true;
+    if (hidden.has(threadCoachId)) return false;
+    const ids = [...hidden];
+    const [sub, owner] = await Promise.all([
+      this.prisma.subCoachAssignment.findFirst({
+        where: { client_id: clientId, head_coach_id: threadCoachId, sub_coach_id: { in: ids } },
+        select: { id: true },
+      }),
+      this.prisma.user.findFirst({ where: { id: { in: ids }, role: 'owner' }, select: { id: true } }),
+    ]);
+    return !sub && !owner;
   }
 
   private async clearDraft(coachId: string, clientId: string) {
