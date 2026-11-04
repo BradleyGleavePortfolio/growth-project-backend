@@ -45,14 +45,14 @@ function commit(repo, message) {
   git(repo, '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', message);
   return git(repo, 'rev-parse', 'HEAD');
 }
-function fixture({ headPolicy = weak, basePolicy = policy, remoteName = 'main', omitBasePolicy = false } = {}) {
+function fixture({ forkPolicy = weak, headPolicy = weak, basePolicy = policy, remoteName = 'main', omitBasePolicy = false } = {}) {
   const repo = mkdtempSync(join(tmpdir(), 'ls1215-independent-'));
   dirs.push(repo);
   git(repo, 'init', '-q');
   git(repo, 'config', 'user.name', 'Independent fixture');
   git(repo, 'config', 'user.email', 'fixture@invalid.local');
   write(repo, 'scripts/check-r75.js', readFileSync(checker, 'utf8'));
-  write(repo, path, weak);
+  write(repo, path, forkPolicy);
   const ancestor = commit(repo, 'old fork with weak policy');
   git(repo, 'checkout', '-qb', 'hostile-policy-change');
   write(repo, 'src/probe.ts', vector.input);
@@ -73,8 +73,8 @@ function range(f, options = {}) {
     ...Object.entries(options).map(([key, value]) => `--${key}=${value}`),
   ]);
 }
-function wired(f, env = {}) {
-  return command(f.repo, 'bash', ['--noprofile', '--norc', '-euo', 'pipefail', '-c', body], {
+function wired(f, env = {}, script = body) {
+  return command(f.repo, 'bash', ['--noprofile', '--norc', '-euo', 'pipefail', '-c', script], {
     EVENT_NAME: 'pull_request', BASE_SHA: f.ancestor, HEAD_SHA: f.head,
     BASE_REF: f.remoteName, ...env,
   });
@@ -86,7 +86,7 @@ function failure(result, status) {
 after(() => { for (const repo of dirs) rmSync(repo, { recursive: true, force: true }); });
 
 test('policy-changing branch cannot self-exempt; old-head control really passes', () => {
-  const f = fixture();
+  const f = fixture({ forkPolicy: policy });
   const control = range(f);
   assert.equal(control.status, 0, control.stderr);
   assert.match(control.stdout, /OK —/);
@@ -95,6 +95,23 @@ test('policy-changing branch cannot self-exempt; old-head control really passes'
   assert.match(repaired.stdout, /FAIL: positive per-class/);
   assert.match(repaired.stdout, /note: this change edits/);
   assert.match(repaired.stdout, new RegExp(`policy from base ${f.base}`));
+  const oldInvocation = body.replace(' --policy-base="$POLICY_SHA"', '');
+  assert.notEqual(oldInvocation, body);
+  assert.equal(wired(f, {}, oldInvocation).status, 0);
+  failure(wired(f), 1);
+});
+
+test('malformed or deleted PR policy is not loaded when base policy is trusted', () => {
+  const malformed = fixture({ forkPolicy: policy, headPolicy: '{not json' });
+  failure(range(malformed), 2);
+  failure(wired(malformed), 1);
+  const deleted = fixture({ forkPolicy: policy });
+  git(deleted.repo, 'rm', '-q', path);
+  deleted.head = commit(deleted.repo, 'PR deletes policy');
+  failure(range(deleted), 2);
+  const result = wired(deleted);
+  failure(result, 1);
+  assert.match(result.stdout, /note: this change edits/);
 });
 
 test('actual workflow reads remote base, not weaker fork or PR policy', () => {
