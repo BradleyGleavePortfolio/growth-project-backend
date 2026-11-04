@@ -58,5 +58,4 @@ describe('LO-1202B B1: held renewal on a plan paid before, charge detail', () =>
     expect({ state: d.charge.state, settled: d.breakdown.settled, waiting_on: d.charge.waiting_on })
       .not.toEqual({ state: 'pending', settled: true, waiting_on: null });
   });
-  });
 });
