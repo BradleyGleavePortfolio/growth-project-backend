@@ -48,7 +48,7 @@ const COACH = 'ls1216-review-coach';
 const CLIENT = '11111111-1111-4111-8111-111111111111';
 const at = new Date('2026-10-30T09:00:00Z');
 
-function world(status: string, held: boolean, paidBefore: boolean) {
+function world(status: string, held: boolean, paidBefore: boolean, withRefund = false) {
   const row = {
     id: 'p1', coach_user_id: COACH, client_user_id: CLIENT, package_id: 'pkg',
     amount_cents: 14900, currency: 'usd', billing_type: 'recurring', status,
@@ -59,7 +59,10 @@ function world(status: string, held: boolean, paidBefore: boolean) {
       status: 'active', step_index: -1,
       last_failure_reason: held ? 'coach_account_not_ready' : 'card_declined',
     },
-    refunds: [],
+    refunds: withRefund ? [{
+      id: 'review-refund', stripe_charge_id: 'ch_earlier', amount_cents: 1299,
+      status: 'succeeded', created_at: at, initiated_by_user_id: COACH,
+    }] : [],
     settlements: paidBefore ? [{
       stripe_charge_id: 'ch_earlier', currency: 'usd', gross_cents: 14900,
       refunded_cents: 0, dispute_withdrawn_cents: 0,
@@ -80,7 +83,7 @@ function world(status: string, held: boolean, paidBefore: boolean) {
     CoachClientPaymentsService,
     [prisma, stripe, {}, {}, feePolicy, { write: jest.fn() }],
   );
-  return { service };
+  return { service, stripe };
 }
 
 async function visibleLine(status: string, held: boolean, paidBefore: boolean) {
@@ -114,5 +117,25 @@ describe('LS-1216 B1: coach hold must not become the current phone failure claim
     const { raw, line } = await visibleLine(status, false, true);
     expect(Reflect.get(raw, 'waiting_on')).toBeNull();
     expect(line).toContain('The latest payment did not go through');
+  });
+
+  it('every m925 plan and nested payment/refund field decodes from the real server reply', async () => {
+    const { service } = world('past_due', true, true, true);
+    const [raw] = (await service.list({ id: COACH, role: 'coach' } as User, CLIENT)).plans;
+    const parsed: unknown = Reflect.apply(
+      Reflect.get(phoneApi, 'toPlan'), null, [JSON.parse(JSON.stringify(raw))],
+    );
+    expect(parsed).toEqual({
+      purchaseId: 'p1', packageName: 'Monthly coaching', billingType: 'recurring',
+      status: 'past_due', amountCents: 14900, currency: 'usd',
+      currentPeriodEnd: at.toISOString(), accessExpiresAt: at.toISOString(),
+      cancelAtPeriodEnd: false, billing: 'running', waitingOn: 'coach_account',
+      actions: { refund: true, pause: false, resume: false, cancel: true, restart: false },
+      payments: [{
+        chargeId: 'ch_earlier', amountCents: 14900, refundedCents: 1299,
+        refundableCents: 13601, currency: 'usd', paidAt: '2026-09-30T09:00:00.000Z',
+        refunds: [{ amountCents: 1299, status: 'succeeded' }],
+      }],
+    });
   });
 });
