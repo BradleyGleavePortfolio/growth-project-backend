@@ -99,6 +99,8 @@ function setup() {
     mealTemplate: { findMany: jest.fn(async ({ where }: Row) => where.id.in.map((id: string) => ({ id }))) },
     // Every client here is still the coach's, so no plan edit freezes a copy (moved clients: the live suite).
     dailyMealPlanAssignment: { findMany: jest.fn(async () => []) },
+    // PLAN-SWAPS-BE: a meal change also writes its revision (test/plan-swaps-be.spec.ts covers the rows).
+    dailyMealPlanRevision: { createMany: jest.fn(async ({ data }: Row) => ({ count: data.length })) },
     dailyMealPlanSlot: {
       findFirst: slotLookup,
       findMany: jest.fn(async ({ where }: Row) => slots.filter((s) => s.daily_meal_plan_id === where.daily_meal_plan_id).map((s) => ({ ...s }))),

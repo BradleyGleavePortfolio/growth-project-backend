@@ -1924,6 +1924,7 @@ model Recipe {
   created_by_id String
   created_by    User          @relation("RecipeCreator", fields: [created_by_id], references: [id])
   saved_by      SavedRecipe[]
+  meal_templates MealTemplate[]
   created_at    DateTime      @default(now())
   updated_at    DateTime      @updatedAt
 
@@ -1963,9 +1964,13 @@ model ListItem {
   unit             String?
   is_checked       Boolean  @default(false)
   source_recipe_id String?
+  // PLAN-SWAPS-BE: the plan meal (a slot of a plan assigned to this user) the item was added from.
+  source_plan_slot_id String?
+  source_plan_slot    DailyMealPlanSlot? @relation(fields: [source_plan_slot_id], references: [id], onDelete: SetNull)
   added_at         DateTime @default(now())
 
   @@index([user_id, list_type])
+  @@index([source_plan_slot_id])
 }
 
 // ============================================================
@@ -3337,10 +3342,16 @@ model MealTemplate {
   items         Json?
   created_at    DateTime  @default(now())
   archived_at   DateTime?
+  // PLAN-SWAPS-BE (C2 S2): the coach's swaps for this meal (ids of their own live templates, never this one)
+  // and the coach's own recipe for it. Plain ids: GET /me/meal-plan/today re-checks both on every read.
+  swap_template_ids String[] @default([])
+  recipe_id         String?
+  recipe            Recipe?   @relation(fields: [recipe_id], references: [id], onDelete: SetNull)
 
   meal_plan_slots DailyMealPlanSlot[]
 
   @@index([coach_id, archived_at])
+  @@index([recipe_id])
 }
 
 model DailyMealPlan {
@@ -3351,9 +3362,12 @@ model DailyMealPlan {
   notes       String?
   created_at  DateTime  @default(now())
   archived_at DateTime?
+  // PLAN-SWAPS-BE: the last time the plan row was written (set on every edit).
+  updated_at  DateTime  @default(now()) @updatedAt
 
   slots       DailyMealPlanSlot[]
   assignments DailyMealPlanAssignment[]
+  revisions   DailyMealPlanRevision[]
 
   @@index([coach_id, archived_at])
 }
@@ -3369,10 +3383,27 @@ model DailyMealPlanSlot {
   // C2-C0: the coach's planned time for this meal, local "HH:MM" (24-hour); null = plan order, no time.
   time_of_day        String?
   food_log_entries   LoggedFoodEntry[]
+  list_items         ListItem[]
 
   @@unique([daily_meal_plan_id, slot_label, order])
   @@index([daily_meal_plan_id])
   @@index([meal_template_id])
+}
+
+// PLAN-SWAPS-BE (C2 S2): one row per meal change in a coach's edit of a day plan, written in the same
+// transaction as the slot change. A changed meal is from -> to; an added meal has no from, a removed one no
+// to. Ids are history (no foreign key to the slot or the templates); the row goes with its plan.
+model DailyMealPlanRevision {
+  id               String        @id @default(uuid())
+  plan_id          String
+  plan             DailyMealPlan @relation(fields: [plan_id], references: [id], onDelete: Cascade)
+  slot_id          String
+  slot_label       String
+  from_template_id String?
+  to_template_id   String?
+  changed_at       DateTime      @default(now())
+
+  @@index([plan_id, changed_at])
 }
 
 model DailyMealPlanAssignment {

@@ -5,8 +5,22 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { resolveRecipientTimeZone } from '../notifications/recipient-timezone';
+import { visibleRecipesWhere } from '../recipes/recipe-access';
+import { loadViewerAllergens } from '../recipes/allergens';
+import {
+  CHANGES_TODAY_LIMIT,
+  LOCAL_DAY_LOOKBACK_MS,
+  MEAL_RECIPE_INVALID,
+  MEAL_SWAP_INVALID,
+  localDateKey,
+  planSwapsError,
+  revisionsFor,
+  sameLocalDay,
+} from './plan-swaps';
 import {
   AssignDailyPlanDto,
   CreateDailyMealPlanDto,
@@ -47,8 +61,33 @@ export class RealMealPlansService {
     if (!p) throw new NotFoundException('Daily meal plan not found');
   }
 
+  // PLAN-SWAPS-BE: every swap is one of this coach's live templates and not the template itself; the
+  // recipe is one this coach created. Anything else (another coach's, archived, missing) is refused.
+  private async assertTemplateLinks(
+    coachId: string,
+    dto: { swap_template_ids?: string[]; recipe_id?: string | null },
+    selfId?: string,
+  ) {
+    const swaps = dto.swap_template_ids ?? [];
+    if (swaps.length > 0) {
+      if (selfId && swaps.includes(selfId)) throw planSwapsError(MEAL_SWAP_INVALID);
+      const found = await this.prisma.mealTemplate.count({
+        where: { id: { in: swaps }, coach_id: coachId, archived_at: null },
+      });
+      if (found !== new Set(swaps).size) throw planSwapsError(MEAL_SWAP_INVALID);
+    }
+    if (dto.recipe_id) {
+      const recipe = await this.prisma.recipe.findFirst({
+        where: { id: dto.recipe_id, created_by_id: coachId },
+        select: { id: true },
+      });
+      if (!recipe) throw planSwapsError(MEAL_RECIPE_INVALID);
+    }
+  }
+
   // ─── MealTemplate CRUD ───────────────────────────────────────────────
   async createTemplate(coachId: string, dto: CreateMealTemplateDto) {
+    await this.assertTemplateLinks(coachId, dto);
     return this.prisma.mealTemplate.create({
       data: {
         coach_id: coachId,
@@ -60,6 +99,8 @@ export class RealMealPlansService {
         fats_g: dto.fats_g,
         fiber_g: dto.fiber_g ?? null,
         ...(dto.items !== undefined && { items: dto.items as unknown as object }),
+        swap_template_ids: dto.swap_template_ids ?? [],
+        recipe_id: dto.recipe_id ?? null,
       },
     });
   }
@@ -82,6 +123,7 @@ export class RealMealPlansService {
     dto: UpdateMealTemplateDto,
   ) {
     await this.assertTemplateOwnedBy(coachId, templateId);
+    await this.assertTemplateLinks(coachId, dto, templateId);
     return this.prisma.$transaction(async (tx) => {
       const used = await tx.dailyMealPlanSlot.findMany({
         where: { meal_template_id: templateId },
@@ -101,6 +143,8 @@ export class RealMealPlansService {
           ...(dto.items !== undefined && {
             items: dto.items as unknown as object,
           }),
+          ...(dto.swap_template_ids !== undefined && { swap_template_ids: dto.swap_template_ids }),
+          ...(dto.recipe_id !== undefined && { recipe_id: dto.recipe_id }),
         },
       });
     });
@@ -223,6 +267,7 @@ export class RealMealPlansService {
         data: {
           ...(dto.name !== undefined && { name: dto.name }),
           ...(dto.notes !== undefined && { notes: dto.notes }),
+          updated_at: new Date(),
         },
       });
       if (dto.slots) {
@@ -241,7 +286,8 @@ export class RealMealPlansService {
           where: { daily_meal_plan_id: planId },
           select: { id: true, slot_label: true, order: true, meal_template_id: true, time_of_day: true },
         });
-        const gone = existing.filter((e) => !wanted.has(key(e))).map((e) => e.id);
+        const goneRows = existing.filter((e) => !wanted.has(key(e)));
+        const gone = goneRows.map((e) => e.id);
         if (gone.length > 0) {
           await tx.dailyMealPlanSlot.deleteMany({ where: { id: { in: gone } } });
         }
@@ -256,10 +302,32 @@ export class RealMealPlansService {
         }
         const kept = new Set(existing.map(key));
         const fresh = next.filter((s) => !kept.has(key(s)));
+        const freshKeys = new Set(fresh.map(key));
+        let added: { id: string; slot_label: string; order: number; meal_template_id: string }[] = [];
         if (fresh.length > 0) {
           await tx.dailyMealPlanSlot.createMany({
             data: fresh.map((s) => ({ daily_meal_plan_id: planId, ...s })),
           });
+          added = (await tx.dailyMealPlanSlot.findMany({
+            where: { daily_meal_plan_id: planId },
+            select: { id: true, slot_label: true, order: true, meal_template_id: true },
+          })).filter((r) => freshKeys.has(key(r)));
+        }
+        // PLAN-SWAPS-BE: one revision per meal change, in this transaction, so today's changes
+        // (getTodayForClient) can never disagree with the slots.
+        const revisions = revisionsFor(
+          planId,
+          existing.flatMap((e) => {
+            const w = wanted.get(key(e));
+            return w ? [{ before: e, afterTemplateId: w.meal_template_id }] : [];
+          }),
+          goneRows,
+          added,
+          new Date(),
+          randomUUID,
+        );
+        if (revisions.length > 0) {
+          await tx.dailyMealPlanRevision.createMany({ data: revisions });
         }
       }
       return tx.dailyMealPlan.findUnique({
@@ -449,6 +517,103 @@ export class RealMealPlansService {
         },
       },
     });
-    return { date: today.toISOString().slice(0, 10), assignments };
+    return this.withSwapsAndChanges(clientId, today.toISOString().slice(0, 10), dateIso, assignments);
+  }
+
+  /**
+   * PLAN-SWAPS-BE (C2 S2): on a plan from the client's current coach, each slot gets that coach's live swaps
+   * (name, kcal, protein) and the meal's recipe when the client can open it (visibleRecipesWhere, with the
+   * client's allergens, so the link never opens onto RECIPE_NOT_FOUND or RECIPE_HIDDEN_FOR_ALLERGENS); a plan
+   * kept from an earlier coach gets none (owner 4). `changes_today` lists the meal changes to these plans
+   * since the client's local midnight (resolveRecipientTimeZone; UTC when no zone is known), and is empty
+   * when ?date names another day.
+   */
+  private async withSwapsAndChanges<
+    A extends {
+      daily_meal_plan: {
+        id: string;
+        coach_id: string;
+        slots: {
+          id: string;
+          meal_template_id: string;
+          meal_template: { swap_template_ids: string[]; recipe_id: string | null };
+        }[];
+      };
+    },
+  >(clientId: string, date: string, dateIso: string | undefined, assignments: A[]) {
+    const viewer = await this.prisma.user.findFirst({
+      where: { id: clientId },
+      select: { id: true, role: true, coach_id: true },
+    });
+    const coachId = viewer?.coach_id ?? null;
+    const ownSlots = assignments
+      .filter((a) => coachId !== null && a.daily_meal_plan.coach_id === coachId)
+      .flatMap((a) => a.daily_meal_plan.slots);
+    const swapIds = [...new Set(ownSlots.flatMap((s) => s.meal_template.swap_template_ids ?? []))];
+    const recipeIds = [...new Set(ownSlots.flatMap((s) => (s.meal_template.recipe_id ? [s.meal_template.recipe_id] : [])))];
+    const avoid = recipeIds.length > 0 ? await loadViewerAllergens(this.prisma, clientId) : [];
+    const [swapRows, recipeRows] = await Promise.all([
+      swapIds.length > 0 && coachId
+        ? this.prisma.mealTemplate.findMany({
+            where: { id: { in: swapIds }, coach_id: coachId, archived_at: null },
+            select: { id: true, name: true, calories_kcal: true, protein_g: true },
+          })
+        : Promise.resolve([]),
+      recipeIds.length > 0 && viewer && coachId
+        ? this.prisma.recipe.findMany({
+            where: { AND: [{ id: { in: recipeIds }, created_by_id: coachId }, visibleRecipesWhere(viewer, avoid)] },
+            select: { id: true },
+          })
+        : Promise.resolve([]),
+    ]);
+    const swapById = new Map(swapRows.map((t) => [t.id, t]));
+    const openable = new Set(recipeRows.map((r) => r.id));
+    const ownSlotIds = new Set(ownSlots.map((s) => s.id));
+    const withSwaps = assignments.map((a) => ({
+      ...a,
+      daily_meal_plan: {
+        ...a.daily_meal_plan,
+        slots: a.daily_meal_plan.slots.map((s) => {
+          const own = ownSlotIds.has(s.id);
+          const swaps = own
+            ? (s.meal_template.swap_template_ids ?? []).flatMap((id) => {
+                const t = swapById.get(id);
+                return t && t.id !== s.meal_template_id ? [t] : [];
+              })
+            : [];
+          const recipeId = own && s.meal_template.recipe_id && openable.has(s.meal_template.recipe_id)
+            ? s.meal_template.recipe_id
+            : null;
+          return { ...s, swaps, recipe_id: recipeId };
+        }),
+      },
+    }));
+
+    const now = new Date();
+    const tz = (await resolveRecipientTimeZone(this.prisma, clientId)) ?? 'UTC';
+    const planIds = [...new Set(assignments.map((a) => a.daily_meal_plan.id))];
+    const forToday = !dateIso || dateIso.slice(0, 10) === localDateKey(now, tz);
+    const rows = forToday && planIds.length > 0
+      ? (await this.prisma.dailyMealPlanRevision.findMany({
+          where: { plan_id: { in: planIds }, changed_at: { gte: new Date(now.getTime() - LOCAL_DAY_LOOKBACK_MS), lte: now } },
+          orderBy: { changed_at: 'asc' },
+          take: CHANGES_TODAY_LIMIT,
+        })).filter((r) => sameLocalDay(r.changed_at, now, tz))
+      : [];
+    const nameIds = [...new Set(rows.flatMap((r) => [r.from_template_id, r.to_template_id]).filter((id): id is string => !!id))];
+    const names = nameIds.length > 0
+      ? new Map((await this.prisma.mealTemplate.findMany({
+          where: { id: { in: nameIds }, coach_id: { in: [...new Set(assignments.map((a) => a.daily_meal_plan.coach_id))] } },
+          select: { id: true, name: true },
+        })).map((t) => [t.id, t.name]))
+      : new Map<string, string>();
+    const changes_today = rows.map(({ id: _id, from_template_id, to_template_id, ...r }) => ({
+      ...r,
+      from_template_id,
+      from_name: from_template_id ? names.get(from_template_id) ?? null : null,
+      to_template_id,
+      to_name: to_template_id ? names.get(to_template_id) ?? null : null,
+    }));
+    return { date, assignments: withSwaps, changes_today };
   }
 }
