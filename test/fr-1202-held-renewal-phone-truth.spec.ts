@@ -4,13 +4,12 @@ import { COACH_ACCOUNT_HOLD_REASON } from '../src/checkout/dunning-v2/coach-acco
 import { CoachMoneyService } from '../src/coach-money/coach-money.service';
 
 // FR-1202 (LO-1202B B1, LS-1202B B1), class-first: what a coach is told about
-// a charge is true in the phone installed today (mobile main d54ca198). That
-// phone reads `pending` as "No payment has gone through for this yet, so
-// nothing has reached your payouts" and hides "This plan so far"
-// (MoneyChargeScreen.tsx:132-198); `failed` with settled payments keeps them
-// ("Latest payment failed ... Earlier payments are counted below", :128).
-// So a held renewal (PF-7) is `pending` only while no payment has gone
-// through on the sale; on a plan paid before it keeps main's `failed` row.
+// a charge is true on the phone. HELD-RENEWAL-BE: the phone now reads
+// `waiting_on` (m#920, mobile main 12f158c1 MoneyChargeScreen.tsx:132-139):
+// a held charge on a plan paid before (`settled`) keeps "This plan so far"
+// and never shows "No payment has gone through for this yet". So a held
+// renewal (PF-7) is `pending` with `waiting_on: 'coach_account'` whether or
+// not the plan was paid before, and leaves the Failed filter.
 // One table over every reader of the class: Charges All, the Failed filter,
 // the charge detail, and the coach's failed roster.
 
@@ -49,9 +48,9 @@ interface Case {
 }
 
 const CASES: Case[] = [
-  // The held renewal on a plan paid before keeps main's row.
-  { id: 'held-paid', status: 'past_due', dunning: HELD, paidBefore: true, state: 'failed', waitingOn: null, inFailed: true, inRoster: false },
-  { id: 'held-unpaid-status-paid', status: 'unpaid', dunning: HELD, paidBefore: true, state: 'failed', waitingOn: null, inFailed: true, inRoster: false },
+  // HELD-RENEWAL-BE: the held renewal on a plan paid before is held too.
+  { id: 'held-paid', status: 'past_due', dunning: HELD, paidBefore: true, state: 'pending', waitingOn: 'coach_account', inFailed: false, inRoster: false },
+  { id: 'held-unpaid-status-paid', status: 'unpaid', dunning: HELD, paidBefore: true, state: 'pending', waitingOn: 'coach_account', inFailed: false, inRoster: false },
   // The held renewal before any payment (the first charge after a trial).
   { id: 'held-never', status: 'past_due', dunning: HELD, paidBefore: false, state: 'pending', waitingOn: 'coach_account', inFailed: false, inRoster: false },
   { id: 'held-never-pf', status: 'payment_failed', dunning: HELD, paidBefore: false, state: 'pending', waitingOn: 'coach_account', inFailed: false, inRoster: false },
@@ -108,7 +107,7 @@ function money() {
 }
 const waitingOn = (c: object) => (c as { waiting_on?: unknown }).waiting_on;
 
-describe('FR-1202: a held renewal is told truly in the phone installed today', () => {
+describe('FR-1202 / HELD-RENEWAL-BE: a held renewal is told truly on the phone', () => {
   it.each(CASES)('$id: Charges All, the Failed filter and the detail agree', async (c) => {
     const svc = money();
     const all = await svc.listCharges(COACH, { status: 'all', limit: 50 });
@@ -126,9 +125,11 @@ describe('FR-1202: a held renewal is told truly in the phone installed today', (
     const d = await svc.getChargeBreakdown(COACH, c.id);
     expect(d.charge.state).toBe(c.state);
     expect(d.breakdown.settled).toBe(c.paidBefore);
+    expect(waitingOn(d.charge)).toBe(c.waitingOn);
     // The phone's never-paid card ("No payment has gone through for this
-    // yet") shows only where no payment went through.
-    if (d.charge.state === 'pending') expect(d.breakdown.settled).toBe(false);
+    // yet") shows only where no payment went through: a pending charge
+    // beside settled payments is always a held one (m#920 keeps the totals).
+    if (d.charge.state === 'pending' && d.breakdown.settled) expect(waitingOn(d.charge)).toBe('coach_account');
     if (c.paidBefore) expect(d.breakdown.price_cents).toBe(29800);
   });
 

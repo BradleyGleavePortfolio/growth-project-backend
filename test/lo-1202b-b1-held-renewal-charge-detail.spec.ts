@@ -4,12 +4,12 @@ import { CoachMoneyService } from '../src/coach-money/coach-money.service';
 
 // LO-1202B B1: a renewal held on the coach's own Stripe account (PF-7) on a
 // plan that has been paid before. Money's charge detail (GET
-// v1/coach/money/charges/:id) must not send state `pending` together with
-// settled earlier payments: the phone (mobile main MoneyChargeScreen) reads
-// `pending` as "No payment has gone through for this yet, so nothing has
-// reached your payouts" and shows the plan's paid total as "Price, not paid
-// yet", hiding "This plan so far". Before HOLD-FU-BE the row was `failed`
-// and the phone kept the earlier payments ("Latest payment failed").
+// v1/coach/money/charges/:id) must never make the phone hide the plan's
+// earlier payments. HELD-RENEWAL-BE: the phone now reads `waiting_on`
+// (m#920, mobile main 12f158c1 MoneyChargeScreen.tsx:132-139): a held charge
+// (`waiting_on: 'coach_account'`) beside `settled` payments keeps "This plan
+// so far" and never shows "No payment has gone through for this yet". So the
+// server sends it as held: `pending`, `waiting_on` set, `settled` kept.
 
 const COACH = 'hold-coach';
 const HELD = { status: 'active', last_failure_reason: COACH_ACCOUNT_HOLD_REASON };
@@ -47,16 +47,15 @@ function money() {
 }
 
 describe('LO-1202B B1: held renewal on a plan paid before, charge detail', () => {
-  it('a held renewal with earlier payments is never sent as pending beside its settled payments', async () => {
+  it('a held renewal with earlier payments is sent as held, with its settled payments kept', async () => {
     const d = await money().getChargeBreakdown(COACH, 'held-renewal');
     expect(d.breakdown.settled).toBe(true);
     expect(d.breakdown.price_cents).toBeGreaterThan(0);
     expect(d.charge.state).not.toBe('paid');
-    // The phone shows "No payment has gone through for this yet" and
-    // "Price, not paid yet: $298.00" for this pair.
-    expect({ state: d.charge.state, settled: d.breakdown.settled }).not.toEqual({
-      state: 'pending',
-      settled: true,
-    });
+    expect(d.charge).toMatchObject({ state: 'pending', waiting_on: 'coach_account' });
+    // m#920's phone: a pending charge beside settled payments is shown as
+    // held only when waiting_on says so; never the never-paid card.
+    expect({ state: d.charge.state, settled: d.breakdown.settled, waiting_on: d.charge.waiting_on })
+      .not.toEqual({ state: 'pending', settled: true, waiting_on: null });
   });
 });
