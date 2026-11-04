@@ -1184,6 +1184,10 @@ model WeightLog {
   weight_lbs Float
   notes      String?
   logged_at  DateTime @default(now())
+  /// WATER-WEIGHT-KEYS-BE (#191-D3): the phone's one-time key for this save, as LoggedFoodEntry.client_uuid.
+  /// A resend with the same key returns this row and stores nothing; unique across all members. Null = a save
+  /// without a key (every row before 20270502010800).
+  client_uuid String? @unique
 
   // Hot path: weight charts query by (user_id, date desc).
   @@index([user_id, date])
@@ -1581,6 +1585,10 @@ model WaterLog {
   amount_ml  Int
   logged_at  DateTime @default(now()) @db.Timestamptz
   created_at DateTime @default(now()) @db.Timestamptz
+  /// WATER-WEIGHT-KEYS-BE (#191-D3): the phone's one-time key for this save, as LoggedFoodEntry.client_uuid.
+  /// A resend with the same key returns this row and stores nothing; unique across all members. Null = a save
+  /// without a key (every row before 20270502010800).
+  client_uuid String? @unique
 
   // Hot path: water intake summaries filter by (user_id, logged_at).
   @@index([user_id, logged_at])
