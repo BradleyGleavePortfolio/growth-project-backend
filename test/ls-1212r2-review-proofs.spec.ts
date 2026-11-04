@@ -75,7 +75,7 @@ describe('LS-1212R2 independent real Postgres review', () => {
   });
 
   it('reruns all 26 unchanged USDA live-release/search cases on the replayed schema', () => {
-    const out = run('npx', ['jest', '--runInBand', '--runTestsByPath', 'test/rls/food-usda-release-rls.spec.ts',
+    const out = run('npx', ['jest', '--config', 'jest.rls.config.js', '--runInBand', '--runTestsByPath', 'test/rls/food-usda-release-rls.spec.ts',
       '--forceExit'], liveEnv);
     console.log(out.split('\n').filter((l) => /USDA foods:|Test Suites:|Tests:|word search timing|shipped searchCatalog/.test(l)).join('\n'));
     expect(out).toMatch(/26 passed/);
