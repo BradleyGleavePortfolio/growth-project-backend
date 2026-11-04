@@ -18,6 +18,10 @@
  *
  * `@KeepRomanContext()` exempts Roman's own turn: it writes nothing Roman
  * reads, and invalidating there would empty the memo after every turn.
+ * `keepRomanContextFor(req)` exempts one request that, as it turned out, stored
+ * nothing: a keyed resend answered with the row its first save stored
+ * (src/common/save-once.ts). The first save still invalidates; the resend
+ * changes nothing Roman reads, so it keeps the memo and any build in flight.
  * `ClientAIContextService.invalidateForUser` (food log, workout, weight,
  * fasting, check-in, coach message) also still fans out here.
  *
@@ -67,6 +71,15 @@ export const KeepRomanContext = () => SetMetadata(KEEP_ROMAN_CONTEXT, true);
 
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
+// Requests whose write stored nothing new. Keyed by the request object, so the
+// mark never reaches the response body and goes away with the request.
+const unchangedRequests = new WeakSet<object>();
+
+/** This write request stored nothing new (a keyed resend): the interceptor skips it. */
+export function keepRomanContextFor(req: object): void {
+  unchangedRequests.add(req);
+}
+
 @Injectable()
 export class RomanContextInvalidationInterceptor implements NestInterceptor {
   constructor(private readonly reflector: Reflector) {}
@@ -86,7 +99,9 @@ export class RomanContextInvalidationInterceptor implements NestInterceptor {
     const res = http.getResponse<{ statusCode?: number }>();
     return next.handle().pipe(
       tap(() => {
-        if ((res.statusCode ?? 200) < 400) romanContextInvalidate(userId);
+        if ((res.statusCode ?? 200) < 400 && !unchangedRequests.has(req)) {
+          romanContextInvalidate(userId);
+        }
       }),
     );
   }
