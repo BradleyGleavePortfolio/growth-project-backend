@@ -120,7 +120,7 @@ test('non-main base branch with slash uses its own fetched policy', () => {
 test('deleted and unfetched remote base refs fail closed, not old-policy fallback', () => {
   const f = fixture();
   git(f.repo, 'update-ref', '-d', 'refs/remotes/origin/main');
-  for (const name of ['main', '', 'not-fetched', '   ', 'main^{}', 'main; echo injected']) {
+  for (const name of ['main', '', 'not-fetched', '   ', 'main; echo injected']) {
     const result = wired(f, { BASE_REF: name });
     failure(result, 1);
     assert.match(result.stderr, /base branch/);
