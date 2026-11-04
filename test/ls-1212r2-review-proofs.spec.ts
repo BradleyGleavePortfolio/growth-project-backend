@@ -20,6 +20,12 @@ const rank = (helpers: string): Rank => {
 const beforeRank = rank(readFileSync(join(__dirname, 'fixtures/ls-1212r2-ranker-before.txt'), 'utf8'));
 const afterRank = rank(source.slice(source.indexOf('function words('), source.indexOf('// 24h TTL')));
 const recorded = {
+  ...Object.fromEntries(
+    ['ls-1198r2/everyday.json', 'ls-1198r2/prefix-dishes.json'].flatMap((file) => {
+      const entries = JSON.parse(readFileSync(join(__dirname, 'fixtures', file), 'utf8')) as Array<{ query: string; foods: unknown[] }>;
+      return entries.map((entry) => [entry.query, entry.foods]);
+    }),
+  ),
   ...JSON.parse(readFileSync(join(__dirname, 'fixtures/fr-1198r3/usda-words.json'), 'utf8')),
   ...JSON.parse(readFileSync(join(__dirname, 'fixtures/lo-1198r3/b1-usda-words.json'), 'utf8')),
   oatmeal: JSON.parse(readFileSync(join(__dirname, 'fixtures/lo-1198-usda-oatmeal.json'), 'utf8')),
