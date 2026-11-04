@@ -67,7 +67,7 @@ function upstream(foods: unknown[] | null) {
       }),
     );
   }
-  return () => spy.mock.calls.filter(([url]) => String(url).includes('api.nal.usda.gov')).length;
+  return () => spy.mock.calls.filter(([url]) => new URL(String(url)).hostname === 'api.nal.usda.gov').length;
 }
 
 async function search(typed: string, rows: unknown[]) {
