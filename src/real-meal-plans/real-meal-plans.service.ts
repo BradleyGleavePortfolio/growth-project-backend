@@ -594,7 +594,8 @@ export class RealMealPlansService {
     const now = new Date();
     const planIds = [...new Set(assignments.map((a) => a.daily_meal_plan.id))];
     const tz = planIds.length > 0 ? (await resolveRecipientTimeZone(this.prisma, clientId)) ?? 'UTC' : 'UTC';
-    const forToday = !dateIso || dateIso.slice(0, 10) === localDateKey(now, tz);
+    // ?date arrives untyped (a repeated ?date is an array): only a string naming the client's today counts.
+    const forToday = dateIso === undefined || (typeof dateIso === 'string' && dateIso.slice(0, 10) === localDateKey(now, tz));
     const rows = forToday && planIds.length > 0
       ? (await this.prisma.dailyMealPlanRevision.findMany({
           where: { plan_id: { in: planIds }, changed_at: { gte: new Date(now.getTime() - LOCAL_DAY_LOOKBACK_MS), lte: now } },
