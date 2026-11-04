@@ -314,12 +314,19 @@ const PURCHASE = {
   currency: 'usd',
 } as any;
 
-describe('DunningService v1', () => {
+describe('DunningService v1 (dunning v2 off)', () => {
   let prisma: any;
   let svc: DunningService;
   let stripe: StripeStub;
+  // v1's tick and sweeper are no-ops under FEATURE_DUNNING_V2; this suite sets it off itself.
+  const savedV2 = process.env.FEATURE_DUNNING_V2;
+  afterEach(() => {
+    if (savedV2 === undefined) delete process.env.FEATURE_DUNNING_V2;
+    else process.env.FEATURE_DUNNING_V2 = savedV2;
+  });
 
   beforeEach(() => {
+    process.env.FEATURE_DUNNING_V2 = 'false';
     prisma = makePrismaStub();
     stripe = new StripeStub();
     svc = new DunningService(prisma, stripe as any);
