@@ -419,9 +419,9 @@ function heldWaitingOn(row: PlanRow): 'coach_account' | null {
 
 /** CONTRACT-1: the sale, its payments and the refund and restart actions; no access or renewal. */
 function moneyPlan(p: CoachClientPlanView) {
-  const { purchase_id, status, waiting_on, amount_cents, currency, created_at, payments } = p;
+  const { purchase_id, status, amount_cents, currency, created_at, payments } = p;
   const actions = { refund: p.actions.refund, restart: p.actions.restart };
-  return { purchase_id, status, waiting_on, amount_cents, currency, created_at, actions, payments };
+  return { purchase_id, status, amount_cents, currency, created_at, actions, payments };
 }
 
 /** One entry per settled charge, newest first. Cross-currency settlements are not coach-refundable. */
