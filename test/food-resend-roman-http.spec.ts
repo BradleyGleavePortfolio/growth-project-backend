@@ -313,8 +313,8 @@ const ROUTES: RouteCase[] = [
 const effects = (member = A) => ({
   interceptorResets: interceptorResets.filter((u) => u === member).length,
   serviceResets: serviceResets.mock.calls.filter(([u]) => u === member).length,
-  captures: capture.mock.calls.length,
-  emits: emit.mock.calls.length,
+  captures: capture.mock.calls.filter(([u]) => u === member).length,
+  emits: emit.mock.calls.filter(([u]) => u === member).length,
 });
 const clear = () => {
   interceptorResets.length = 0;
