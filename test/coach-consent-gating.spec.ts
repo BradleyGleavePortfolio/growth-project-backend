@@ -57,7 +57,7 @@ describe('CoachService consent gating', () => {
   it('omits per-scope data when consent is not granted; includes consent block', async () => {
     const prisma = makePrisma({
       meals: [{ id: 'm1', date: new Date('2026-04-22T10:00:00Z') }],
-      workouts: [{ id: 'w1', created_at: new Date('2026-04-23T10:00:00Z') }],
+      workouts: [{ id: 'w1', date: new Date('2026-04-23T00:00:00Z'), created_at: new Date('2026-04-23T10:00:00Z') }],
       weights: [{ id: 'wt1', date: new Date('2026-04-21T00:00:00Z') }],
       checkIns: [{ id: 'c1', date: new Date('2026-04-24T00:00:00Z') }],
     });
@@ -91,7 +91,7 @@ describe('CoachService consent gating', () => {
 
   it('owner bypasses consent and sees everything', async () => {
     const prisma = makePrisma({
-      workouts: [{ id: 'w1', created_at: new Date('2026-04-23T10:00:00Z') }],
+      workouts: [{ id: 'w1', date: new Date('2026-04-23T00:00:00Z'), created_at: new Date('2026-04-23T10:00:00Z') }],
       weights: [{ id: 'wt1', date: new Date('2026-04-21T00:00:00Z') }],
     });
     // ConsentService.coachCanAccess should never be called for owners,
@@ -109,7 +109,7 @@ describe('CoachService consent gating', () => {
   it('getClientSummary respects food + workouts consent', async () => {
     const prisma = makePrisma({
       meals: [{ id: 'm1', date: new Date('2026-04-22T10:00:00Z'), quantity_multiplier: 1, food_item: { calories: 100 } }],
-      workouts: [{ id: 'w1', created_at: new Date('2026-04-23T10:00:00Z') }],
+      workouts: [{ id: 'w1', date: new Date('2026-04-23T00:00:00Z'), created_at: new Date('2026-04-23T10:00:00Z') }],
       weights: [{ id: 'wt1', date: new Date('2026-04-21T00:00:00Z') }],
     });
     const consent = fakeConsent({
