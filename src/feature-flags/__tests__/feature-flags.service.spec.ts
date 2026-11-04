@@ -18,6 +18,9 @@ const FLAG_ENVS = [
   'FEATURE_COMMUNITY_EVENTS',
   'FEATURE_COACHLESS_HOME',
   'FEATURE_ROMAN_CRISIS_ALERT',
+  // Not community-gated: cleared here so the all-off test sets its switches itself.
+  'FEATURE_MESSAGING_CORE_V2',
+  'FEATURE_COACH_PAYMENT_ACTIONS',
 ] as const;
 
 describe('FeatureFlagsService', () => {
@@ -43,7 +46,7 @@ describe('FeatureFlagsService', () => {
     for (const v of Object.values(flags)) expect(typeof v).toBe('boolean');
   });
 
-  it('all flags OFF when the community master gate is off (even if per-flag envs are on)', () => {
+  it('all flags OFF when the community master gate is off (even if per-flag envs are on; the other switches unset)', () => {
     process.env.FEATURE_COMMUNITY_API = 'false';
     process.env.FEATURE_COMMUNITY_SEARCH = 'true';
     process.env.FEATURE_COMMUNITY_CLASSROOM_POSTS = 'true';
