@@ -49,7 +49,7 @@ describe('LS-1185R2 B1: ordinary new callers of a registered reader remain inven
       }
       const source = `${imported}\nexport class PreviewService { ${members} }\n`;
       const parsed = ts.createSourceFile('preview.ts', source, ts.ScriptTarget.ES2021, true);
-      expect(Reflect.get(parsed, 'parseDiagnostics')).toEqual([]);
+      expect((parsed as unknown as { parseDiagnostics: unknown[] }).parseDiagnostics).toEqual([]);
       writeFileSync(join(root, 'preview.ts'), source);
       const calls = scanMemberContentReads(root).filter(
         (site) => site.file.endsWith('/preview.ts') && site.via === 'caller',
