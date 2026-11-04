@@ -75,11 +75,11 @@ describe('AI builder sees injury-filtered exercises already in the workout (AIB-
     await svc.propose(coach, edit({ injury_area: 'knee' }));
     const [squat, bench] = rowsOf(sent[0]);
     expect(squat).toEqual({
-      client_ref: 'r1', exercise_external_id: 'seed:legs-001', sets: 3, reps_or_duration_seconds: 8, weight_lbs: null, rest_seconds: 90,
+      client_ref: 'r1', exercise_external_id: 'seed:legs-001', sets: 3, reps_or_duration_seconds: 8, unit: 'reps', weight_lbs: null, rest_seconds: 90,
       name: 'Back Squat', muscle: 'quads',
     });
     // The bench press is still in LIBRARY, so its row is sent exactly as before.
-    expect(Object.keys(bench)).toEqual(['client_ref', 'exercise_external_id', 'sets', 'reps_or_duration_seconds', 'weight_lbs', 'rest_seconds']);
+    expect(Object.keys(bench)).toEqual(['client_ref', 'exercise_external_id', 'sets', 'reps_or_duration_seconds', 'unit', 'weight_lbs', 'rest_seconds']);
     // Seed rows never need a catalog read.
     expect(lookup).not.toHaveBeenCalled();
   });

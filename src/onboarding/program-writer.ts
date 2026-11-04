@@ -6,8 +6,8 @@
  * assignProgramToClient and the builder UI treat these rows like any other.
  */
 import { Prisma } from '@prisma/client';
-import { alternativesOf } from '../workout-builder/plan-exercise-fields';
-import type { PlanContent } from './consultation-programs';
+import { alternativesOf, unitOf } from '../workout-builder/plan-exercise-fields';
+import { type PlanContent } from './consultation-programs';
 
 export interface ProgramTreeInput {
   tenantCoachId: string;
@@ -70,7 +70,11 @@ export async function writeProgramTree(
         version: 1,
       },
     });
-    const rows = plan.exercises.slice().sort((a, b) => a.order - b.order);
+    // TIMED-SETS-BE: each row and the first revision carry the row's unit: the one a master row states, else its note's.
+    const rows = plan.exercises
+      .slice()
+      .sort((a, b) => a.order - b.order)
+      .map((e) => ({ ...e, unit: unitOf(e) }));
     await tx.workoutPlanExercise.createMany({
       data: rows.map((e) => ({
         workout_plan_id: created.id,
@@ -83,6 +87,7 @@ export async function writeProgramTree(
         superset_group_id: e.superset_group_id,
         notes: e.notes,
         alternative_external_ids: alternativesOf(e),
+        unit: unitOf(e),
       })),
     });
     const revision = await tx.workoutPlanRevision.create({

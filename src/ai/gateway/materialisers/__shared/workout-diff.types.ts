@@ -29,7 +29,7 @@
  */
 
 import { z } from 'zod';
-import { alternativesOf } from '../../../../workout-builder/plan-exercise-fields';
+import { alternativesOf, PLAN_EXERCISE_UNITS, unitOf, type PlanExerciseUnitValue } from '../../../../workout-builder/plan-exercise-fields';
 
 /** Discriminator literals for the diff op union. Exported for exhaustive switches. */
 export const WORKOUT_DIFF_OP_KINDS = [
@@ -95,6 +95,9 @@ const RestSecondsSchema = z
   .max(86_400, { message: 'rest_seconds must be <= 86400' })
   .nullable();
 
+/** TIMED-SETS-BE: what reps_or_duration_seconds counts. An add without one is reps. */
+const UnitSchema = z.enum(PLAN_EXERCISE_UNITS);
+
 const SupersetGroupSchema = z
   .string()
   .min(1)
@@ -118,6 +121,7 @@ export const AddExerciseOpSchema = z
     rest_seconds: RestSecondsSchema.optional().default(null),
     superset_group_id: SupersetGroupSchema.optional().default(null),
     notes: NotesSchema.optional().default(null),
+    unit: UnitSchema.optional(),
   })
   .strict();
 export type AddExerciseOp = z.infer<typeof AddExerciseOpSchema>;
@@ -144,6 +148,7 @@ export const UpdateExerciseOpSchema = z
     rest_seconds: RestSecondsSchema.optional(),
     superset_group_id: SupersetGroupSchema.optional(),
     notes: NotesSchema.optional(),
+    unit: UnitSchema.optional(),
   })
   .strict();
 export type UpdateExerciseOp = z.infer<typeof UpdateExerciseOpSchema>;
@@ -157,6 +162,7 @@ export function updateExerciseOpChangesAField(op: UpdateExerciseOp): boolean {
     op.weight_lbs !== undefined ||
     op.rest_seconds !== undefined ||
     op.superset_group_id !== undefined ||
+    op.unit !== undefined ||
     op.notes !== undefined
   );
 }
@@ -301,6 +307,8 @@ export interface PlanExerciseSnapshot {
   notes: string | null;
   /** C1V2-C1: the coach's swaps, carried as the row has them. */
   alternative_external_ids?: string[];
+  /** TIMED-SETS-BE: reps or seconds; a row without one reads reps. */
+  unit?: PlanExerciseUnitValue;
 }
 
 export interface PlanMetaSnapshot {
@@ -343,6 +351,7 @@ export interface PersistableExerciseRow {
   superset_group_id: string | null;
   notes: string | null;
   alternative_external_ids?: string[];
+  unit: PlanExerciseUnitValue;
 }
 
 /** Project a snapshot's exercises onto the persistable DB column set (ordered). */
@@ -362,6 +371,7 @@ export function toPersistableRows(
       superset_group_id: e.superset_group_id ?? null,
       notes: e.notes ?? null,
       alternative_external_ids: alternativesOf(e),
+      unit: unitOf(e),
     }));
 }
 
@@ -387,6 +397,7 @@ export function serialiseSnapshotExercises(
       superset_group_id: e.superset_group_id ?? null,
       notes: e.notes ?? null,
       alternative_external_ids: alternativesOf(e),
+      unit: unitOf(e),
     }));
 }
 
@@ -436,6 +447,7 @@ export function snapshotFromRevisionJson(
       typeof r.superset_group_id === 'string' ? r.superset_group_id : null,
     notes: typeof r.notes === 'string' ? r.notes : null,
     alternative_external_ids: alternativesOf(r),
+    unit: unitOf(r),
   }));
   // Canonicalise order on load so a legacy/sparse revision is normalised.
   exercises

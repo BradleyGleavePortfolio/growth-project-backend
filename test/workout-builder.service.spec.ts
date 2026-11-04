@@ -589,8 +589,8 @@ describe('WorkoutBuilderService', () => {
         data: {
           workout_plan_id: basePlan.id, revision_index: 3,
           exercises_json: [
-            { exercise_external_id: 'ex-1', order: 1, sets: 3, reps_or_duration_seconds: 12, weight_lbs: null, rest_seconds: null, superset_group_id: null, notes: null },
-            { exercise_external_id: 'ex-2', order: 2, sets: 4, reps_or_duration_seconds: 8, weight_lbs: 135, rest_seconds: 120, superset_group_id: null, notes: null },
+            { exercise_external_id: 'ex-1', order: 1, sets: 3, reps_or_duration_seconds: 12, weight_lbs: null, rest_seconds: null, superset_group_id: null, notes: null, unit: 'reps' },
+            { exercise_external_id: 'ex-2', order: 2, sets: 4, reps_or_duration_seconds: 8, weight_lbs: 135, rest_seconds: 120, superset_group_id: null, notes: null, unit: 'reps' },
           ],
           plan_meta_json: { name: 'Push Day A', type: WorkoutType.strength, duration_estimate_minutes: 45, week_index: null, day_index: null },
           author_id: COACH_ID, author_kind: 'coach', cause: 'manual_edit',
