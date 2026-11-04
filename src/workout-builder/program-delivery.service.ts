@@ -32,7 +32,7 @@ import { randomUUID } from 'crypto';
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
-import { alternativesOf } from './plan-exercise-fields';
+import { alternativesOf, unitOf } from './plan-exercise-fields';
 import { programDaysWhere } from './program-guards';
 
 /** Advisory-lock namespace (int4) for program delivery keys. */
@@ -187,6 +187,7 @@ export class ProgramDeliveryService {
         superset_group_id: remap(e.superset_group_id ?? null),
         notes: e.notes ?? null,
         alternative_external_ids: alternativesOf(e),
+        unit: unitOf(e),
       }));
       planRows.push({
         id: planId,

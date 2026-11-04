@@ -99,12 +99,66 @@ function rangeRun(script: string, violation: boolean, values: Record<string, str
   const head = git(repo, 'rev-parse', 'HEAD');
   // The event head, not the checked-out base, must be scanned.
   git(repo, 'checkout', '-q', '--detach', base);
+  // actions/checkout with fetch-depth 0 fetches every branch as origin/<name>.
+  git(repo, 'update-ref', 'refs/remotes/origin/main', base);
   return shell(repo, script, {
     EVENT_NAME: 'pull_request',
     BASE_SHA: base,
     HEAD_SHA: head,
+    BASE_REF: 'main',
     ...values,
   });
+}
+
+const realPolicy = readFileSync(join(root, policyPath), 'utf8');
+// A policy that validates but bans nothing the harness writes.
+const bansNothing = JSON.stringify({
+  scan: JSON.parse(realPolicy).scan,
+  tokens: [{ name: 'zzz-not-a-real-token', pattern: 'zzz-not-a-real-token' }],
+});
+
+// R75-BASE-POLICY-BE: the event base is where the PR forked; origin/main may
+// have moved past it. The head adds a cast and may carry its own policy copy.
+function baseBranchRun(
+  policies: { fork?: string; head?: string; newerMain?: string },
+  values: Record<string, string> = {},
+) {
+  const repo = mkdtempSync(join(tmpdir(), 'r75-wiring-'));
+  directories.push(repo);
+  git(repo, 'init', '-q');
+  git(repo, 'config', 'user.name', 'test');
+  git(repo, 'config', 'user.email', 'test@invalid.local');
+  const commit = (files: Record<string, string>, message: string) => {
+    for (const [path, text] of Object.entries(files)) write(repo, path, text);
+    git(repo, 'add', '-A', '-f');
+    git(repo, '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', message);
+    return git(repo, 'rev-parse', 'HEAD');
+  };
+  const checker = readFileSync(join(root, checkerPath), 'utf8');
+  const forkPolicy = policies.fork ?? realPolicy;
+  const fork = commit({ [checkerPath]: checker, [policyPath]: forkPolicy }, 'fork');
+  const head = commit(
+    {
+      'src/example.ts': vectors.tokens[0].input,
+      ...(policies.head === undefined ? {} : { [policyPath]: policies.head }),
+    },
+    'head',
+  );
+  let main = fork;
+  if (policies.newerMain !== undefined) {
+    git(repo, 'checkout', '-q', '--detach', fork);
+    main = commit({ [policyPath]: policies.newerMain }, 'newer main');
+  }
+  git(repo, 'checkout', '-q', '--detach', fork);
+  git(repo, 'update-ref', 'refs/remotes/origin/main', main);
+  const result = shell(repo, body, {
+    EVENT_NAME: 'pull_request',
+    BASE_SHA: fork,
+    HEAD_SHA: head,
+    BASE_REF: 'main',
+    ...values,
+  });
+  return { fork, main, result };
 }
 
 function wiringContract(script: string, mode: 'range' | 'staged', diagnose = false) {
@@ -233,11 +287,38 @@ describe('R75 executable wiring contracts', () => {
     expect(result.stdout).not.toContain('OK');
   });
 
+  it('judges a PR by the base branch policy, never by its own loosened copy', () => {
+    const { main, result } = baseBranchRun({ head: bansNothing });
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(`policy from base ${main}`);
+    expect(result.stdout).toContain('FAIL: positive per-class');
+    expect(result.stdout).toContain(`note: this change edits ${policyPath}`);
+    expect(result.stderr).toBe('');
+  });
+
+  it('gives a branch built before a policy change the base branch newest policy', () => {
+    const { fork, main, result } = baseBranchRun({ fork: bansNothing, newerMain: realPolicy });
+    expect(main).not.toBe(fork);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(`policy from base ${main}`);
+    expect(result.stdout).toContain('FAIL: positive per-class');
+    expect(result.stdout).not.toContain('note: this change edits');
+    expect(result.stderr).toBe('');
+  });
+
+  it.each(['not-fetched', ''])('fails closed when the base branch head is missing: %s', (ref) => {
+    const { result } = baseBranchRun({ head: bansNothing }, { BASE_REF: ref });
+    expect(result.status).toBe(1);
+    expect(result.stdout).not.toContain('OK');
+    expect(result.stderr).toMatch(/base branch/);
+  });
+
   it('uses event references, an explicit shell and a pinned runtime without stored credentials', () => {
     expect(step.env).toEqual({
       EVENT_NAME: '${{ github.event_name }}',
       BASE_SHA: '${{ github.event.pull_request.base.sha }}',
       HEAD_SHA: '${{ github.event.pull_request.head.sha }}',
+      BASE_REF: '${{ github.event.pull_request.base.ref }}',
     });
     expect(step.shell).toBe('bash');
     expect(job['continue-on-error']).not.toBe(true);

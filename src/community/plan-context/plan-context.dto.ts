@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PLAN_EXERCISE_UNITS } from '../../workout-builder/plan-exercise-fields';
 
 /**
  * v2-1 plan-context tags.
@@ -146,6 +147,8 @@ const WorkoutSnapshotSchema = z
         order: z.number().int(),
         sets: z.number().int(),
         reps_or_duration_seconds: z.number().int(),
+        // TIMED-SETS-BE: what reps_or_duration_seconds counts.
+        unit: z.enum(PLAN_EXERCISE_UNITS),
       })
       .nullable(),
   })

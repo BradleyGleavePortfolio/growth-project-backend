@@ -8,7 +8,7 @@ import { Prisma, type AiActionDraft } from '@prisma/client';
 import { PrismaService } from '../../../prisma.service';
 import { NotificationsService } from '../../../notifications/notifications.service';
 import { NotificationKind } from '../../../notifications/notification-kind';
-import { alternativesOf } from '../../../workout-builder/plan-exercise-fields';
+import { alternativesOf, unitOf } from '../../../workout-builder/plan-exercise-fields';
 import { planStaysInTenantWhere } from '../../../workout-builder/tenant-clients';
 import {
   CapabilityMaterializer,
@@ -190,6 +190,7 @@ export class AssignWorkoutMaterializer implements CapabilityMaterializer {
                 superset_group_id: true,
                 notes: true,
                 alternative_external_ids: true,
+                unit: true,
               },
             },
           },
@@ -236,6 +237,7 @@ export class AssignWorkoutMaterializer implements CapabilityMaterializer {
             superset_group_id: e.superset_group_id ?? null,
             notes: e.notes ?? null,
             alternative_external_ids: alternativesOf(e),
+            unit: unitOf(e),
           }));
         await tx.clientWorkoutAssignmentSnapshot.create({
           data: {

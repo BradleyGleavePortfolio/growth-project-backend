@@ -34,27 +34,43 @@ function indexState() {
   return createHash('sha256').update(readFileSync(index)).update(head).digest('hex');
 }
 
+// CI passes --policy-base=<the base branch's head>: the rules then come from
+// what the change merges into, so a head cannot loosen or keep a stale copy of
+// its own policy. Without it (local runs) the measured head's file is read.
 function argumentsOf(argv) {
   const args = {};
   for (const argument of argv) {
-    const match = /^--(mode|base|head)=(.*)$/.exec(argument);
+    const match = /^--(mode|base|head|policy-base)=(.*)$/.exec(argument);
     if (!match || Object.hasOwn(args, match[1])) fail(`invalid or duplicate argument: ${argument}`);
     args[match[1]] = match[2];
   }
   if (args.mode === 'staged') {
-    if (Object.hasOwn(args, 'base') || Object.hasOwn(args, 'head')) {
+    if (['base', 'head', 'policy-base'].some((name) => Object.hasOwn(args, name))) {
       fail('staged mode does not accept range references');
     }
-    return { diff: ['--cached'], policy: `:${POLICY_PATH}` };
+    return { diff: ['--cached'], policy: `:${POLICY_PATH}`, notes: [] };
   }
   if (args.mode !== 'range' || !args.base?.trim()) fail('range mode requires a nonempty base');
   if (Object.hasOwn(args, 'head') && !args.head.trim()) fail('range mode requires a nonempty head');
+  const policyBase = args['policy-base'];
+  if (policyBase !== undefined && !policyBase.trim()) {
+    fail('range mode requires a nonempty policy base');
+  }
   const resolve = (ref) =>
     git(['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`]).trim();
   const base = resolve(args.base.trim());
   const head = resolve(args.head?.trim() || 'HEAD');
   const ancestor = git(['merge-base', base, head]).trim();
-  return { diff: [ancestor, head], policy: `${head}:${POLICY_PATH}` };
+  if (policyBase === undefined) {
+    return { diff: [ancestor, head], policy: `${head}:${POLICY_PATH}`, notes: [] };
+  }
+  const rules = resolve(policyBase.trim());
+  const notes = [`policy from base ${rules}`];
+  if (git(['diff', '--name-only', ancestor, head, '--', POLICY_PATH]).trim()) {
+    const judged = "it is judged by the base's file, not its own";
+    notes.push(`note: this change edits ${POLICY_PATH}; ${judged}`);
+  }
+  return { diff: [ancestor, head], policy: `${rules}:${POLICY_PATH}`, notes };
 }
 
 function readPolicy(source) {
@@ -176,6 +192,7 @@ try {
     fail('index or HEAD changed during the scan; retry with stable staged inputs');
   }
   print(`R75 ${scope.diff.join(' ')}; policy=${scope.policy}`);
+  for (const note of scope.notes) print(note);
   print('Counts are whole-file after (+) and before (-); net is the per-class change.');
   for (const { token, before, after, files } of totals) {
     if (before || after)

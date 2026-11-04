@@ -18,6 +18,7 @@ import { CommunityEvent, CommunityEventState } from '@prisma/client';
 import type { User } from '@prisma/client';
 import { CommunityEventsService } from '../../../src/community/events/community-events.service';
 import { safetyWithBlocks } from '../safety/safety-test-helpers';
+import { InMemoryPrisma } from '../safety/in-memory-prisma';
 
 type AnyUser = { id: string; role: string };
 
@@ -64,7 +65,7 @@ function baseEvent(over: Partial<CommunityEvent> = {}): CommunityEvent {
   };
 }
 
-function makeService(blocks: Array<[string, string]> = []) {
+function makeService(blocks: Array<[string, string]> = [], world?: InMemoryPrisma) {
   const store: Record<string, CommunityEvent> = {
     [EVT]: baseEvent(),
   };
@@ -158,7 +159,7 @@ function makeService(blocks: Array<[string, string]> = []) {
     repo as never,
     realtime as never,
     push as never,
-    safetyWithBlocks(blocks),
+    safetyWithBlocks(blocks, world),
   );
   return { service, access, repo, realtime, push, store };
 }
@@ -378,6 +379,37 @@ describe('CommunityEventsService (v2-3)', () => {
       await service.list(coach as never, WS, {});
       expect(repo.list).toHaveBeenCalledWith(expect.objectContaining({ cohortScope: null }));
       expect(access.listAccessibleCohortIds).not.toHaveBeenCalled();
+    });
+  });
+
+  // ALL-ON-FIX-BE (owner rule 1, C6-WINS-MOVE): the author rule posts use. Coach-made events are kept; a row
+  // whose author is a client who moved to another coach drops out of the list and reads as not found.
+  describe('a client who left (rule 1)', () => {
+    const LEFT = '77777777-7777-4777-8777-777777777777';
+    const EVT_LEFT = '88888888-8888-4888-8888-888888888888';
+    function world(): InMemoryPrisma {
+      const w = new InMemoryPrisma();
+      w.seed('communityWorkspace', { id: WS, coach_id: coach.id });
+      w.seed('user', { id: coach.id, role: 'coach', coach_id: null });
+      w.seed('user', { id: client.id, role: 'student', coach_id: coach.id });
+      w.seed('user', { id: LEFT, role: 'student', coach_id: '99999999-9999-4999-8999-999999999999' });
+      return w;
+    }
+
+    it('lists the coach event and leaves out the one by the client who left', async () => {
+      const { service, repo, store } = makeService([], world());
+      store[EVT_LEFT] = baseEvent({ id: EVT_LEFT, created_by_id: LEFT });
+      repo.list.mockResolvedValue([store[EVT], store[EVT_LEFT]]);
+      const ids = async (u: AnyUser) => (await service.list(u as never, WS, {})).events.map((e) => e.id);
+      expect(await ids(coach)).toEqual([EVT]);
+      expect(await ids(client)).toEqual([EVT]);
+    });
+
+    it('reads the coach event by id; the one by the client who left is not found', async () => {
+      const { service, store } = makeService([], world());
+      store[EVT_LEFT] = baseEvent({ id: EVT_LEFT, created_by_id: LEFT });
+      await expect(service.getOne(asUser(client), EVT)).resolves.toBeDefined();
+      await expect(service.getOne(asUser(coach), EVT_LEFT)).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 

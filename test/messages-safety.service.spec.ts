@@ -28,6 +28,8 @@ function makePrisma() {
     body: string;
     created_at: Date;
     read_at: Date | null;
+    // Read by the FEATURE_MESSAGING_CORE_V2 unread counts (deleted_at: null).
+    deleted_at?: Date | null;
   }> = [];
   const reports: Array<{
     id: string;
@@ -492,6 +494,7 @@ describe('MessagingService — block-aware list + unread filters', () => {
         body: 'hi coach',
         created_at: new Date('2026-05-21T01:00:00Z'),
         read_at: null,
+        deleted_at: null,
       },
       {
         id: 'm-2',
@@ -501,6 +504,7 @@ describe('MessagingService — block-aware list + unread filters', () => {
         body: 'hi client',
         created_at: new Date('2026-05-21T02:00:00Z'),
         read_at: null,
+        deleted_at: null,
       },
     );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

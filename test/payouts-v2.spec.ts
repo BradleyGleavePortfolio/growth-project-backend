@@ -622,8 +622,8 @@ describe('PayoutRoutingService — fee-tier routing', () => {
     });
   });
 
-  it('STRIPE_TREASURY behaves like Connect Custom bank while the Treasury flag is OFF', async () => {
-    await withEnv(ON as any, async () => {
+  it('STRIPE_TREASURY behaves like Connect Custom bank while the Treasury flag is OFF (sets it off itself)', async () => {
+    await withEnv({ ...ON, FEATURE_STRIPE_TREASURY_PAYOUTS: 'false' } as any, async () => {
       const prisma = makeFakePrisma();
       const stripe = makeStripeConnectMock();
       prisma.__db.user.push({ id: 'coach1', default_payout_method_id: 'pmT' });
