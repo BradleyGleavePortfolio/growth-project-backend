@@ -46,7 +46,7 @@ import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { WorkoutBuilderService } from './workout-builder.service';
 import { isMwbAutosaveUndoEnabled } from './workout-builder-autosave.feature';
 import { planStaysInTenantWhere } from './tenant-clients';
-import { alternativesOf } from './plan-exercise-fields';
+import { alternativesOf, unitOf, type PlanExerciseUnitValue } from './plan-exercise-fields';
 import {
   buildRevisionList,
   parseRevisionsLimit,
@@ -116,6 +116,8 @@ interface RevisionExerciseRow {
   superset_group_id: string | null;
   notes: string | null;
   alternative_external_ids?: string[];
+  /** TIMED-SETS-BE: reps or seconds; absent (an older snapshot or an edit without one) reads reps. */
+  unit?: PlanExerciseUnitValue;
 }
 
 /** Identity of the acting principal, resolved by the controller from the JWT. */
@@ -761,6 +763,7 @@ export class WorkoutBuilderAutosaveService implements OnModuleInit {
         superset_group_id: r.superset_group_id ?? null,
         notes: r.notes ?? null,
         alternative_external_ids: alternativesOf(r),
+        unit: unitOf(r),
       });
     }
 
@@ -776,7 +779,8 @@ export class WorkoutBuilderAutosaveService implements OnModuleInit {
                 `upsert_exercise row_id ${op.row_id} is not a live row`,
               );
             }
-            // C1V2-C1: an autosaved row keeps the coach's swaps (only Save sets them).
+            // C1V2-C1: an autosaved row keeps the coach's swaps (only Save sets them),
+            // and its unit unless the phone sent one (TIMED-SETS-BE).
             model.set(op.row_id, { ...model.get(op.row_id), _key: op.row_id, ...row });
           } else {
             const key = synthKey();
@@ -841,6 +845,7 @@ export class WorkoutBuilderAutosaveService implements OnModuleInit {
         superset_group_id: r.superset_group_id,
         notes: r.notes,
         alternative_external_ids: alternativesOf(r),
+        unit: unitOf(r),
       }),
     );
 
@@ -882,6 +887,7 @@ export class WorkoutBuilderAutosaveService implements OnModuleInit {
           superset_group_id: r.superset_group_id,
           notes: r.notes,
           alternative_external_ids: alternativesOf(r),
+          unit: unitOf(r),
         })),
       });
     }
@@ -995,6 +1001,8 @@ export class WorkoutBuilderAutosaveService implements OnModuleInit {
       rest_seconds: input.rest_seconds ?? null,
       superset_group_id: input.superset_group_id ?? null,
       notes: input.notes ?? null,
+      // TIMED-SETS-BE: only when sent, so an edit without one keeps the row's unit.
+      ...(input.unit ? { unit: input.unit } : {}),
     };
   }
 
@@ -1022,6 +1030,7 @@ export class WorkoutBuilderAutosaveService implements OnModuleInit {
         superset_group_id: r.superset_group_id ?? null,
         notes: r.notes ?? null,
         alternative_external_ids: alternativesOf(r),
+        unit: unitOf(r),
       }));
   }
 

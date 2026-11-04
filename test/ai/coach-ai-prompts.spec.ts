@@ -76,9 +76,9 @@ function fixtureCtx(): ClientContext {
 }
 
 describe('Prompt versions are pinned', () => {
-  it('workout-program v3 (R7: client text fenced as data)', () => {
+  it('workout-program v4 (R7: client text fenced as data; TIMED-SETS-BE: each row says reps or seconds)', () => {
     expect(WorkoutProgramPrompt.name).toBe('workout-program');
-    expect(WorkoutProgramPrompt.version).toBe('v3');
+    expect(WorkoutProgramPrompt.version).toBe('v4');
   });
   it('meal-plan v2 (R7)', () => {
     expect(MealPlanPrompt.name).toBe('meal-plan');
