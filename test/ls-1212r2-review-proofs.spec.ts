@@ -148,10 +148,17 @@ describe('LS-1212R2 independent real Postgres review', () => {
       name: 'Review private lasagne', serving_description: 'my bowl', serving_size_grams: 100,
       calories: 123, protein_g: 3, carbs_g: 6, fat_g: 9,
     }, a.id);
-    const fetchSpy = jest.spyOn(global, 'fetch').mockRejectedValue(new Error('offline fixture'));
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true, status: 200, json: async () => ({ products: [], foods: [] }),
+    } as Response);
     try {
       expect((await food.search('lasagne', 50, a.id)).results.some((r) => r.id === own.id)).toBe(true);
+      const cached = (food as unknown as { memoryCache: Map<string, unknown> }).memoryCache;
+      expect(cached.size).toBe(1);
+      expect(JSON.stringify([...cached.values()])).not.toContain(own.id);
+      const calls = fetchSpy.mock.calls.length;
       expect((await food.search('lasagne', 50, b.id)).results.some((r) => r.id === own.id)).toBe(false);
+      expect(fetchSpy).toHaveBeenCalledTimes(calls);
       expect(await food.getById(own.id, b.id)).toBeNull();
       const log = new LogService(prisma as never, food, { capture: jest.fn() } as never,
         { emit: jest.fn() } as never, { invalidateForUser: jest.fn() } as never);
