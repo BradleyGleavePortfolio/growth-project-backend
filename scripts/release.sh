@@ -329,6 +329,30 @@ if ! DIRECT_URL="${DIRECT_URL}" node "${FOOD_SEED_SCRIPT}" "${FOOD_SEED_FILE}"; 
   exit 1
 fi
 
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 6 — USDA foods (FOOD-USDA-BE). Adds each food in
+# prisma/data/usda-foods.jsonl.gz (USDA SR Legacy and Foundation, built from
+# USDA's own CSV files by scripts/usda-foods/build.py) that the shared catalog
+# lacks, keyed on its usda:<fdcId> tag, as the same row the live USDA import
+# stores. Like step 5 it never updates or deletes a row and never reads a
+# member's own food; any food still missing afterwards, or an insert the
+# database refuses, fails this release, so Fly keeps the previous image.
+# ─────────────────────────────────────────────────────────────────────────────
+echo "[release] step 6: USDA foods (prisma/data/usda-foods.jsonl.gz)..."
+USDA_FOODS_SCRIPT="dist/food-seed/scripts/load-usda-foods.js"
+USDA_FOODS_FILE="prisma/data/usda-foods.jsonl.gz"
+if [[ ! -f "${USDA_FOODS_SCRIPT}" || ! -f "${USDA_FOODS_FILE}" ]]; then
+  echo "[release] USDA foods FAILED: ${USDA_FOODS_SCRIPT} or ${USDA_FOODS_FILE} is not in this image"
+  echo "[release] Refusing to mark this release green."
+  exit 1
+fi
+if ! DIRECT_URL="${DIRECT_URL}" node "${USDA_FOODS_SCRIPT}" "${USDA_FOODS_FILE}"; then
+  echo "[release] USDA foods step FAILED (reason on the line above)."
+  echo "[release] Refusing to mark this release green."
+  echo "[release] NOTE: migrate deploy already ran; the database may now be ahead of the running code."
+  exit 1
+fi
+
 # Count successfully applied (rolled_back_at IS NULL) rows in _prisma_migrations
 # so the log emits a single grep-able line for monitoring/observability.
 #

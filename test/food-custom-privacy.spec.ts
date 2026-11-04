@@ -50,10 +50,13 @@ const food = (id: string, name: string, extra: Record<string, unknown> = {}): Ro
   ...extra,
 });
 
-/** Flat equality plus `OR` and `tags: { has }`, the filters FoodService sends. */
+/** Flat equality plus `OR`, `AND`, `NOT` and `tags: { has }`, the filters FoodService sends. */
 function matches(row: Row, where: Record<string, unknown>): boolean {
   return Object.entries(where).every(([key, want]) => {
     if (key === 'OR' && Array.isArray(want)) return want.some((w) => matches(row, w));
+    // FOOD-USDA-BE: the empty-query list leaves out the loaded USDA rows with AND + NOT.
+    if (key === 'AND' && Array.isArray(want)) return want.every((w) => matches(row, w));
+    if (key === 'NOT' && want && typeof want === 'object') return !matches(row, want as Record<string, unknown>);
     if (key === 'tags' && want && typeof want === 'object' && 'has' in want) {
       return Array.isArray(row.tags) && row.tags.includes(Reflect.get(want, 'has'));
     }
