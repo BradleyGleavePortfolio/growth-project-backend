@@ -21,7 +21,9 @@ describe('MessagingService read clears the thread message notifications', () => 
 
   function service(): MessagingService {
     const svc: MessagingService = Object.create(MessagingService.prototype);
-    return Object.assign(svc, { prisma, logger: new Logger('test') });
+    // With FEATURE_MESSAGING_CORE_V2 on, a read pings the thread (notifyThreadUpdated).
+    const supabase = { pingChat: jest.fn(async () => undefined) };
+    return Object.assign(svc, { prisma, supabase, logger: new Logger('test') });
   }
 
   beforeEach(() => {

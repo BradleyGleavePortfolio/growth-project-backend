@@ -190,6 +190,9 @@ describe('BroadcastsService idempotency (A-659-6)', () => {
         }),
         count: jest.fn(async () => 0),
       },
+      // FR-1217R1: a replay reads the moved-away roster rule, like get/list.
+      // No client here has moved (private-client is still on the roster).
+      user: { findMany: jest.fn(async () => []) },
     };
     return prisma;
   }

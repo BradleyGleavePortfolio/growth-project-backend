@@ -1241,12 +1241,15 @@ describe('R100 deploy-readiness orchestrator', () => {
       expect(board.totalRed).toBe(0);
     });
 
-    it('full mode (PR / informational) runs every section and is SAFE TO DEPLOY', async () => {
+    it('full mode (PR / informational, switches unset) runs every section and is SAFE TO DEPLOY', async () => {
       // PR mode: only the codebase-invariant buckets (stub + prod-switch) gate.
       // Stub red is zero on this repo because every BLOCK_SHIP fingerprint is
       // adjudicated tracked debt in the learning ledger and downgraded to WARN by
       // applyTrackedDebt; the registry is coherent, so prodSwitchesWrong is zero.
-      const board = await runDeployReadiness({ repoRoot: REPO_ROOT, mode: 'full', strict: false });
+      // The board reads the env it is given: pin it to this job's env with every FEATURE_* switch unset, so a
+      // job that turns switches on (not their production value) does not read as switches wrong.
+      const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('FEATURE_')));
+      const board = await runDeployReadiness({ repoRoot: REPO_ROOT, mode: 'full', strict: false, env });
       expect(board.sections.map((s) => s.section)).toEqual([...BOARD_SECTIONS]);
       // eslint-disable-next-line no-console
       console.log(board.board);

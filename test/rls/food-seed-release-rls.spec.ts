@@ -74,8 +74,12 @@ const release = (): Run => {
     poly_fat_g: true, fiber_g: true, sugar_g: true, sodium_mg: true, tags: true, search_aliases: true, image_url: true,
     barcode: true, nutrient_basis: true, created_by_user_id: true,
   } as const;
-  const shared = () => prisma.foodItem.findMany({ where: { created_by_user_id: null }, select: COLUMNS });
-  const sharedOf = (name: string) => prisma.foodItem.findMany({ where: { created_by_user_id: null, name, brand_or_restaurant: null } });
+  // FOOD-USDA-BE: release step 6 adds the 7,980 USDA foods (shared, tagged basic-food) after this step; they are
+  // test/rls/food-usda-release-rls.spec.ts's, so these counts leave them out.
+  const NOT_USDA = { NOT: { tags: { has: 'basic-food' } } };
+  const shared = () => prisma.foodItem.findMany({ where: { created_by_user_id: null, ...NOT_USDA }, select: COLUMNS });
+  const sharedOf = (name: string) =>
+    prisma.foodItem.findMany({ where: { created_by_user_id: null, name, brand_or_restaurant: null, ...NOT_USDA } });
   const allRows = () => prisma.foodItem.findMany({ orderBy: { id: 'asc' } });
   let seedFoodsRows = new Map<string, unknown>();
 

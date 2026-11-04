@@ -1,0 +1,265 @@
+{
+ "about": "FOOD-USDA-BE (agent 193): which USDA SR Legacy food each of the 65 built-in foods (prisma/data/seed-foods.json) already stands for. scripts/usda-foods/build.py leaves these USDA foods out of prisma/data/usda-foods.jsonl.gz, so the catalog does not hold the same food twice. A built-in food maps to an SR Legacy food only when its numbers are that food's: calories within 2 kcal and protein, carbs and fat each within 0.5 g per 100 g (test/usda-foods-file.spec.ts checks every pair); null when no SR Legacy food has its numbers.",
+ "foods": [
+  {
+   "built_in": "Chicken breast, raw, skinless",
+   "sr_legacy_fdc_id": 171077
+  },
+  {
+   "built_in": "Chicken breast, cooked, roasted",
+   "sr_legacy_fdc_id": 171477
+  },
+  {
+   "built_in": "Chicken thigh, cooked, roasted",
+   "sr_legacy_fdc_id": 172388
+  },
+  {
+   "built_in": "Ground beef, 80/20, raw",
+   "sr_legacy_fdc_id": 174036
+  },
+  {
+   "built_in": "Ground beef, 90/10, raw",
+   "sr_legacy_fdc_id": 174030
+  },
+  {
+   "built_in": "Salmon, Atlantic, cooked",
+   "sr_legacy_fdc_id": 175168
+  },
+  {
+   "built_in": "Tuna, canned in water, drained",
+   "sr_legacy_fdc_id": 173709
+  },
+  {
+   "built_in": "Egg, whole, raw",
+   "sr_legacy_fdc_id": 171287
+  },
+  {
+   "built_in": "Egg white, raw",
+   "sr_legacy_fdc_id": 172183
+  },
+  {
+   "built_in": "Greek yogurt, plain, nonfat",
+   "sr_legacy_fdc_id": 170894
+  },
+  {
+   "built_in": "Greek yogurt, plain, whole milk",
+   "sr_legacy_fdc_id": 171304
+  },
+  {
+   "built_in": "Yogurt, plain, whole milk",
+   "sr_legacy_fdc_id": 171284
+  },
+  {
+   "built_in": "Milk, whole, 3.25% fat",
+   "sr_legacy_fdc_id": 171265
+  },
+  {
+   "built_in": "Milk, 2% fat",
+   "sr_legacy_fdc_id": 171267
+  },
+  {
+   "built_in": "Milk, skim, nonfat",
+   "sr_legacy_fdc_id": 171269
+  },
+  {
+   "built_in": "Almond milk, unsweetened",
+   "sr_legacy_fdc_id": null
+  },
+  {
+   "built_in": "Cheddar cheese",
+   "sr_legacy_fdc_id": 173414
+  },
+  {
+   "built_in": "Mozzarella cheese, part-skim",
+   "sr_legacy_fdc_id": 170847
+  },
+  {
+   "built_in": "Cottage cheese, lowfat 2%",
+   "sr_legacy_fdc_id": null
+  },
+  {
+   "built_in": "Butter, salted",
+   "sr_legacy_fdc_id": 173410
+  },
+  {
+   "built_in": "Olive oil, extra virgin",
+   "sr_legacy_fdc_id": 171413
+  },
+  {
+   "built_in": "Coconut oil",
+   "sr_legacy_fdc_id": 171412
+  },
+  {
+   "built_in": "Avocado, raw",
+   "sr_legacy_fdc_id": 171705
+  },
+  {
+   "built_in": "Banana, raw",
+   "sr_legacy_fdc_id": 173944
+  },
+  {
+   "built_in": "Apple, raw, with skin",
+   "sr_legacy_fdc_id": 171688
+  },
+  {
+   "built_in": "Strawberries, raw",
+   "sr_legacy_fdc_id": 167762
+  },
+  {
+   "built_in": "Blueberries, raw",
+   "sr_legacy_fdc_id": 171711
+  },
+  {
+   "built_in": "Orange, raw",
+   "sr_legacy_fdc_id": 169097
+  },
+  {
+   "built_in": "Grapes, raw",
+   "sr_legacy_fdc_id": 174683
+  },
+  {
+   "built_in": "Broccoli, raw",
+   "sr_legacy_fdc_id": 170379
+  },
+  {
+   "built_in": "Spinach, raw",
+   "sr_legacy_fdc_id": 168462
+  },
+  {
+   "built_in": "Carrots, raw",
+   "sr_legacy_fdc_id": 170393
+  },
+  {
+   "built_in": "Sweet potato, raw",
+   "sr_legacy_fdc_id": 168482
+  },
+  {
+   "built_in": "Potato, white, raw",
+   "sr_legacy_fdc_id": 170026
+  },
+  {
+   "built_in": "Tomato, raw",
+   "sr_legacy_fdc_id": 170457
+  },
+  {
+   "built_in": "Onion, raw",
+   "sr_legacy_fdc_id": 170000
+  },
+  {
+   "built_in": "Bell pepper, red, raw",
+   "sr_legacy_fdc_id": 170108
+  },
+  {
+   "built_in": "Oats, rolled, dry",
+   "sr_legacy_fdc_id": 173904
+  },
+  {
+   "built_in": "Rice, white, long-grain, cooked",
+   "sr_legacy_fdc_id": 168878
+  },
+  {
+   "built_in": "Rice, brown, long-grain, cooked",
+   "sr_legacy_fdc_id": 169704
+  },
+  {
+   "built_in": "Quinoa, cooked",
+   "sr_legacy_fdc_id": 168917
+  },
+  {
+   "built_in": "Pasta, cooked, plain",
+   "sr_legacy_fdc_id": 169737
+  },
+  {
+   "built_in": "Pasta, dry",
+   "sr_legacy_fdc_id": 169736
+  },
+  {
+   "built_in": "Bread, white",
+   "sr_legacy_fdc_id": 174924
+  },
+  {
+   "built_in": "Bread, whole wheat",
+   "sr_legacy_fdc_id": null
+  },
+  {
+   "built_in": "Almonds, raw",
+   "sr_legacy_fdc_id": 170567
+  },
+  {
+   "built_in": "Peanut butter, smooth",
+   "sr_legacy_fdc_id": null
+  },
+  {
+   "built_in": "Walnuts, raw",
+   "sr_legacy_fdc_id": 170187
+  },
+  {
+   "built_in": "Black beans, cooked",
+   "sr_legacy_fdc_id": 173735
+  },
+  {
+   "built_in": "Lentils, cooked",
+   "sr_legacy_fdc_id": 172421
+  },
+  {
+   "built_in": "Chickpeas, cooked",
+   "sr_legacy_fdc_id": 173757
+  },
+  {
+   "built_in": "Tofu, firm",
+   "sr_legacy_fdc_id": 172475
+  },
+  {
+   "built_in": "Sugar, granulated, white",
+   "sr_legacy_fdc_id": 169655
+  },
+  {
+   "built_in": "Honey",
+   "sr_legacy_fdc_id": 169640
+  },
+  {
+   "built_in": "Maple syrup, pure",
+   "sr_legacy_fdc_id": 169661
+  },
+  {
+   "built_in": "All-purpose flour, white",
+   "sr_legacy_fdc_id": 168894
+  },
+  {
+   "built_in": "Whey protein powder",
+   "sr_legacy_fdc_id": null
+  },
+  {
+   "built_in": "Pork tenderloin, cooked",
+   "sr_legacy_fdc_id": 168250
+  },
+  {
+   "built_in": "Bacon, pan-fried",
+   "sr_legacy_fdc_id": 168322
+  },
+  {
+   "built_in": "Shrimp, cooked",
+   "sr_legacy_fdc_id": 175180
+  },
+  {
+   "built_in": "Cucumber, raw",
+   "sr_legacy_fdc_id": 168409
+  },
+  {
+   "built_in": "Lettuce, romaine, raw",
+   "sr_legacy_fdc_id": 169247
+  },
+  {
+   "built_in": "Mushrooms, white, raw",
+   "sr_legacy_fdc_id": 169251
+  },
+  {
+   "built_in": "Hummus, plain",
+   "sr_legacy_fdc_id": 174289
+  },
+  {
+   "built_in": "Dark chocolate, 70-85% cacao",
+   "sr_legacy_fdc_id": 170273
+  }
+ ]
+}

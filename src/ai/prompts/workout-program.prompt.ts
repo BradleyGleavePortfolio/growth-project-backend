@@ -1,5 +1,6 @@
 import { ClientContext } from '../context/client-context.types';
 import { CoachAIPrompt } from './prompt.types';
+import type { PlanExerciseUnitValue } from '../../workout-builder/plan-exercise-fields';
 import { UNTRUSTED_TEXT_RULE, fenceUntrusted } from '../utils/untrusted-text';
 import { sanitizePromptInput } from '../utils/sanitize-prompt-input';
 import type { WorkoutContextV2 } from '../context/workout-context.service';
@@ -28,6 +29,8 @@ export interface WorkoutProgramExerciseRow {
   order: number;
   sets: number;
   reps_or_duration_seconds: number;
+  /** TIMED-SETS-BE: what reps_or_duration_seconds counts; anything but "seconds" is reps (absent on a draft saved before units). */
+  unit?: PlanExerciseUnitValue;
   weight_lbs?: number | null;
   rest_seconds?: number | null;
   superset_group_id?: string | null;
@@ -93,6 +96,7 @@ OUTPUT SCHEMA (return ONLY valid JSON conforming to this shape):
           "order": <int 1..>,
           "sets": <int 1..10>,
           "reps_or_duration_seconds": <int>,
+          "unit": "reps" | "seconds",
           "weight_lbs": <number or null>,
           "rest_seconds": <int or null>,
           "superset_group_id": "<short id or null>",
@@ -120,6 +124,7 @@ function validateRow(raw: unknown, weekIdx: number, dayIdx: number): WorkoutProg
     order: numberOf(o.order, 'order'),
     sets: numberOf(o.sets, 'sets'),
     reps_or_duration_seconds: numberOf(o.reps_or_duration_seconds, 'reps_or_duration_seconds'),
+    unit: o.unit === 'seconds' ? 'seconds' : 'reps',
     weight_lbs:
       o.weight_lbs == null ? null : numberOf(o.weight_lbs, 'weight_lbs'),
     rest_seconds:
@@ -138,7 +143,7 @@ function numberOf(v: unknown, field: string): number {
 
 export const WorkoutProgramPrompt: CoachAIPrompt<WorkoutProgramInput, WorkoutProgramPayload> = {
   name: 'workout-program',
-  version: 'v3',
+  version: 'v4',
   system: SYSTEM,
   buildUser(ctx, input) {
     const lines: string[] = [];
