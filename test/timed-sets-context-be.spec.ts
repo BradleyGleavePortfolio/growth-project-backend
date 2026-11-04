@@ -29,6 +29,8 @@ afterEach(() => {
 
 type Row = Record<string, unknown>;
 type Select = { select?: Record<string, unknown> };
+// Read untyped, so this spec also runs (and fails on behaviour) against a tree without the field.
+const unitIn = (e: object): unknown => (e as { unit?: unknown }).unit;
 
 // A live plan: a 60-second plank that says seconds (no "SECONDS." note) and a
 // 50-rep row that says reps. Neither number tells the unit.
@@ -85,7 +87,7 @@ describe("TIMED-SETS-CONTEXT-BE: Roman's client context", () => {
     const { svc } = setup();
     const { context } = await svc.build({ id: P1, role: 'student' }, NOW);
     expect(context.plan?.next_session?.date).toBe('2026-10-01');
-    expect(context.plan?.next_session?.exercises.map((e) => [e.reps_or_duration_seconds, e.unit])).toEqual([
+    expect(context.plan?.next_session?.exercises.map((e) => [e.reps_or_duration_seconds, unitIn(e)])).toEqual([
       [45, 'seconds'],
       [40, 'reps'],
       [8, 'reps'],
