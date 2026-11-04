@@ -34,6 +34,7 @@ interface Header {
   foods: number;
   with_portion: number;
   left_out_built_in: LeftOut[];
+  left_out_same_name: { fdc_id: number; name: string; kept: string }[];
   skipped: { fdc_id: string; why: string }[];
   carbs_below_zero_stored_as_0: { fdc_id: number; usda_carbs_g: number }[];
 }
@@ -71,12 +72,15 @@ describe('prisma/data/usda-foods.jsonl.gz — the USDA SR Legacy and Foundation 
       'b80817294b8850530aaedf2e515c02593b1824f763a0ff356e5c2081643e6fd0',
       '70457ee9d9342f43bda2010318c85f04210c689fdeb9cd2da4c513b0e8dbc655',
     ]);
-    expect(header.files.map((f) => f.foods)).toEqual([7793, 323]);
-    expect(foods).toHaveLength(8056);
-    expect(header.foods).toBe(8056);
-    // SR Legacy less the foods a built-in food stands for, plus Foundation.
+    // FR-1212R1: Foundation 323 less Salt, table, iodized (no protein, carbohydrate or fat figure, LS-1212 B2); in
+    // the file, Foundation less the 75 foods named like a built-in food or an SR Legacy food (LO-1212 C1).
+    expect(header.files.map((f) => f.foods)).toEqual([7793, 322]);
+    expect(foods).toHaveLength(7980);
+    expect(header.foods).toBe(7980);
+    // SR Legacy less the foods a built-in food stands for, plus Foundation less the foods named like another.
     expect(foods.filter((f) => f.data_type === 'SR Legacy')).toHaveLength(7793 - header.left_out_built_in.length);
-    expect(foods.filter((f) => f.data_type === 'Foundation')).toHaveLength(323);
+    expect(foods.filter((f) => f.data_type === 'Foundation')).toHaveLength(322 - header.left_out_same_name.length);
+    expect(header.left_out_same_name).toHaveLength(75);
     expect(foods.filter((f) => f.serving_description !== null)).toHaveLength(header.with_portion);
   });
 
@@ -85,16 +89,20 @@ describe('prisma/data/usda-foods.jsonl.gz — the USDA SR Legacy and Foundation 
     const sr = csvIds('sr-legacy/sr_legacy_food.csv');
     const fd = csvIds('foundation/foundation_food.csv');
     expect(sr.length + fd.length).toBeGreaterThanOrEqual(20);
-    expect(fixture.foods.length).toBeGreaterThanOrEqual(20);
+    // FR-1212R1: 19, as Salt, table, iodized (Foundation 746775, no protein, carbohydrate or fat figure) is left out.
+    expect(fixture.foods.length).toBeGreaterThanOrEqual(19);
     expect(new Set(fixture.foods.map((f) => f.data_type))).toEqual(new Set(['SR Legacy', 'Foundation']));
-    for (const f of fixture.foods) expect([f.fdc_id, byId.get(f.fdc_id)]).toEqual([f.fdc_id, f]);
+    // FR-1212R1: a food the full build leaves out for its name (its twin is outside the cut) is not in the file.
+    const sameName = new Set(header.left_out_same_name.map((l) => l.fdc_id));
+    for (const f of fixture.foods) expect([f.fdc_id, byId.get(f.fdc_id)]).toEqual([f.fdc_id, sameName.has(f.fdc_id) ? undefined : f]);
     // The cut covers each path: no portion, energy from Atwater General, carbohydrate below zero, no energy at all,
-    // and an SR Legacy food a built-in food stands for.
+    // no protein, carbohydrate or fat figure (FR-1212R1), and an SR Legacy food a built-in food stands for.
     expect(fixture.foods.some((f) => f.serving_description === null)).toBe(true);
     expect(fixture.foods.some((f) => f.energy_from === '2047')).toBe(true);
     expect(fixture.header.carbs_below_zero_stored_as_0.length).toBeGreaterThan(0);
     for (const z of fixture.header.carbs_below_zero_stored_as_0) expect(byId.get(z.fdc_id)?.carbs_g).toBe(0);
     expect(fixture.header.skipped.length).toBeGreaterThan(0);
+    expect(fixture.header.skipped.some((s) => /^no USDA figure for /.test(s.why))).toBe(true);
     for (const s of fixture.header.skipped) expect(byId.has(Number(s.fdc_id))).toBe(false);
     expect(fixture.header.left_out_built_in.length).toBeGreaterThan(0);
     for (const l of fixture.header.left_out_built_in) {

@@ -1,6 +1,6 @@
 /**
  * FOOD-USDA-BE — live proof of scripts/release.sh step 6 (USDA foods) and the catalog's word search, on the replayed
- * migration chain, with prisma/data/usda-foods.jsonl.gz (8,056 USDA SR Legacy and Foundation foods).
+ * migration chain, with prisma/data/usda-foods.jsonl.gz (7,980 USDA SR Legacy and Foundation foods).
  *
  * Proves, in order:
  *   1. the first release adds every USDA food the shared catalog lacks once, as usdaFoodRow makes it (the live import's

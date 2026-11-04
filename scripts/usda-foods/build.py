@@ -29,7 +29,9 @@ Rounding is the live import's: every nutrient to 0.1 (JavaScript Math.round,
 halves up), calories and sodium to a whole number, a zero fibre, sugar or
 sodium stored as null. A carbohydrate-by-difference below zero (ten Foundation
 meats and fish) is stored as 0 and listed in line 1. A food with no energy
-figure at all is left out and listed in line 1 with the reason.
+figure at all, or no protein, carbohydrate or fat figure, is left out and
+listed in line 1 with the reason; so is a food with the name of a built-in food
+or of an SR Legacy food kept (left_out_same_name).
 """
 import csv
 import gzip
@@ -175,6 +177,13 @@ def read_release(path, list_file, data_type, skipped, below_zero):
         if not energy_ids:
             skipped.append({'fdc_id': fdc_id, 'data_type': data_type, 'name': name, 'why': 'no energy figure'})
             continue
+        # FR-1212R1 (LS-1212 B2): FoodItem has no "unknown" for protein, carbohydrate or fat, and 0 would read as a
+        # measured 0, so a food USDA gives no figure for one of them is left out and listed with the reason.
+        missing = [label for label, nid in (('protein', PROTEIN), ('carbohydrate', CARBS), ('fat', FAT)) if nid not in n]
+        if missing:
+            skipped.append({'fdc_id': fdc_id, 'data_type': data_type, 'name': name,
+                            'why': 'no USDA figure for ' + ', '.join(missing)})
+            continue
         # The live import's order: Energy kcal, else Atwater General, else
         # Atwater Specific, else kJ / 4.184 (a zero falls through, as || does).
         calories, energy_from = 0, energy_ids[0]
@@ -228,7 +237,8 @@ def main(argv):
     fd = read_release(fd_path, 'foundation_food.csv', 'Foundation', skipped, below_zero)
     # A USDA food one of the 65 built-in foods already stands for is left out.
     with open(map_path, encoding='utf-8') as f:
-        built_in = {r['sr_legacy_fdc_id']: r['built_in'] for r in json.load(f)['foods'] if r['sr_legacy_fdc_id']}
+        mapped = json.load(f)['foods']
+    built_in = {r['sr_legacy_fdc_id']: r['built_in'] for r in mapped if r['sr_legacy_fdc_id']}
     sr_ids = {f['fdc_id'] for f in sr}
     unknown = sorted(i for i in built_in if i not in sr_ids)
     # (A fixture folder holds a cut of SR Legacy, so the full map names foods it lacks.)
@@ -238,7 +248,20 @@ def main(argv):
     stands_for = [{'fdc_id': f['fdc_id'], 'name': f['name'], 'built_in': built_in[f['fdc_id']],
                    'calories': f['calories'], 'protein_g': f['protein_g'], 'carbs_g': f['carbs_g'], 'fat_g': f['fat_g']}
                   for f in sr if f['fdc_id'] in built_in]
-    foods = sorted([f for f in sr if f['fdc_id'] not in built_in] + fd, key=lambda f: f['fdc_id'])
+    # FR-1212R1 (LO-1212 C1): one food per name. A food named like a built-in food, or like an SR Legacy food already
+    # kept, is left out and listed: the SR Legacy row stays (it always lists a portion; 25 of the 71 Foundation foods
+    # named like one list none), and a built-in food is never stood in for by a USDA row of its name.
+    fold = lambda name: ' '.join(name.lower().split())
+    taken = {fold(r['built_in']): 'built-in food' for r in mapped}
+    same_name, kept = [], []
+    for f in sorted([f for f in sr if f['fdc_id'] not in built_in], key=lambda f: f['fdc_id']) + fd:
+        if fold(f['name']) in taken:
+            same_name.append({'fdc_id': f['fdc_id'], 'data_type': f['data_type'], 'name': f['name'],
+                              'kept': taken[fold(f['name'])]})
+        else:
+            taken[fold(f['name'])] = f'{f["data_type"]} {f["fdc_id"]}'
+            kept.append(f)
+    foods = sorted(kept, key=lambda f: f['fdc_id'])
     ids = [f['fdc_id'] for f in foods]
     if len(ids) != len(set(ids)):
         sys.exit('an fdc_id is in both files')
@@ -258,6 +281,7 @@ def main(argv):
             'saturated_fat_g': SATURATED, 'mono_fat_g': MONO, 'poly_fat_g': POLY,
         },
         'left_out_built_in': stands_for,
+        'left_out_same_name': same_name,
         'foods': len(foods),
         'with_portion': sum(1 for f in foods if f['serving_description']),
         'skipped': skipped,
@@ -269,7 +293,8 @@ def main(argv):
             gz.write((json.dumps(line, ensure_ascii=False, separators=(',', ':')) + '\n').encode('utf-8'))
     with open(out_path, 'wb') as f:
         f.write(buf.getvalue())
-    print(f'{len(foods)} foods ({len(sr)} SR Legacy less {len(stands_for)} built-in, {len(fd)} Foundation), '
+    print(f'{len(foods)} foods ({len(sr)} SR Legacy less {len(stands_for)} built-in, {len(fd)} Foundation, '
+          f'less {len(same_name)} with the name of another), '
           f'{header["with_portion"]} with a portion, {len(skipped)} skipped -> {out_path} '
           f'({len(buf.getvalue())} bytes)')
 
