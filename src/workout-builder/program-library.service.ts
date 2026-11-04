@@ -57,7 +57,7 @@ import {
   UpdateProgramDto,
 } from './program-library.dto';
 import { inTenantSql, inTenantWhere } from './tenant-clients';
-import { alternativesOf } from './plan-exercise-fields';
+import { alternativesOf, unitOf, type PlanExerciseUnitValue } from './plan-exercise-fields';
 
 /** Advisory-lock namespaces (int4). */
 const LOCK_NS_PROGRAM_GRID = 0x4d574247; // 'MWBG' — serialises grid writes per program
@@ -732,6 +732,7 @@ export class ProgramLibraryService {
       superset_group_id: string | null;
       notes: string | null;
       alternative_external_ids?: string[];
+      unit: PlanExerciseUnitValue;
     }>;
   }> {
     if (dto.source === 'blank') {
@@ -797,6 +798,7 @@ export class ProgramLibraryService {
         superset_group_id: e.superset_group_id ?? null,
         notes: e.notes ?? null,
         alternative_external_ids: alternativesOf(e),
+        unit: unitOf(e),
       })),
     };
   }
@@ -950,6 +952,7 @@ export class ProgramLibraryService {
                 superset_group_id: e.superset_group_id ?? null,
                 notes: e.notes ?? null,
                 alternative_external_ids: alternativesOf(e),
+                unit: unitOf(e),
               })),
             });
           }

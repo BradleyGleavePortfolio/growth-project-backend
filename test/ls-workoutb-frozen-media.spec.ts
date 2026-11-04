@@ -49,7 +49,8 @@ describe('LS-WORKOUTB signed media follows the prescription actually presented',
     // Exercise the real, pure server presenter used by the assignment routes,
     // not a fabricated rule that substitutes frozen data only in this test.
     const presented = WorkoutBuilderService.prototype['presentAssignment'](assignment);
-    expect(presented.exercises).toEqual([exercise(frozenRef ?? liveRef)]);
+    // TIMED-SETS-BE: a frozen row without a unit is presented with the unit unitOf reads (reps here).
+    expect(presented.exercises).toEqual([frozenRef === null ? exercise(liveRef) : { ...exercise(frozenRef), unit: 'reps' }]);
     expect(presented.snapshot_source).toBe(frozenRef !== null);
 
     const memberMatches = (where: AssignmentLookup['where']) =>

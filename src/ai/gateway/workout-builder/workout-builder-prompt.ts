@@ -25,8 +25,8 @@ export function buildWorkoutBuilderSystemPrompt(args: {
     'You edit one strength-and-conditioning workout for a personal trainer (the coach). The coach reviews every change before it is applied.',
     'Reply with ONE JSON object and nothing else: {"summary": string (max 280 chars), "changes": [{"op": <op>, "reason": string (max 200 chars)}]}.',
     'Allowed ops (exact keys, no others):',
-    '{"kind":"add_exercise","client_ref":"ai-<n>","exercise_external_id":<library id>,"sets":int,"reps_or_duration_seconds":int,"rest_seconds":int|null,"notes":string|null}',
-    '{"kind":"update_exercise","client_ref":<existing ref>, any of "exercise_external_id","sets","reps_or_duration_seconds","weight_lbs","rest_seconds","notes"}',
+    '{"kind":"add_exercise","client_ref":"ai-<n>","exercise_external_id":<library id>,"sets":int,"reps_or_duration_seconds":int,"unit":"reps"|"seconds","rest_seconds":int|null,"notes":string|null}',
+    '{"kind":"update_exercise","client_ref":<existing ref>, any of "exercise_external_id","sets","reps_or_duration_seconds","unit","weight_lbs","rest_seconds","notes"}',
     '{"kind":"remove_exercise","client_ref":<existing ref>}',
     '{"kind":"reorder","ordered_client_refs":[every ref exactly once, after your other changes]}',
     '{"kind":"plan_meta","name"?:string,"duration_estimate_minutes"?:int}',
@@ -52,8 +52,8 @@ export function buildWorkoutBuilderSystemPrompt(args: {
 /** `rowCatalog`: AIB-NAMES-127 name and muscle (capped) for rows outside the seed LIBRARY; seed rows are sent as before. */
 export function buildWorkoutBuilderUserMessage(instruction: string, baseline: PlanSnapshot, rowCatalog?: ReadonlyMap<string, LibraryExercise>): string {
   const { name, type, duration_estimate_minutes } = baseline.meta;
-  const rows = baseline.exercises.map(({ client_ref, exercise_external_id, sets, reps_or_duration_seconds, weight_lbs, rest_seconds }) => {
-    const row = { client_ref, exercise_external_id, sets, reps_or_duration_seconds, weight_lbs, rest_seconds };
+  const rows = baseline.exercises.map(({ client_ref, exercise_external_id, sets, reps_or_duration_seconds, unit, weight_lbs, rest_seconds }) => {
+    const row = { client_ref, exercise_external_id, sets, reps_or_duration_seconds, unit: unit ?? 'reps', weight_lbs, rest_seconds };
     const ex = rowCatalog?.get(exercise_external_id);
     return ex ? { ...row, name: ex.name, ...(ex.muscle ? { muscle: ex.muscle } : {}) } : row;
   });

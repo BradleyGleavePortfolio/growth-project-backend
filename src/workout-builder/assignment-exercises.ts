@@ -1,3 +1,5 @@
+import { unitOf } from './plan-exercise-fields';
+
 /**
  * The exercise list a client actually sees on an assignment (MWB-1 §3.3):
  * the frozen snapshot when there is one, else the live (non-archived)
@@ -11,7 +13,10 @@ export function visibleAssignmentExercises(assignment: {
 }): unknown[] {
   if (assignment.snapshot) {
     const frozen = assignment.snapshot.exercises_json;
-    return Array.isArray(frozen) ? (frozen as unknown[]) : [];
+    // TIMED-SETS-BE: a day frozen before units carries none; it reads as unitOf says.
+    return Array.isArray(frozen)
+      ? frozen.map((r) => (r && typeof r === 'object' && !Array.isArray(r) ? { ...r, unit: unitOf(r) } : r))
+      : [];
   }
   return assignment.workout_plan?.exercises ?? [];
 }

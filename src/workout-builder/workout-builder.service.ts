@@ -55,7 +55,7 @@ import { NotificationKind } from '../notifications/notification-kind';
 import { isMwbTemplatesEnabled } from './mwb-templates.feature';
 import { assertLastDayMayGo, lockProgramMaster, programDaysWhere } from './program-guards';
 import { inTenantWhere, planStaysInTenantWhere, programStaysInTenantWhere } from './tenant-clients';
-import { alternativesOf } from './plan-exercise-fields';
+import { alternativesOf, unitOf, type PlanExerciseUnitValue } from './plan-exercise-fields';
 import { visibleAssignmentExercises } from './assignment-exercises';
 import {
   AssignProgramDto,
@@ -629,6 +629,7 @@ export class WorkoutBuilderService {
                   superset_group_id: r.superset_group_id ?? null,
                   notes: r.notes ?? null,
                   alternative_external_ids: alternativesOf(r),
+                  unit: unitOf(r),
                 })),
               });
             }
@@ -1153,6 +1154,7 @@ export class WorkoutBuilderService {
         superset_group_id: remapGroup(e.superset_group_id ?? null),
         notes: e.notes ?? null,
         alternative_external_ids: alternativesOf(e),
+        unit: unitOf(e),
       }));
       if (rows.length > 0) {
         await tx.workoutPlanExercise.createMany({
@@ -1815,6 +1817,7 @@ export class WorkoutBuilderService {
             superset_group_id: r.superset_group_id ?? null,
             notes: r.notes ?? null,
             alternative_external_ids: alternativesOf(r),
+            unit: unitOf(r),
           })),
         ),
         plan_meta_json: planMetaJson(plan),
@@ -1846,6 +1849,7 @@ export class WorkoutBuilderService {
       superset_group_id: string | null;
       notes: string | null;
       alternative_external_ids?: string[];
+      unit?: string;
     }>,
   ): Prisma.InputJsonValue {
     return rows
@@ -1861,6 +1865,7 @@ export class WorkoutBuilderService {
         superset_group_id: r.superset_group_id ?? null,
         notes: r.notes ?? null,
         alternative_external_ids: alternativesOf(r),
+        unit: unitOf(r),
       })) as unknown as Prisma.InputJsonValue;
   }
 
@@ -1897,6 +1902,7 @@ export class WorkoutBuilderService {
             superset_group_id: true,
             notes: true,
             alternative_external_ids: true,
+            unit: true,
           },
         },
       },
@@ -2023,6 +2029,8 @@ export interface AssignmentExerciseRow {
   notes: string | null;
   /** C1V2-C1: the coach's swaps; absent on a row frozen before them. */
   alternative_external_ids?: string[];
+  /** TIMED-SETS-BE: reps or seconds; a row frozen before units reads reps. */
+  unit?: PlanExerciseUnitValue;
 }
 
 /** Defensive parse of a snapshot's `exercises_json`; malformed rows are skipped. */
@@ -2043,6 +2051,7 @@ export function parseAssignmentRows(json: unknown): AssignmentExerciseRow[] {
       superset_group_id: typeof o.superset_group_id === 'string' ? o.superset_group_id : null,
       notes: typeof o.notes === 'string' ? o.notes : null,
       alternative_external_ids: alternativesOf(o),
+      unit: unitOf(o),
     });
   }
   return out.sort((a, b) => a.order - b.order);
