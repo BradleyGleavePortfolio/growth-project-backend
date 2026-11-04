@@ -43,7 +43,7 @@ and any failure is logged inside `recordSignal`.
 |---|---|---|---|---|
 | `checkin_streak` | `check-ins` | `CheckInsService.upsertForClient` after the upsert succeeds | consecutive-day streak ending today | none |
 | `checkin_miss` | `check-ins` | same path, when the latest prior check-in is `>= 3` calendar days behind today | gap in days | none |
-| `weight_logged` | `weight` | `WeightService.logWeight` after the create | delta vs prior log in lbs (0 on first log) | `{ weight_lbs, prior_weight_lbs }` |
+| `weight_logged` | `weight` | `WeightService.logWeight` after the create (not again for a resend with the same `client_uuid`) | delta vs prior log in lbs (0 on first log) | `{ weight_lbs, prior_weight_lbs }` |
 | `workout_logged` | `workout` | `WorkoutService.createWorkout` after the session is persisted | total volume = sum of `weight_per_set[i] * reps_per_set[i]` across every set, rounded | `{ exercise_count, duration_min }` |
 | `meal_logged` | `log` (food) | `LogService.logFood` after the create | calories logged (`food_item.calories * quantity_multiplier`, rounded) | `{ meal_type }` |
 | `message_sent` | `messaging` | `MessagingService.sendAsClient` after the create | `body.length` | none |

@@ -1,10 +1,14 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { PtmService } from '../ptm/ptm.service';
 import { ClientAIContextService } from '../ai/client-ai-context.service';
+import { saveOnce } from '../common/save-once';
 import { LogWeightDto, UpdateWeightDto } from './weight.dto';
 
 const WEIGH_IN_NOT_FOUND = 'Weigh-in not found.';
+
+type NewWeighIn = Pick<Prisma.WeightLogUncheckedCreateInput, 'user_id' | 'date' | 'weight_lbs' | 'notes'>;
 
 @Injectable()
 export class WeightService {
@@ -15,19 +19,39 @@ export class WeightService {
     private aiContext: ClientAIContextService,
   ) {}
 
-  async logWeight(userId: string, data: LogWeightDto) {
+  async logWeight(userId: string, data: LogWeightDto, onResend?: () => void) {
+    // WATER-WEIGHT-KEYS-BE: no key is a plain create, as before, and its answer
+    // keeps its shape (the new column is left out). With a key, a resend
+    // answers with the first row and stores nothing, so it emits no second
+    // 'weight_logged' and busts nothing (onResend lets the controller skip the
+    // request's global Roman bust); another member's key is a 404
+    // (src/common/save-once.ts).
+    const key = data.client_uuid;
+    if (!key) {
+      return this.createWeight(userId, data, (row) =>
+        this.prisma.weightLog.create({ data: row, omit: { client_uuid: true } }),
+      );
+    }
+    return saveOnce(
+      userId,
+      () => this.prisma.weightLog.findUnique({ where: { client_uuid: key } }),
+      () => this.createWeight(userId, data, (row) => this.prisma.weightLog.create({ data: { ...row, client_uuid: key } })),
+      onResend,
+    );
+  }
+
+  // One new weigh-in and its effects, which run only after `insert` succeeds.
+  private async createWeight<T>(userId: string, data: LogWeightDto, insert: (row: NewWeighIn) => Promise<T>) {
     const prior = await this.prisma.weightLog.findFirst({
       where: { user_id: userId },
       orderBy: { date: 'desc' },
       select: { weight_lbs: true },
     });
-    const created = await this.prisma.weightLog.create({
-      data: {
-        user_id: userId,
-        date: data.date ? new Date(data.date) : new Date(),
-        weight_lbs: data.weight_lbs,
-        notes: data.notes,
-      },
+    const created = await insert({
+      user_id: userId,
+      date: data.date ? new Date(data.date) : new Date(),
+      weight_lbs: data.weight_lbs,
+      notes: data.notes,
     });
     const priorLbs = prior?.weight_lbs ?? null;
     const delta = priorLbs == null ? 0 : data.weight_lbs - priorLbs;
