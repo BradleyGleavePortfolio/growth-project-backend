@@ -735,8 +735,9 @@ jobs:
 
       - name: Turn every FEATURE_* switch on
         # Writes NAME=true to GITHUB_ENV for every FEATURE_* key in the
-        # desired-state file's flags, gates and excluded sections. Fails if it
-        # finds none, so a moved or renamed file cannot pass with nothing on.
+        # desired-state file's flags, gates and excluded sections, plus a random
+        # test value for the one secret a switch needs to boot. Fails if it
+        # finds no switch, so a moved or renamed file cannot pass with nothing on.
         run: |
           node <<'NODE'
           const fs = require('fs');
@@ -755,7 +756,18 @@ jobs:
             console.error(`No FEATURE_* switch found in ${file}`);
             process.exit(1);
           }
-          fs.appendFileSync(process.env.GITHUB_ENV, on.map((n) => `${n}=true`).join('\n') + '\n');
+          // Test-only companion secret. Production has it (secrets section);
+          // without it WorkoutBuilderAutosaveService throws in onModuleInit
+          // once FEATURE_MWB_AUTOSAVE_UNDO is on, so every suite that boots
+          // the app fails on that one line and nothing behind it is tested.
+          // A fresh random value each run, never a real secret.
+          const testSecrets = [
+            `MWB_AUTOSAVE_LOCK_TOKEN_SECRET=${require('crypto').randomBytes(32).toString('hex')}`,
+          ];
+          fs.appendFileSync(
+            process.env.GITHUB_ENV,
+            [...on.map((n) => `${n}=true`), ...testSecrets].join('\n') + '\n',
+          );
           const lines = [
             `FEATURE_* switches set to true: ${on.length} (from ${file})`,
             `Left unset (lists, not switches): ${skipped.length ? skipped.join(', ') : 'none'}`,
