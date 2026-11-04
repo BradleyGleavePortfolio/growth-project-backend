@@ -2,8 +2,9 @@
   "doc": "Declarative policy for scripts/check-r75.js (R75 / R100.A2). Banned literals live here as data, never assembled in executable source, so the checker cannot evade its own scan. .json is not in scan.includeExtensions, so this file is not self-matched.",
   "scan": {
     "includeExtensions": [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".cjs", ".mjs", ".sh"],
-    "includeRoots": ["src/", "test/", "__tests__/", "scripts/"],
+    "includeRoots": ["src/", "scripts/"],
     "includeFiles": ["dangerfile.js"],
+    "excludeRootGlobs": ["src/**/*.spec.ts"],
     "excludeSuffixes": [],
     "excludeSegments": []
   },
@@ -14,7 +15,7 @@
       "note": "R75 permits this directive when the same line carries a non-empty reason. Non-empty is the whole rule: no minimum length, no ASCII or alphanumeric requirement, no issue number. The exception applies to this directive occurrence only; other banned tokens on the same line still count."
     }
   ],
-  "scopeNote": "Application AND test sources are in scope, including declarations, executable module variants and authored nested paths. Directory names alone prove no generated provenance. Positive roots exclude top-level dependencies/build output; no authored child or suffix is exempted. Source-root links fail closed. Fixture DATA remains outside executable extensions.",
+  "scopeNote": "Application code, scripts/ and dangerfile.js are in scope, including declarations, executable module variants and authored nested paths. Test files the production build leaves out are skipped (owner ruling #192-D6 op 1): nothing under test/ or top-level __tests__/, and src/ files ending .spec.ts (excludeRootGlobs src/**/*.spec.ts, ruling R-R75-1). That is the **/*spec.ts exclude in tsconfig.build.json with the dot added: tsc still compiles an excluded file that app code imports, so a src/ name ending spec.ts without the dot (for example src/scout/reconstruct/mapping-spec.ts) is app code and stays scanned. Every other src/ file stays scanned, including test helpers the build compiles (for example under src/**/__tests__/). Directory names alone prove no generated provenance. Positive roots exclude top-level dependencies/build output; no authored child or suffix is exempted. Source-root links fail closed. Fixture DATA remains outside executable extensions.",
   "tokens": [
     {
       "name": "@ts-ignore",

@@ -672,10 +672,15 @@ export class MessagingService {
   // the client can pass the oldest timestamp it has seen to fetch the next
   // page without duplicates. Composite index (coach_id, client_id, created_at)
   // makes this a single seek.
+  //
+  // FR-1205 (LS-1205 B3): `hidden` is everyone in a block with the reader.
+  // Their rows leave inside the query, before `take`, so a page is the newest
+  // `limit` rows this reader may see (a short page still means "no older").
   private async listThread(
     coachId: string,
     clientId: string,
     opts: ListOpts,
+    hidden: Set<string>,
   ): Promise<ThreadRow[]> {
     const limit = this.clampLimit(opts.limit);
     const before = this.parseBefore(opts.before);
@@ -684,6 +689,9 @@ export class MessagingService {
         coach_id: coachId,
         client_id: clientId,
         ...(before ? { created_at: { lt: before } } : {}),
+        ...(hidden.size > 0
+          ? { OR: [{ sender_id: null }, { sender_id: { notIn: [...hidden] } }] }
+          : {}),
       },
       orderBy: { created_at: 'desc' as const },
       take: limit,
@@ -732,8 +740,7 @@ export class MessagingService {
     // For sub-coaches, the thread's coach_id is the head coach's id —
     // returned in client.coach_id by assertClientOfCoach.
     const threadCoachId = client.coach_id ?? coachId;
-    const rows = await this.listThread(threadCoachId, clientId, opts);
-    const visible = await this.filterBlockedAuthors(coachId, clientId, rows);
+    const visible = await this.readableThread(coachId, clientId, threadCoachId, clientId, opts);
     return this.serializeThreadPage(coachId, visible);
   }
 
@@ -744,8 +751,7 @@ export class MessagingService {
   ) {
     const coachId = await this.requireClientCoachId(clientId);
     await this.tellClosed(clientId, coachId, onClosed);
-    const rows = await this.listThread(coachId, clientId, opts);
-    const visible = await this.filterBlockedAuthors(clientId, coachId, rows);
+    const visible = await this.readableThread(clientId, coachId, coachId, clientId, opts);
     return this.serializeThreadPage(clientId, visible);
   }
 
@@ -764,21 +770,21 @@ export class MessagingService {
    * #168-4: a block either way (the caller blocked the other party, or the
    * other party blocked the caller) closes the thread: the page is empty for
    * both people until unblock. A sub-coach in a block with the caller loses
-   * their own rows. The block sets are read once per page (blockSets).
+   * their own rows, inside the page query (FR-1205), so the page is never cut
+   * short by rows the caller cannot read. The caller's own rows stay (nobody
+   * is in a block with themselves). The block sets are read once per page.
    */
-  private async filterBlockedAuthors<T extends { sender_id: string | null }>(
+  private async readableThread(
     callerId: string,
     otherPartyId: string,
-    rows: T[],
-  ): Promise<T[]> {
-    if (!otherPartyId || rows.length === 0) return rows;
+    threadCoachId: string,
+    clientId: string,
+    opts: ListOpts,
+  ): Promise<ThreadRow[]> {
     const hidden = await this.hiddenIdsFor(callerId);
-    if (hidden.size === 0) return rows;
-    // #168-4: a block either way closes the whole thread for both people
-    // ("hide ALL messaging entirely"), own history included, until unblock.
-    if (hidden.has(otherPartyId)) return [];
-    // A sub-coach in a block with the caller (either way): their rows go.
-    return rows.filter((m) => !m.sender_id || m.sender_id === callerId || !hidden.has(m.sender_id));
+    if (otherPartyId && hidden.has(otherPartyId)) return [];
+    hidden.delete(callerId);
+    return this.listThread(threadCoachId, clientId, opts, hidden);
   }
 
   /**
