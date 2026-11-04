@@ -590,8 +590,8 @@ export class RealMealPlansService {
     }));
 
     const now = new Date();
-    const tz = (await resolveRecipientTimeZone(this.prisma, clientId)) ?? 'UTC';
     const planIds = [...new Set(assignments.map((a) => a.daily_meal_plan.id))];
+    const tz = planIds.length > 0 ? (await resolveRecipientTimeZone(this.prisma, clientId)) ?? 'UTC' : 'UTC';
     const forToday = !dateIso || dateIso.slice(0, 10) === localDateKey(now, tz);
     const rows = forToday && planIds.length > 0
       ? (await this.prisma.dailyMealPlanRevision.findMany({
