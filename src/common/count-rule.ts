@@ -19,7 +19,9 @@
 //             viewer either way adds nothing (the block-pair rule the thread uses).
 //             countedMessagesFor: the same for each message's author (LS-1197
 //             B1), so a team coach in a block with the viewer adds no words and
-//             no count in a client's thread they write in.
+//             no count in a client's thread they write in. authorReadableBy is
+//             that author part alone, for the readers of a thread's words that
+//             keep their own removed rule (ACTUAL-AUTHOR-READS-BE).
 //   departed  countedClients keeps only the roster the caller passes;
 //             countedThreadsOf keeps only threads whose client is this coach's now.
 //   ban       coaching chat: n/a, a community ban does not reach the one-to-one
@@ -46,8 +48,21 @@ export const COUNTED_MESSAGE = { deleted_at: null } as const satisfies Prisma.Co
 export function countedMessagesFor(viewerId: string): Prisma.CoachMessageWhereInput {
   return {
     ...COUNTED_MESSAGE,
-    AND: [{ OR: [{ sender_id: null }, { sender: notInBlockWith(viewerId) }] }],
+    AND: [authorReadableBy(viewerId)],
   };
+}
+
+/**
+ * The author part alone (ACTUAL-AUTHOR-READS-BE): a message whose author is in a
+ * block with `viewerIds` either way is not read; the viewer's own rows and rows
+ * whose author is gone (sender_id SetNull) stay. For readers of a message's words
+ * that keep their own removed rule: the v1 thread detail (V1CoachService.getThread),
+ * the coach AI context (ClientContextService.build) and the gateway context
+ * (PrivateContextService.loadClientContext). Put it in an `AND`, before a newest
+ * row is chosen or a `take` cuts.
+ */
+export function authorReadableBy(viewerIds: string | readonly string[]): Prisma.CoachMessageWhereInput {
+  return { OR: [{ sender_id: null }, { sender: notInBlockWith(viewerIds) }] };
 }
 
 /** The roster a coaching-chat count may read: `roster` minus every client in a block with `viewerId` either way. */

@@ -480,8 +480,12 @@ export class CoachService {
       metadata: { view: 'timeline', days },
     });
 
-    const ninetyDaysAgo = new Date();
-    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - days);
+    // Every slice filters a calendar-day column, so the window is whole UTC days:
+    // the first day counts all day, whatever hour the coach looks.
+    const now = new Date();
+    const ninetyDaysAgo = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - days),
+    );
 
     // Per-scope consent gating. A scope the client has not granted
     // returns an empty slice rather than a 403 — the rest of the
@@ -508,9 +512,13 @@ export class CoachService {
         : Promise.resolve<LoggedFoodEntryWithFood[]>([]),
       flags.workouts
         ? this.prisma.workoutSession.findMany({
-            where: { user_id: clientId, created_at: { gte: ninetyDaysAgo } },
+            // A workout belongs to the day it was done (`date`), not the moment
+            // the phone saved it: a Monday session saved on Wednesday stays on
+            // Monday. Newest save, then id, breaks same-day ties so
+            // workoutsCursor pages are exact.
+            where: { user_id: clientId, date: { gte: ninetyDaysAgo } },
             include: { exercises: true, comments: ownComment(coachId) },
-            orderBy: { created_at: 'desc' },
+            orderBy: [{ date: 'desc' }, { created_at: 'desc' }, { id: 'desc' }],
             take: 100,
             ...(opts.workoutsCursor ? { cursor: { id: opts.workoutsCursor }, skip: 1 } : {}),
           })
@@ -535,11 +543,13 @@ export class CoachService {
     // C8-S: a check-in's weight follows Weigh-ins, not Check-ins and habits (rows and events alike).
     const checkIns = sharedCheckIns.map((c) => weightIfShared(c, flags.bodyMetrics));
 
+    // Every event date is a calendar day; the stable sort keeps one order inside a
+    // day: meals, workouts, weights, check-ins, each in its slice's order.
     const events: Array<{ type: string; date: Date; ref: unknown }> = [
       // Use `date` (eat date) not `logged_at` (sync timestamp) for timeline
       // event ordering so offline-queued entries sort correctly. See Fix 5.
       ...meals.map((m) => ({ type: 'meal', date: m.date, ref: m })),
-      ...workouts.map((w) => ({ type: 'workout', date: w.created_at, ref: w })),
+      ...workouts.map((w) => ({ type: 'workout', date: w.date, ref: w })),
       ...weights.map((w) => ({ type: 'weight', date: w.date, ref: w })),
       ...checkIns.map((c) => ({ type: 'check_in', date: c.date, ref: c })),
     ].sort((a, b) => b.date.getTime() - a.date.getTime());

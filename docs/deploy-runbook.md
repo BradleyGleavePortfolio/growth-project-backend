@@ -223,7 +223,9 @@ even if the dashboard shows the new one.
 
    The `release_command` (see `scripts/release.sh`) runs first: verifier
    contract preflight, `prisma migrate status`, `prisma migrate deploy`,
-   status re-check, catalog verifiers (§11.2). If status reports P3005
+   status re-check, catalog verifiers (§11.2), then step 5 adds any
+   missing built-in foods (`[release] built-in foods: …`; see
+   `docs/delivery-controls.md` §7.1). If status reports P3005
    (schema present but not baselined) the release **aborts** with a
    pointer to §2.1. There is **no** `db push --accept-data-loss` fallback
    and no `RELEASE_ALLOW_DB_PUSH` switch in the current script; earlier

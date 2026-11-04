@@ -69,6 +69,11 @@ RUN npx tsc -p tsconfig.house-seed.json \
     && mkdir -p dist/house-seed/seed \
     && cp seed/clinic-programs.v1.json dist/house-seed/seed/clinic-programs.v1.json
 
+# Built-in foods (FOOD-SEED-BE): a compiled copy of scripts/seed-built-in-foods.ts
+# for scripts/release.sh step 5, which adds the prisma/data/seed-foods.json foods
+# the shared catalog is missing on every deploy. The runtime image has no ts-node.
+RUN npx tsc -p tsconfig.food-seed.json
+
 ############################
 # runtime stage
 ############################
@@ -107,6 +112,8 @@ RUN node -e "['prisma/package.json','@prisma/client/package.json','@nestjs/core/
     && test -f dist/house-seed/scripts/seed-clinic-programs.js \
     && test -f dist/house-seed/scripts/seed-exercise-catalog.js \
     && test -f dist/house-seed/seed/clinic-programs.v1.json \
+    && test -f dist/food-seed/scripts/seed-built-in-foods.js \
+    && test -f prisma/data/seed-foods.json \
     && test -f prisma/schema.prisma \
     && test -f prisma/seed-diagnostic.json \
     && test -f scripts/release.sh \

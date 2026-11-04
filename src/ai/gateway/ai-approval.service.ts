@@ -134,7 +134,7 @@ export class AiApprovalService {
     private materialisers: CapabilityMaterializerRegistry | null = null,
   ) {}
 
-  async listPending(scope: { tenantCoachId?: string; subjectUserId?: string; limit?: number; status?: string }) {
+  async listPending(scope: { tenantCoachId?: string; subjectUserId?: string; limit?: number; status?: string; readerId?: string }) {
     const limit = Math.min(Math.max(scope.limit ?? 50, 1), 200);
     // Allow filtering by explicit status; fall back to 'pending' when omitted so
     // existing callers that don't pass a status keep their current behaviour.
@@ -153,14 +153,15 @@ export class AiApprovalService {
       orderBy: { created_at: 'desc' },
       take: limit,
     });
-    return scope.tenantCoachId ? this.keepOnRoster(scope.tenantCoachId, drafts) : drafts;
+    const kept = scope.tenantCoachId ? await this.keepOnRoster(scope.tenantCoachId, drafts) : drafts;
+    return this.withoutBlockedSources(scope.readerId, kept);
   }
 
   /**
    * COPILOT-BE: the coach's paged queue of pending drafts, oldest first, with the total still waiting. Same scope as
    * listPending (his tenant, his current clients); `after` is the id of the last draft of the previous page.
    */
-  async pageQueue(scope: { tenantCoachId?: string; limit: number; after?: string }) {
+  async pageQueue(scope: { tenantCoachId?: string; limit: number; after?: string; readerId?: string }) {
     const coachId = scope.tenantCoachId;
     // #CP-LAPSE: a Copilot change past its wait is gone from the queue and from the total.
     const where: Prisma.AiActionDraftWhereInput = { status: 'pending', AND: [notLapsedWhere()] };
@@ -182,7 +183,52 @@ export class AiApprovalService {
     ]);
     const items = rows.slice(0, scope.limit);
     const next_cursor = rows.length > scope.limit ? items[items.length - 1].id : null;
-    return { items: coachId ? await this.keepOnRoster(coachId, items) : items, total, next_cursor };
+    const kept = coachId ? await this.keepOnRoster(coachId, items) : items;
+    return { items: await this.withoutBlockedSources(scope.readerId, kept), total, next_cursor };
+  }
+
+  /**
+   * FR-1205 (LS-1205 B4): a saved draft quotes the chat message its context
+   * read (provenance `coach_messages`, ref = the message id). While that
+   * message's author is in a block with the reader (either way), or the
+   * message is gone, the draft is withheld from the reader: it leaves both
+   * queues and decide answers 404 as for an unknown id. Unblock brings it back.
+   */
+  private async blockedSourceDrafts<T extends { id: string; provenance: Prisma.JsonValue }>(
+    readerId: string | undefined,
+    drafts: T[],
+  ): Promise<Set<string>> {
+    const refsOf = (d: T) =>
+      Array.isArray(d.provenance)
+        ? d.provenance.flatMap((p) =>
+            p && typeof p === 'object' && !Array.isArray(p) && p.source === 'coach_messages' && typeof p.ref === 'string'
+              ? [p.ref]
+              : [],
+          )
+        : [];
+    const ids = [...new Set(drafts.flatMap(refsOf))];
+    if (!readerId || ids.length === 0) return new Set();
+    const rows = await this.prisma.coachMessage.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, sender_id: true },
+    });
+    const senderOf = new Map(rows.map((m) => [m.id, m.sender_id]));
+    const senders = rows.flatMap((m) => (m.sender_id ? [m.sender_id] : []));
+    const blocked = await inBlockWith(this.prisma, readerId, senders);
+    const hidden = (ref: string) => {
+      if (!senderOf.has(ref)) return true;
+      const sender = senderOf.get(ref);
+      return !!sender && blocked.has(sender);
+    };
+    return new Set(drafts.filter((d) => refsOf(d).some(hidden)).map((d) => d.id));
+  }
+
+  private async withoutBlockedSources<T extends { id: string; provenance: Prisma.JsonValue }>(
+    readerId: string | undefined,
+    drafts: T[],
+  ): Promise<T[]> {
+    const withheld = await this.blockedSourceDrafts(readerId, drafts);
+    return withheld.size === 0 ? drafts : drafts.filter((d) => !withheld.has(d.id));
   }
 
   private async keepOnRoster<T extends { capability: string; subject_user_id: string | null; payload: Prisma.JsonValue }>(
@@ -282,6 +328,11 @@ export class AiApprovalService {
     // COPILOT-BE: a client's Copilot change is invisible to every coach but the client's current one: 404, as for an
     // unknown id (the roster checks below still run).
     if (draft.capability === CLIENT_PATH_CHANGE && input.decider.role !== 'owner' && !(await this.isCurrentCoach(draft, input.decider))) {
+      throw new NotFoundException('AI draft not found');
+    }
+    // FR-1205 (LS-1205 B4): a draft whose source author is in a block with the
+    // decider is withheld from them: 404, as for an unknown id.
+    if ((await this.blockedSourceDrafts(input.decider.id, [draft])).size > 0) {
       throw new NotFoundException('AI draft not found');
     }
     if (draft.status !== 'pending') {
