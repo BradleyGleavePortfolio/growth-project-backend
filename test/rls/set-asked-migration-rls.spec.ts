@@ -64,10 +64,10 @@ const ADDED = {
     );
   const touching = () =>
     prisma.$queryRawUnsafe<Array<{ n: number }>>(
-      `SELECT (SELECT count(*) FROM pg_constraint c JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
+      `SELECT ((SELECT count(*) FROM pg_constraint c JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
                 WHERE c.conrelid = '"ExerciseSet"'::regclass AND a.attname = ANY($1::text[]))
             + (SELECT count(*) FROM pg_index i JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
-                WHERE i.indrelid = '"ExerciseSet"'::regclass AND a.attname = ANY($1::text[])) AS n`,
+                WHERE i.indrelid = '"ExerciseSet"'::regclass AND a.attname = ANY($1::text[])))::int AS n`,
       Object.keys(ADDED),
     );
 
