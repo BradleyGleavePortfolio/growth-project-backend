@@ -36,9 +36,16 @@ export class WorkoutService {
     private aiContext: ClientAIContextService,
   ) {}
 
-  async createWorkout(userId: string, data: CreateWorkoutDto, clientKey?: string) {
+  async createWorkout(
+    userId: string,
+    data: CreateWorkoutDto,
+    clientKey?: string,
+    onResend?: () => void,
+  ) {
     // WK-1-BE: a resend after a lost answer carries the same key and gets the
     // stored workout back (same shape, nothing created, no second signal).
+    // `onResend` runs on that stored answer, so the controller keeps the
+    // request's global Roman context bust off (keepRomanContextFor).
     // No key (or a blank header) is exactly the pre-WK-1 path.
     const key = clientKey?.trim() || undefined;
     if (key !== undefined && !WORKOUT_CLIENT_KEY_PATTERN.test(key)) {
@@ -49,7 +56,10 @@ export class WorkoutService {
     }
     if (key !== undefined) {
       const stored = await this.findByClientKey(userId, key);
-      if (stored) return stored;
+      if (stored) {
+        onResend?.();
+        return stored;
+      }
     }
     // Explicit field mapping — previously `...sessionData` spread the body into
     // Prisma, which (combined with `@Body() body: any` on the controller) would
@@ -89,7 +99,10 @@ export class WorkoutService {
       // client_key) index kept one; answer with it.
       if (key !== undefined && err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         const stored = await this.findByClientKey(userId, key);
-        if (stored) return stored;
+        if (stored) {
+          onResend?.();
+          return stored;
+        }
       }
       throw err;
     }

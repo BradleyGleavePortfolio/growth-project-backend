@@ -19,11 +19,15 @@ export class LogService {
     private aiContext: ClientAIContextService,
   ) {}
 
-  async logFood(userId: string, data: LogFoodDto) {
+  // `onResend` runs when the answer is this member's entry already stored
+  // under the key (a resend, or the loser of two sends at once): nothing new
+  // was saved, so the controller keeps the request's global Roman context bust
+  // off (keepRomanContextFor, src/common/save-once.ts). It never changes the answer.
+  async logFood(userId: string, data: LogFoodDto, onResend?: () => void) {
     // R6 (LO-FOOD B6, LS-FOOD B3): a repeat of a keyed save whose answer was
     // lost returns the stored entry and does nothing else — no food import, no
-    // second entry, no analytics event or meal_logged signal. Another
-    // person's key reads as not found (D2 below).
+    // second entry, no analytics event, meal_logged signal or Roman context
+    // reset. Another person's key reads as not found (D2 below).
     if (data.client_uuid) {
       const earlier = await this.prisma.loggedFoodEntry.findUnique({
         where: { client_uuid: data.client_uuid },
@@ -31,6 +35,7 @@ export class LogService {
       });
       if (earlier) {
         if (earlier.user_id !== userId) throw new NotFoundException('Entry not found');
+        onResend?.();
         return earlier;
       }
     }
@@ -86,6 +91,7 @@ export class LogService {
       });
       if (!stored) throw err;
       if (stored.user_id !== userId) throw new NotFoundException('Entry not found');
+      onResend?.();
       return stored;
     }
     if (created.user_id !== userId) throw new NotFoundException('Entry not found');

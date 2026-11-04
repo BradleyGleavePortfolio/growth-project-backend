@@ -8,6 +8,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { LogFoodDto, UpdateLogEntryDto, withClientKey } from './log.dto';
 import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
 import { OpenToCoachlessClient } from '../common/decorators/open-to-coachless-client.decorator';
+import { keepRomanContextFor } from '../roman/context/roman-context-invalidation';
 
 @ApiTags('log')
 @Controller('log')
@@ -19,13 +20,16 @@ export class LogController {
   constructor(private logService: LogService) {}
 
   // R6: the key is body.client_uuid, or the Idempotency-Key header when the body has none.
+  // A keyed resend stores nothing new, so it keeps Roman's context.
   @Post('food')
   async logFood(
     @Request() req: AuthedRequest,
     @Body() body: LogFoodDto,
     @Headers('idempotency-key') idempotencyKey?: string,
   ) {
-    return this.logService.logFood(req.user.id, withClientKey(body, idempotencyKey));
+    return this.logService.logFood(req.user.id, withClientKey(body, idempotencyKey), () =>
+      keepRomanContextFor(req),
+    );
   }
 
   @Get('daily')

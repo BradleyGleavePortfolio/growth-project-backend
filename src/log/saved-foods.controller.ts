@@ -8,6 +8,7 @@ import { OpenToCoachlessClient } from '../common/decorators/open-to-coachless-cl
 import { AddFavoriteDto, CreateSavedMealDto, LogSavedMealDto, RenameSavedMealDto } from './saved-foods.dto';
 import { SavedFoodsService } from './saved-foods.service';
 import { withClientKey } from './log.dto';
+import { keepRomanContextFor } from '../roman/context/roman-context-invalidation';
 
 /**
  * FOODSAVED: the client's own favourite foods and saved meals for the add
@@ -58,6 +59,7 @@ export class SavedFoodsController {
   }
 
   // R6: the key is body.client_uuid, or the Idempotency-Key header when the body has none.
+  // A keyed resend stores nothing new, so it keeps Roman's context.
   @Post('saved-meals/:id/log')
   logSavedMeal(
     @Request() req: AuthedRequest,
@@ -65,6 +67,8 @@ export class SavedFoodsController {
     @Body() body: LogSavedMealDto,
     @Headers('idempotency-key') idempotencyKey?: string,
   ) {
-    return this.saved.logSavedMeal(req.user.id, id, withClientKey(body, idempotencyKey));
+    return this.saved.logSavedMeal(req.user.id, id, withClientKey(body, idempotencyKey), () =>
+      keepRomanContextFor(req),
+    );
   }
 }
