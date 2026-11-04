@@ -1,4 +1,5 @@
 import {
+  Allow,
   IsString,
   IsOptional,
   IsNumber,
@@ -77,6 +78,17 @@ export class CreateExerciseSetDto {
   @IsNotEmpty()
   @MaxLength(200)
   exercise_external_id?: string;
+
+  /**
+   * SET-ASKED-BE: the plan row the set was logged from: her assignment's id and the row's order.
+   * The server copies what that row asked; a reference it cannot use (malformed, another member's,
+   * no row at that order) is ignored, never a 400, so the log is always saved.
+   */
+  @Allow()
+  plan_assignment_id?: unknown;
+
+  @Allow()
+  plan_order?: unknown;
 }
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
