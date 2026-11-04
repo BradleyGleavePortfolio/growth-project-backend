@@ -109,9 +109,13 @@ if (!DB_URL && process.env.CI === 'true') {
   it("the new columns stay under their tables' rules: grocery items are server-only, template columns read as before", async () => {
     await prisma.$executeRaw`INSERT INTO "ListItem" ("id", "user_id", "list_type", "name", "source_plan_slot_id")
       VALUES (${id('item.A')}, ${u.A}, 'grocery'::"ListType", 'Oats', ${id('slot.K')})`;
-    // ListItem keeps its server-only posture (20270125000000): no API role reads it, its owner included.
+    // ListItem keeps its server-only posture (20270125000000): no API role reads it, its owner included
+    // (no table grant: 42501), while the server role reads the new link.
     const item = `SELECT count(*)::int AS "n" FROM "ListItem" WHERE "id" = $1`;
-    for (const who of 'AB') expect(await as(who, (tx) => tx.$queryRawUnsafe<{ n: number }[]>(item, id('item.A')))).toEqual([{ n: 0 }]);
+    for (const who of 'AB') {
+      expect(await as(who, (tx) => tx.$queryRawUnsafe<{ n: number }[]>(item, id('item.A'))).then((r) => r, sqlstate)).toBe('42501');
+    }
+    expect(await prisma.$queryRawUnsafe<{ n: number }[]>(`${item} AND "source_plan_slot_id" = $2`, id('item.A'), id('slot.K'))).toEqual([{ n: 1 }]);
     const tpl = `SELECT count(*)::int AS "n" FROM "MealTemplate" WHERE "id" = $1 AND "swap_template_ids" = ARRAY[]::TEXT[] AND "recipe_id" IS NULL`;
     expect(await as('K', (tx) => tx.$queryRawUnsafe<{ n: number }[]>(tpl, id('tpl.K')))).toEqual([{ n: 1 }]);
     expect(await as('L', (tx) => tx.$queryRawUnsafe<{ n: number }[]>(tpl, id('tpl.K')))).toEqual([{ n: 0 }]);
