@@ -212,7 +212,22 @@ const containsRun = (list: string[], q: string[]) =>
   list.some((_, i) => startsWithWords(list.slice(i), q));
 
 function isBranded(item: FoodResult): boolean {
-  return !!item.brand_or_restaurant || item.id.startsWith('off_') || (item.tags ?? []).some((t) => t.startsWith('off:'));
+  return (
+    !!item.brand_or_restaurant ||
+    item.id.startsWith('off_') ||
+    (item.tags ?? []).some((t) => t.startsWith('off:')) ||
+    brandInUsdaName(item)
+  );
+}
+
+// FR-1212R1 (LO-1212 B2): SR Legacy and Foundation keep a brand inside the name, written in capitals
+// ("Yogurt, Greek, whole, plain, CHOBANI", "Cereals, QUAKER, ..."), and USDA marks them as basic foods all the same.
+// A USDA row (loaded or live) with a run of 3 or more capitals is a brand, except USDA's own words: NFS (not
+// further specified), USDA, NFSMI (its school-meals recipes) and BBQ.
+const USDA_CAPITALS = new Set(['NFS', 'USDA', 'NFSMI', 'BBQ']);
+function brandInUsdaName(item: FoodResult): boolean {
+  const usda = item.id.startsWith('usda_') || (item.tags ?? []).some((t) => t.startsWith('usda:'));
+  return usda && (item.name.match(/[A-Z]{3,}/g) ?? []).some((run) => !USDA_CAPITALS.has(run));
 }
 
 /**
@@ -277,6 +292,9 @@ const plainForm = (item: FoodResult) =>
 function namesFood(item: FoodResult, score: number, rawQuery: string): 0 | 1 | 2 {
   const q = words(rawQuery);
   const [group, food, ...rest] = item.name.split(',').map((part) => words(part));
+  // FR-1212R1 (LO-1212 B3): USDA's "Babyfood, <food>, ..." rows are a baby food made of the food, not the food in
+  // its group, so they get no group-first credit ("Babyfood, green beans, ..." is not "green beans").
+  if (group.join(' ') === 'babyfood') return 0;
   if (score === 100) {
     // FR-1198R3 (LO-1198R3 B1): a head-only match whose later comma part holds
     // the head's words inside a longer name ("Fish, fish sticks, ...",
@@ -301,6 +319,11 @@ function categoryOf(item: FoodResult): string {
   const tagged = (item.tags ?? []).find((t) => t.startsWith(CATEGORY_TAG))?.slice(CATEGORY_TAG.length);
   const category = tagged ?? item.category ?? '';
   return category === 'generic' ? '' : category;
+}
+/** FR-1212R1: an unbranded row holding every typed word as a whole word and named for the food (namesFood level 2). */
+function namesTheFood(item: FoodResult, q: string): boolean {
+  const { score, whole } = matchOf(item, q);
+  return whole && !isBranded(item) && namesFood(item, score, q) === 2;
 }
 const wholeName = (item: FoodResult, q: string[]) => (sameWords(words(item.name), q) ? 1 : 0);
 const builtIn = (item: FoodResult) => ((item.tags ?? []).includes(SEED_TAG) ? 1 : 0);
@@ -330,9 +353,13 @@ function rankFoodResults(items: FoodResult[], q: string, limit: number): FoodRes
   const qWords = words(q);
   const scored = [...byIdentity.values()].map((item) => {
     const { score, whole } = matchOf(item, q);
-    const tier = item.basic_food ? 2 : isBranded(item) ? 0 : 1;
+    const tier = item.basic_food && !brandInUsdaName(item) ? 2 : isBranded(item) ? 0 : 1;
     const named = whole && tier > 0 ? namesFood(item, score, q) : 0;
-    return { item, score, named, tier, whole, group: whole ? tier : 0, offCategory: 0 };
+    // FR-1212R1 (LO-1212 B3): a whole-word unbranded row whose first comma part holds a typed word ("Milk, ...",
+    // "Beans, snap, green, ...") comes before one holding the words only in a later part ("Egg custards, dry mix,
+    // prepared with 2% milk").
+    const lead = whole && tier > 0 && words(item.name.split(',')[0]).some((w) => qWords.includes(w)) ? 1 : 0;
+    return { item, score, named, tier, whole, group: whole ? tier : 0, lead, offCategory: 0 };
   });
 
   // FR-1198R3 (LO-1198R3 C1, owner #192-D2 op 1): USDA's food category. The
@@ -369,6 +396,7 @@ function rankFoodResults(items: FoodResult[], q: string, limit: number): FoodRes
       b.named - a.named ||
       a.offCategory - b.offCategory ||
       b.group - a.group ||
+      b.lead - a.lead ||
       b.score - a.score ||
       // FR-1198R3 (LO-1198R3 C2): the row named exactly the query before a row
       // whose head only is the query (ahead of the plain form), and a built-in
@@ -498,7 +526,9 @@ export class FoodService implements OnModuleInit {
     let failed = false;
     let usda: FoodResult[] = [];
     let off: FoodResult[] = [];
-    if (catalog.whole < LOCAL_ENOUGH_WHOLE) {
+    // FR-1212R1 (LS-1212 B1, LO-1212 B1): the catalog answers alone only when it also holds a row named for the food
+    // itself; 40 rows made with it ("Bread, oatmeal", "Cookies, oatmeal") still ask USDA, as on main.
+    if (catalog.whole < LOCAL_ENOUGH_WHOLE || !local.some((item) => namesTheFood(item, q))) {
       const settled = await Promise.allSettled([this.searchUSDA(q, 20), this.searchOpenFoodFacts(q, 20)]);
       [usda, off] = settled.map((r) => (r.status === 'fulfilled' ? r.value : []));
       failed = settled.some((r) => r.status === 'rejected');

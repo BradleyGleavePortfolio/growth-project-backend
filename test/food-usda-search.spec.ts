@@ -1,5 +1,5 @@
 // FOOD-USDA-BE (U3, U4, U6): the catalog's word search, catalog first, without a database. The live proof over the
-// real 8,056 loaded USDA rows (the seven foods, chick, the injection cases) is test/rls/food-usda-release-rls.spec.ts.
+// real 7,980 loaded USDA rows (the seven foods, chick, the injection cases) is test/rls/food-usda-release-rls.spec.ts.
 //   - the typed text reaches SQL only as bound parameters, never inside the SQL text, whatever it holds;
 //   - the words and tsquery texts hold letters, digits, " & " and ":*" only;
 //   - catalog first: with LOCAL_ENOUGH_WHOLE whole-word catalog matches, USDA and Open Food Facts are not asked;
@@ -120,7 +120,8 @@ describe('FOOD-USDA-BE: catalog first (U4)', () => {
   });
 
   it('the shared answer is cached under food:search:v3:, past b#1198\'s v2', async () => {
-    const { service } = setup(Array.from({ length: LOCAL_ENOUGH_WHOLE }, (_, i) => row(`Egg ${i}`, 0)));
+    // FR-1212R1: rows named for the food ("Egg, whole, raw"), so the catalog answers alone (LS-1212 B1).
+    const { service } = setup(Array.from({ length: LOCAL_ENOUGH_WHOLE }, (_, i) => row(`Egg, whole, raw ${i}`, 0)));
     await service.search('eggs', 20, VIEWER);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const keys = [...(service as any).memoryCache.keys()] as string[];
