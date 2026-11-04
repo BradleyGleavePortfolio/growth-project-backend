@@ -4,12 +4,15 @@ import { runInNewContext } from 'vm';
 import { transpileModule, ModuleKind, ScriptTarget } from 'typescript';
 import type { User } from '@prisma/client';
 import { CoachClientPaymentsService } from '../src/checkout/coach-client-payments.service';
+import { CoachMoneyService } from '../src/coach-money/coach-money.service';
+import { PackagesService } from '../src/packages/packages.service';
 
 // Independent review evidence, not a product fix. These fixture files are
 // unmodified git-archive copies from mobile main 6e90289f and paired
 // mobile #925 at 4c1dfb7e. Execute the actual pure reader
 // and copy function, not a reimplementation or a guessed phone shape.
 const phoneCache = new Map<string, Record<string, unknown>>();
+let phoneResponse: unknown;
 function phoneModule(relative: string, phone: string): Record<string, unknown> {
   const file = join(__dirname, `ls1216-mobile-${phone}/src`, relative);
   const cached = phoneCache.get(file);
@@ -25,6 +28,9 @@ function phoneModule(relative: string, phone: string): Record<string, unknown> {
     {
       exports,
       require: (specifier: string) => {
+        if (specifier === '../services/api') {
+          return { __esModule: true, default: { get: async () => ({ data: phoneResponse }) } };
+        }
         const dependency = resolve(dirname(file), `${specifier}.ts`);
         const root = join(__dirname, `ls1216-mobile-${phone}/src`);
         if (dependency.startsWith(root) && existsSync(dependency)) {
@@ -174,5 +180,83 @@ describe('LS-1216 regression phone=paired: actual nested parser and existing bil
     expect(line).toContain('Canceled. Sam keeps access until');
     expect(line).toContain('nothing more is charged.');
     expect(line).not.toContain('Waiting');
+  });
+});
+
+describe('LS-1216 cross-surface phone=paired: actual server and actual phone adapters', () => {
+  it.each(['past_due', 'unpaid'])('Money held %s paid before: waiting without losing settlements', async (status) => {
+    const row = {
+      id: 'review-sale', coach_user_id: COACH, client_user_id: CLIENT, source: null,
+      amount_cents: 14900, currency: 'usd', billing_type: 'recurring', status,
+      created_at: at, updated_at: at,
+      client: { id: CLIENT, name: 'Sam' }, package: { name: 'Monthly coaching' },
+      splits: [{ kind: 'destination', status: 'posted' }], refunds: [], disputes: [],
+      dunning: { status: 'active', last_failure_reason: 'coach_account_not_ready' },
+    };
+    const prisma = {
+      clientPurchase: { findFirst: jest.fn(async () => row) },
+      splitLedgerEntry: {
+        findMany: jest.fn(async () => [1, 2].map(() => ({
+          kind: 'destination', payee_user_id: COACH, amount_cents: 14900,
+          reversed_cents: 0, status: 'posted', purchase_id: row.id, currency: 'usd',
+        }))),
+      },
+      user: { findMany: jest.fn(async () => []) },
+      subCoachAssignment: { findMany: jest.fn(async () => []) },
+      notification: { findMany: jest.fn(async () => []) },
+    };
+    const service: CoachMoneyService = Reflect.construct(CoachMoneyService, [prisma]);
+    const detail = await service.getChargeBreakdown(COACH, row.id);
+    const api = phoneModule('api/coachMoneyApi.ts', 'paired');
+    const copy = phoneModule('lib/money/moneyCopy.ts', 'paired');
+    const charge = Reflect.apply(Reflect.get(api, 'toCharge'), null, [JSON.parse(JSON.stringify(detail.charge))]);
+    expect(prisma.clientPurchase.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ id: row.id, coach_user_id: COACH }),
+    }));
+    expect(charge).toMatchObject({
+      id: row.id, state: 'pending', rawState: 'pending', waitingOn: 'coach_account',
+      client: { id: CLIENT, name: 'Sam' }, packageName: 'Monthly coaching',
+      amountCents: 14900, currency: 'usd', billingType: 'recurring',
+    });
+    expect(Reflect.apply(Reflect.get(api, 'chargeHeld'), null, [charge])).toBe(true);
+    expect(Reflect.apply(Reflect.get(copy, 'chargeIsProblem'), null, [charge])).toBe(false);
+    expect(Reflect.apply(Reflect.get(copy, 'chargeStateLabel'), null, [charge]))
+      .toBe('Waiting on your Stripe account');
+    expect(detail.breakdown).toMatchObject({ settled: true, price_cents: 29800 });
+  });
+
+  it.each(['past_due', 'unpaid'])('subscriber held %s: actual phone accepts Active and access', async (status) => {
+    const pkg = {
+      id: 'review-package', coach_id: COACH, name: 'Monthly coaching',
+      amount_cents: 14900, currency: 'usd', billing_type: 'recurring',
+      interval: 'month', interval_count: 1, recurring_amount_cents: null,
+      recurring_interval: null, recurring_interval_count: null,
+      is_active: true, archived_at: null, published_at: at,
+    };
+    const row = {
+      id: 'review-sale', package_id: pkg.id, client_user_id: CLIENT, coach_user_id: COACH,
+      amount_cents: 14900, currency: 'usd', billing_type: 'recurring', status,
+      entitlement_active: true, source: null, current_period_end: at,
+      cancel_at_period_end: false, created_at: at, client: { name: 'Sam', email: '' },
+      dunning: { status: 'active', last_failure_reason: 'coach_account_not_ready' },
+    };
+    const prisma = {
+      coachPackage: { findFirst: jest.fn(async () => pkg), findMany: jest.fn(async () => [pkg]) },
+      clientPurchase: { findMany: jest.fn(async () => [row]) },
+      user: { findMany: jest.fn(async () => []) },
+    };
+    const service: PackagesService = Reflect.construct(PackagesService, [prisma, {}]);
+    const raw = await service.listSubscribers(COACH, pkg.id);
+    expect(raw.subscribers[0]).toMatchObject({ status: 'active', waiting_on: 'coach_account' });
+    expect(Reflect.get(raw.subscribers[0], 'dunning')).toBeUndefined();
+    phoneResponse = JSON.parse(JSON.stringify(raw));
+    const api = phoneModule('api/packagesApi.ts', 'paired');
+    const coachApi = Reflect.get(api, 'coachPackagesApi');
+    const response = await Reflect.apply(Reflect.get(coachApi, 'subscribers'), null, [pkg.id]);
+    expect(response.data.subscribers[0]).toMatchObject({
+      id: row.id, userId: CLIENT, status: 'active', rawStatus: 'active',
+      entitlementActive: true, amountCents: 14900, currency: 'usd',
+      cancelAtPeriodEnd: false, nextRenewalAt: at.toISOString(),
+    });
   });
 });
