@@ -15,7 +15,7 @@
  * Gate: TEST_DATABASE_URL. No URL -> skip, except under CI=true (hard failure).
  */
 import { randomUUID } from 'crypto';
-import { readdirSync, readFileSync } from 'fs';
+import { existsSync, readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { liveTestDatabaseUrl } from '../utils/live-test-db';
@@ -27,8 +27,14 @@ if (!DB_URL && process.env.CI === 'true') {
 
 const MIGRATIONS = join(__dirname, '..', '..', 'prisma', 'migrations');
 const DIR = readdirSync(MIGRATIONS).find((d) => d.endsWith('_plan_exercise_unit')) ?? 'missing_plan_exercise_unit';
-const statements = (file: string): string[] =>
-  readFileSync(join(MIGRATIONS, DIR, file), 'utf8')
+// Later reversible migrations, rolled back newest first before this down.sql and re-applied oldest
+// first after its migration.sql, as a real rollback runs them: 20270502011000_exercise_set_asked's
+// ExerciseSet.asked_unit uses PlanExerciseUnit, so the type cannot drop while that column stands.
+const LATER = readdirSync(MIGRATIONS)
+  .filter((d) => /^\d{14}_/.test(d) && d > DIR && existsSync(join(MIGRATIONS, d, 'down.sql')))
+  .sort();
+const statements = (file: string, dir = DIR): string[] =>
+  readFileSync(join(MIGRATIONS, dir, file), 'utf8')
     .replace(/--.*$/gm, '')
     .split(';')
     .map((s) => s.trim())
@@ -40,9 +46,9 @@ const statements = (file: string): string[] =>
   const plan = randomUUID();
   const row = { timedNote: randomUUID(), repsNote: randomUUID(), coachTimed: randomUUID(), lowerCase: randomUUID(), archived: randomUUID() };
 
-  const run = (file: string) =>
+  const run = (file: string, dir = DIR) =>
     prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      for (const s of statements(file)) await tx.$executeRawUnsafe(s);
+      for (const s of statements(file, dir)) await tx.$executeRawUnsafe(s);
     });
   const rows = () =>
     prisma.$queryRawUnsafe<Array<{ id: string; rest: unknown }>>(
@@ -115,11 +121,13 @@ const statements = (file: string): string[] =>
       [row.archived]: 'seconds',
     };
     for (let round = 0; round < 2; round++) {
+      for (const later of [...LATER].reverse()) await run('down.sql', later);
       await run('down.sql');
       expect(await hasColumn()).toBe(false);
       expect(await hasType()).toBe(false);
       expect(await rows()).toEqual(before);
       await run('migration.sql');
+      for (const later of LATER) await run('migration.sql', later);
       expect(await hasColumn()).toBe(true);
       expect(await rows()).toEqual(before);
       expect(await units()).toEqual(fromNotes);

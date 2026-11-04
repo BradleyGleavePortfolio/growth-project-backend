@@ -139,7 +139,7 @@ const ask = (id: string, order: number, s: number, count: number, unit: string, 
   it('as the API role: her and her coach read the copied asks; another member reads none', async () => {
     const w = await log('H', [set('a', a.frozen, 0)]);
     const read = (who: string) => as(who, (tx) => tx.$queryRaw<{ n: number }[]>`
-      SELECT count(*)::int AS n FROM "ExerciseSet" WHERE "workout_id" = ${w.id} AND "asked_sets" = 4 AND "asked_unit" = 'reps'`);
+      SELECT count(*)::int AS n FROM "ExerciseSet" WHERE "workout_id" = ${w.id} AND "plan_assignment_id" = ${a.frozen} AND "asked_sets" IS NOT NULL AND "asked_unit" = 'reps'`);
     expect(await as('H', (tx) => tx.$queryRaw<{ bypass: boolean }[]>`
       SELECT "rolbypassrls" AS "bypass" FROM pg_roles WHERE "rolname" = current_user`)).toEqual([{ bypass: false }]);
     expect([(await read('H'))[0].n, (await read('C'))[0].n, (await read('O'))[0].n]).toEqual([1, 1, 0]);
