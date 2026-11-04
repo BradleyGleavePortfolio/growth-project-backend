@@ -584,7 +584,9 @@ export class RealMealPlansService {
           const recipeId = own && s.meal_template.recipe_id && openable.has(s.meal_template.recipe_id)
             ? s.meal_template.recipe_id
             : null;
-          return { ...s, swaps, recipe_id: recipeId };
+          // The raw ids stay server-side: the client sees only the checked swaps and recipe.
+          const { swap_template_ids: _swapIds, recipe_id: _recipeId, ...meal_template } = s.meal_template;
+          return { ...s, meal_template, swaps, recipe_id: recipeId };
         }),
       },
     }));

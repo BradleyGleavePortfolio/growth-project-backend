@@ -330,6 +330,9 @@ describe('PLAN-SWAPS-BE 3: GET /me/meal-plan/today adds swaps, the recipe and ch
     const [breakfast, lunch] = today.assignments[0].daily_meal_plan.slots;
     expect(breakfast.swaps).toEqual([{ id: 'tpl-eggs', name: 'Eggs', calories_kcal: 300, protein_g: 25 }]);
     expect(breakfast.recipe_id).toBe('rec-a');
+    // The template's raw ids (an archived meal, another coach's id) never reach the client.
+    expect(breakfast.meal_template).not.toHaveProperty('swap_template_ids');
+    expect(breakfast.meal_template).not.toHaveProperty('recipe_id');
     expect(lunch.swaps).toEqual([]);
     // rec-private is the coach's but not shared with clients: no dead-end link.
     expect(lunch.recipe_id).toBeNull();
