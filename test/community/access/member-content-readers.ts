@@ -114,12 +114,15 @@ const ROWS: RegisteredReader[] = [
   r('broadcasts/broadcasts.service.ts', 'BroadcastsService.runStatsFor', ['CoachMessage'], 'metric', "broadcast run stats: how many of the coach's own broadcast messages were read (a count per run, `message: { read_at }` filter)", allNa("n/a: the coach's own broadcast messages (a read count, no words)")),
 
   // ── Coaching one-to-one chat ─────────────────────────────────────────────────────────────────────
-  r('messaging/messaging.service.ts', 'MessagingService.listThread', ['CoachMessage'], 'shown', 'the one-to-one thread page (and reply quotes)', { block: 'listThreadForCoach/listThreadForClient: tellClosed + filterBlockedAuthors + serializeMessage(hiddenIdsFor)', ban: NA_1TO1_BAN, removed: WORDS_CLEARED, departed: 'assertClientOfCoach / requireClientCoachId: the current coach only' }, { covered: 'test/messaging/messaging-block-closes-thread.spec.ts' }),
+  r('messaging/messaging.service.ts', 'MessagingService.listThread', ['CoachMessage'], 'shown', 'the one-to-one thread page (and reply quotes)', { block: 'readableThread (from listThreadForCoach/listThreadForClient): hiddenIdsFor; the other party in a block either way empties the page, a sub-coach in a block loses their rows inside the page query (FR-1205); tellClosed + serializeMessage(hiddenIdsFor)', ban: NA_1TO1_BAN, removed: WORDS_CLEARED, departed: 'assertClientOfCoach / requireClientCoachId: the current coach only' }, { covered: 'test/messaging/messaging-block-closes-thread.spec.ts' }),
   r('messaging/messaging.service.ts', 'MessagingService.unreadCountForClient', ['CoachMessage'], 'shown', 'client unread badge', { block: 'hiddenIdsFor: senders in a block either way count 0', ban: NA_1TO1_BAN, removed: 'deleted_at null', departed: CURRENT_COACH }),
   r('messaging/messaging.service.ts', 'MessagingService.unreadCountForCoach', ['CoachMessage'], 'shown', 'coach unread badge, per client', { block: 'blockSets: a closed chat counts 0 (closed_client_ids)', ban: NA_1TO1_BAN, removed: 'deleted_at null', departed: 'the coach roster' }),
   r('messaging/messaging.service.ts', 'MessagingService.insertThreadMessage', ['CoachMessage'], 'check', 'send path: idempotency lookup', allNa(NA_CHECK)),
   r('messaging/messaging.service.ts', 'MessagingService.persistCoachMessage', ['CoachMessage'], 'check', 'send path: idempotency lookup', allNa(NA_CHECK)),
   r('messaging/messaging.service.ts', 'MessagingService.readCutoff', ['CoachMessage'], 'check', 'mark-read cutoff', allNa(NA_CHECK)),
+  // FR-1185R5B (main d0982a09, b#1205 ACTUAL-AUTHOR-READS-BE): two block lookups on a saved AI text's chat source.
+  r('ai/coach/coach-ai.service.ts', 'CoachAIService.quotesBlockedAuthor', ['CoachMessage'], 'check', "an insight's quoted chat message: the authors of its thread up to the draft's time (sender_id only), handed to inBlockWith", allNa(`${NA_CHECK}: it selects sender_id only (no words); an author in a block either way with the reader returns the insight without content (test/ls-1205-stored-insight-author.spec.ts)`)),
+  r('ai/gateway/ai-approval.service.ts', 'AiApprovalService.blockedSourceDrafts', ['CoachMessage'], 'check', "a saved draft's quoted chat message (provenance coach_messages): id and sender_id only, handed to inBlockWith", allNa(`${NA_CHECK}: it selects id and sender_id only (no words); a source in a block either way with the reader, or gone, withholds the draft (test/ls-1205-gateway-draft-author.spec.ts)`)),
   r('messaging/messaging-inbox.service.ts', 'MessagingInboxService.inboxForCoach', ['CoachMessage'], 'shown', 'coach chat list: rows, previews, unread', { block: 'blockSets: a closed chat has no row, no preview, unread 0', ban: NA_1TO1_BAN, removed: 'deleted_at null', departed: 'the coach roster' }, { covered: 'test/messaging/messaging-block-closes-thread.spec.ts' }),
   r('messaging/messaging-inbox.service.ts', 'MessagingInboxService.inboxForClient', ['CoachMessage'], 'shown', 'client chat list: rows, previews, unread', { block: 'blockSets: senders in a block either way are left out', ban: NA_1TO1_BAN, removed: 'deleted_at null', departed: CURRENT_COACH }),
   r('messaging/message-actions.service.ts', 'MessageActionsService.listPins', ['CoachMessage'], 'shown', 'pinned messages of a thread', { block: 'hiddenIdsFor: a closed chat shows none', ban: NA_1TO1_BAN, removed: 'deleted_at null', departed: 'loadThread: the caller thread only' }),
@@ -288,7 +291,7 @@ const CALLERS: Record<string, string[]> = {
   'CommunityVoiceRepository.list': ['CommunityVoiceService.list'],
   'CommunityVoiceRepository.viewExtras': ['CommunityVoiceService.noteViews'],
   // LO-1185R2 C1: private; its rules live in the two methods that return its rows.
-  'MessagingService.listThread': ['MessagingService.listThreadForClient', 'MessagingService.listThreadForCoach'],
+  'MessagingService.listThread': ['MessagingService.readableThread'],
 };
 
 for (const reader of Object.keys(CALLERS)) {
