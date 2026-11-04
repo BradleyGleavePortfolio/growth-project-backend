@@ -244,7 +244,7 @@ export class BroadcastsService {
           card: v.card?.type ?? null,
         },
       });
-      return this.present(row);
+      return this.answer(scope, row);
     } catch (err) {
       if (key && err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         const existing = await this.findOwnKey(scope, key);
@@ -266,14 +266,14 @@ export class BroadcastsService {
     });
   }
 
-  private replay(scope: CoachScope, existing: BroadcastRow, input: BroadcastInput) {
+  private async replay(scope: CoachScope, existing: BroadcastRow, input: BroadcastInput) {
     // The same read rule as get/list, on every replay path (A-659-6).
     if (existing.coach_id !== scope.tenantId || existing.author_user_id !== scope.actorId) {
       throw broadcastError('broadcast.idempotency_conflict');
     }
     const sameBody = typeof input.body === 'string' && input.body.trim() === existing.body;
     if (!sameBody) throw broadcastError('broadcast.idempotency_conflict');
-    return this.present(existing);
+    return this.answer(scope, existing);
   }
 
   async update(actorId: string, id: string, input: BroadcastInput, now: Date = new Date()) {
@@ -520,7 +520,16 @@ export class BroadcastsService {
     return movedAwayClientIds(this.prisma, scope.actorId, ids);
   }
 
-  present(row: BroadcastRow, away: ReadonlySet<string> = new Set()) {
+  /**
+   * FR-1217R1 (LS-1217 B1): every single-row answer (create echo and both
+   * idempotent replay paths) leaves out moved-away exclusions, like get/list.
+   */
+  private async answer(scope: CoachScope, row: BroadcastRow) {
+    return this.present(row, await this.movedAway(scope, [row]));
+  }
+
+  /** No default set: each caller must say which moved-away ids to leave out. */
+  private present(row: BroadcastRow, away: ReadonlySet<string>) {
     return {
       id: row.id,
       status: row.status,

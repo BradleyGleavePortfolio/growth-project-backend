@@ -8,6 +8,7 @@ import {
   NOT_HELD_RENEWAL,
 } from '../checkout/dunning-v2/coach-account-hold';
 import { dunningCycleKey } from '../checkout/dunning-v2/dunning-cycle';
+import { isBillingPauseReason } from '../checkout/dunning-v2/dunning-v2.service';
 import { movedAwayClientIds } from '../checkout/moved-client-money';
 import { movedAwayDates } from '../checkout/plan-renewal/switch-tell';
 
@@ -69,6 +70,7 @@ export const CARD_UPDATE_LINK_ATTEMPT_KINDS = ['soft', 'urgent', 'final', 'cance
 
 type CardLinkSends = {
   entered_at?: Date | null;
+  last_failure_reason?: string | null;
   attempts?: Array<{ sent_at: Date | null }>;
   notice_deliveries?: Array<{ sent_at: Date | null; cycle_key: string }>;
 };
@@ -77,12 +79,20 @@ type CardLinkSends = {
  * The newest "Update payment" email of the current cycle, from either dunning
  * path: v1's sent attempt (a reopened cycle deletes the old attempts) or v2's
  * sent client email, counted only when its cycle_key is the live cycle's.
+ * FR-1217R1 (LS-1217 B2): a dispute or refund cycle's client email carries no
+ * update-card link (the dispatcher renders it as a dispute notice), so a v2
+ * delivery in a billing-pause cycle is never reported as a sent link.
  */
 function cardUpdateLinkSentAt(d: CardLinkSends | null | undefined): string | null {
   const v1 = d?.attempts?.[0]?.sent_at ?? null;
   const v2 = d?.notice_deliveries?.[0];
   const v2At =
-    v2?.sent_at && d?.entered_at && v2.cycle_key === dunningCycleKey(d.entered_at) ? v2.sent_at : null;
+    v2?.sent_at &&
+    d?.entered_at &&
+    !isBillingPauseReason(d.last_failure_reason) &&
+    v2.cycle_key === dunningCycleKey(d.entered_at)
+      ? v2.sent_at
+      : null;
   const newest = v1 && v2At ? (v2At > v1 ? v2At : v1) : (v1 ?? v2At);
   return newest ? newest.toISOString() : null;
 }
