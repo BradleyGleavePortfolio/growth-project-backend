@@ -172,14 +172,14 @@ test('working tree policy tampering cannot affect trusted range or index behavio
   git(f.repo, 'add', '-f', 'src/staged.ts');
   const staged = command(f.repo, process.execPath, [checker, '--mode=staged']);
   failure(staged, 1);
-  assert.match(staged.stdout, /index tree/);
+  assert.match(staged.stdout, /^R75 --cached; policy=:\.github\/r75-policy\.json/m);
 });
 
 test('staged mode rejects policy-base rather than pretending to certify it', () => {
   const f = fixture();
   const result = command(f.repo, process.execPath, [checker, '--mode=staged', `--policy-base=${f.base}`]);
   failure(result, 2);
-  assert.match(result.stderr, /only valid with --mode=range/);
+  assert.match(result.stderr, /staged mode does not accept range references/);
 });
 
 test('base advance before resolution is honored; after resolution immutable SHA is used', () => {
