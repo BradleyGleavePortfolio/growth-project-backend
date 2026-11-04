@@ -95,7 +95,7 @@ const ask = (id: string, order: number, s: number, count: number, unit: string, 
     await prisma.workoutAdjustmentProposal.create({
       data: {
         coach_id: u.C, client_id: u.H, assignment_id: a.roman, rule_key: 'sab-volume', rule_version: 1, status: 'approved',
-        severity: 'low', signals: {}, proposed_change: {}, base_fingerprint: 'sab', roman_text: 'Lighter day.',
+        severity: 'moderate', signals: {}, proposed_change: {}, base_fingerprint: 'sab', roman_text: 'Lighter day.',
         decided_at: new Date('2026-11-03T10:00:00Z'), applied_change: { exercises: [{ order: 0, sets_before: 4, sets_after: 3 }] },
       },
     });

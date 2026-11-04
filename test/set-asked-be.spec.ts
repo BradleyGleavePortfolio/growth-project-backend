@@ -92,12 +92,8 @@ function fakeStore() {
         }));
     }),
   };
-  const prisma = {
-    workoutSession,
-    exerciseSet,
-    clientWorkoutAssignment,
-    $transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
-  };
+  const tables = { workoutSession, exerciseSet, clientWorkoutAssignment };
+  const prisma = { ...tables, $transaction: jest.fn(async (fn: (tx: typeof tables) => Promise<unknown>) => fn(tables)) };
   return { sessions, sets, assignments, reads, prisma };
 }
 
