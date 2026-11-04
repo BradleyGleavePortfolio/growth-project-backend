@@ -13,6 +13,7 @@ import type {
   User,
 } from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
+import { placeOf } from '../community-space-access';
 import { CommunityRealtimeService } from '../realtime/community-realtime.service';
 import { CommunityNotificationsService } from '../notifications/community-notifications.service';
 import { COMMUNITY_BROADCAST_EVENTS } from '../community-events';
@@ -196,7 +197,7 @@ export class CommunityChallengesService {
     // Two-way block: a challenge created by someone in a block relation with
     // the caller reads as "does not exist" (read, join, progress, leaderboard,
     // comments and reports all resolve through here).
-    await this.safety.assertVisibleTo(user.id, challenge.created_by_id, NOT_FOUND);
+    await this.safety.assertVisibleTo(user.id, challenge.created_by_id, NOT_FOUND, placeOf(challenge));
     return challenge;
   }
 
@@ -376,10 +377,12 @@ export class CommunityChallengesService {
 
     // Two-way block: drop challenges created by anyone in a block relation with
     // the caller (cursor stays on the unfiltered page, as on every list).
+    // ALL-ON-FIX-BE (C6-WINS-MOVE, owner rule 1): and by a client who left, as on posts.
     const visibleChallenges = await this.safety.filterBlocked(
       user.id,
       page.items,
       (c) => c.created_by_id,
+      placeOf,
     );
     return ChallengeListResponseSchema.parse({
       challenges: visibleChallenges.map((c) => this.challengeView(c)),
