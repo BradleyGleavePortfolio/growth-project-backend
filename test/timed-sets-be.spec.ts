@@ -185,9 +185,6 @@ describe('every plan copy keeps seconds', () => {
   // one reads it. Excluded: readers that copy nothing to a plan or the phone.
   const EXCLUDED: Record<string, string> = {
     'src/scout/reconstruct/native/native-writers.ts:r': 'the importer (v1.1): writes reps, the column default',
-    'src/roman/context/roman-client-context.service.ts:e': "Roman's context (AI only): found, not fixed",
-    'src/roman/context/roman-client-context.service.ts:select': "Roman's context (AI only): found, not fixed",
-    'src/ai/context/workout-context.service.ts:select': 'AI context reads the plan: found, not fixed',
   };
   const files = (dir: string): string[] =>
     readdirSync(dir, { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? files(join(dir, d.name)) : d.name.endsWith('.ts') ? [join(dir, d.name)] : []));
