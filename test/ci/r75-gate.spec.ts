@@ -573,3 +573,147 @@ describe('R75 gate — CI and the pre-commit hook invoke the one committed check
   // test/ci/delivery-artifact.spec.ts, and the absence of any inline pathspec or
   // token list by test/ci/r100-pathspec.spec.ts.
 });
+
+// R75-BASE-POLICY-BE (#194-D1 op 1): CI passes --policy-base=<the base branch's
+// head>, so a change is judged by the rules it would merge into. It can neither
+// loosen its own check by editing the policy file nor keep a stale copy of the
+// policy from before a newer one landed on the base.
+describe('R75 gate — the rules come from the base, never from the head', () => {
+  const vectors: { tokens: { name: string; input: string }[] } = JSON.parse(
+    readFileSync(join(__dirname, 'fixtures', 'r75-boundaries.json'), 'utf8'),
+  );
+  const castToken = 'as unknown as';
+  const cast = vectors.tokens.find((entry) => entry.name === castToken)?.input;
+  if (!cast) throw new Error(`fixture vector missing: ${castToken}`);
+  const real = JSON.parse(REAL_POLICY);
+  // Parses and validates, but bans nothing any case writes.
+  const BANS_NOTHING = JSON.stringify({
+    scan: real.scan,
+    tokens: [{ name: 'zzz-not-a-real-token', pattern: 'zzz-not-a-real-token' }],
+  });
+  // The policy before b#1208: src/ files ending .spec.ts were still scanned.
+  const SCANS_SPEC_FILES = JSON.stringify({
+    ...real,
+    scan: { ...real.scan, excludeRootGlobs: [] },
+  });
+
+  function commit(repo: string, files: FileMap, policy?: string): string {
+    if (policy !== undefined) installPolicy(repo, policy);
+    writeFiles(repo, files);
+    git(repo, ['add', '-A', '-f']);
+    git(repo, ['commit', '-q', '--allow-empty', '-m', 'step']);
+    return git(repo, ['rev-parse', 'HEAD']);
+  }
+
+  function range(repo: string, base: string, head: string, policyBase?: string) {
+    const args = ['--mode=range', `--base=${base}`, `--head=${head}`];
+    return runChecker(repo, policyBase ? [...args, `--policy-base=${policyBase}`] : args);
+  }
+
+  it('a head that bans nothing still fails a new cast the base policy bans', () => {
+    const repo = newRepo();
+    const base = commit(repo, { 'src/keep.ts': ['export const keep = 1;'] }, REAL_POLICY);
+    const head = commit(repo, { 'src/feature.ts': [cast] }, BANS_NOTHING);
+
+    const judged = range(repo, base, head, base);
+    expect(judged.status).toBe(1);
+    expect(reportedNet(judged.stdout, castToken)).toBe(1);
+    expect(judged.stdout).toContain('src/feature.ts');
+    expect(judged.stdout).toContain(`policy from base ${base}`);
+    expect(judged.stdout).toContain(
+      `note: this change edits ${POLICY_IN_REPO}; it is judged by the base's file, not its own`,
+    );
+    expect(judged.stdout).not.toContain('zzz-not-a-real-token');
+
+    // Control: read from the head, the loosened file lets the same cast through.
+    const own = range(repo, base, head);
+    expect(own.status).toBe(0);
+    expect(own.stdout).toContain('OK — no positive token change');
+  });
+
+  it('a branch built before a policy change is judged by the base branch newest policy', () => {
+    const repo = newRepo();
+    const fork = commit(repo, { 'src/keep.ts': ['export const keep = 1;'] }, SCANS_SPEC_FILES);
+    git(repo, ['checkout', '-q', '-b', 'feature']);
+    const head = commit(repo, { 'src/feature.spec.ts': [cast], 'test/feature.spec.ts': [cast] });
+    git(repo, ['checkout', '-q', '-b', 'newer-main', fork]);
+    const newest = commit(repo, {}, REAL_POLICY);
+
+    const judged = range(repo, fork, head, newest);
+    expect(judged.status).toBe(0);
+    expect(judged.stdout).toContain(`policy from base ${newest}`);
+    expect(judged.stdout).toContain('OK — no positive token change');
+    expect(judged.stdout).not.toContain('note: this change edits');
+
+    // Control: the stale copy at the head still scans the src/ spec file.
+    const stale = range(repo, fork, head);
+    expect(stale.status).toBe(1);
+    expect(stale.stdout).toContain('src/feature.spec.ts');
+  });
+
+  it('under the base policy a skipped test file stays skipped; app code still counts', () => {
+    const repo = newRepo();
+    const base = commit(repo, { 'src/keep.ts': ['export const keep = 1;'] }, REAL_POLICY);
+    const head = commit(repo, {
+      'src/feature.spec.ts': [cast],
+      'test/feature.spec.ts': [cast],
+      '__tests__/feature.ts': [cast],
+      'src/app.ts': [cast],
+    });
+
+    const judged = range(repo, base, head, base);
+    expect(judged.status).toBe(1);
+    expect(reportedNet(judged.stdout, castToken)).toBe(1);
+    expect(judged.stdout).toContain('src/app.ts');
+    const skipped = ['src/feature.spec.ts', 'test/feature.spec.ts', '__tests__/feature.ts'];
+    for (const path of skipped) expect(judged.stdout).not.toContain(path);
+  });
+
+  it('a local run with no policy argument still reads today\'s path at the measured head', () => {
+    const repo = newRepo();
+    const base = commit(repo, { 'src/keep.ts': ['export const keep = 1;'] }, REAL_POLICY);
+    const head = commit(repo, { 'src/feature.ts': [cast] });
+
+    const local = range(repo, base, head);
+    expect(local.status).toBe(1);
+    expect(local.stdout).toContain(`policy=${head}:${POLICY_IN_REPO}`);
+    expect(local.stdout).not.toContain('policy from base');
+
+    writeFiles(repo, { 'src/staged.ts': [cast] });
+    git(repo, ['add', '-A', '-f']);
+    const staged = runChecker(repo, ['--mode=staged']);
+    expect(staged.status).toBe(1);
+    expect(staged.stdout).toContain(`policy=:${POLICY_IN_REPO}`);
+  });
+
+  const rejected: [string, string[], string][] = [
+    ['staged mode', ['--mode=staged', '--policy-base=HEAD'], 'staged mode does not accept'],
+    ['an empty value', ['--mode=range', '--base=HEAD', '--policy-base='], 'nonempty policy base'],
+    ['a blank value', ['--mode=range', '--base=HEAD', '--policy-base=  '], 'nonempty policy base'],
+    ['a non-commit', ['--mode=range', '--base=HEAD', '--policy-base=nope'], 'git failed'],
+    [
+      'a repeated option',
+      ['--mode=range', '--base=HEAD', '--policy-base=HEAD', '--policy-base=HEAD'],
+      'duplicate',
+    ],
+  ];
+  it.each(rejected)('rejects --policy-base with %s', (_name, args, reason) => {
+    const repo = newRepo();
+    commit(repo, { 'src/keep.ts': ['export const keep = 1;'] }, REAL_POLICY);
+    const result = runChecker(repo, args);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain('operational failure');
+    expect(result.stderr).toContain(reason);
+    expect(result.stdout).not.toContain('OK —');
+  });
+
+  it('a base with no policy file fails closed instead of falling back to the head', () => {
+    const repo = newRepo();
+    const base = commit(repo, { 'src/keep.ts': ['export const keep = 1;'] });
+    const head = commit(repo, { 'src/feature.ts': ['export const clean = 2;'] }, REAL_POLICY);
+    const result = range(repo, base, head, base);
+    expect(result.status).toBe(2);
+    expect(result.stderr).not.toContain('invalid or duplicate argument');
+    expect(result.stdout).not.toContain('OK —');
+  });
+});
