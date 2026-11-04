@@ -677,3 +677,110 @@ jobs:
         run: npx jest test/refund-reversal-concurrency.live.spec.ts --runInBand --testTimeout=120000
         env:
           NODE_OPTIONS: --max-old-space-size=4096
+
+  all-switches-on:
+    # ALL-ON-CI-BE (op194): the same plain jest suite as build-and-test's Test
+    # step, with every FEATURE_* switch named in .github/fly-env-desired-state.json
+    # set to "true". build-and-test runs with every switch unset, so code that
+    # only runs behind a switch is never exercised until production flips it.
+    #
+    # NOT REQUIRED, and kept out of the CI run's conclusion on purpose:
+    #   - scripts/setup-branch-protection.sh does not list it, so a red shard
+    #     does not block a merge.
+    #   - continue-on-error at job level keeps a red shard from failing the CI
+    #     workflow run. scripts/ci/release-evidence-gate.sh refuses a deploy
+    #     unless the newest ci.yml run on main concluded success, so without this
+    #     a known all-on failure would block every production deploy.
+    # A red shard is still shown red on the PR; read its log for the failures.
+    #
+    # The switch names are read from the desired-state file at run time (never
+    # listed here): a new FEATURE_* key there is picked up with no edit to this
+    # job, and test/ci/fly-env-manifest.spec.ts forbids naming a managed flag
+    # in any workflow but fly-env-sync.yml. Names ending _ALLOWLIST or _IDS are
+    # lists of ids, not on/off switches, and are left unset.
+    # Only the default jest config runs here; the live-database jobs above
+    # (rls-live-tests, community-live-tests, mwb-3-live-tests) are not repeated.
+    name: All switches on (not required) (${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    # Same live Redis as build-and-test for the throttler-storage proofs.
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Turn every FEATURE_* switch on
+        # Writes NAME=true to GITHUB_ENV for every FEATURE_* key in the
+        # desired-state file's flags, gates and excluded sections, plus a random
+        # test value for the one secret a switch needs to boot. Fails if it
+        # finds no switch, so a moved or renamed file cannot pass with nothing on.
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const file = '.github/fly-env-desired-state.json';
+          const d = JSON.parse(fs.readFileSync(file, 'utf8'));
+          const names = new Set();
+          for (const section of ['flags', 'gates', 'excluded']) {
+            for (const k of Object.keys(d[section] || {})) {
+              if (/^FEATURE_[A-Z0-9_]+$/.test(k)) names.add(k);
+            }
+          }
+          const all = [...names].sort();
+          const skipped = all.filter((n) => /_(ALLOWLIST|IDS)$/.test(n));
+          const on = all.filter((n) => !skipped.includes(n));
+          if (on.length === 0) {
+            console.error(`No FEATURE_* switch found in ${file}`);
+            process.exit(1);
+          }
+          // Test-only companion secret. Production has it (secrets section);
+          // without it WorkoutBuilderAutosaveService throws in onModuleInit
+          // once the autosave-undo switch is on, so every suite that boots
+          // the app fails on that one line and nothing behind it is tested.
+          // A fresh random value each run, never a real secret.
+          const testSecrets = [
+            `MWB_AUTOSAVE_LOCK_TOKEN_SECRET=${require('crypto').randomBytes(32).toString('hex')}`,
+          ];
+          fs.appendFileSync(
+            process.env.GITHUB_ENV,
+            [...on.map((n) => `${n}=true`), ...testSecrets].join('\n') + '\n',
+          );
+          const lines = [
+            `FEATURE_* switches set to true: ${on.length} (from ${file})`,
+            `Left unset (lists, not switches): ${skipped.length ? skipped.join(', ') : 'none'}`,
+            ...on.map((n) => `  ${n}=true`),
+          ];
+          console.log(lines.join('\n'));
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, '```\n' + lines.join('\n') + '\n```\n');
+          NODE
+
+      - name: Test (shard ${{ matrix.shard }}/4, all switches on)
+        # Same heap as build-and-test's Test step; the shard keeps each runner's
+        # share of the suite small.
+        run: npm test -- --shard=${{ matrix.shard }}/4
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+          THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0

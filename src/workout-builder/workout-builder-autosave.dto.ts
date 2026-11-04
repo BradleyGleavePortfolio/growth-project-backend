@@ -15,6 +15,7 @@
  */
 
 import { z } from 'zod';
+import { PLAN_EXERCISE_UNITS } from './plan-exercise-fields';
 
 // ─── Bounds (spec §6.2; mirror UpsertExerciseRowDto class-validator bounds) ───
 
@@ -52,6 +53,8 @@ export const UpsertExerciseRowSchema = z
     rest_seconds: z.number().int().min(0).nullable().optional(),
     superset_group_id: z.string().min(1).nullable().optional(),
     notes: z.string().max(NOTES_MAX_LEN).nullable().optional(),
+    // TIMED-SETS-BE: reps or seconds. Absent = reps on a new row; an edit keeps the row's unit.
+    unit: z.enum(PLAN_EXERCISE_UNITS).optional(),
   })
   .strict();
 

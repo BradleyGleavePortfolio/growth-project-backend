@@ -54,6 +54,12 @@ const RELATIONS: Record<string, Record<string, Relation>> = {
       resolve: (r, db) =>
         (db.state.dunningAttempt ?? []).filter((x) => x.dunning_state_id === r.id),
     },
+    notice_deliveries: {
+      model: 'dunningNoticeDelivery',
+      many: true,
+      resolve: (r, db) =>
+        (db.state.dunningNoticeDelivery ?? []).filter((x) => x.dunning_state_id === r.id),
+    },
   },
   chargeRefund: {
     purchase: {

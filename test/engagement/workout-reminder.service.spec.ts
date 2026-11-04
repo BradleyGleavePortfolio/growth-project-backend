@@ -181,6 +181,8 @@ describe('WorkoutReminderService', () => {
             clientWorkoutAssignment: h.assignments,
             workoutSession: h.sessions,
             workoutReminderDelivery: h.deliveries,
+            // Read by the FEATURE_DUNNING_V2 lockout check.
+            dunningState: h.dunning,
           },
           h.users,
         ).db,

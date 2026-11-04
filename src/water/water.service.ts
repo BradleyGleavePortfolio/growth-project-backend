@@ -1,21 +1,33 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { saveOnce } from '../common/save-once';
 import { LogWaterDto } from './water.dto';
 
 @Injectable()
 export class WaterService {
   constructor(private prisma: PrismaService) {}
 
-  async logWater(userId: string, data: LogWaterDto) {
+  async logWater(userId: string, data: LogWaterDto, onResend?: () => void) {
     // DTO already enforces amount_ml > 0 via @Min. user_id is set from the
     // authenticated session, never from the body.
-    return this.prisma.waterLog.create({
-      data: {
-        user_id: userId,
-        amount_ml: data.amount_ml,
-        logged_at: data.date ? new Date(data.date) : new Date(),
-      },
-    });
+    const row = {
+      user_id: userId,
+      amount_ml: data.amount_ml,
+      logged_at: data.date ? new Date(data.date) : new Date(),
+    };
+    // WATER-WEIGHT-KEYS-BE: no key is a plain create, as before, and its answer
+    // keeps its shape (the new column is left out). With a key, a resend
+    // answers with the first row and stores nothing (onResend lets the
+    // controller skip the request's global Roman bust); another member's key is
+    // a 404 (src/common/save-once.ts).
+    const key = data.client_uuid;
+    if (!key) return this.prisma.waterLog.create({ data: row, omit: { client_uuid: true } });
+    return saveOnce(
+      userId,
+      () => this.prisma.waterLog.findUnique({ where: { client_uuid: key } }),
+      () => this.prisma.waterLog.create({ data: { ...row, client_uuid: key } }),
+      onResend,
+    );
   }
 
   async getDaily(userId: string, date: string) {

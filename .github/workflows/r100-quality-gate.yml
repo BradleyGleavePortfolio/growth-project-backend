@@ -9,6 +9,12 @@ name: R100 Quality Gate
 #     `scripts/check-r75.js` against the declarative policy `.github/r75-policy.json`;
 #     the pre-commit hook (lefthook.yml) runs the SAME checker against the index,
 #     so the hook and CI cannot diverge.
+#   - The rules come from the base branch, never from the PR head
+#     (R75-BASE-POLICY-BE, #194-D1 op 1): CI passes --policy-base=<the head of
+#     origin/<base branch> at run time>. A PR that edits the policy file is
+#     judged by the base's file, and a branch built before a policy change is
+#     judged by the newest policy it would merge into, not the merge base's.
+#     Local and pre-commit runs pass no policy base and read today's path.
 #
 # Retired 2026-09-20 (G01/G08 — generic volume quotas are not quality
 # evidence): the former `loc-budget` (400 net-LOC cap, [LOC-EXEMPT:] waiver)
@@ -53,6 +59,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
           set -euo pipefail
           # workflow_dispatch carries no pull-request base. Rather than fabricate
@@ -73,8 +80,20 @@ jobs:
             echo "FAIL — pull_request event carried no head SHA; refusing to certify R75." >&2
             exit 1
           fi
+          if [ -z "${BASE_REF:-}" ]; then
+            echo "FAIL — pull_request event carried no base branch; refusing to certify R75." >&2
+            exit 1
+          fi
+          # The policy is read from the base branch as fetched now (checkout with
+          # fetch-depth 0 brings every branch), not from the event's base SHA or
+          # the merge base: both keep the policy the branch was built on, and a
+          # re-run reuses the old event. A missing base branch fails closed.
+          POLICY_SHA="$(git rev-parse --verify --quiet "refs/remotes/origin/${BASE_REF}^{commit}")" || {
+            echo "FAIL — base branch '$BASE_REF' was not fetched; refusing to certify R75." >&2
+            exit 1
+          }
           node --version
           # Single committed implementation, shared verbatim with the pre-commit
           # hook. Real Git range semantics (base...head, i.e. merge base) and
           # per-token net counting live in the checker, not in this YAML.
-          node scripts/check-r75.js --mode=range --base="$BASE_SHA" --head="$HEAD_SHA"
+          node scripts/check-r75.js --mode=range --base="$BASE_SHA" --head="$HEAD_SHA" --policy-base="$POLICY_SHA"

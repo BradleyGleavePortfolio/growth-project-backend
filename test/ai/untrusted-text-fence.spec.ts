@@ -62,7 +62,7 @@ describe('R7 fenceUntrusted', () => {
 
 describe('R7 coach AI drafts', () => {
   it.each([
-    ['workout-program', WorkoutProgramPrompt, 'v3'],
+    ['workout-program', WorkoutProgramPrompt, 'v4'],
     ['meal-plan', MealPlanPrompt, 'v2'],
     ['client-insight', ClientInsightPrompt, 'v2'],
   ] as const)('%s: system ends with the rule and the version moved', (_n, prompt, version) => {
