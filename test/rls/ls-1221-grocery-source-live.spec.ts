@@ -34,7 +34,7 @@ if (!url && process.env.CI === 'true') {
     await prisma.dailyMealPlan.create({
       data: {
         id: plan, coach_id: coach, name: 'Daily food',
-        slots: { create: { id: slot, meal_template_id: template, slot_label: 'breakfast', planned_time: '08:00' } },
+        slots: { create: { id: slot, meal_template_id: template, slot_label: 'breakfast', time_of_day: '08:00' } },
       },
     });
     await prisma.dailyMealPlanAssignment.create({
@@ -49,7 +49,7 @@ if (!url && process.env.CI === 'true') {
     expect(before.source_plan_slot_id).toBe(slot);
 
     await plans.updatePlan(coach, plan, {
-      slots: [{ meal_template_id: template, slot_label: 'breakfast', planned_time: '09:00' }],
+      slots: [{ meal_template_id: template, slot_label: 'breakfast', time_of_day: '09:00' }],
     });
     const after = await prisma.listItem.findUniqueOrThrow({ where: { id: before.id } });
     expect(after.source_plan_slot_id).not.toBeNull();
@@ -57,7 +57,7 @@ if (!url && process.env.CI === 'true') {
       where: { id: after.source_plan_slot_id! },
     });
     expect(linkedSlot).toMatchObject({
-      daily_meal_plan_id: plan, meal_template_id: template, slot_label: 'breakfast', planned_time: '09:00',
+      daily_meal_plan_id: plan, meal_template_id: template, slot_label: 'breakfast', time_of_day: '09:00',
     });
   });
 });
