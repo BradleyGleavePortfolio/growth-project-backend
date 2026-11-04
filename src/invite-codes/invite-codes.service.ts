@@ -162,7 +162,10 @@ export function inviteCodeLookupCandidates(raw: unknown): string[] {
 export const INVITE_ATTACH_ERROR = {
   /** Code unknown, revoked, expired, exhausted, or failed the seat race. */
   INVITE_CODE_INVALID: 'invite_code_invalid',
-  /** Never thrown now (owner TM-P1: no coach plans); kept so older app builds still map it. */
+  /**
+   * The coach cannot take this buyer one to one (the coaching rule refused the join: nameless,
+   * locked for deletion, or in a block with the buyer). 1TO1-FU-BE: thrown again for that refusal.
+   */
   COACH_NOT_ACCEPTING_CLIENTS: 'coach_not_accepting_clients',
   /** Redeemer is already a client of a DIFFERENT coach; refuse to re-parent. */
   ALREADY_ATTACHED_TO_DIFFERENT_COACH: 'already_attached_to_different_coach',
@@ -250,9 +253,12 @@ function joinPackageUnavailable(): BadRequestException {
   });
 }
 
-/** STORE-1TO1: the grant's existing answer for a package its coach cannot sell to this buyer. */
-function joinPackageNotFound(): NotFoundException {
-  return new NotFoundException({ error: 'PACKAGE_NOT_FOUND', message: 'Package not available' });
+/** 1TO1-FU-BE: a new join the coach cannot take (planJoin -> null). Existing code and words. */
+function coachNotAcceptingClients(): BadRequestException {
+  return new BadRequestException({
+    code: INVITE_ATTACH_ERROR.COACH_NOT_ACCEPTING_CLIENTS,
+    message: 'This coach is not currently accepting new clients.',
+  });
 }
 
 /** A single-recipient invite redeemed by someone else (case and spaces ignored). */
@@ -1079,8 +1085,9 @@ export class InviteCodesService {
     // B-PACKAGE-135 — attached ONLY together with the code's one package.
     // Legacy wiring without InviteGrantService (old unit specs) keeps attach-only.
     const plan = this.grants ? await this.planJoin(target, userId) : null;
-    // STORE-1TO1: a new join to a coach who cannot coach this buyer is refused before any write.
-    if (this.grants && !plan) throw joinPackageNotFound();
+    // STORE-1TO1: a new join to a coach who cannot coach this buyer is refused before any write,
+    // with the existing not-accepting code (1TO1-FU-BE), never a package answer.
+    if (this.grants && !plan) throw coachNotAcceptingClients();
     if (plan && plan.join.status === 'checkout_required') {
       // Paid: NOT attached, no seat. The app opens the checkout with this code
       // as `join_code`; the purchase's entitlement attaches (coachless till then).
