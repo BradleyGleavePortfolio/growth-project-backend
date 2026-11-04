@@ -124,6 +124,7 @@ OUTPUT SCHEMA (return ONLY valid JSON conforming to this shape):
           "order": <int 1..>,
           "sets": <int 1..10>,
           "reps_or_duration_seconds": <int>,
+          "unit": "reps" | "seconds",
           "weight_lbs": <number or null>,
           "rest_seconds": <int or null>,
           "superset_group_id": "<short id or null>",

@@ -48,7 +48,7 @@ import {
   type PlanContent,
 } from './consultation-programs';
 import { writeProgramTree } from './program-writer';
-import { alternativesOf } from '../workout-builder/plan-exercise-fields';
+import { alternativesOf, unitOf } from '../workout-builder/plan-exercise-fields';
 import { flaggedClientPayload } from './flagged-join-alert';
 import {
   ONBOARDING_COMPLETION_HOOKS,
@@ -1251,6 +1251,8 @@ export class OnboardingService {
         superset_group_id: e.superset_group_id,
         notes: e.notes,
         alternative_external_ids: alternativesOf(e),
+        // FR-1211R1 (LS-1211 B1, LO-1211 B1): the unit the master row states travels to the client copy.
+        unit: unitOf(e),
       })),
     }));
     const plans = materialiseClientPlans(content, sel.program_key, sel, m);
