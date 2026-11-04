@@ -208,7 +208,10 @@ describe('compiled copy — what the runtime image runs (F1, F4)', () => {
   it('tsconfig.food-seed.json emits only the step, at the path release.sh and the Dockerfile name', () => {
     expect(error).toBeUndefined();
     expect(parsed.errors).toEqual([]);
-    expect(parsed.fileNames.map((f) => relative(ROOT, f))).toEqual(['scripts/seed-built-in-foods.ts']);
+    // FOOD-USDA-BE: release step 6's loader is the second (and only other) script the copy carries.
+    expect(parsed.fileNames.map((f) => relative(ROOT, f))).toEqual(['scripts/seed-built-in-foods.ts', 'scripts/load-usda-foods.ts']);
+    const usda = ts.getOutputFileNames(parsed, join(ROOT, 'scripts/load-usda-foods.ts'), false).find((f) => f.endsWith('.js'));
+    expect(relative(ROOT, usda ?? '')).toBe('dist/food-seed/scripts/load-usda-foods.js');
     const js = ts.getOutputFileNames(parsed, join(ROOT, 'scripts/seed-built-in-foods.ts'), false).find((f) => f.endsWith('.js'));
     expect(relative(ROOT, js ?? '')).toBe('dist/food-seed/scripts/seed-built-in-foods.js');
     expect(readFileSync(join(ROOT, 'scripts/release.sh'), 'utf8')).toContain('dist/food-seed/scripts/seed-built-in-foods.js');

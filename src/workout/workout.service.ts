@@ -1,11 +1,15 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { PlanExerciseUnit, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { PtmService } from '../ptm/ptm.service';
 import { ClientAIContextService } from '../ai/client-ai-context.service';
 import { summarizeExerciseSet } from '../roman/tools/roman-exercise-history';
+import { visibleAssignmentExercises } from '../workout-builder/assignment-exercises';
+import { unitOf } from '../workout-builder/plan-exercise-fields';
+import { romanAdjustedSets } from '../workout-builder/workout-builder.service';
 import {
   ExerciseHistoryQueryDto,
+  CreateExerciseSetDto,
   CreateWorkoutDto,
   CreateRoutineDto,
   CreateRoutineExerciseDto,
@@ -22,6 +26,54 @@ const HISTORY_SESSIONS = 100;
  * dashes, underscores. The phone's queue key `${userId}:${sessionStartMs}` fits.
  */
 const WORKOUT_CLIENT_KEY_PATTERN = /^[A-Za-z0-9._:-]{8,128}$/;
+
+/**
+ * SET-ASKED-BE: what her plan asked for a set logged from a plan row. The reference and the ask
+ * are stored together or not at all; the server copies the ask, the phone sends only the reference.
+ */
+type PlanRef = { plan_assignment_id: string; plan_order: number };
+type PlanAsk = PlanRef & {
+  asked_sets: number;
+  asked_count: number;
+  asked_unit: PlanExerciseUnit;
+  asked_weight_lbs: number | null;
+};
+const ASSIGNMENT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const refKey = (r: PlanRef) => `${r.plan_assignment_id}#${r.plan_order}`;
+const isCount = (n: unknown): n is number => typeof n === 'number' && Number.isSafeInteger(n) && n >= 0;
+
+/** The reference a set carries, or null when it is missing or malformed (then the set is saved with no ask). */
+function planRefOf(e: Pick<CreateExerciseSetDto, 'plan_assignment_id' | 'plan_order'>): PlanRef | null {
+  const { plan_assignment_id: id, plan_order: order } = e;
+  if (typeof id !== 'string' || !ASSIGNMENT_ID_PATTERN.test(id) || !isCount(order)) return null;
+  return { plan_assignment_id: id, plan_order: order };
+}
+
+/** The ask in one plan row she was shown (a snapshot row or a live plan row), or null when the row is unusable. */
+function askOf(row: unknown, adjustedSets: number | undefined): Omit<PlanAsk, keyof PlanRef> | null {
+  if (!row || typeof row !== 'object') return null;
+  const r = row as { sets?: unknown; reps_or_duration_seconds?: unknown; weight_lbs?: unknown };
+  const sets = adjustedSets ?? r.sets;
+  if (!isCount(sets) || !isCount(r.reps_or_duration_seconds)) return null;
+  const weight = typeof r.weight_lbs === 'number' && Number.isFinite(r.weight_lbs) ? r.weight_lbs : null;
+  return { asked_sets: sets, asked_count: r.reps_or_duration_seconds, asked_unit: unitOf(row), asked_weight_lbs: weight };
+}
+
+/** An ask already stored on a set (read before PUT /workouts/:id deletes and recreates the sets). */
+function storedAskOf(s: {
+  plan_assignment_id: string | null;
+  plan_order: number | null;
+  asked_sets: number | null;
+  asked_count: number | null;
+  asked_unit: PlanExerciseUnit | null;
+  asked_weight_lbs: number | null;
+}): PlanAsk | null {
+  const { plan_assignment_id, plan_order, asked_sets, asked_count, asked_unit, asked_weight_lbs } = s;
+  if (plan_assignment_id === null || plan_order === null || asked_sets === null || asked_count === null || asked_unit === null) {
+    return null;
+  }
+  return { plan_assignment_id, plan_order, asked_sets, asked_count, asked_unit, asked_weight_lbs };
+}
 
 type TopSet = { weight_lbs: number; reps: number };
 const heavier = (a: TopSet, b: TopSet | null | undefined) =>
@@ -64,6 +116,8 @@ export class WorkoutService {
     // Explicit field mapping — previously `...sessionData` spread the body into
     // Prisma, which (combined with `@Body() body: any` on the controller) would
     // let a client set `user_id`, `id`, etc. See audit C4/H10.
+    // SET-ASKED-BE: what her plan asked for each set logged from a plan row (one read, none without a reference).
+    const asked = await this.plannedAsks(this.prisma, userId, data.exercises);
     let created;
     try {
       created = await this.prisma.workoutSession.create({
@@ -78,7 +132,7 @@ export class WorkoutService {
           notes: data.notes,
           exercises: data.exercises
             ? {
-                create: data.exercises.map((e) => ({
+                create: data.exercises.map((e, i) => ({
                   exercise_name: e.exercise_name,
                   muscle_group: e.muscle_group,
                   sets_completed: e.sets_completed,
@@ -88,6 +142,7 @@ export class WorkoutService {
                   notes: e.notes,
                   video_url: e.video_url,
                   exercise_external_id: e.exercise_external_id,
+                  ...(asked[i] ?? {}),
                 })),
               }
             : undefined,
@@ -246,10 +301,13 @@ export class WorkoutService {
         },
       });
       if (data.exercises) {
+        // SET-ASKED-BE: a set sent again with the same plan row keeps the ask stored first (read
+        // before the delete); a new reference copies a fresh ask; no reference stores none.
+        const asked = await this.plannedAsks(tx, userId, data.exercises, id);
         await tx.exerciseSet.deleteMany({ where: { workout_id: id } });
         if (data.exercises.length > 0) {
           await tx.exerciseSet.createMany({
-            data: data.exercises.map((e) => ({
+            data: data.exercises.map((e, i) => ({
               workout_id: id,
               exercise_name: e.exercise_name,
               muscle_group: e.muscle_group,
@@ -260,6 +318,7 @@ export class WorkoutService {
               notes: e.notes,
               video_url: e.video_url,
               exercise_external_id: e.exercise_external_id,
+              ...(asked[i] ?? {}),
             })),
           });
         }
@@ -270,6 +329,80 @@ export class WorkoutService {
       });
     });
     return updated;
+  }
+
+  /**
+   * SET-ASKED-BE: the ask for each of `exercises` (null for a set with no usable reference), in
+   * order. No reference anywhere: no read at all, exactly the path before SET-ASKED-BE. With
+   * `workoutId` (PUT), an ask already stored for the same plan row is kept (first one wins). The
+   * rest come from one read of her own assignments: the row she was shown at that order
+   * (visibleAssignmentExercises: the frozen snapshot, else the live plan rows), its sets replaced
+   * by a coach-approved Roman set count for that order as the phone shows it. Another member's
+   * assignment, a deleted one, or an order with no row gives no ask; the set is still saved.
+   */
+  private async plannedAsks(
+    db: Prisma.TransactionClient,
+    userId: string,
+    exercises: CreateExerciseSetDto[] | undefined,
+    workoutId?: string,
+  ): Promise<Array<PlanAsk | null>> {
+    const refs = (exercises ?? []).map(planRefOf);
+    if (!refs.some((r) => r !== null)) return refs.map(() => null);
+    const asks = new Map<string, PlanAsk>();
+    if (workoutId !== undefined) {
+      const stored = await db.exerciseSet.findMany({
+        where: { workout_id: workoutId, plan_assignment_id: { not: null } },
+        select: {
+          plan_assignment_id: true,
+          plan_order: true,
+          asked_sets: true,
+          asked_count: true,
+          asked_unit: true,
+          asked_weight_lbs: true,
+        },
+      });
+      for (const s of stored) {
+        const ask = storedAskOf(s);
+        if (ask && !asks.has(refKey(ask))) asks.set(refKey(ask), ask);
+      }
+    }
+    const fresh = refs.filter((r): r is PlanRef => r !== null && !asks.has(refKey(r)));
+    const ids = [...new Set(fresh.map((r) => r.plan_assignment_id))];
+    if (ids.length > 0) {
+      const assignments = await db.clientWorkoutAssignment.findMany({
+        where: { id: { in: ids }, client_id: userId },
+        select: {
+          id: true,
+          snapshot: { select: { exercises_json: true } },
+          workout_plan: {
+            select: {
+              exercises: {
+                where: { archived_at: null },
+                orderBy: { order: 'asc' },
+                select: { order: true, sets: true, reps_or_duration_seconds: true, weight_lbs: true, unit: true },
+              },
+            },
+          },
+          // As workout-builder's ROMAN_APPLIED_PROPOSALS: the decisions the phone lays over the day.
+          adjustment_proposals: {
+            where: { status: { in: ['approved', 'edited'] } },
+            select: { applied_change: true, decided_at: true },
+            orderBy: { decided_at: 'asc' },
+          },
+        },
+      });
+      for (const a of assignments) {
+        const rows = visibleAssignmentExercises(a);
+        const adjusted = new Map(romanAdjustedSets(a.adjustment_proposals).map((r) => [r.order, r.sets]));
+        for (const ref of fresh) {
+          if (ref.plan_assignment_id !== a.id || asks.has(refKey(ref))) continue;
+          const row = rows.find((x) => (x as { order?: unknown } | null)?.order === ref.plan_order);
+          const ask = askOf(row, adjusted.get(ref.plan_order));
+          if (ask) asks.set(refKey(ref), { ...ref, ...ask });
+        }
+      }
+    }
+    return refs.map((r) => (r ? asks.get(refKey(r)) ?? null : null));
   }
 
   async deleteWorkout(userId: string, id: string) {

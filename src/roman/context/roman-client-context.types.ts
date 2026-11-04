@@ -17,6 +17,8 @@
  * or `null` meaning "unknown". Strings are clamped; lists use recency windows.
  */
 
+import type { PlanExerciseUnitValue } from '../../workout-builder/plan-exercise-fields';
+
 export const ROMAN_CONTEXT_VERSION = 'ctx-v3';
 
 export interface RomanCtxIdentity {
@@ -145,6 +147,8 @@ export interface RomanCtxExercise {
   name: string;
   sets: number;
   reps_or_duration_seconds: number;
+  /** TIMED-SETS-CONTEXT-BE: what reps_or_duration_seconds counts. */
+  unit: PlanExerciseUnitValue;
   cue: string | null;
 }
 

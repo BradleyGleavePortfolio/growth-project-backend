@@ -78,6 +78,7 @@ import {
 import { onRomanContextInvalidate } from './roman-context-invalidation';
 import { resolveRomanCoachScope } from './roman-coach-scope';
 import { notInBlockWith } from '../../messaging/block-pair';
+import { unitOf, type PlanExerciseUnitValue } from '../../workout-builder/plan-exercise-fields';
 
 export const ROMAN_CONTEXT_MEMO_TTL_MS = 15_000;
 /** C-651-4: hard bound on memoised bundles held in process memory. */
@@ -608,6 +609,7 @@ export class RomanClientContextService {
                       exercise_external_id: true,
                       sets: true,
                       reps_or_duration_seconds: true,
+                      unit: true,
                       notes: true,
                     },
                   },
@@ -1278,6 +1280,7 @@ type RawExercise = {
   exercise_external_id: string;
   sets: number;
   reps_or_duration_seconds: number;
+  unit: PlanExerciseUnitValue;
   notes: string | null;
 };
 type AssignmentRow = {
@@ -1327,6 +1330,8 @@ function rawExercisesOf(a: AssignmentRow): RawExercise[] {
         sets: typeof r.sets === 'number' ? r.sets : 0,
         reps_or_duration_seconds:
           typeof r.reps_or_duration_seconds === 'number' ? r.reps_or_duration_seconds : 0,
+        // TIMED-SETS-CONTEXT-BE: a row frozen before units reads its note's.
+        unit: unitOf(r),
         notes: typeof r.notes === 'string' ? r.notes : null,
       });
     }
@@ -1363,6 +1368,7 @@ function toSession(
     name: clamp(nameById.get(e.exercise_external_id) ?? 'Exercise', 60) ?? 'Exercise',
     sets: e.sets,
     reps_or_duration_seconds: e.reps_or_duration_seconds,
+    unit: e.unit,
     cue: clamp(e.notes, 80),
   }));
   return {

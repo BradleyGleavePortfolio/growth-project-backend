@@ -216,12 +216,12 @@ export interface MoneyChargeDto {
   created_at: string;
   /**
    * HOLD-FU-BE (LS-1195 C2): `coach_account` when this charge is a renewal
-   * held because the coach's own Stripe account can't take payments (PF-7)
-   * and no payment has gone through on the sale yet (HELD_NEVER_PAID). It is
-   * not the client's failed charge: its state is `pending` (still owed, never
-   * `paid`), it is left out of the `failed` list, and this field names the
-   * cause. Null otherwise, including a held renewal on a plan paid before,
-   * which keeps `failed` with its earlier payments (FR-1202).
+   * held because the coach's own Stripe account can't take payments (PF-7).
+   * It is not the client's failed charge: its state is `pending` (still owed,
+   * never `paid`), it is left out of the `failed` list, and this field names
+   * the cause. HELD-RENEWAL-BE: the same whether or not the plan was paid
+   * before; the breakdown's `settled` still says whether earlier payments
+   * went through (the phone keeps them on the charge screen). Null otherwise.
    */
   waiting_on: 'coach_account' | null;
   /**
@@ -305,27 +305,6 @@ interface SliceRow {
 
 const COUNTED_SLICE_STATUSES = ['posted', 'reversed'];
 
-/**
- * FR-1202 (LO-1202B B1, LS-1202B B1): a sale with a counted coach slice has
- * had a payment go through. The same rule as `chargeSelect().splits` and
- * getChargeBreakdown's `settled`.
- */
-const PAID_BEFORE_WHERE: Prisma.ClientPurchaseWhereInput = {
-  splits: { some: { kind: 'destination', status: { in: COUNTED_SLICE_STATUSES } } },
-};
-
-/**
- * FR-1202: a renewal held on the coach's own account (PF-7) is shown as
- * `pending` only while no payment has gone through on the sale. The phone
- * installed today reads `pending` as "No payment has gone through for this
- * yet" and hides the plan's earlier payments (mobile MoneyChargeScreen), so a
- * held renewal on a plan paid before keeps main's `failed` row, which keeps
- * them ("Latest payment failed ... Earlier payments are counted below").
- * The Failed filter leaves out only the rows this marks.
- */
-const NOT_HELD_NEVER_PAID: Prisma.ClientPurchaseWhereInput = {
-  OR: [NOT_HELD_RENEWAL, PAID_BEFORE_WHERE],
-};
 const LOST_DISPUTE_STATUS_LIST: string[] = [...LOST_DISPUTE_STATUSES];
 
 /**
@@ -1654,7 +1633,7 @@ export class CoachMoneyService {
       opts.status === 'paid'
         ? PAID_NOW_WHERE
         : opts.status === 'failed'
-          ? { status: { in: [...FAILED_PURCHASE_STATUSES] }, ...NOT_HELD_NEVER_PAID }
+          ? { status: { in: [...FAILED_PURCHASE_STATUSES] }, ...NOT_HELD_RENEWAL }
           : opts.status === 'refunded'
             ? REFUNDED_WHERE
             : opts.status === 'disputed'
@@ -1793,8 +1772,8 @@ export class CoachMoneyService {
     const chargedBack = r.status === CHARGEBACK_LOST_PURCHASE_STATUS || lostDisputes.length > 0;
     const failed = (FAILED_PURCHASE_STATUSES as readonly string[]).includes(r.status);
     // HOLD-FU-BE (LS-1195 C2): a renewal held on the coach's account is owed, not failed.
-    // FR-1202: only while no payment has gone through (NOT_HELD_NEVER_PAID).
-    const held = failed && isHeldRenewal(r.dunning) && r.splits.length === 0;
+    // HELD-RENEWAL-BE: paid before or not (the Failed filter's NOT_HELD_RENEWAL).
+    const held = failed && isHeldRenewal(r.dunning);
     let state: MoneyChargeDto['state'];
     // B-641-2: a lost chargeback is checked first — the ledger keeps its
     // (reversed) destination slice, which must never read as `paid`.

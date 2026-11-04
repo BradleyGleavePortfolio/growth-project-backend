@@ -6,6 +6,7 @@ import { PrismaService } from '../../prisma.service';
 import { classifyStrengthDay, median, splitOf } from '../../roman/playbook/playbook-signals.service';
 import type { PlaybookDayType, PlaybookSplit } from '../../roman/playbook/playbook-signals.types';
 import { InjuryAreaV2, seedExerciseFor, toInjuryAreas } from '../gateway/workout-builder/training-substitutions';
+import { unitOf, type PlanExerciseUnitValue } from '../../workout-builder/plan-exercise-fields';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const STYLE_TTL_MS = 10 * 60 * 1000;
@@ -28,7 +29,7 @@ export interface WorkoutContextV2 { client: WorkoutClientSignals | null; coach_s
 
 type SessionRow = { id: string; exercises: Array<{ exercise_name: string; reps_per_set: number[]; weight_per_set: number[] }> };
 type SampleRow = { metric: string; value: number; start_at: Date };
-type PlanRow = { exercises: Array<{ exercise_external_id: string; sets: number; reps_or_duration_seconds: number; rest_seconds: number | null; superset_group_id: string | null }> };
+type PlanRow = { exercises: Array<{ exercise_external_id: string; sets: number; reps_or_duration_seconds: number; unit: PlanExerciseUnitValue; rest_seconds: number | null; superset_group_id: string | null }> };
 
 const round1 = (v: number) => Math.round(v * 10) / 10;
 const pct = (n: number, d: number) => (d > 0 ? Math.round((100 * n) / d) : 0);
@@ -109,7 +110,8 @@ export function coachStyleFromPlans(plans: readonly PlanRow[]): CoachStyleSignal
   const days: Partial<Record<PlaybookDayType, number>> = {};
   for (const r of rows) {
     const v = r.reps_or_duration_seconds;
-    if (v > 30) bands.timed += 1;
+    // TIMED-SETS-CONTEXT-BE: timed is the row's unit, never its number.
+    if (unitOf(r) === 'seconds') bands.timed += 1;
     else if (v >= 13) bands.high_13_30 += 1;
     else if (v >= 6) bands.mid_6_12 += 1;
     else bands.low_1_5 += 1;
@@ -197,7 +199,7 @@ export class WorkoutContextService {
     if (hit && now.getTime() - hit.at < STYLE_TTL_MS) return hit.value;
     const plans = await this.prisma.workoutPlan.findMany({
       where: { coach_id: coachId, archived_at: null }, orderBy: { updated_at: 'desc' }, take: 200,
-      select: { exercises: { where: { archived_at: null }, select: { exercise_external_id: true, sets: true, reps_or_duration_seconds: true, rest_seconds: true, superset_group_id: true } } },
+      select: { exercises: { where: { archived_at: null }, select: { exercise_external_id: true, sets: true, reps_or_duration_seconds: true, unit: true, rest_seconds: true, superset_group_id: true } } },
     });
     const value = coachStyleFromPlans(plans);
     this.styleCache.set(coachId, { at: now.getTime(), value });

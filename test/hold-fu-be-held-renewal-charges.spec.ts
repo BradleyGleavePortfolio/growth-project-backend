@@ -44,8 +44,8 @@ function row(id: string, status: string, dunning: Dunning, paidBefore = true) {
   };
 }
 const HELD = { status: 'active', last_failure_reason: COACH_ACCOUNT_HOLD_REASON };
-// FR-1202: `held-renewal` is held on a plan paid before (it keeps main's
-// `failed` row and its earlier payments); `held-never-paid` is held before
+// `held-renewal` is held on a plan paid before (HELD-RENEWAL-BE: held too,
+// its earlier payments kept as `settled`); `held-never-paid` is held before
 // any payment went through (for example the first charge after a trial).
 const rows = [
   row('held-renewal', 'past_due', HELD),
@@ -74,10 +74,10 @@ function money() {
 }
 
 describe('HOLD-FU-BE: a held renewal is not the client\'s failed charge', () => {
-  it('Charges "failed" filter leaves out the held renewal never paid and keeps every row shown as failed', async () => {
+  it('Charges "failed" filter leaves out every held renewal and keeps every row shown as failed', async () => {
     const failed = await money().listCharges(COACH, { status: 'failed' });
     expect(failed.charges.map((c) => c.id).sort()).toEqual([
-      'client-failed', 'held-renewal', 'hold-cleared', 'unpaid-no-dunning',
+      'client-failed', 'hold-cleared', 'unpaid-no-dunning',
     ]);
     expect(failed.charges.every((c) => c.state === 'failed' && waitingOn(c) === null)).toBe(true);
   });
@@ -88,10 +88,9 @@ describe('HOLD-FU-BE: a held renewal is not the client\'s failed charge', () => 
     expect(held).toMatchObject({ state: 'pending', waiting_on: 'coach_account', amount_cents: 14900 });
     expect(held?.state).not.toBe('paid');
     expect(held?.state).not.toBe('failed');
-    // FR-1202: on a plan paid before the row keeps main's `failed`, so the
-    // phone installed today keeps "Latest payment failed ... Earlier
-    // payments are counted below" (never "No payment has gone through").
-    expect(all.charges.find((c) => c.id === 'held-renewal')).toMatchObject({ state: 'failed', waiting_on: null });
+    // HELD-RENEWAL-BE: on a plan paid before it is held too; the phone
+    // (m#920) keeps the earlier payments from the detail's `settled`.
+    expect(all.charges.find((c) => c.id === 'held-renewal')).toMatchObject({ state: 'pending', waiting_on: 'coach_account' });
     const client = all.charges.find((c) => c.id === 'client-failed');
     expect(client).toMatchObject({ state: 'failed', waiting_on: null });
     expect(all.charges.find((c) => c.id === 'paid')).toMatchObject({ state: 'paid', waiting_on: null });

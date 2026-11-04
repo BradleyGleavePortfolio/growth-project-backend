@@ -43,16 +43,22 @@ describe('LS-1202B B1: held renewal must not select the installed phone never-pa
     expect(detail.breakdown).toMatchObject({
       settled: true, price_cents: 29800, net_cents: 28000,
     });
-    // Actual installed phone contract, mobile main d54ca1989ee3:
-    // src/screens/coach/money/MoneyChargeScreen.tsx:132,178-198.
-    // `pending = c.state === "pending"` selects the never-paid copy, labels
-    // d.priceCents "Price, not paid yet", and suppresses all plan-paid totals.
-    // The phone parser ignores the new waiting_on key, so it cannot escape it.
-    const pending = detail.charge.state === 'pending';
+    expect(detail.charge).toMatchObject(
+      held ? { state: 'pending', waiting_on: 'coach_account' } : { state: 'failed', waiting_on: null },
+    );
+    // HELD-RENEWAL-BE: the phone contract on mobile main 12f158c1 (m#920),
+    // src/screens/coach/money/MoneyChargeScreen.tsx:132-139 with
+    // coachMoneyApi.ts chargeHeld: held = waiting_on && (pending | failed);
+    // paidBefore = plan && settled; the never-paid copy (and its hidden
+    // plan-paid totals) only when (pending || held) && !paidBefore.
+    const c = detail.charge;
+    const chargeHeld = c.waiting_on === 'coach_account' && (c.state === 'pending' || c.state === 'failed');
+    const paidBefore = c.billing_type === 'recurring' && detail.breakdown.settled;
+    const neverPaid = (c.state === 'pending' || chargeHeld) && !paidBefore;
     expect({
-      showsNeverPaidCopy: pending,
-      hidesPlanPaidTotals: pending,
-      shownUnpaidPriceCents: pending ? detail.breakdown.price_cents : null,
+      showsNeverPaidCopy: neverPaid,
+      hidesPlanPaidTotals: neverPaid,
+      shownUnpaidPriceCents: neverPaid ? detail.breakdown.price_cents : null,
     }).toEqual({
       showsNeverPaidCopy: false,
       hidesPlanPaidTotals: false,
