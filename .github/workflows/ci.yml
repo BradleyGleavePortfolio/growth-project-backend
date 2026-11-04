@@ -758,7 +758,7 @@ jobs:
           }
           // Test-only companion secret. Production has it (secrets section);
           // without it WorkoutBuilderAutosaveService throws in onModuleInit
-          // once FEATURE_MWB_AUTOSAVE_UNDO is on, so every suite that boots
+          // once the autosave-undo switch is on, so every suite that boots
           // the app fails on that one line and nothing behind it is tested.
           // A fresh random value each run, never a real secret.
           const testSecrets = [
