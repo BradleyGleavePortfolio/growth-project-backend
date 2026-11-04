@@ -413,3 +413,28 @@ describe('PLAN-SWAPS-BE 5: POST /lists/:type/bulk body', () => {
     expect(await errs({ items: [{ quantity: 1 }] })).toEqual(['items']);
   });
 });
+
+describe('LS-1221 C1: the bounded feed caps today, not yesterday', () => {
+  it('does not let 100 revisions from yesterday hide one revision today', async () => {
+    const { meals, revisions } = world();
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+    jest.setSystemTime(new Date('2026-11-04T05:01:00Z')); // Nov 4 00:01 New York
+    const change = {
+      plan_id: 'plan-a', slot_id: 'slot-b', slot_label: 'breakfast',
+      from_template_id: 'tpl-oats', to_template_id: 'tpl-eggs',
+    };
+    for (let n = 0; n < 100; n++) {
+      revisions.push({
+        ...change, id: `yesterday-${n}`,
+        changed_at: new Date('2026-11-04T04:30:00Z'), // Nov 3 23:30 New York
+      });
+    }
+    revisions.push({
+      ...change, id: 'today',
+      changed_at: new Date('2026-11-04T05:00:30Z'),
+    });
+    expect((await meals.getTodayForClient(CLIENT)).changes_today).toEqual([
+      expect.objectContaining({ plan_id: 'plan-a', changed_at: new Date('2026-11-04T05:00:30Z') }),
+    ]);
+  });
+});
