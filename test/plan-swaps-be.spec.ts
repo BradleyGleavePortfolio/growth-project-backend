@@ -16,12 +16,19 @@ import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { RealMealPlansService } from '../src/real-meal-plans/real-meal-plans.service';
 import { ListsService } from '../src/lists/lists.service';
+import { ListsController } from '../src/lists/lists.controller';
+import {
+  ClientMealPlanController,
+  CoachDailyMealPlansController,
+  CoachMealTemplatesController,
+} from '../src/real-meal-plans/real-meal-plans.controller';
 import { BulkAddListItemsDto } from '../src/lists/lists.dto';
 import { CreateMealTemplateDto } from '../src/real-meal-plans/real-meal-plans.dto';
 import {
   MEAL_RECIPE_INVALID,
   MEAL_SWAP_INVALID,
   localDateKey,
+  localDayStartBefore,
   revisionsFor,
 } from '../src/real-meal-plans/plan-swaps';
 import type { PrismaService } from '../src/prisma.service';
@@ -230,9 +237,29 @@ describe('PLAN-SWAPS-BE 1: a meal template carries the coach\'s own swaps and re
     const { meals, templates } = world();
     const before = templates.length;
     expect(await codeOf(meals.createTemplate(COACH, { ...base, swap_template_ids: ids }))).toBe(MEAL_SWAP_INVALID);
-    expect(await codeOf(meals.updateTemplate(COACH, 'tpl-oats', { swap_template_ids: ids }))).toBe(MEAL_SWAP_INVALID);
+    // FIX-1221 (LO-1221 C1): the update is on a meal that stores none of these, since a meal's own
+    // stored swaps are accepted back (next test).
+    expect(await codeOf(meals.updateTemplate(COACH, 'tpl-eggs', { swap_template_ids: ids }))).toBe(MEAL_SWAP_INVALID);
     expect(templates.length).toBe(before);
-    expect(templates.find((t) => t.id === 'tpl-oats')!.swap_template_ids).toEqual(['tpl-eggs', 'tpl-old', 'tpl-b']);
+    expect(templates.find((t) => t.id === 'tpl-eggs')!.swap_template_ids).toEqual([]);
+  });
+
+  it('FIX-1221 (LO-1221 C1): saves back the swaps a meal already stores, even one archived since', async () => {
+    const { meals, templates } = world();
+    const oats = templates.find((t) => t.id === 'tpl-oats')!;
+    const stored = [...oats.swap_template_ids]; // includes tpl-old, archived after it was linked
+    expect(await codeOf(meals.updateTemplate(COACH, 'tpl-oats', { name: 'Oats bowl', swap_template_ids: stored, recipe_id: oats.recipe_id }))).toBe('no error');
+    expect(oats).toMatchObject({ name: 'Oats bowl', swap_template_ids: stored });
+    // Adding an archived one is still refused, and a stored list cannot smuggle in a new bad id.
+    oats.swap_template_ids = ['tpl-eggs'];
+    expect(await codeOf(meals.updateTemplate(COACH, 'tpl-oats', { swap_template_ids: ['tpl-eggs', 'tpl-old'] }))).toBe(MEAL_SWAP_INVALID);
+    expect(oats.swap_template_ids).toEqual(['tpl-eggs']);
+  });
+
+  it('FIX-1221 (LO-1221 C2): an empty recipe id is MEAL_RECIPE_INVALID, not a database error', async () => {
+    const { meals } = world();
+    expect(await codeOf(meals.createTemplate(COACH, { ...base, recipe_id: '' }))).toBe(MEAL_RECIPE_INVALID);
+    expect(await codeOf(meals.updateTemplate(COACH, 'tpl-eggs', { recipe_id: '' }))).toBe(MEAL_RECIPE_INVALID);
   });
 
   it('refuses a meal as its own swap', async () => {
@@ -320,6 +347,33 @@ describe('PLAN-SWAPS-BE 2: a meal change in a plan edit writes one revision in t
       ['r2', 's3', 'd', null],
       ['r3', 's4', null, 'e'],
     ]);
+  });
+
+  it('FIX-1221 (LO-1221 C3): a meal that only moved (same label and meal, new slot row) writes nothing', () => {
+    let n = 0;
+    const rows = revisionsFor(
+      'p',
+      [],
+      [{ id: 's1', slot_label: 'breakfast', meal_template_id: 'a' }, { id: 's2', slot_label: 'lunch', meal_template_id: 'c' }],
+      [{ id: 's5', slot_label: 'breakfast', meal_template_id: 'a' }, { id: 's6', slot_label: 'lunch', meal_template_id: 'd' }],
+      new Date('2026-11-04T15:00:00Z'),
+      () => `r${++n}`,
+    );
+    expect(rows.map((r) => [r.slot_id, r.from_template_id, r.to_template_id])).toEqual([
+      ['s2', 'c', null],
+      ['s6', null, 'd'],
+    ]);
+  });
+
+  it('FIX-1221 (LO-1221 C3): reordering a plan through the coach route writes no revision', async () => {
+    const { meals, revisions } = world();
+    await meals.updatePlan(COACH, 'plan-a', {
+      slots: [
+        { slot_label: 'breakfast', order: 1, meal_template_id: 'tpl-oats' },
+        { slot_label: 'lunch', order: 0, meal_template_id: 'tpl-eggs' },
+      ],
+    });
+    expect(revisions).toEqual([]);
   });
 });
 
@@ -436,5 +490,96 @@ describe('LS-1221 C1: the bounded feed caps today, not yesterday', () => {
     expect((await meals.getTodayForClient(CLIENT)).changes_today).toEqual([
       expect.objectContaining({ plan_id: 'plan-a', changed_at: new Date('2026-11-04T05:00:30Z') }),
     ]);
+  });
+});
+
+describe('FIX-1221: localDayStartBefore is the local midnight, across DST', () => {
+  it.each([
+    ['2026-11-04T05:01:00Z', 'America/New_York', '2026-11-04T05:00:00.000Z'],
+    ['2026-11-01T20:00:00Z', 'America/New_York', '2026-11-01T04:00:00.000Z'], // 25-hour day (DST ends)
+    ['2026-03-08T20:00:00Z', 'America/New_York', '2026-03-08T05:00:00.000Z'], // 23-hour day (DST starts)
+    ['2026-11-04T12:00:00Z', 'UTC', '2026-11-04T00:00:00.000Z'],
+    ['2026-11-04T12:00:00Z', 'Asia/Kolkata', '2026-11-03T18:30:00.000Z'],
+  ])('%s in %s starts at %s', (now, tz, start) => {
+    expect(localDayStartBefore(new Date(now), tz).toISOString()).toBe(start);
+  });
+});
+
+// FIX-1221 (LS-1221 N1): every changed route, called through its controller as the other coach (OTHER)
+// and as a client who does not hold the plan or no longer belongs to its coach (MOVED, STRANGER).
+describe('FIX-1221: the changed routes as another coach and another client', () => {
+  const STRANGER = 'client-3';
+  const as = (id: string) => ({ user: { id } }) as never;
+  const setup = () => {
+    const w = world();
+    return {
+      ...w,
+      templatesRoute: new CoachMealTemplatesController(w.meals),
+      plansRoute: new CoachDailyMealPlansController(w.meals),
+      todayRoute: new ClientMealPlanController(w.meals),
+      listsRoute: new ListsController(w.lists),
+    };
+  };
+  const status = async (p: Promise<unknown>) => {
+    try {
+      await p;
+      return 'ok';
+    } catch (e) {
+      const r = (e as { getResponse?: () => Row }).getResponse?.();
+      return r?.code ?? (e as { getStatus?: () => number }).getStatus?.() ?? String(e);
+    }
+  };
+
+  it('POST /coach/meal-templates as another coach cannot link this coach\'s meal or recipe', async () => {
+    const { templatesRoute, templates } = setup();
+    const before = templates.length;
+    expect(await status(templatesRoute.create(as(OTHER), { ...base, swap_template_ids: ['tpl-eggs'] } as never))).toBe(MEAL_SWAP_INVALID);
+    expect(await status(templatesRoute.create(as(OTHER), { ...base, recipe_id: 'rec-a' } as never))).toBe(MEAL_RECIPE_INVALID);
+    expect(templates.length).toBe(before);
+  });
+
+  it('GET and PATCH /coach/meal-templates/:id as another coach are 404 and change nothing', async () => {
+    const { templatesRoute, templates } = setup();
+    expect(await status(templatesRoute.get(as(OTHER), 'tpl-oats'))).toBe(404);
+    expect(await status(templatesRoute.update(as(OTHER), 'tpl-oats', { swap_template_ids: ['tpl-b'] } as never))).toBe(404);
+    expect(templates.find((t) => t.id === 'tpl-oats')!.swap_template_ids).toEqual(['tpl-eggs', 'tpl-old', 'tpl-b']);
+  });
+
+  it('PATCH /coach/daily-meal-plans/:id as another coach is 404 and writes no revision', async () => {
+    const { plansRoute, revisions, slots } = setup();
+    expect(await status(plansRoute.update(as(OTHER), 'plan-a', {
+      slots: [{ slot_label: 'breakfast', order: 0, meal_template_id: 'tpl-b' }],
+    } as never))).toBe(404);
+    expect(revisions).toEqual([]);
+    expect(slots.find((s) => s.id === 'slot-b')!.meal_template_id).toBe('tpl-oats');
+  });
+
+  it('GET /me/meal-plan/today: a moved client gets no swaps or recipe; another coach and a stranger get nothing', async () => {
+    const { todayRoute, plansRoute } = setup();
+    await plansRoute.update(as(COACH), 'plan-a', {
+      slots: [
+        { slot_label: 'breakfast', order: 0, meal_template_id: 'tpl-eggs' },
+        { slot_label: 'lunch', order: 0, meal_template_id: 'tpl-eggs' },
+      ],
+    } as never);
+    const own = await todayRoute.today(as(CLIENT));
+    expect(own.changes_today).toHaveLength(1);
+    const moved = await todayRoute.today(as(MOVED));
+    for (const a of moved.assignments as Row[]) {
+      for (const s of a.daily_meal_plan.slots) expect(s).toMatchObject({ swaps: [], recipe_id: null });
+    }
+    for (const id of [OTHER, STRANGER]) {
+      const view = await todayRoute.today(as(id));
+      expect(view.assignments).toEqual([]);
+      expect(view.changes_today).toEqual([]);
+    }
+  });
+
+  it('POST /lists/:type/bulk as another coach or a stranger keeps the item but not the plan meal', async () => {
+    const { listsRoute, listItems } = setup();
+    for (const id of [OTHER, STRANGER]) {
+      await listsRoute.bulkAdd(as(id), 'grocery', { items: [{ name: 'Oats', source_plan_slot_id: 'slot-b' }] } as never);
+    }
+    expect(listItems.map((i) => [i.user_id, i.source_plan_slot_id])).toEqual([[OTHER, null], [STRANGER, null]]);
   });
 });

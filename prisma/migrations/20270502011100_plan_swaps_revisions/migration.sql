@@ -19,6 +19,13 @@
 --   * no API role writes: the server writes through Prisma's service-role connection (bypasses RLS)
 --     behind the coach routes' ownership checks, and a revision is never changed or deleted by hand.
 -- The new columns sit on tables whose policies already cover every column; nothing there changes.
+-- FIX-1221 (LS-1221 B1): the template links are also checked where they are written. Two RESTRICTIVE
+-- policies on MealTemplate (INSERT and UPDATE, every role that does not bypass row security) add
+-- app.meal_template_links_ok to the existing coach-self WITH CHECK: each swap is a live (not archived)
+-- template of the row's coach and not the row itself, and the recipe is one that coach created. On an
+-- UPDATE, swaps and a recipe the row already stores under the same coach stay (a swap archived later may
+-- be saved back, as the coach routes accept). The helper is SECURITY DEFINER (search_path pinned) so it
+-- sees rows the caller cannot read (Recipe is server-only, another coach's template is unreadable).
 -- Live proof: test/rls/plan-revisions-rls.spec.ts (rls-live-tests). Reverse: down.sql.
 -- Placement: sorts after 20270502010900 (main) and 20270502011000 (#1219, not yet merged).
 
@@ -64,5 +71,41 @@ CREATE POLICY "p_dailymealplanrevision_select_coach" ON "DailyMealPlanRevision"
   FOR SELECT TO public
   USING (app.current_user_id() IS NOT NULL AND EXISTS (SELECT 1 FROM public."DailyMealPlan" dmp WHERE dmp."id" = "DailyMealPlanRevision"."plan_id" AND dmp."coach_id" = app.current_user_id() AND app.caller_keeps_meal_plan(dmp."id")));
 COMMENT ON POLICY "p_dailymealplanrevision_select_coach" ON "DailyMealPlanRevision" IS '20270502011100: the plan''s coach reads its changes while every client holding the plan is still theirs. No API role writes.';
+
+CREATE OR REPLACE FUNCTION app.meal_template_links_ok(p_id text, p_coach text, p_swaps text[], p_recipe text)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT NOT EXISTS (
+    SELECT 1 FROM unnest(coalesce(p_swaps, ARRAY[]::text[])) AS x
+     WHERE NOT EXISTS (
+             SELECT 1 FROM public."MealTemplate" o
+              WHERE o."id" = p_id AND o."coach_id" = p_coach AND x = ANY (o."swap_template_ids"))
+       AND (x IS NULL OR x = p_id OR NOT EXISTS (
+             SELECT 1 FROM public."MealTemplate" t
+              WHERE t."id" = x AND t."coach_id" = p_coach AND t."archived_at" IS NULL))
+  ) AND (
+    p_recipe IS NULL
+    OR EXISTS (SELECT 1 FROM public."MealTemplate" o WHERE o."id" = p_id AND o."coach_id" = p_coach AND o."recipe_id" = p_recipe)
+    OR EXISTS (SELECT 1 FROM public."Recipe" r WHERE r."id" = p_recipe AND r."created_by_id" = p_coach)
+  )
+$$;
+COMMENT ON FUNCTION app.meal_template_links_ok(text, text, text[], text) IS
+  '20270502011100 (FIX-1221): true when every swap is a live template of the coach (not the row itself) and the recipe is the coach''s own, or the row already stores it under that coach.';
+REVOKE ALL ON FUNCTION app.meal_template_links_ok(text, text, text[], text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app.meal_template_links_ok(text, text, text[], text) TO authenticated, service_role;
+
+CREATE POLICY "p_mealtemplate_links_insert" ON "MealTemplate"
+  AS RESTRICTIVE FOR INSERT TO public
+  WITH CHECK (app.meal_template_links_ok("id", "coach_id", "swap_template_ids", "recipe_id"));
+COMMENT ON POLICY "p_mealtemplate_links_insert" ON "MealTemplate" IS '20270502011100 (FIX-1221): a new template links only its own coach''s live swaps and recipe.';
+CREATE POLICY "p_mealtemplate_links_update" ON "MealTemplate"
+  AS RESTRICTIVE FOR UPDATE TO public
+  USING (true)
+  WITH CHECK (app.meal_template_links_ok("id", "coach_id", "swap_template_ids", "recipe_id"));
+COMMENT ON POLICY "p_mealtemplate_links_update" ON "MealTemplate" IS '20270502011100 (FIX-1221): an update adds only its own coach''s live swaps and recipe.';
 
 COMMIT;

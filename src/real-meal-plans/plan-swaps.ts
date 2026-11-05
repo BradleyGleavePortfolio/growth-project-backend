@@ -33,7 +33,11 @@ export function planSwapsError(code: PlanSwapsErrorCode): BadRequestException {
 /** The longest a local day can reach back from now (a 25-hour DST day, plus slack). */
 export const LOCAL_DAY_LOOKBACK_MS = 26 * 60 * 60 * 1000;
 
-/** At most this many of today's changes are returned (G15: bounded lists). */
+/**
+ * At most this many of today's changes are returned (G15: bounded lists). The read is bounded to the
+ * client's local day first (localDayStartBefore), so the cap keeps today's earliest 100 changes, oldest
+ * first; yesterday's rows can never use it up (FIX-1221, LS-1221 C1).
+ */
 export const CHANGES_TODAY_LIMIT = 100;
 
 /** YYYY-MM-DD of `d` in `tz`. */
@@ -43,6 +47,22 @@ export function localDateKey(d: Date, tz: string): string {
 
 export function sameLocalDay(a: Date, b: Date, tz: string): boolean {
   return localDayNumber(a, tz) === localDayNumber(b, tz);
+}
+
+/**
+ * The first instant of `now`'s local day in `tz` (DST-safe): a search over the LOCAL_DAY_LOOKBACK_MS
+ * window before `now`, where "same local day as now" turns from false to true exactly once.
+ */
+export function localDayStartBefore(now: Date, tz: string): Date {
+  let lo = now.getTime() - LOCAL_DAY_LOOKBACK_MS;
+  let hi = now.getTime();
+  if (sameLocalDay(new Date(lo), now, tz)) return new Date(lo);
+  while (hi - lo > 1) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (sameLocalDay(new Date(mid), now, tz)) hi = mid;
+    else lo = mid;
+  }
+  return new Date(hi);
 }
 
 export interface SlotRow {
@@ -64,6 +84,8 @@ export interface RevisionRow {
 /**
  * The revisions one plan edit writes: a kept slot whose meal changed (from -> to), a removed slot
  * (from -> null) and an added slot (null -> to). Every row of one edit carries the same `changedAt`.
+ * FIX-1221 (LO-1221 C3): a removed slot and an added slot with the same label and meal are the same meal
+ * moved (a reorder or a renumbered save), not a change, and write nothing.
  */
 export function revisionsFor(
   planId: string,
@@ -83,11 +105,19 @@ export function revisionsFor(
     to_template_id: to,
     changed_at: changedAt,
   });
+  const same = (a: SlotRow, b: SlotRow) => a.slot_label === b.slot_label && a.meal_template_id === b.meal_template_id;
+  const gone = [...removed];
+  const fresh = added.filter((s) => {
+    const i = gone.findIndex((g) => same(g, s));
+    if (i < 0) return true;
+    gone.splice(i, 1);
+    return false;
+  });
   return [
     ...kept
       .filter((k) => k.before.meal_template_id !== k.afterTemplateId)
       .map((k) => row(k.before, k.before.meal_template_id, k.afterTemplateId)),
-    ...removed.map((s) => row(s, s.meal_template_id, null)),
-    ...added.map((s) => row(s, null, s.meal_template_id)),
+    ...gone.map((s) => row(s, s.meal_template_id, null)),
+    ...fresh.map((s) => row(s, null, s.meal_template_id)),
   ];
 }

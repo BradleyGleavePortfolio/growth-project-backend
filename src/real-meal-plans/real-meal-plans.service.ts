@@ -13,7 +13,7 @@ import { visibleRecipesWhere } from '../recipes/recipe-access';
 import { loadViewerAllergens } from '../recipes/allergens';
 import {
   CHANGES_TODAY_LIMIT,
-  LOCAL_DAY_LOOKBACK_MS,
+  localDayStartBefore,
   MEAL_RECIPE_INVALID,
   MEAL_SWAP_INVALID,
   localDateKey,
@@ -62,25 +62,38 @@ export class RealMealPlansService {
   }
 
   // PLAN-SWAPS-BE: every swap is one of this coach's live templates and not the template itself; the
-  // recipe is one this coach created. Anything else (another coach's, archived, missing) is refused.
+  // recipe is one this coach created. Anything else (another coach's, archived, missing, an empty
+  // recipe id) is refused. FIX-1221 (LO-1221 C1): on an update, swaps and the recipe the template
+  // already stores are accepted back, so a coach can save a meal whose swap was archived later; the
+  // database applies the same rule (p_mealtemplate_links_insert/_update, 20270502011100).
   private async assertTemplateLinks(
     coachId: string,
     dto: { swap_template_ids?: string[]; recipe_id?: string | null },
     selfId?: string,
   ) {
+    const stored = selfId
+      ? await this.prisma.mealTemplate.findFirst({
+          where: { id: selfId, coach_id: coachId },
+          select: { swap_template_ids: true, recipe_id: true },
+        })
+      : null;
+    const kept = new Set(stored?.swap_template_ids ?? []);
     const swaps = dto.swap_template_ids ?? [];
-    if (swaps.length > 0) {
-      if (selfId && swaps.includes(selfId)) throw planSwapsError(MEAL_SWAP_INVALID);
+    if (selfId && swaps.includes(selfId)) throw planSwapsError(MEAL_SWAP_INVALID);
+    const added = [...new Set(swaps.filter((id) => !kept.has(id)))];
+    if (added.length > 0) {
       const found = await this.prisma.mealTemplate.count({
-        where: { id: { in: swaps }, coach_id: coachId, archived_at: null },
+        where: { id: { in: added }, coach_id: coachId, archived_at: null },
       });
-      if (found !== new Set(swaps).size) throw planSwapsError(MEAL_SWAP_INVALID);
+      if (found !== added.length) throw planSwapsError(MEAL_SWAP_INVALID);
     }
-    if (dto.recipe_id) {
-      const recipe = await this.prisma.recipe.findFirst({
-        where: { id: dto.recipe_id, created_by_id: coachId },
-        select: { id: true },
-      });
+    if (dto.recipe_id !== undefined && dto.recipe_id !== null && dto.recipe_id !== stored?.recipe_id) {
+      const recipe = dto.recipe_id
+        ? await this.prisma.recipe.findFirst({
+            where: { id: dto.recipe_id, created_by_id: coachId },
+            select: { id: true },
+          })
+        : null;
       if (!recipe) throw planSwapsError(MEAL_RECIPE_INVALID);
     }
   }
@@ -384,8 +397,8 @@ export class RealMealPlansService {
         data: { coach_id, name, notes, created_at, archived_at: now },
       });
       const frozen = new Map<string, string>();
-      for (const { meal_template: t } of plan.slots) {
-        if (frozen.has(t.id)) continue;
+      const snapshot = async (t: (typeof plan.slots)[number]['meal_template']) => {
+        if (frozen.has(t.id)) return;
         const row = await tx.mealTemplate.create({
           data: {
             coach_id: t.coach_id,
@@ -401,9 +414,25 @@ export class RealMealPlansService {
           },
         });
         frozen.set(t.id, row.id);
+      };
+      for (const { meal_template: t } of plan.slots) await snapshot(t);
+      // FIX-1221 (LS-1221 B2): the plan's change history goes with the copy. A meal a change names that
+      // is no longer in the plan (the meal swapped out) gets its own frozen snapshot too, so the moved
+      // client's feed keeps reading the names as they were, from rows of the plan's own coach.
+      const history = await tx.dailyMealPlanRevision.findMany({
+        where: { plan_id: planId },
+        orderBy: { changed_at: 'asc' },
+      });
+      const named = [...new Set(history.flatMap((r) => [r.from_template_id, r.to_template_id]))]
+        .filter((id): id is string => !!id && !frozen.has(id));
+      if (named.length > 0) {
+        for (const t of await tx.mealTemplate.findMany({ where: { id: { in: named }, coach_id } })) {
+          await snapshot(t);
+        }
       }
       const held = moved.filter((a) => a.daily_meal_plan_id === planId);
       const clientIds = [...new Set(held.map((a) => a.client_id))];
+      const slotCopy = new Map<string, string>();
       for (const s of plan.slots) {
         const { id } = await tx.dailyMealPlanSlot.create({
           data: {
@@ -415,11 +444,32 @@ export class RealMealPlansService {
           },
           select: { id: true },
         });
+        slotCopy.set(s.id, id);
         // FOODLINK: the moved clients' meals logged for this slot follow it to the copy, so their plan still
         // shows them eaten; every other client's links stay on the live slot.
         await tx.loggedFoodEntry.updateMany({
           where: { plan_slot_id: s.id, user_id: { in: clientIds } },
           data: { plan_slot_id: id },
+        });
+        // FIX-1221 (LS-1221 B2): so do the moved clients' grocery items added from this slot; every
+        // other client's items stay on the live slot.
+        await tx.listItem.updateMany({
+          where: { source_plan_slot_id: s.id, user_id: { in: clientIds } },
+          data: { source_plan_slot_id: id },
+        });
+      }
+      if (history.length > 0) {
+        // A change keeps its time; its slot and meals point at the copy's rows (a slot since removed
+        // keeps its old id, as on the live plan).
+        await tx.dailyMealPlanRevision.createMany({
+          data: history.map((r) => ({
+            plan_id: copy.id,
+            slot_id: slotCopy.get(r.slot_id) ?? r.slot_id,
+            slot_label: r.slot_label,
+            from_template_id: r.from_template_id ? frozen.get(r.from_template_id) ?? r.from_template_id : null,
+            to_template_id: r.to_template_id ? frozen.get(r.to_template_id) ?? r.to_template_id : null,
+            changed_at: r.changed_at,
+          })),
         });
       }
       await tx.dailyMealPlanAssignment.updateMany({
@@ -598,7 +648,9 @@ export class RealMealPlansService {
     const forToday = dateIso === undefined || (typeof dateIso === 'string' && dateIso.slice(0, 10) === localDateKey(now, tz));
     const rows = forToday && planIds.length > 0
       ? (await this.prisma.dailyMealPlanRevision.findMany({
-          where: { plan_id: { in: planIds }, changed_at: { gte: new Date(now.getTime() - LOCAL_DAY_LOOKBACK_MS), lte: now } },
+          // FIX-1221 (LS-1221 C1): bounded to the local day before the cap, so the cap keeps today's
+          // earliest CHANGES_TODAY_LIMIT changes and yesterday's rows cannot use it up.
+          where: { plan_id: { in: planIds }, changed_at: { gte: localDayStartBefore(now, tz), lte: now } },
           orderBy: { changed_at: 'asc' },
           take: CHANGES_TODAY_LIMIT,
         })).filter((r) => sameLocalDay(r.changed_at, now, tz))
