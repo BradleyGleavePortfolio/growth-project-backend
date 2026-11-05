@@ -47,6 +47,6 @@ REVOKE ALL ON TABLE "RomanMessageReport" FROM anon;
 CREATE POLICY "p_romanmessagereport_select_tgp_team" ON "RomanMessageReport"
   FOR SELECT TO public
   USING (app.is_owner());
-COMMENT ON POLICY "p_romanmessagereport_select_tgp_team" ON "RomanMessageReport" IS '20270502011200: only TGP''s team (platform owner) reads a report on a Roman reply; never the reporter''s coach. No API role writes.';
+COMMENT ON POLICY "p_romanmessagereport_select_tgp_team" ON "RomanMessageReport" IS '20270502011200: only the TGP team (platform owner) reads a report on a Roman reply, never the coach of the reporter. No API role writes.';
 
 COMMIT;

@@ -64,6 +64,15 @@ describe('migration 20270502011200_roman_message_report', () => {
     expect((up.match(/CREATE POLICY/g) ?? []).length).toBe(1);
   });
 
+  it('splits cleanly on semicolons: no ";" or escaped quote inside a string (suites that replay later migrations split on ";")', () => {
+    const strings = [...up.matchAll(/'((?:[^']|'')*)'/g)].map((m) => m[1]);
+    expect(strings.length).toBeGreaterThan(0);
+    for (const s of strings) {
+      expect(s).not.toMatch(/;/);
+      expect(s).not.toMatch(/''/);
+    }
+  });
+
   it('is additive: touches no other table, and down.sql drops only the new table', () => {
     const altered = [...up.matchAll(/ALTER TABLE "(\w+)"/g)].map((m) => m[1]);
     expect(new Set(altered)).toEqual(new Set(['RomanMessageReport']));

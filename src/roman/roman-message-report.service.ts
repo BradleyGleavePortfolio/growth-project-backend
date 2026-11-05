@@ -27,7 +27,7 @@ export class RomanMessageReportService {
   constructor(private readonly prisma: PrismaService) {}
 
   async report(
-    caller: Pick<RomanCaller, 'id'>,
+    caller: RomanCaller,
     messageId: string,
     input: RomanMessageReportInput,
   ): Promise<RomanMessageReportResult> {
