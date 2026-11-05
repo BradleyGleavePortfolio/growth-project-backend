@@ -1,20 +1,25 @@
 // FOOD-SCORE-BE (agent 192): a food accuracy score over the foods clients log most (test/food-score/foods.json).
-// It runs the real FoodService.search against this job's Postgres copy (the full migration chain) holding the 65
-// built-in foods, inserted the way the release step does (FOOD-SEED-BE, b#1203: one createMany of seedFoodRow for
-// each food the shared catalog lacks). Every outside call (USDA FoodData Central, Open Food Facts) is served from
-// answers recorded once with curl under test/food-score/answers/; nothing reaches the network. A request with no
-// saved answer is a failure that names the URL.
+// It runs the real FoodService.search against this job's Postgres copy (the full migration chain) holding the shared
+// catalog the release steps write: the 65 built-in foods (FOOD-SEED-BE, b#1203: one createMany of seedFoodRow for
+// each food the shared catalog lacks), then the USDA foods of prisma/data/usda-foods.jsonl.gz (FOOD-USDA-BE, b#1212:
+// loadUsdaFoods, release step 6). Every outside call is served from answers saved under test/food-score/answers/;
+// nothing reaches the network. FIX-1207 (195-S4 op 1): each USDA search answer is taken from that same catalog file
+// (record.py usda: the catalog foods the catalog search finds, in USDA's answer shape), not from USDA's
+// rate-limited service; the Open Food Facts answers are the ones recorded with curl on 11-02. A request with no saved
+// answer is a failure that names the URL.
 //
 // A row scores when the first result meets the row's name rule and its kcal for the row's portion is within 10% of
 // the row's source. v1 rows (v11 false) must score at least test/food-score/floor.json; v1.1 rows (chain
 // restaurants) are printed and never fail. Rows marked recorded=false have no saved answers yet: printed as
-// "not recorded" and left out of the score and the floor. Lives under test/rls/ because rls-live-tests is the
-// required job with a Postgres service and the whole migration chain (build-and-test has no database).
+// "not recorded" and left out of the score and the floor. A worse search (the catalog lookup failing on every
+// search, as on main before b#1212, with USDA's service refusing) must score below the floor. Lives under test/rls/
+// because rls-live-tests is the required job with a Postgres service and the whole migration chain (build-and-test has no database).
 import { createHash, randomUUID } from 'crypto';
 import { readFileSync, appendFileSync } from 'fs';
 import { join } from 'path';
 import { brotliDecompressSync } from 'zlib';
 import { PrismaClient } from '@prisma/client';
+import { loadUsdaFoods, parseUsdaFoods } from '../../scripts/load-usda-foods';
 import { FoodService, type FoodResult } from '../../src/food/food.service';
 import type { PrismaService } from '../../src/prisma.service';
 import { liveTestDatabaseUrl } from '../utils/live-test-db';
@@ -130,6 +135,8 @@ function grade(row: Row, first: FoodResult | undefined): Outcome {
   const misses: string[] = [];
   const served: string[] = [];
   let fetchSpy: jest.SpyInstance;
+  let usdaDown = false; // the worse search: USDA's service answers 429
+  const keyBefore = process.env.USDA_API_KEY;
 
   beforeAll(async () => {
     prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
@@ -140,10 +147,17 @@ function grade(row: Row, first: FoodResult | undefined): Outcome {
     const have = new Set(before.map((r) => JSON.stringify([r.name, r.brand_or_restaurant])));
     const toAdd = seedFoods.filter((f) => !have.has(JSON.stringify([f.name, f.brand])));
     if (toAdd.length) await prisma.foodItem.createMany({ data: toAdd.map(seedFoodRow) });
+    // Release step 6 (b#1212): the USDA foods the shared catalog lacks, as production holds them.
+    const usdaFile = join(__dirname, '..', '..', 'prisma', 'data', 'usda-foods.jsonl.gz');
+    const usda = await loadUsdaFoods(prisma, parseUsdaFoods(readFileSync(usdaFile)));
+    expect(usda.missing).toBe(0);
+    // searchUSDA asks only with a key (production has one); its answers here are the saved ones.
+    process.env.USDA_API_KEY = 'food-score-saved-answers';
 
     fetchSpy = jest.spyOn(globalThis, 'fetch').mockImplementation(async (input: unknown) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
       const key = answerKey(url);
+      if (usdaDown && key.startsWith('https://api.nal.usda.gov/')) return new Response('{}', { status: 429 });
       const a = answers[key];
       if (!a) {
         misses.push(key);
@@ -153,16 +167,18 @@ function grade(row: Row, first: FoodResult | undefined): Outcome {
       const body = savedBody(a);
       return new Response(new Uint8Array(body), { status: a.status, headers: a.content_type ? { 'content-type': a.content_type } : {} });
     });
-  });
+  }, 120_000);
 
   afterAll(async () => {
     fetchSpy?.mockRestore();
+    if (keyBefore === undefined) delete process.env.USDA_API_KEY;
+    else process.env.USDA_API_KEY = keyBefore;
     await prisma?.$disconnect();
   });
 
-  async function scoreOnce(): Promise<Outcome[]> {
+  async function scoreOnce(db: PrismaClient = prisma): Promise<Outcome[]> {
     // A fresh service per run: its in-memory search cache starts empty, so every run calls every source.
-    const service = new FoodService(stub<PrismaService>(prisma));
+    const service = new FoodService(stub<PrismaService>(db));
     const viewer = randomUUID(); // a member with no foods of their own
     const out: Outcome[] = [];
     for (const row of rows.filter((r) => r.recorded)) {
@@ -187,6 +203,14 @@ function grade(row: Row, first: FoodResult | undefined): Outcome {
     const v11 = sum(run1, true);
     const notRecorded = rows.filter((r) => !r.recorded);
     const line = `Food score: ${v1.hit} of ${v1.of} v1 rows, ${v11.hit} of ${v11.of} v1.1 rows`;
+    // Measured numbers first: the first result is a USDA food (loaded from the catalog file or a USDA answer) or a
+    // built-in food (seed:common-foods, its numbers from USDA's SR Legacy).
+    const isUsda = (f?: FoodResult) => !!f && (f.id.startsWith('usda_') || f.tags.some((t) => t.startsWith('usda:')));
+    const isSeed = (f?: FoodResult) => !!f && f.tags.includes('seed:common-foods');
+    const count = (p: (f?: FoodResult) => boolean) => run1.filter((x) => p(x.first)).length;
+    const measured = `  first result measured: ${count((f) => isUsda(f) || isSeed(f))} of ${run1.length} rows (USDA ${count(
+      isUsda,
+    )}, built-in ${count(isSeed)})`;
     const fmt = (x: Outcome) =>
       `  MISS${x.row.v11 ? ' (v1.1)' : ''} "${x.row.typed}" -> first: ${
         x.first ? `"${x.first.name}"${x.first.brand_or_restaurant ? ` (${x.first.brand_or_restaurant})` : ''}` : '(no result)'
@@ -198,6 +222,7 @@ function grade(row: Row, first: FoodResult | undefined): Outcome {
         .join(' + ')})`;
     const report = [
       line,
+      measured,
       `  floor (v1): ${floor.v1_floor}; not recorded: ${notRecorded.length} of ${rows.length} rows; local search path: ${
         trgm[0].n ? 'pg_trgm similarity' : 'ILIKE fallback (no pg_trgm)'
       }; shared catalog rows: ${shared}; saved answers served: ${served.length}`,
@@ -216,6 +241,21 @@ function grade(row: Row, first: FoodResult | undefined): Outcome {
     expect(brief(run2)).toEqual(brief(run1));
     // The score only goes up.
     expect(v1.hit).toBeGreaterThanOrEqual(floor.v1_floor);
+  }, 240_000);
+
+  it('fails the floor with a worse search: the catalog lookup failing and USDA refusing', async () => {
+    const broken = new Proxy(prisma, {
+      get: (target, key) =>
+        key === '$queryRaw' ? () => Promise.reject(new Error('catalog lookup off')) : Reflect.get(target, key),
+    });
+    usdaDown = true;
+    try {
+      const worse = (await scoreOnce(broken)).filter((x) => !x.row.v11 && x.nameOk && x.kcalOk).length;
+      process.stdout.write(`\nFood score, worse search: ${worse} v1 rows (floor ${floor.v1_floor})\n`);
+      expect(worse).toBeLessThan(floor.v1_floor);
+    } finally {
+      usdaDown = false;
+    }
   });
 
   it('serves a saved answer for every recorded row, and none for an unknown URL', async () => {
