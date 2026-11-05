@@ -170,9 +170,10 @@ async function seed(db: Db, now: Date): Promise<Record<string, number>> {
       const start = new Date(now.getTime() - wk * 7 * DAY_MS + c * 3_600_000);
       rows.coachingSession.push({ coach_id: COACH_ID, client_id: uid, status: 'scheduled', start_at: start, end_at: new Date(start.getTime() + 1_800_000), title: 'Weekly call', approved_at: start });
     }
-    const soon = new Date(now.getTime() + (1 + (c % 6)) * DAY_MS);
+    // One coach cannot hold two live calls at once (CoachingSession_no_overlapping_active_booking): an hour apart.
+    const soon = new Date(now.getTime() + DAY_MS + c * 3_600_000);
     rows.coachingSession.push({ coach_id: COACH_ID, client_id: uid, status: 'scheduled', start_at: soon, end_at: new Date(soon.getTime() + 1_800_000), title: 'Weekly call', approved_at: now });
-    const asked = new Date(soon.getTime() + DAY_MS / 2);
+    const asked = new Date(now.getTime() + 3 * DAY_MS + c * 3_600_000);
     rows.coachingSession.push({ coach_id: COACH_ID, client_id: uid, status: 'requested', start_at: asked, end_at: new Date(asked.getTime() + 1_800_000), title: 'Extra call', request_expires_at: new Date(now.getTime() + 2 * DAY_MS) });
   });
   for (const [model, list] of Object.entries(rows)) counts[model] = await many(db, model, list);
