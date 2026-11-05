@@ -462,13 +462,13 @@ export class RealMealPlansService {
         // A change keeps its time; its slot and meals point at the copy's rows (a slot since removed
         // keeps its old id, as on the live plan).
         await tx.dailyMealPlanRevision.createMany({
-          data: history.map((r) => ({
+          // (A revision is history, not a slot write: test/c2-c0-planned-times.spec.ts walks slot writers.)
+          data: history.map(({ id: _id, plan_id: _planId, slot_id, from_template_id, to_template_id, ...same }) => ({
+            ...same, // slot_label and changed_at
             plan_id: copy.id,
-            slot_id: slotCopy.get(r.slot_id) ?? r.slot_id,
-            slot_label: r.slot_label,
-            from_template_id: r.from_template_id ? frozen.get(r.from_template_id) ?? r.from_template_id : null,
-            to_template_id: r.to_template_id ? frozen.get(r.to_template_id) ?? r.to_template_id : null,
-            changed_at: r.changed_at,
+            slot_id: slotCopy.get(slot_id) ?? slot_id,
+            from_template_id: from_template_id ? frozen.get(from_template_id) ?? from_template_id : null,
+            to_template_id: to_template_id ? frozen.get(to_template_id) ?? to_template_id : null,
           })),
         });
       }
