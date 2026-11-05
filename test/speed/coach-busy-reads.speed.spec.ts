@@ -236,7 +236,6 @@ const median = (xs: number[]) => {
     const switches = turnEverySwitchOn();
       console.log(`FEATURE_* switches on: ${switches.length}`);
 
-    const helmet = require('helmet');
     const { ValidationPipe } = require('@nestjs/common');
     const { Test } = require('@nestjs/testing');
     const { SchedulerRegistry } = require('@nestjs/schedule');
@@ -257,9 +256,9 @@ const median = (xs: number[]) => {
       .overrideProvider(JwksVerifierService)
       .useValue({ verify, verifyForDeletionReceipt: verify })
       .compile();
-    // The request pipeline main.ts builds, minus Sentry, metrics export and Swagger.
+    // The request pipeline main.ts builds, minus Sentry, metrics export, Swagger and the
+    // helmet response headers (headers only; no read depends on them).
     app = ref.createNestApplication({ rawBody: true, logger: ['error'] });
-    app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'cross-origin' } }));
     app.use(featureFlagNotFoundMiddleware);
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
     app.useGlobalFilters(new HttpExceptionFilter(), new ThrottlerExceptionFilter(app.get(MetricsService, { strict: false })));
