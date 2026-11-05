@@ -42,7 +42,7 @@ export class LogService {
     // Mobile client may send synthetic ids ("usda_123", "off_456") returned by food search.
     // Resolve them to real FoodItem.id via upsert-on-log so the FK below can't blow up.
     // Another person's custom food resolves as not found (UX-FOOD-PRIV-124).
-    const resolvedFoodItemId = await this.foodService.resolveOrImportId(data.food_item_id, userId);
+    const resolvedFoodItemId = await this.resolveFood(userId, data.food_item_id);
     const plan_slot_id = data.plan_slot_id
       ? await this.ownPlanSlot(userId, data.plan_slot_id, new Date(data.date))
       : null;
@@ -237,5 +237,19 @@ export class LogService {
     });
 
     return Object.values(byDate);
+  }
+
+  /**
+   * FIX-1222 (LS-1222 B5, LO-1222 N1): a food that is missing or refused (its numbers cannot be true, a macro its
+   * source left out) answers 404 "Food not found", which the phone keeps as final, as saved meals already do; any
+   * other failure (a source not reached) still throws, so the queued log retries.
+   */
+  private async resolveFood(userId: string, ref: string): Promise<string> {
+    try {
+      return await this.foodService.resolveOrImportId(ref, userId);
+    } catch (err) {
+      if (err instanceof Error && /not found/i.test(err.message)) throw new NotFoundException('Food not found');
+      throw err;
+    }
   }
 }

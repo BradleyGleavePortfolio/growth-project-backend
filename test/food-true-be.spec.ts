@@ -107,7 +107,9 @@ describe('T1: numbersCanBeTrue (per 100 g, 4/4/9)', () => {
     ['over 100 g carbs per 100 g', { calories: 440, protein_g: 0, carbs_g: 110, fat_g: 0 }, false],
     ['over 100 g fat per 100 g', { calories: 890, protein_g: 0, carbs_g: 0, fat_g: 101 }, false],
     ['calories far above the macros (250 vs 17)', { calories: 250, protein_g: 1, carbs_g: 1, fat_g: 1 }, false],
-    ['calories far below the macros (50 vs 400)', { calories: 50, protein_g: 0, carbs_g: 100, fat_g: 0 }, false],
+    // FIX-1222 (LO-1222 B2): carbs count 0-4 kcal a gram (unlisted fibre, sugar alcohols), so the floor is protein and fat.
+    ['calories far below the protein (50 vs 400)', { calories: 50, protein_g: 100, carbs_g: 0, fat_g: 0 }, false],
+    ['a zero-energy sweetener (0 kcal, 100 g carbs)', { calories: 0, protein_g: 0, carbs_g: 100, fat_g: 0 }, true],
     ['39 kcal away is close enough', { calories: 139, protein_g: 5, carbs_g: 10, fat_g: 4.4 }, true],
     ['35% but only 7 kcal away is close enough', { calories: 27, protein_g: 0, carbs_g: 5, fat_g: 0 }, true],
     ['45 kcal but only 10% away is close enough', { calories: 470, protein_g: 10, carbs_g: 40, fat_g: 25 }, true],

@@ -1,10 +1,12 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma } from '@prisma/client';
+import { FoodItem, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { volumeWeightsFor } from './food-density';
 import { parseFoodQuery } from './food-query-parser';
-import { numbersCanBeTrue } from './food-truth';
+import {
+  TRUTH_TAG_PREFIX, evidenceTags, legacyPackagedZero, numbersCanBeTrue, storedNumbersCanBeTrue, withinHardCaps,
+} from './food-truth';
 
 export interface FoodSearchResponse {
   results: FoodResult[];
@@ -248,7 +250,8 @@ function matchOf(item: FoodResult, rawQuery: string): { score: number; whole: bo
   const text = item.name.toLowerCase();
   if (text.includes(rawQuery.toLowerCase().trim())) return { score: 20, whole };
   if (q.every((w) => text.includes(w))) return { score: 15, whole };
-  const aliases = words([...(item.tags || []), ...(item.search_aliases || [])].join(' '));
+  const tags = (item.tags || []).filter((t) => !t.startsWith(TRUTH_TAG_PREFIX));
+  const aliases = words([...tags, ...(item.search_aliases || [])].join(' '));
   return { score: q.some((w) => aliases.includes(w)) ? 10 : 5, whole };
 }
 
@@ -477,7 +480,13 @@ function usdaAmount(food: UsdaFood, name: string): number | null {
  */
 function usdaNumbersUsable(food: UsdaFood, mapped: FoodResult): boolean {
   if (food.dataType === 'Branded' && USDA_MACROS.some((name) => usdaAmount(food, name) === null)) return false;
-  return numbersCanBeTrue(mapped, usdaAmount(food, 'Alcohol, ethyl') ?? 0);
+  const polyols = usdaAmount(food, 'Total sugar alcohols') ?? usdaAmount(food, 'Sugar alcohols') ?? 0;
+  return numbersCanBeTrue(mapped, usdaAlcoholG(food), polyols);
+}
+
+/** The alcohol a USDA food lists, in grams per 100 g (0 when it lists none). */
+function usdaAlcoholG(food: UsdaFood): number {
+  return usdaAmount(food, 'Alcohol, ethyl') ?? 0;
 }
 
 /**
@@ -490,7 +499,30 @@ function offNumbersUsable(product: OpenFoodFactsProduct, mapped: FoodResult): bo
   const listed = (k: string) => n[k] != null && Number.isFinite(Number(n[k]));
   if (!listed('energy-kcal_100g') && !listed('energy_100g')) return false;
   if (!['proteins_100g', 'carbohydrates_100g', 'fat_100g'].every(listed)) return false;
-  return numbersCanBeTrue(mapped, listed('alcohol_100g') ? Number(n['alcohol_100g']) * 0.789 : 0);
+  return numbersCanBeTrue(mapped, offAlcoholG(product), listed('polyols_100g') ? Number(n['polyols_100g']) : 0);
+}
+
+/** The alcohol an Open Food Facts product lists, in grams per 100 g (0 when it lists none). */
+function offAlcoholG(product: OpenFoodFactsProduct): number {
+  const value = Number((product.nutriments ?? {})['alcohol_100g']);
+  return Number.isFinite(value) ? value * 0.789 : 0;
+}
+
+/**
+ * FIX-1222 (LS-1222 B4): a stored shared row a list may show (lists cannot ask the source): its numbers can be true,
+ * read with the alcohol its tags hold, and it is not an Open Food Facts row stored before FIX-1222 with a 0 g macro
+ * (every such row is a packaged label, and its 0 may be a macro the label left out). The caller's own foods are theirs.
+ */
+function storedRowShows(row: FoodItemRow & { created_by_user_id?: string | null }): boolean {
+  if (row.created_by_user_id) return true;
+  const offRow = (row.tags ?? []).some((t) => t.startsWith('off:'));
+  return storedNumbersCanBeTrue(row) && !(offRow && legacyPackagedZero(row, BASIC_TAG));
+}
+
+/** FIX-1222: where a held row's numbers are read again: `listsAlcohol` when that source lists a food's alcohol. */
+interface HeldSource {
+  listsAlcohol: boolean;
+  confirm: () => Promise<boolean>;
 }
 
 @Injectable()
@@ -549,7 +581,7 @@ export class FoodService implements OnModuleInit {
       });
       return {
         // FOOD-TRUE-BE: a shared row whose numbers cannot be true is left out; the caller's own foods are theirs.
-        results: defaults.filter((row) => row.created_by_user_id !== null || numbersCanBeTrue(row)).map(this.toResult),
+        results: defaults.filter((row) => storedRowShows(row)).map(this.toResult),
         suggestions: [],
         did_you_mean: false,
         query: rawQ,
@@ -738,7 +770,7 @@ export class FoodService implements OnModuleInit {
     const kept =
       ownerId !== null
         ? rows
-        : rows.filter((r) => numbersCanBeTrue(r) && !((r.tags ?? []).includes(SEED_TAG) && Number(r.word_match) === 2));
+        : rows.filter((r) => storedRowShows(r) && !((r.tags ?? []).includes(SEED_TAG) && Number(r.word_match) === 2));
     return { rows: kept.map(this.toResult), whole: kept.filter((r) => Number(r.word_match) === 0).length };
   }
 
@@ -766,10 +798,11 @@ export class FoodService implements OnModuleInit {
 
       return foods
         .filter((f) => f.description && f.description.trim())
-        .slice(0, limit)
         .map((f) => ({ food: f, mapped: this.mapUSDAFood(f) }))
-        // FOOD-TRUE-BE: a food whose numbers cannot be true, or a packaged one missing a macro, is left out.
+        // FOOD-TRUE-BE: a food whose numbers cannot be true, or a packaged one missing a macro, is left out, before
+        // the limit is taken (FIX-1222), so a left-out food does not cost a usable one its place.
         .filter(({ food, mapped }) => usdaNumbersUsable(food, mapped))
+        .slice(0, limit)
         .map(({ mapped }) => mapped);
     } finally {
       clearTimeout(timeout);
@@ -864,17 +897,14 @@ export class FoodService implements OnModuleInit {
       const products: OpenFoodFactsProduct[] = data?.products || [];
 
       return products
-        .filter((p) => {
-          // Filter out products with no name or no nutrition data
-          if (!p.product_name || !p.product_name.trim()) return false;
-          const n = p.nutriments || {};
-          const cals = n['energy-kcal_100g'] ?? (n['energy_100g'] ? n['energy_100g'] / 4.184 : null);
-          return cals != null && cals > 0;
-        })
-        .slice(0, limit)
+        // Products with no name are left out. A listed 0 kcal is kept (FIX-1222, LS-1222 B1: water, sweeteners);
+        // offNumbersUsable leaves out a product whose label lists no calories.
+        .filter((p) => p.product_name && p.product_name.trim())
         .map((p) => ({ product: p, mapped: this.mapOpenFoodFactsProduct(p) }))
-        // FOOD-TRUE-BE: a product whose numbers cannot be true, or missing its protein, carbs or fat, is left out.
+        // FOOD-TRUE-BE: a product whose numbers cannot be true, or missing its protein, carbs or fat, is left out,
+        // before the limit is taken (FIX-1222).
         .filter(({ product, mapped }) => offNumbersUsable(product, mapped))
+        .slice(0, limit)
         .map(({ mapped }) => mapped);
     } finally {
       clearTimeout(timeout);
@@ -998,7 +1028,94 @@ export class FoodService implements OnModuleInit {
     // Another person's custom food is reported exactly like a missing id.
     const existing = await this.prisma.foodItem.findUnique({ where: { id } });
     if (!existing || !canSeeFood(existing, viewerId)) throw new Error(`FoodItem ${id} not found`);
+    // FIX-1222 (LS-1222 B4): a saved id (saved meals, favourites, recents) never newly logs a missing macro as 0 g.
+    if (!(await this.heldUsable(existing, this.sourceFor(existing), false))) throw new Error(`FoodItem ${id} not found`);
     return existing.id;
+  }
+
+  /**
+   * FIX-1222 (LS-1222 B3, LO-1222 B1, C1): a stored shared row read again (barcode, import, saved id) passes what a
+   * new import of it passes. With `checkNumbers`, its numbers are read with the alcohol its tags hold; when they still
+   * fail, within the hard caps, only a source that lists alcohol may confirm them (a wine stored before FIX-1222). A
+   * packaged row stored before FIX-1222 with a 0 g macro is used only when its source lists every macro. Nothing
+   * stored is changed; a source that cannot be reached throws, so a queued log retries.
+   */
+  private async heldUsable(row: FoodItem, source: HeldSource | null, checkNumbers: boolean): Promise<boolean> {
+    if (row.created_by_user_id !== null) return true;
+    if (checkNumbers && !storedNumbersCanBeTrue(row)) {
+      return source !== null && source.listsAlcohol && withinHardCaps(row) && source.confirm();
+    }
+    if (!legacyPackagedZero(row, BASIC_TAG)) return true;
+    return source !== null && source.confirm();
+  }
+
+  /** The source a stored row came from: its USDA id, else its Open Food Facts code or barcode. */
+  private sourceFor(row: FoodItem): HeldSource | null {
+    const fdcId = (row.tags ?? []).find((t) => t.startsWith('usda:'))?.slice(5);
+    if (fdcId) return this.usdaSource(fdcId, (row.tags ?? []).includes(BASIC_TAG));
+    const code = (row.tags ?? []).find((t) => t.startsWith('off:'))?.slice(4) ?? row.barcode;
+    return code ? this.offSource(code) : null;
+  }
+
+  /** USDA lists alcohol for its basic foods (SR Legacy, Foundation), not on a Branded label. */
+  private usdaSource(fdcId: string, basic: boolean): HeldSource {
+    return {
+      listsAlcohol: basic,
+      confirm: async () => {
+        const food = await this.fetchUSDAFood(fdcId);
+        return food !== null && usdaNumbersUsable(food, this.mapUSDAFood(food));
+      },
+    };
+  }
+
+  private offSource(code: string): HeldSource {
+    return {
+      listsAlcohol: true,
+      confirm: async () => {
+        const product = await this.fetchOpenFoodFactsProduct(code);
+        return product !== null && offNumbersUsable(product, this.mapOpenFoodFactsProduct(product));
+      },
+    };
+  }
+
+  /** USDA's record for one food, or null when USDA has none (404). Any other failure throws. */
+  private async fetchUSDAFood(fdcId: string): Promise<UsdaFood | null> {
+    const apiKey = process.env.USDA_API_KEY;
+    if (!apiKey) throw new Error('USDA_API_KEY is not configured');
+
+    const url = `https://api.nal.usda.gov/fdc/v1/food/${encodeURIComponent(fdcId)}?api_key=${apiKey}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: { 'User-Agent': 'TheGrowthProject/1.0' },
+      });
+      if (response.status === 404) return null;
+      if (!response.ok) throw new Error(`USDA fetch failed: ${response.status}`);
+      return (await response.json()) as UsdaFood;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  /** Open Food Facts' product for one code, or null when it has none (404 or no product). Any other failure throws. */
+  private async fetchOpenFoodFactsProduct(code: string): Promise<OpenFoodFactsProduct | null> {
+    const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: { 'User-Agent': 'TheGrowthProject/1.0' },
+      });
+      if (response.status === 404) return null;
+      if (!response.ok) throw new Error(`OpenFoodFacts fetch failed: ${response.status}`);
+      const payload = (await response.json()) as OpenFoodFactsProductResponse;
+      return payload?.product ?? null;
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   private async upsertFromUSDA(fdcId: string): Promise<string> {
@@ -1009,26 +1126,15 @@ export class FoodService implements OnModuleInit {
     const existing = await this.prisma.foodItem.findFirst({
       where: { tags: { has: tag }, created_by_user_id: null },
     });
-    if (existing) return existing.id;
-
-    const apiKey = process.env.USDA_API_KEY;
-    if (!apiKey) throw new Error('USDA_API_KEY is not configured');
-
-    const url = `https://api.nal.usda.gov/fdc/v1/food/${encodeURIComponent(fdcId)}?api_key=${apiKey}`;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-    let food: UsdaFood;
-    try {
-      const response = await fetch(url, {
-        signal: controller.signal,
-        headers: { 'User-Agent': 'TheGrowthProject/1.0' },
-      });
-      if (!response.ok) throw new Error(`USDA fetch failed: ${response.status}`);
-      food = (await response.json()) as UsdaFood;
-    } finally {
-      clearTimeout(timeout);
+    if (existing) {
+      // FIX-1222 (LS-1222 B3): a held USDA row passes what a new import of it passes, or reads as not found.
+      const source = this.usdaSource(fdcId, (existing.tags ?? []).includes(BASIC_TAG));
+      if (!(await this.heldUsable(existing, source, true))) throw new Error(`USDA food ${fdcId} not found`);
+      return existing.id;
     }
 
+    const food = await this.fetchUSDAFood(fdcId);
+    if (!food) throw new Error(`USDA food ${fdcId} not found`);
     const mapped = this.mapUSDAFood(food);
     // FOOD-TRUE-BE: the stored import keeps search's rules; such a food is not stored and reads as not found.
     if (!usdaNumbersUsable(food, mapped)) throw new Error(`USDA food ${fdcId} not found`);
@@ -1057,6 +1163,8 @@ export class FoodService implements OnModuleInit {
             tag,
             ...(mapped.category !== 'generic' ? [`${CATEGORY_TAG}${mapped.category}`] : []),
             ...(mapped.basic_food ? [BASIC_TAG] : []),
+            // FIX-1222 (LS-1222 B2, LO-1222 B1): checked, and the alcohol USDA listed, so a later read passes too.
+            ...evidenceTags(usdaAlcoholG(food)),
           ],
           search_aliases: [],
           image_url: mapped.image_url,
@@ -1082,8 +1190,9 @@ export class FoodService implements OnModuleInit {
     const held = await this.prisma.foodItem.findUnique({ where: { barcode: code } });
     if (held) {
       if (!canSeeFood(held, viewerId)) throw new Error(`OpenFoodFacts product ${code} not found`);
-      // FOOD-TRUE-BE: a stored shared row whose numbers cannot be true reads as not found (the row is not changed).
-      if (held.created_by_user_id === null && !numbersCanBeTrue(held)) {
+      // FOOD-TRUE-BE, FIX-1222 (LO-1222 B1, C1): a held shared row passes what a new scan of it passes, or reads as
+      // not found (the row is not changed).
+      if (!(await this.heldUsable(held, this.offSource(code), true))) {
         throw new Error(`OpenFoodFacts product ${code} not found`);
       }
       return held.id;
@@ -1091,26 +1200,12 @@ export class FoodService implements OnModuleInit {
 
     // Barcode is unique in FoodItem — use a true Prisma upsert so concurrent
     // flush calls don't race to create a duplicate row (Fix 3).
-    const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json`;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-    let payload: OpenFoodFactsProductResponse;
-    try {
-      const response = await fetch(url, {
-        signal: controller.signal,
-        headers: { 'User-Agent': 'TheGrowthProject/1.0' },
-      });
-      if (!response.ok) throw new Error(`OpenFoodFacts fetch failed: ${response.status}`);
-      payload = (await response.json()) as OpenFoodFactsProductResponse;
-    } finally {
-      clearTimeout(timeout);
-    }
-
-    if (!payload?.product) throw new Error(`OpenFoodFacts product ${code} not found`);
-    const mapped = this.mapOpenFoodFactsProduct(payload.product);
+    const product = await this.fetchOpenFoodFactsProduct(code);
+    if (!product) throw new Error(`OpenFoodFacts product ${code} not found`);
+    const mapped = this.mapOpenFoodFactsProduct(product);
     // FOOD-TRUE-BE: the barcode and the stored import keep search's rules: a product missing its calories, protein,
     // carbs or fat, or whose numbers cannot be true, is not stored as 0 g and reads as not found.
-    if (!offNumbersUsable(payload.product, mapped)) throw new Error(`OpenFoodFacts product ${code} not found`);
+    if (!offNumbersUsable(product, mapped)) throw new Error(`OpenFoodFacts product ${code} not found`);
 
     // upsert on barcode (unique) — no-op update so a race just returns the
     // existing row's id rather than throwing a unique constraint violation.
@@ -1129,7 +1224,8 @@ export class FoodService implements OnModuleInit {
         fiber_g: mapped.fiber_g,
         sugar_g: mapped.sugar_g,
         sodium_mg: mapped.sodium_mg,
-        tags: [`off:${code}`],
+        // FIX-1222 (LS-1222 B2, LO-1222 B1): checked, and the alcohol the label listed, so a later read passes too.
+        tags: [`off:${code}`, ...evidenceTags(offAlcoholG(product))],
         search_aliases: [],
         image_url: mapped.image_url,
         barcode: code,

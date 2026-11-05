@@ -45,7 +45,10 @@ describe.each(foods)('LS-1222 complete real food: $name', (food) => {
     const stored = {
       id: 'stored-food', ...food, serving_size_grams: 100, serving_description: '100 g',
       nutrient_basis: 'PER_100G', created_by_user_id: null, word_match: 0,
-      tags: ['usda:1222010'], barcode: '1222010',
+      // FIX-1222: a row stored by this import keeps the alcohol its source listed as a tag (no alcohol column); a
+      // loaded row stored without it is the found-not-fixed case (FIX-1222 READY), read through its source on a log.
+      tags: ['usda:1222010', ...(food.alcohol_g === undefined ? [] : [`truth:alcohol_g=${food.alcohol_g}`])],
+      barcode: '1222010',
     };
     const usda = {
       fdcId: 1222010, description: food.name, dataType: 'Branded', foodNutrients: [

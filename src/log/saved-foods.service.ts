@@ -114,6 +114,9 @@ export class SavedFoodsService {
       onResend?.();
       return earlier;
     }
+    // FIX-1222 (LS-1222 B4): each saved food is read as POST /log/food reads it, so a packaged row with a missing
+    // macro stored as 0 g is not newly logged; a refused food answers 404 "Food not found", as it does there.
+    await Promise.all(meal.items.map((item) => this.resolveFood(userId, item.food_item_id)));
 
     const logged_at = new Date();
     const writes = meal.items.map((item, i) =>
