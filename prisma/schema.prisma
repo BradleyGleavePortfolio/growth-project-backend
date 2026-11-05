@@ -568,6 +568,8 @@ model User {
   coach_welcome_job           CoachWelcomeMessageJob?          @relation("CoachWelcomeJobClient")
   workout_reminder_deliveries WorkoutReminderDelivery[]        @relation("WorkoutReminderClient")
   roman_messages RomanMessage[] @relation("RomanMessageUser")
+  // ROMAN-HOLD-BE: the client's reports on Roman's replies (read only by TGP's team; erased with the account).
+  roman_message_reports RomanMessageReport[] @relation("RomanMessageReportReporter")
   // Roman v1.1 memory (R11-M1): notes, summaries and job state about this
   // client. Server only; erased with the account.
   roman_client_notes     RomanClientNote[]    @relation("RomanClientNoteClient")
@@ -8130,12 +8132,37 @@ model RomanMessage {
   // them with a null source (R11-M1).
   roman_notes RomanClientNote[] @relation("RomanClientNoteSourceMessage")
 
+  // ROMAN-HOLD-BE: client reports on this reply; erasing the message erases them.
+  reports RomanMessageReport[]
+
   // Hot read path: a session's messages in chronological order (the controller
   // paginates newest-first by reversing a created_at cursor over this index).
   @@index([session_id, created_at])
   // Direct owner scope for RLS / per-user budget queries.
   @@index([user_id])
   @@index([parent_message_id])
+}
+
+// ROMAN-HOLD-BE (20270502011200; owner #197-D3): a client's report on one of Roman's replies in their own
+// chat (press and hold the reply, then Report). Names the reporter and the held message by id, with a
+// reason from the DM report list and optional details; no copy of the chat. One per reporter and
+// message. Only TGP's team reads it (RLS: app.is_owner()); never the reporter's coach. Goes with the
+// message and with the account. Written only by the server (POST /roman/messages/:id/report).
+model RomanMessageReport {
+  id               String   @id @default(uuid())
+  reporter_id      String
+  roman_message_id String
+  // One of REPORT_REASONS (src/messages-safety/dto/report-message.dto.ts); a CHECK holds it in the DB.
+  reason           String
+  details          String?
+  created_at       DateTime @default(now())
+
+  reporter User         @relation("RomanMessageReportReporter", fields: [reporter_id], references: [id], onDelete: Cascade)
+  message  RomanMessage @relation(fields: [roman_message_id], references: [id], onDelete: Cascade)
+
+  @@unique([reporter_id, roman_message_id])
+  @@index([roman_message_id])
+  @@index([created_at])
 }
 
 // ── Roman P4 (Option C) — first-payment notification ledger ──────────────────
