@@ -454,8 +454,10 @@ const SEARCH_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 // b#1198's v2 entries are never served after this change. v4 (FOOD-TRUE-BE): an
 // answer holds no food whose numbers cannot be true, so a v3 answer (which may) is
 // never served. v5 (FIX-1222): real low-energy foods, alcohol held in tags and the
-// limit taken after the check, so a v4 answer (which may hide them) is never served.
-const SEARCH_CACHE_KEY_PREFIX = 'food:search:v5:';
+// limit taken after the check, so a v4 answer (which may hide them) is never served. v6 (FIX-1222R2): an answer
+// holds no USDA Branded row stored before FIX-1222 with a 0 g macro and keeps foods whose fibre sits outside
+// their carbohydrate, so a v5 answer (which may show the one and hide the other) is never served.
+const SEARCH_CACHE_KEY_PREFIX = 'food:search:v6:';
 // R2's label "100 g", with a no-break space so the number and unit stay on one line.
 export const HUNDRED_GRAMS = '100\u00a0g';
 

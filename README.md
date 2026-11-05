@@ -192,7 +192,7 @@ optional on `POST /log/food`, returned by `GET /log/daily`, never editable.
 
 `FoodService` caches the merged + scored search result list in Redis
 (when `REDIS_URL` is set) or an in-process map otherwise. Key:
-`food:search:v5:<normalized food name>`, TTL 24h. Cache hits skip both
+`food:search:v6:<normalized food name>`, TTL 24h. Cache hits skip both
 USDA + OFF.
 
 ### Seeded common foods

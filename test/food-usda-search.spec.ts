@@ -120,14 +120,14 @@ describe('FOOD-USDA-BE: catalog first (U4)', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
-  it('the shared answer is cached under food:search:v5: (FIX-1222), past v4, v3 and b#1198\'s v2', async () => {
+  it('the shared answer is cached under food:search:v6: (FIX-1222R2), past v5, v4, v3 and b#1198\'s v2', async () => {
     // FR-1212R1: rows named for the food ("Egg, whole, raw"), so the catalog answers alone (LS-1212 B1).
     const { service } = setup(Array.from({ length: LOCAL_ENOUGH_WHOLE }, (_, i) => row(`Egg, whole, raw ${i}`, 0)));
     await service.search('eggs', 20, VIEWER);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const keys = [...(service as any).memoryCache.keys()] as string[];
     expect(keys.length).toBe(1);
-    expect(keys[0].startsWith('food:search:v5:')).toBe(true);
+    expect(keys[0].startsWith('food:search:v6:')).toBe(true);
   });
 });
 
