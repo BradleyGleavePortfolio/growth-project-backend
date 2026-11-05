@@ -6,6 +6,7 @@ import {
 } from '../src/food/food-truth';
 import { FoodService } from '../src/food/food.service';
 import type { PrismaService } from '../src/prisma.service';
+import { Prisma } from '@prisma/client';
 
 const stub = <T>(value: unknown) => value as T;
 const fdc = [167602, 168581, 168998, 168999, 169045, 172243];
@@ -129,3 +130,61 @@ describe.each(controls)('LS-1222R3 held-source parity: $title', (food) => {
     expect(JSON.stringify(row)).toBe(before);
   });
 });
+
+describe.each(loaded.filter((food) => fdc.includes(food.fdc_id ?? 0)))(
+  'LS-1222R3 restored catalog import round trip: $name', (food) => {
+    it.each(['usda', 'off'])('%s maps, stores, lists and reuses the actual fibre-outside record', async (transport) => {
+      type Row = Record<string, unknown>;
+      let held: Row | null = null;
+      const source = {
+        fdcId: food.fdc_id, description: food.name, dataType: 'SR Legacy', foodNutrients: [
+          { nutrientName: 'Energy', unitName: 'KCAL', value: food.calories },
+          { nutrientName: 'Protein', unitName: 'G', value: food.protein_g },
+          { nutrientName: 'Carbohydrate, by difference', unitName: 'G', value: food.carbs_g },
+          { nutrientName: 'Total lipid (fat)', unitName: 'G', value: food.fat_g },
+          { nutrientName: 'Fiber, total dietary', unitName: 'G', value: food.fiber_g },
+        ],
+      };
+      const product = { code: String(food.fdc_id), product_name: food.name, nutriments: {
+        'energy-kcal_100g': food.calories, proteins_100g: food.protein_g,
+        carbohydrates_100g: food.carbs_g, fat_100g: food.fat_g, fiber_100g: food.fiber_g,
+      } };
+      const fetchMock = jest.spyOn(global, 'fetch').mockImplementation(async (input) => {
+        const url = new URL(String(input));
+        return stub<Response>({
+          ok: true, status: 200, json: async () =>
+            url.pathname.includes('/food/') ? source
+              : url.pathname.includes('/product/') ? { product }
+                : url.hostname === 'api.nal.usda.gov' ? { foods: [] } : { products: [] },
+        });
+      });
+      const store = (data: Row) => {
+        held = {
+          id: `restored-${transport}`, created_by_user_id: null, nutrient_basis: 'PER_100G',
+          word_match: 0, ...data,
+        };
+        return held;
+      };
+      const create = jest.fn(async ({ data }: { data: Row }) => store(data));
+      const upsert = jest.fn(async ({ create: data }: { create: Row }) => store(data));
+      const service = new FoodService(stub<PrismaService>({
+        $queryRaw: jest.fn(async (strings: TemplateStringsArray, ...values: unknown[]) =>
+          Prisma.sql(strings, ...values).sql.includes('IS NULL') && held ? [held] : []),
+        foodItem: {
+          findFirst: jest.fn(async () => held), findUnique: jest.fn(async () => held),
+          create, upsert,
+        },
+      }));
+      const id = await service.resolveOrImportId(`${transport}_${food.fdc_id}`, 'viewer');
+      expect(held).toEqual(expect.objectContaining({
+        id, calories: food.calories, protein_g: food.protein_g, carbs_g: food.carbs_g,
+        fat_g: food.fat_g, fiber_g: food.fiber_g,
+      }));
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      await expect(service.resolveOrImportId(id, 'viewer')).resolves.toBe(id);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect((await service.search(food.name, 50, 'viewer')).results.map((row) => row.id)).toContain(id);
+      expect(create.mock.calls.length + upsert.mock.calls.length).toBe(1);
+    });
+  },
+);
