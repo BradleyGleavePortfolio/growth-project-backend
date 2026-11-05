@@ -229,8 +229,10 @@ describe('R5: one row per food, not per name', () => {
   });
 
   it('a stored import meets its upstream row once (the stored row wins)', async () => {
+    // FIX-1222: stored by today's import (checked); an unchecked one with its 0 g protein is left out of lists (LS-1222 B4).
     const stored = {
-      ...seedRow('stored-alpha', 'Protein bar'), brand_or_restaurant: 'Alpha', calories: 350, carbs_g: carbsFor(350), fat_g: fatFor(350), tags: ['off:11'],
+      ...seedRow('stored-alpha', 'Protein bar'), brand_or_restaurant: 'Alpha', calories: 350, carbs_g: carbsFor(350), fat_g: fatFor(350),
+      tags: ['off:11', 'truth:checked'],
     };
     upstreams([], [bar('11', 'Alpha', 350)]);
     const { results } = await setup({ local: [stored] }).search('protein bar', 50, 'viewer');

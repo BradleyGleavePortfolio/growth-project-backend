@@ -141,7 +141,8 @@ describe('R1/R2: every food source offers only portions it can weigh', () => {
     await svc.resolveOrImportId('usda_748967', 'viewer');
     expect(created[0]).toMatchObject({
       category: 'generic', serving_description: HUNDRED_GRAMS, serving_size_grams: 100,
-      tags: ['usda:748967', 'category:Dairy and Egg Products', 'basic-food'],
+      // FIX-1222: and the evidence of its check (LS-1222 B2).
+      tags: ['usda:748967', 'category:Dairy and Egg Products', 'basic-food', 'truth:checked'],
     });
     const stored = await svc.getById('imported', 'viewer');
     const searched = await searchOne(detail, 'usda');
