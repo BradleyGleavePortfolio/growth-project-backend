@@ -678,6 +678,91 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
+  speed-test:
+    # SPEED-TEST-BE (owner pick 195-S3 op 1): the reads behind the coach's six
+    # busiest screens (Needs you, the client list, the inbox, one client's
+    # file, Money, the calendar week) on a scratch Postgres seeded with 1
+    # coach, 45 clients and 90 days of workouts, food, water, weight,
+    # check-ins and messages. Every read must answer within half a second;
+    # the job prints a table (screen, read, median, worst) to its log and the
+    # run summary. test/speed/coach-busy-reads.speed.spec.ts says what is
+    # timed and how.
+    #
+    # NOT REQUIRED, the same way as all-switches-on below:
+    # scripts/setup-branch-protection.sh does not list it, and job-level
+    # continue-on-error keeps a slow read from failing the CI run (and so from
+    # blocking a deploy through scripts/ci/release-evidence-gate.sh). A slow
+    # read still shows this job red on the PR; it gets its own fix PR.
+    #
+    # Same Postgres 15 service, Supabase-equivalent bootstrap and full
+    # `prisma migrate deploy` as community-live-tests, so the reads run on the
+    # real migration output and its indexes.
+    name: Speed test, 45 clients (not required)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      # The var the speed test connects with AND gates on (localhost only).
+      SPEED_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      # SupabaseService builds a client at construction; no timed read uses it.
+      SUPABASE_URL: http://127.0.0.1:54321
+      SUPABASE_SERVICE_ROLE_KEY: ci-speed-test-not-a-secret
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Install postgresql-client
+        # CI-APT: bounded and fail-closed (image psql first, else 3 timed apt tries).
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1; then
+            for i in 1 2 3; do
+              echo "postgresql-client install attempt $i of 3"
+              timeout 120 sudo apt-get update -o Acquire::Retries=3 && timeout 240 sudo apt-get install -y postgresql-client && break
+              sleep 10
+            done
+          fi
+          command -v psql
+          psql --version
+
+      - name: Bootstrap Supabase-equivalent environment (CI only)
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/_supabase_bootstrap.sql
+
+      - name: Apply all migrations (prisma migrate deploy)
+        run: npx prisma migrate deploy
+
+      - name: Time the coach's six busiest screens (45 clients x 90 days)
+        run: npx jest test/speed/coach-busy-reads.speed.spec.ts --runInBand --testTimeout=120000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
   all-switches-on:
     # ALL-ON-CI-BE (op194): the same plain jest suite as build-and-test's Test
     # step, with every FEATURE_* switch named in .github/fly-env-desired-state.json
