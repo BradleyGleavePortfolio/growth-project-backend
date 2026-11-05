@@ -180,12 +180,12 @@ describe('FIX-1222R2 R2: lists leave out legacy packaged zeros, USDA Branded as 
     ['seed row 0 g fat', cereal(0), ['seed:common-foods'], true],
     ['USDA Branded impossible numbers', { ...milk, calories: 418 }, ['usda:1222900', 'truth:checked'], false],
   ];
-  it.each(LISTED)('typed search: %s -> shown %s', async (_name, numbers, tags, shown) => {
+  it.each(LISTED)('typed search: %s', async (_name, numbers, tags, shown) => {
     const row = stored(numbers, tags, { name: 'Packaged cereal', barcode: null });
     const { food } = world(row, null);
     expect((await food.search('Packaged cereal', 50, viewer)).results.map((r) => r.id)).toEqual(shown ? [row.id] : []);
   });
-  it.each(LISTED.filter(([, , tags]) => !tags.includes('basic-food')))('short list: %s -> shown %s', async (_name, numbers, tags, shown) => {
+  it.each(LISTED.filter(([, , tags]) => !tags.includes('basic-food')))('short list: %s', async (_name, numbers, tags, shown) => {
     const row = stored(numbers, tags, { name: 'Packaged cereal', barcode: null });
     const { food } = world(row, null);
     expect((await food.search('', 50, viewer)).results.map((r) => r.id)).toEqual(shown ? [row.id] : []);
