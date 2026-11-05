@@ -5,7 +5,8 @@ import { PrismaService } from '../prisma.service';
 import { volumeWeightsFor } from './food-density';
 import { parseFoodQuery } from './food-query-parser';
 import {
-  TRUTH_TAG_PREFIX, evidenceTags, legacyPackagedZero, numbersCanBeTrue, storedNumbersCanBeTrue, withinHardCaps,
+  SourceEvidence, TRUTH_TAG_PREFIX, evidenceTags, heldRowConfirmed, legacyPackagedZero, numbersCanBeTrue,
+  storedNumbersCanBeTrue, withinHardCaps,
 } from './food-truth';
 
 export interface FoodSearchResponse {
@@ -481,8 +482,24 @@ function usdaAmount(food: UsdaFood, name: string): number | null {
  */
 function usdaNumbersUsable(food: UsdaFood, mapped: FoodResult): boolean {
   if (food.dataType === 'Branded' && USDA_MACROS.some((name) => usdaAmount(food, name) === null)) return false;
-  const polyols = usdaAmount(food, 'Total sugar alcohols') ?? usdaAmount(food, 'Sugar alcohols') ?? 0;
-  return numbersCanBeTrue(mapped, usdaAlcoholG(food), polyols);
+  return numbersCanBeTrue(mapped, usdaAlcoholG(food), usdaPolyolsG(food));
+}
+
+/** The sugar alcohols a USDA food lists, in grams per 100 g (0 when it lists none). */
+function usdaPolyolsG(food: UsdaFood): number {
+  return usdaAmount(food, 'Total sugar alcohols') ?? usdaAmount(food, 'Sugar alcohols') ?? 0;
+}
+
+/**
+ * FIX-1222R2: what USDA lists for a food. A basic (non-Branded) food missing a macro lists it as 0 g, as its import
+ * reads it (generic USDA missing macro reads 0 g); a Branded label that leaves one out lists nothing for it.
+ */
+function usdaEvidence(food: UsdaFood): SourceEvidence {
+  const macro = (name: string) => usdaAmount(food, name) ?? (food.dataType === 'Branded' ? null : 0);
+  return {
+    protein_g: macro(USDA_MACROS[0]), carbs_g: macro(USDA_MACROS[1]), fat_g: macro(USDA_MACROS[2]),
+    alcoholG: usdaAlcoholG(food), polyolsG: usdaPolyolsG(food),
+  };
 }
 
 /** The alcohol a USDA food lists, in grams per 100 g (0 when it lists none). */
@@ -500,7 +517,17 @@ function offNumbersUsable(product: OpenFoodFactsProduct, mapped: FoodResult): bo
   const listed = (k: string) => n[k] != null && Number.isFinite(Number(n[k]));
   if (!listed('energy-kcal_100g') && !listed('energy_100g')) return false;
   if (!['proteins_100g', 'carbohydrates_100g', 'fat_100g'].every(listed)) return false;
-  return numbersCanBeTrue(mapped, offAlcoholG(product), listed('polyols_100g') ? Number(n['polyols_100g']) : 0);
+  return numbersCanBeTrue(mapped, offAlcoholG(product), offEvidence(product).polyolsG);
+}
+
+/** FIX-1222R2: what an Open Food Facts label lists per 100 g (a macro it leaves out lists nothing). */
+function offEvidence(product: OpenFoodFactsProduct): SourceEvidence {
+  const n = product.nutriments ?? {};
+  const amount = (k: string) => (n[k] != null && Number.isFinite(Number(n[k])) ? Number(n[k]) : null);
+  return {
+    protein_g: amount('proteins_100g'), carbs_g: amount('carbohydrates_100g'), fat_g: amount('fat_100g'),
+    alcoholG: offAlcoholG(product), polyolsG: amount('polyols_100g') ?? 0,
+  };
 }
 
 /** The alcohol an Open Food Facts product lists, in grams per 100 g (0 when it lists none). */
@@ -510,20 +537,24 @@ function offAlcoholG(product: OpenFoodFactsProduct): number {
 }
 
 /**
- * FIX-1222 (LS-1222 B4): a stored shared row a list may show (lists cannot ask the source): its numbers can be true,
- * read with the alcohol its tags hold, and it is not an Open Food Facts row stored before FIX-1222 with a 0 g macro
- * (every such row is a packaged label, and its 0 may be a macro the label left out). The caller's own foods are theirs.
+ * FIX-1222 (LS-1222 B4), FIX-1222R2 (LS-1222R2 B2): a stored shared row a list may show (lists cannot ask the source):
+ * its numbers can be true, read with the alcohol its tags hold, and it is not a packaged row (an Open Food Facts,
+ * USDA Branded or FNDDS import) stored before FIX-1222 with a 0 g macro (its 0 may be a macro the label
+ * left out; search still shows the source's own record). The caller's own foods are theirs.
  */
 function storedRowShows(row: FoodItemRow & { created_by_user_id?: string | null }): boolean {
   if (row.created_by_user_id) return true;
-  const offRow = (row.tags ?? []).some((t) => t.startsWith('off:'));
-  return storedNumbersCanBeTrue(row) && !(offRow && legacyPackagedZero(row, BASIC_TAG));
+  return storedNumbersCanBeTrue(row) && !legacyPackagedZero(row, BASIC_TAG);
 }
 
-/** FIX-1222: where a held row's numbers are read again: `listsAlcohol` when that source lists a food's alcohol. */
+/**
+ * FIX-1222, FIX-1222R2: where a held row is read again. `read` gives what the source lists for it now (null when the
+ * source has no such food); `listsAlcohol` when that source lists a food's alcohol (the only evidence that can make
+ * failing stored numbers true: listed polyols only narrow the check).
+ */
 interface HeldSource {
   listsAlcohol: boolean;
-  confirm: () => Promise<boolean>;
+  read: () => Promise<SourceEvidence | null>;
 }
 
 @Injectable()
@@ -1029,25 +1060,27 @@ export class FoodService implements OnModuleInit {
     // Another person's custom food is reported exactly like a missing id.
     const existing = await this.prisma.foodItem.findUnique({ where: { id } });
     if (!existing || !canSeeFood(existing, viewerId)) throw new Error(`FoodItem ${id} not found`);
-    // FIX-1222 (LS-1222 B4): a saved id (saved meals, favourites, recents) never newly logs a missing macro as 0 g.
-    if (!(await this.heldUsable(existing, this.sourceFor(existing), false))) throw new Error(`FoodItem ${id} not found`);
+    // FIX-1222 (LS-1222 B4), FIX-1222R2 (LS-1222R2 B1, LO-1222R2 B1): a saved id (recents, repeat, favourites, saved
+    // meals) passes the same numbers check as its usda_ or off_ id and never newly logs a missing macro as 0 g.
+    if (!(await this.heldUsable(existing, this.sourceFor(existing)))) throw new Error(`FoodItem ${id} not found`);
     return existing.id;
   }
 
   /**
-   * FIX-1222 (LS-1222 B3, LO-1222 B1, C1): a stored shared row read again (barcode, import, saved id) passes what a
-   * new import of it passes. With `checkNumbers`, its numbers are read with the alcohol its tags hold; when they still
-   * fail, within the hard caps, only a source that lists alcohol may confirm them (a wine stored before FIX-1222). A
-   * packaged row stored before FIX-1222 with a 0 g macro is used only when its source lists every macro. Nothing
-   * stored is changed; a source that cannot be reached throws, so a queued log retries.
+   * FIX-1222 (LS-1222 B3, LO-1222 B1, C1), FIX-1222R2 (LS-1222R2 B1, B2; LO-1222R2 B1, B2): a stored shared row read
+   * again (barcode, usda_, off_, saved id, saved meal) passes what a new import of it passes. Its numbers are read
+   * with the alcohol its tags hold. When they fail (within the hard caps, from a source that lists alcohol: a wine
+   * stored before FIX-1222), or it is a packaged row stored before FIX-1222 with a 0 g macro, its source is read
+   * again and the stored numbers must pass with what the source lists (heldRowConfirmed), never the source's own
+   * numbers. Nothing stored is changed; a source that cannot be reached throws, so a queued log retries.
    */
-  private async heldUsable(row: FoodItem, source: HeldSource | null, checkNumbers: boolean): Promise<boolean> {
+  private async heldUsable(row: FoodItem, source: HeldSource | null): Promise<boolean> {
     if (row.created_by_user_id !== null) return true;
-    if (checkNumbers && !storedNumbersCanBeTrue(row)) {
-      return source !== null && source.listsAlcohol && withinHardCaps(row) && source.confirm();
-    }
-    if (!legacyPackagedZero(row, BASIC_TAG)) return true;
-    return source !== null && source.confirm();
+    const numbersPass = storedNumbersCanBeTrue(row);
+    if (numbersPass && !legacyPackagedZero(row, BASIC_TAG)) return true;
+    if (source === null || (!numbersPass && !(source.listsAlcohol && withinHardCaps(row)))) return false;
+    const listed = await source.read();
+    return listed !== null && heldRowConfirmed(row, listed, BASIC_TAG);
   }
 
   /** The source a stored row came from: its USDA id, else its Open Food Facts code or barcode. */
@@ -1062,9 +1095,9 @@ export class FoodService implements OnModuleInit {
   private usdaSource(fdcId: string, basic: boolean): HeldSource {
     return {
       listsAlcohol: basic,
-      confirm: async () => {
+      read: async () => {
         const food = await this.fetchUSDAFood(fdcId);
-        return food !== null && usdaNumbersUsable(food, this.mapUSDAFood(food));
+        return food === null ? null : usdaEvidence(food);
       },
     };
   }
@@ -1072,9 +1105,9 @@ export class FoodService implements OnModuleInit {
   private offSource(code: string): HeldSource {
     return {
       listsAlcohol: true,
-      confirm: async () => {
+      read: async () => {
         const product = await this.fetchOpenFoodFactsProduct(code);
-        return product !== null && offNumbersUsable(product, this.mapOpenFoodFactsProduct(product));
+        return product === null ? null : offEvidence(product);
       },
     };
   }
@@ -1130,7 +1163,7 @@ export class FoodService implements OnModuleInit {
     if (existing) {
       // FIX-1222 (LS-1222 B3): a held USDA row passes what a new import of it passes, or reads as not found.
       const source = this.usdaSource(fdcId, (existing.tags ?? []).includes(BASIC_TAG));
-      if (!(await this.heldUsable(existing, source, true))) throw new Error(`USDA food ${fdcId} not found`);
+      if (!(await this.heldUsable(existing, source))) throw new Error(`USDA food ${fdcId} not found`);
       return existing.id;
     }
 
@@ -1193,7 +1226,7 @@ export class FoodService implements OnModuleInit {
       if (!canSeeFood(held, viewerId)) throw new Error(`OpenFoodFacts product ${code} not found`);
       // FOOD-TRUE-BE, FIX-1222 (LO-1222 B1, C1): a held shared row passes what a new scan of it passes, or reads as
       // not found (the row is not changed).
-      if (!(await this.heldUsable(held, this.offSource(code), true))) {
+      if (!(await this.heldUsable(held, this.offSource(code)))) {
         throw new Error(`OpenFoodFacts product ${code} not found`);
       }
       return held.id;

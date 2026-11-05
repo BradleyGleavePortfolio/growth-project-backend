@@ -10,7 +10,11 @@ export const MAX_MACRO_G_PER_100G = 100;
 /** Calories may sit outside what the macros allow by up to 30% or up to 40 kcal (rounding, label slack). */
 export const ENERGY_GAP_SHARE = 0.3;
 export const ENERGY_GAP_KCAL = 40;
-/** 21 CFR 101.9(c)(1)(i): fibre counts at most 2 kcal a gram (soluble; insoluble is 0). */
+/**
+ * 21 CFR 101.9(c)(1)(i): fibre counts at most 2 kcal a gram (soluble; insoluble is 0). A label may also list fibre
+ * outside its carbohydrate (EU and UK labels; 21 CFR 101.9 lets fibre count at 4 or 2), so the high bound also allows
+ * all of the carbohydrate at 4 plus the listed fibre at 2 (FIX-1222R2, LO-1222R2 C1).
+ */
 export const FIBRE_KCAL_PER_G = 2;
 /** 21 CFR 101.9(c)(1)(i): sugar alcohols count at most 3 kcal a gram (erythritol is 0). */
 export const POLYOL_KCAL_PER_G = 3;
@@ -39,7 +43,9 @@ export interface FoodNumbers {
  * and calories within 30% or 40 kcal of what the macros allow. Protein and fat count 4 and 9 kcal a gram and
  * `alcoholG` (grams per 100 g, when the source lists it) 7. Carbohydrate counts 0 to 4 kcal a gram, because a
  * label's carbohydrate may hold fibre or sugar alcohols it does not list (stevia, Truvia, cocoa); fibre the food
- * lists (`fiber_g`) counts at most 2 and sugar alcohols the source lists (`polyolsG`) at most 3.
+ * lists (`fiber_g`) counts at most 2 and sugar alcohols the source lists (`polyolsG`) at most 3, unless the fibre
+ * sits outside the carbohydrate (then up to 4 a gram of carbohydrate plus 2 of fibre). The low bound counts no
+ * carbohydrate (stevia, erythritol), so a carbohydrate-only slip cannot be told from a sweetener: an accepted trade.
  */
 export function numbersCanBeTrue(food: FoodNumbers, alcoholG = 0, polyolsG = 0): boolean {
   if (!withinHardCaps(food)) return false;
@@ -51,7 +57,11 @@ export function numbersCanBeTrue(food: FoodNumbers, alcoholG = 0, polyolsG = 0):
   const fibre = Math.min(carbs, Math.max(0, Number(food.fiber_g) * scale || 0));
   const polyols = Math.min(carbs - fibre, Math.max(0, Number(polyolsG) || 0));
   const low = 4 * protein + 9 * fat + 7 * alcohol;
-  const high = low + 4 * (carbs - fibre - polyols) + FIBRE_KCAL_PER_G * fibre + POLYOL_KCAL_PER_G * polyols;
+  const listedFibre = Math.max(0, Number(food.fiber_g) * scale || 0);
+  const high = Math.max(
+    low + 4 * (carbs - fibre - polyols) + FIBRE_KCAL_PER_G * fibre + POLYOL_KCAL_PER_G * polyols,
+    low + 4 * carbs + FIBRE_KCAL_PER_G * listedFibre,
+  );
   const near = (gap: number, bound: number) => gap <= ENERGY_GAP_KCAL || gap <= ENERGY_GAP_SHARE * bound;
   if (kcal < low) return near(low - kcal, low);
   if (kcal > high) return near(kcal - high, high);
@@ -106,4 +116,35 @@ export function legacyPackagedZero(row: FoodNumbers & {
   const packaged = Boolean(row.barcode) || tags.some((t) => t.startsWith('off:'))
     || (tags.some((t) => t.startsWith('usda:')) && !tags.includes(basicTag));
   return packaged && [row.protein_g, row.carbs_g, row.fat_g].some((v) => Number(v) === 0);
+}
+
+/** What a source lists for one food, per 100 g: each macro (null when it does not list it), alcohol and polyols. */
+export interface SourceEvidence {
+  protein_g: number | null;
+  carbs_g: number | null;
+  fat_g: number | null;
+  alcoholG: number;
+  polyolsG: number;
+}
+
+/** A label may declare under 0.5 g of a macro as 0 g (21 CFR 101.9(c)), so a source amount below it confirms a 0. */
+export const ZERO_BELOW_G = 0.5;
+
+/**
+ * FIX-1222R2 (LS-1222R2 B1, B2; LO-1222R2 B1, B2): a held shared row read with what its source lists now. The stored
+ * numbers (never the source's own) must be able to be true with the alcohol and polyols the source lists, and a
+ * packaged row stored before FIX-1222 keeps a 0 g macro only when the source lists that macro as 0.
+ */
+export function heldRowConfirmed(
+  row: FoodNumbers & { tags?: readonly string[] | null; barcode?: string | null; created_by_user_id?: string | null },
+  source: SourceEvidence,
+  basicTag: string,
+): boolean {
+  const alcohol = Math.max(storedAlcoholG(row.tags), Number(source.alcoholG) || 0);
+  if (!numbersCanBeTrue(row, alcohol, source.polyolsG)) return false;
+  if (!legacyPackagedZero(row, basicTag)) return true;
+  return (['protein_g', 'carbs_g', 'fat_g'] as const).every((k) => {
+    const listed = source[k];
+    return Number(row[k]) !== 0 || (listed !== null && Number.isFinite(listed) && listed < ZERO_BELOW_G);
+  });
 }
