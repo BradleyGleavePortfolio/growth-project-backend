@@ -114,9 +114,9 @@ describe('T1: numbersCanBeTrue (per 100 g, 4/4/9)', () => {
     ['a negative macro', { calories: 100, protein_g: -5, carbs_g: 30, fat_g: 0 }, false],
     ['a number that is not a number', { calories: Number.NaN, protein_g: 5, carbs_g: 10, fat_g: 4.4 }, false],
     ['per serving: 1,000 kcal in a 200 g serving is 500 per 100 g',
-      { calories: 1000, protein_g: 50, carbs_g: 100, fat_g: 44, nutrient_basis: 'PER_SERVING', serving_size_grams: 200 }, true],
+      { calories: 1000, protein_g: 50, carbs_g: 100, fat_g: 44, nutrient_basis: 'PER_SERVING' as const, serving_size_grams: 200 }, true],
     ['per serving: 60 g protein in a 50 g serving',
-      { calories: 240, protein_g: 60, carbs_g: 0, fat_g: 0, nutrient_basis: 'PER_SERVING', serving_size_grams: 50 }, false],
+      { calories: 240, protein_g: 60, carbs_g: 0, fat_g: 0, nutrient_basis: 'PER_SERVING' as const, serving_size_grams: 50 }, false],
   ])('%s', (_label, food, expected) => {
     expect(numbersCanBeTrue(food)).toBe(expected);
   });

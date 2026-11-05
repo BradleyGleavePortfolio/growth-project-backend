@@ -355,7 +355,12 @@ const builtIn = (item: FoodResult) => ((item.tags ?? []).includes(SEED_TAG) ? 1 
  * after them. The exact whole name, the plain form, a built-in row, shorter
  * names and then A-Z break ties.
  */
-function rankFoodResults(items: FoodResult[], q: string, limit: number, own: ReadonlySet<string> = new Set()): FoodResult[] {
+function rankFoodResults(
+  items: FoodResult[],
+  q: string,
+  limit: number,
+  own: ReadonlySet<string> = new Set(),
+): FoodResult[] {
   const byIdentity = new Map<string, FoodResult>();
   // FOOD-TRUE-BE (LO-FOOD C9): one food from two sources shows once. A name plus brand already listed from another
   // source is that food again (the first source listed wins: catalog, then USDA, then Open Food Facts); one source's
