@@ -8,13 +8,13 @@
 //   - the fewer-than-2-characters list leaves the loaded USDA rows (shared + basic-food) out.
 import { Prisma } from '@prisma/client';
 import {
-import { carbsFor, fatFor } from './support/food-true-numbers';
   FoodService,
   LOCAL_ENOUGH_WHOLE,
   LOCAL_SEARCH_TAKE,
   foodSearchWords,
   foodWordQueries,
 } from '../src/food/food.service';
+import { carbsFor, fatFor } from './support/food-true-numbers';
 
 const VIEWER = '00000000-0000-0000-0000-000000000193';
 const INJECTIONS = [
