@@ -142,13 +142,13 @@ describe('T1 and T2 in search: every source', () => {
 
   it.each([...impossible, ...missing])('Open Food Facts: a product with %s never shows', async (_label, n) => {
     upstreams([], [off('1', 'Snack bar true', {}), off('2', 'Snack bar bad', n)]);
-    const { results } = await setup().search('snack bar', 50, VIEWER);
+    const { results } = await setup().service.search('snack bar', 50, VIEWER);
     expect(names(results)).toEqual(['Snack bar true']);
   });
 
   it('Open Food Facts: a product missing a macro is never shown as 0 g', async () => {
     upstreams([], [off('3', 'Granola', { proteins_100g: undefined, 'energy-kcal_100g': 60, carbohydrates_100g: 15, fat_100g: 0 })]);
-    const { results } = await setup().search('granola', 50, VIEWER);
+    const { results } = await setup().service.search('granola', 50, VIEWER);
     expect(results.filter((r) => r.protein_g === 0)).toEqual([]);
   });
 
@@ -161,7 +161,7 @@ describe('T1 and T2 in search: every source', () => {
     ['no fat (Branded)', { 'Total lipid (fat)': undefined }],
   ])('USDA: a food with %s never shows', async (_label, n) => {
     upstreams([usda('Cracker true'), usda('Cracker bad', n)], []);
-    const { results } = await setup().search('cracker', 50, VIEWER);
+    const { results } = await setup().service.search('cracker', 50, VIEWER);
     expect(names(results)).toEqual(['Cracker true']);
   });
 
@@ -170,8 +170,14 @@ describe('T1 and T2 in search: every source', () => {
       Energy: 85, Protein: 0.1, 'Carbohydrate, by difference': 2.6, 'Total lipid (fat)': 0, 'Alcohol, ethyl': 10.6,
     }, { dataType: 'SR Legacy', brandOwner: undefined, foodCategory: 'Beverages' });
     upstreams([wine], []);
-    const { results } = await setup().search('wine', 50, VIEWER);
+    const { results } = await setup().service.search('wine', 50, VIEWER);
     expect(names(results)).toEqual(['Alcoholic beverage, wine, table, red']);
+  });
+
+  it('Open Food Facts: wine (alcohol as % by volume) still shows', async () => {
+    upstreams([], [off('4', 'Red wine', { 'energy-kcal_100g': 83, proteins_100g: 0, carbohydrates_100g: 2.7, fat_100g: 0, alcohol_100g: 13 })]);
+    const { results } = await setup().service.search('red wine', 50, VIEWER);
+    expect(names(results)).toEqual(['Red wine']);
   });
 
   it.each([
@@ -196,7 +202,7 @@ describe('T1 and T2 in search: every source', () => {
   it("the caller's own custom food is theirs: it is listed with the numbers they typed", async () => {
     upstreams([], []);
     const own = [stored('mine', 'Oat bar homemade', { calories: 250, protein_g: 0, carbs_g: 0, fat_g: 0, tags: [], created_by_user_id: VIEWER })];
-    const { results } = await setup({ own }).search('oat bar', 50, VIEWER);
+    const { results } = await setup({ own }).service.search('oat bar', 50, VIEWER);
     expect(results.map((r) => r.id)).toEqual(['mine']);
   });
 });
@@ -288,13 +294,13 @@ describe('T5: one food from two sources shows once (name plus brand)', () => {
   it('a catalog row and an Open Food Facts product with one name and brand: once, the catalog row', async () => {
     upstreams([], [off('55', 'Protein bar', { 'energy-kcal_100g': 380, proteins_100g: 30, carbohydrates_100g: 40, fat_100g: 11 }, 'Alpha')]);
     const local = [stored('cat-alpha', 'Protein bar', { brand_or_restaurant: 'Alpha', tags: ['seed:common-foods'] })];
-    const { results } = await setup({ local }).search('protein bar', 50, VIEWER);
+    const { results } = await setup({ local }).service.search('protein bar', 50, VIEWER);
     expect(results.map((r) => r.id)).toEqual(['cat-alpha']);
   });
 
   it('a USDA food and an Open Food Facts product with one name and brand (any case): once, the USDA row', async () => {
     upstreams([usda('Protein Bar', {}, { brandOwner: 'ALPHA' })], [off('56', 'protein bar', {}, 'Alpha')]);
-    const { results } = await setup().search('protein bar', 50, VIEWER);
+    const { results } = await setup().service.search('protein bar', 50, VIEWER);
     expect(results.map((r) => r.id)).toEqual([`usda_${fdc}`]);
   });
 
@@ -303,13 +309,13 @@ describe('T5: one food from two sources shows once (name plus brand)', () => {
     ['two barcodes of one brand from one source', [off('11', 'Protein bar', {}, 'Alpha'), off('13', 'Protein bar', {}, 'Alpha')], 2],
   ])('%s: both stay', async (_label, products, count) => {
     upstreams([], products);
-    expect((await setup().search('protein bar', 50, VIEWER)).results).toHaveLength(count);
+    expect((await setup().service.search('protein bar', 50, VIEWER)).results).toHaveLength(count);
   });
 
   it("the caller's own food with a shared food's name and brand: both stay", async () => {
     upstreams([], [off('57', 'Protein bar', {}, 'Alpha')]);
     const own = [stored('mine', 'Protein bar', { brand_or_restaurant: 'Alpha', tags: [], created_by_user_id: VIEWER })];
-    const { results } = await setup({ own }).search('protein bar', 50, VIEWER);
+    const { results } = await setup({ own }).service.search('protein bar', 50, VIEWER);
     expect(results.map((r) => r.id).sort()).toEqual(['mine', 'off_57']);
   });
 });
@@ -323,14 +329,14 @@ describe('T6: a built-in food shows only for its own words', () => {
   ])('"%s" and the built-in "%s" (word match %i): shown %s', async (q, name, word_match, shown) => {
     upstreams([], []);
     const local = [stored('seed-1', name, { tags: ['seed:common-foods'], word_match })];
-    const { results } = await setup({ local }).search(q, 50, VIEWER);
+    const { results } = await setup({ local }).service.search(q, 50, VIEWER);
     expect(names(results)).toEqual(shown ? [name] : []);
   });
 
   it('a loaded USDA row found by the typed text inside a word still shows, as before', async () => {
     upstreams([], []);
     const local = [stored('usda-1', 'Crackers, graham', { tags: ['basic-food', 'usda:1'], word_match: 2 })];
-    const { results } = await setup({ local }).search('ham', 50, VIEWER);
+    const { results } = await setup({ local }).service.search('ham', 50, VIEWER);
     expect(names(results)).toEqual(['Crackers, graham']);
   });
 });
