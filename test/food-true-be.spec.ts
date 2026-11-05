@@ -280,12 +280,12 @@ describe('T4: an answer with a failed source is not kept in the cache', () => {
     expect((service as any).memoryCache.size).toBe(0);
   });
 
-  it('an answer cached before this change (food:search:v3:) is never served', async () => {
+  it.each(['v3', 'v4'])('an answer cached before this change (food:search:%s:) is never served', async (v) => {
     upstreams([], []);
     const { service } = setup();
     const bad = { ...stored('old', 'Rice cake'), calories: 900, protein_g: 1 };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (service as any).memoryCache.set('food:search:v3:rice cake', {
+    (service as any).memoryCache.set(`food:search:${v}:rice cake`, {
       value: { results: [bad], suggestions: [], did_you_mean: false, query: 'rice cake' }, expiresAt: Date.now() + 60_000,
     });
     expect(names((await service.search('rice cake', 50, VIEWER)).results)).toEqual([]);
