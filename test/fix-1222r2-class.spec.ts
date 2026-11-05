@@ -57,6 +57,7 @@ function world(row: Row, source: Row | null) {
     return stub<Response>({ ok: true, status: 200, json: async () => ({ foods: [], products: [] }) });
   });
   const create = jest.fn(async ({ data }: { data: Row }) => ({ id: 'new-entry', ...data, quantity_multiplier: 1, food_item: row }));
+  const entries = { create, upsert: create, findUnique: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]) };
   const prisma = stub<PrismaService>({
     $queryRaw: jest.fn(async (strings: TemplateStringsArray, ...values: unknown[]) =>
       Prisma.sql(strings, ...values).sql.includes('IS NULL') ? [row] : []),
@@ -69,14 +70,13 @@ function world(row: Row, source: Row | null) {
         items: [{ position: 0, food_item_id: row.id, quantity_multiplier: 1 }] }),
       create: jest.fn(async () => ({ id: 'meal', items: [] })), count: jest.fn().mockResolvedValue(0),
     },
-    loggedFoodEntry: { create, upsert: create, findUnique: jest.fn().mockResolvedValue(null),
-      findMany: jest.fn().mockResolvedValue([]) },
+    loggedFoodEntry: entries,
     $transaction: jest.fn(async (writes: Array<Promise<unknown>>) => Promise.all(writes)),
   });
   const food = new FoodService(prisma);
   const deps = [stub({ capture: jest.fn() }), stub({ emit: jest.fn() }), stub({ invalidateForUser: jest.fn() })] as const;
   return {
-    fetchMock, create, food, prisma,
+    fetchMock, create, food, entries,
     log: new LogService(prisma, food, ...(deps as unknown as [never, never, never])),
     saved: new SavedFoodsService(prisma, food, ...(deps as unknown as [never, never, never])),
   };
@@ -204,7 +204,7 @@ describe('FIX-1222R2 R3: kept', () => {
     const row = stored({ ...milk, calories: 418 }, ['usda:1222900']);
     const w = world(row, milk);
     const earlier = { id: 'earlier', user_id: viewer, food_item: row };
-    (w.prisma.loggedFoodEntry.findUnique as jest.Mock).mockResolvedValue(earlier);
+    w.entries.findUnique.mockResolvedValue(earlier);
     await expect(w.log.logFood(viewer, { food_item_id: String(row.id), client_uuid: 'k1', date: '2026-11-05', meal_type: 'lunch' } as never))
       .resolves.toBe(earlier);
     expect(w.fetchMock).not.toHaveBeenCalled();
