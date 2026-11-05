@@ -169,6 +169,27 @@ gate, and interpolated its `app` input directly into shell.
   `prisma db execute --url "$DIRECT_URL" --file <verifier>` and asserts
   `ran == discovered ≥ required ≥ 1`. A RAISE in any verifier fails the
   release_command (stage B above).
+- **step 5** (after step 4; FOOD-SEED-BE) runs the compiled
+  `dist/food-seed/scripts/seed-built-in-foods.js` on `DIRECT_URL`: it adds,
+  in one transaction under an advisory lock, each food in
+  `prisma/data/seed-foods.json` that the shared catalog (`FoodItem` rows
+  with `created_by_user_id` NULL) lacks, keyed on name + brand with letter
+  case and whitespace runs folded the same way in its SQL and its key, and never
+  updates or deletes a row or reads a member's own food. Normal line:
+  `[release] built-in foods: 65 present, 0 added`. Any seed food still
+  missing afterwards, a refused insert (the transaction writes nothing) or
+  a missing/empty seed file fails the release_command (stage B above) with a
+  `[release] built-in foods FAILED: …` line naming the reason.
+- **step 6** (after step 5; FOOD-USDA-BE) runs the compiled
+  `dist/food-seed/scripts/load-usda-foods.js` on `DIRECT_URL`: it adds, in
+  one transaction under its own advisory lock, each USDA SR Legacy and
+  Foundation food in `prisma/data/usda-foods.jsonl.gz` (built from USDA's CSV
+  files by `scripts/usda-foods/build.py`) that the shared catalog lacks,
+  keyed on its `usda:<fdcId>` tag, as the row the live USDA import stores,
+  and never updates or deletes a row or reads a member's own food. Normal
+  line: `[release] USDA foods: 7980 present, 0 added (… ms)`. Any food still
+  missing afterwards, a refused insert or a missing/bad data file fails the
+  release_command with a `[release] USDA foods FAILED: …` line.
 
 Ownership: the contract *file* and runner are S2's; the verifier *content*
 (role/grant/RLS postconditions) is S1's. When a migration ships a

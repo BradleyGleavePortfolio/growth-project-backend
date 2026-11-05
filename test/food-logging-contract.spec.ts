@@ -64,27 +64,32 @@ describe('food logging contract — ordinary client portions', () => {
     )).rejects.toThrow();
   });
 
+  // FOOD-1-BE (R1): the weights come from the food's own household measure;
+  // this used to pin 'generic' = water (240 g a cup), the LO-FOOD B3 defect.
   it('ships the volume weights that correspond to the server support flag', async () => {
     const { service, foodItem } = setup();
     foodItem.findUnique.mockResolvedValue({
-      id: 'milk', name: 'Milk', category: 'generic', serving_description: '100g',
-      serving_size_grams: 100, calories: 61, protein_g: 3.2, carbs_g: 4.8, fat_g: 3.3,
+      id: 'milk', name: 'Milk', category: 'generic', serving_description: '1 cup (244g)',
+      serving_size_grams: 244, calories: 61, protein_g: 3.2, carbs_g: 4.8, fat_g: 3.3,
     });
     expect(await service.getById('milk', 'user-a')).toEqual(expect.objectContaining({
-      supports_volume_units: true, cup_grams: 240, tbsp_grams: 15, tsp_grams: 5,
+      supports_volume_units: true, cup_grams: 244, tbsp_grams: 15.3, tsp_grams: 5.1,
     }));
   });
 
-  it('does not invent a volume weight for a category without density data', async () => {
-    const { service, foodItem } = setup();
-    foodItem.findUnique.mockResolvedValue({
-      id: 'food', name: 'Food', category: 'unrecognised', serving_description: '100g',
-      serving_size_grams: 100, calories: 100, protein_g: 10, carbs_g: 10, fat_g: 2,
-    });
-    expect(await service.getById('food', 'user-a')).toEqual(expect.objectContaining({
-      supports_volume_units: false, cup_grams: undefined,
-    }));
-  });
+  it.each(['unrecognised', 'generic'])(
+    'does not invent a volume weight for a %s category without density data',
+    async (category) => {
+      const { service, foodItem } = setup();
+      foodItem.findUnique.mockResolvedValue({
+        id: 'food', name: 'Food', category, serving_description: '100g',
+        serving_size_grams: 100, calories: 100, protein_g: 10, carbs_g: 10, fat_g: 2,
+      });
+      expect(await service.getById('food', 'user-a')).toEqual(expect.objectContaining({
+        supports_volume_units: false, cup_grams: undefined,
+      }));
+    },
+  );
 });
 
 describe('USDA search-to-log detail import', () => {
@@ -150,6 +155,9 @@ describe('USDA search-to-log detail import', () => {
         foodNutrients: [
           ...nutrients,
           { amount: 13, nutrient: { name: 'Protein', unitName: 'g' } },
+          // FOOD-TRUE-BE: numbers oat flour can have (389 kcal from 13 g protein, 67.7 g carbs, 6.9 g fat).
+          { amount: 67.7, nutrient: { name: 'Carbohydrate, by difference', unitName: 'g' } },
+          { amount: 6.9, nutrient: { name: 'Total lipid (fat)', unitName: 'g' } },
         ],
       }),
     } as Response);
@@ -169,6 +177,8 @@ describe('USDA search-to-log detail import', () => {
         foodNutrients: [
           { amount: 389, nutrient: { name: 'Energy (Atwater General Factors)', unitName: 'kcal' } },
           { amount: 13, nutrient: { name: 'Protein', unitName: 'g' } },
+          { amount: 67.7, nutrient: { name: 'Carbohydrate, by difference', unitName: 'g' } },
+          { amount: 6.9, nutrient: { name: 'Total lipid (fat)', unitName: 'g' } },
         ],
       }),
     } as Response);

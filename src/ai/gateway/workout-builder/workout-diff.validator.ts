@@ -3,7 +3,8 @@
 import {
   PlanExerciseSnapshot, PlanSnapshot, WorkoutDiffOp, WorkoutDiffOpSchema, planMetaOpChangesAField, updateExerciseOpChangesAField,
 } from '../materialisers/__shared/workout-diff.types';
-import { WorkoutDiffApplyError, applyWorkoutDiff } from '../materialisers/__shared/workout-diff.applier';
+import { WorkoutDiffApplyError, addedRow, applyWorkoutDiff, patchedRow } from '../materialisers/__shared/workout-diff.applier';
+import { unitOf } from '../../../workout-builder/plan-exercise-fields';
 import {
   INJURY_AREA_LABEL, InjuryArea, MEDICAL_CLAIM_PATTERN, TRAINING_BOUNDS as B, contraindicatedAreas, stripMedicalClaims,
 } from './training-safety.constants';
@@ -35,10 +36,6 @@ const DEFAULT_REASON: Record<ChangeKind, string> = {
   moved: 'Order adjusted to match the request.', meta: 'Workout details updated to match the request.',
 };
 
-function isTimed(ex: LibraryExercise | undefined, plan: PlanSnapshot): boolean {
-  if (!ex) return plan.meta.type !== 'strength';
-  return ex.category === 'cardio' || ex.category === 'mobility' || /plank|hold|carry|stretch|pose/i.test(ex.name);
-}
 type Fields = { sets?: number; reps_or_duration_seconds?: number; rest_seconds?: number | null };
 function boundsError(op: Fields, timed: boolean): string | null {
   if (op.sets !== undefined && (op.sets < B.setsMin || op.sets > B.setsMax)) return `Sets must be ${B.setsMin} to ${B.setsMax}.`;
@@ -96,10 +93,15 @@ function checkChange(op: WorkoutDiffOp, before: PlanExerciseSnapshot | null, ex:
   // U1: a workout name the client may see never carries a medical claim.
   if (op.kind === 'plan_meta' && op.name !== undefined && MEDICAL_CLAIM_PATTERN.test(op.name)) return 'Workout names cannot make medical claims.';
   if (op.kind !== 'add_exercise' && op.kind !== 'update_exercise') return null;
-  const timed = isTimed(ex, current);
-  const err = boundsError(op, timed);
-  if (err) return err;
   if (op.notes != null) op.notes = stripMedicalClaims(op.notes, B.notesMax) || null;
+  // FR-1211R1 (LS-1211 B2): check the row the applier will write (the baseline merged with the op) on the unit it will
+  // persist. The count is checked whenever the op sets it or the row's unit moves (a unit-only edit changes what it means).
+  const after = op.kind === 'add_exercise' ? addedRow(op, current.exercises.length) : before ? patchedRow(before, op) : null;
+  const unit = unitOf(after ?? op);
+  const unitMoved = op.kind === 'update_exercise' && before !== null && unitOf(before) !== unit;
+  const count = op.reps_or_duration_seconds !== undefined || unitMoved ? (after ?? op).reps_or_duration_seconds : undefined;
+  const err = boundsError({ sets: op.sets, rest_seconds: op.rest_seconds, reps_or_duration_seconds: count }, unit === 'seconds');
+  if (err) return err;
   // Loads are never invented: a new row has none (the coach fills it); a changed load needs a current load, max one step.
   let increases = false;
   if (op.kind === 'add_exercise') op.weight_lbs = null;
@@ -108,12 +110,13 @@ function checkChange(op: WorkoutDiffOp, before: PlanExerciseSnapshot | null, ex:
     if (op.weight_lbs != null && before.weight_lbs != null && op.weight_lbs > before.weight_lbs * (1 + B.progressLoadMaxPct / 100)) {
       return `Load increase is more than ${B.progressLoadMaxPct} percent in one step.`;
     }
-    const reps = op.reps_or_duration_seconds;
-    if (!swaps && reps !== undefined && !timed && reps > before.reps_or_duration_seconds + B.progressRepsMax) {
+    // The rep cap and the increase read the effective unit; a unit change cannot be shown not to add work, so it counts as one.
+    const reps = count;
+    if (!swaps && reps !== undefined && !unitMoved && unit === 'reps' && reps > before.reps_or_duration_seconds + B.progressRepsMax) {
       return `Rep increase is more than ${B.progressRepsMax} in one step.`;
     }
-    increases = !swaps && ((op.sets !== undefined && op.sets > before.sets) || (reps !== undefined && reps > before.reps_or_duration_seconds) ||
-      (op.weight_lbs != null && op.weight_lbs > (before.weight_lbs ?? 0)));
+    increases = !swaps && ((op.sets !== undefined && op.sets > before.sets) || unitMoved ||
+      (reps !== undefined && reps > before.reps_or_duration_seconds) || (op.weight_lbs != null && op.weight_lbs > (before.weight_lbs ?? 0)));
     if (increases && input.screeningFlag) return 'Intensity stays the same until medical clearance is confirmed.';
     if (increases && input.quickAction === 'deload') return 'A deload does not increase sets, reps or load.';
   }

@@ -63,8 +63,6 @@ const KNOWN_GAPS: Array<{ id: string; rule: Rule; key: string; reason: string }>
 const KNOWN_GAPS_CEILING = 7;
 const EXEMPT: Array<{ rule: Rule; key: string; reason: string }> = [
   { rule: 1, key: 'GET /consent/check/:client_id/:scope', reason: "it echoes the ids it was asked about and whether the caller's own grant stands, nothing else" },
-  { rule: 2, key: 'GET /coach/consultation', reason: "the coach's own set-up; it mints a random invite code for a coach with none, so two reads differ" },
-  { rule: 2, key: 'GET /coaches/me/invite-link', reason: "the coach's own link; it mints a random invite code for a coach with none, so two reads differ" },
   { rule: 3, key: 'GET /roman/sessions', reason: 'CONTRACT-2 Option 1 (owner): a coachless client lists their old Roman chats (62x: "may delete prior data here")' },
   { rule: 3, key: 'GET /roman/sessions/:id/messages', reason: 'CONTRACT-2 Option 1 (owner): a coachless client opens an old Roman chat; Roman does not reply until they have a coach' },
   { rule: 3, key: 'DELETE /roman/sessions', reason: 'CONTRACT-2 Option 1 (owner) and 62x: a coachless client may delete prior data' },
@@ -74,7 +72,7 @@ const EXEMPT: Array<{ rule: Rule; key: string; reason: string }> = [
   { rule: 3, key: 'POST /coachless/roman-card/seen', reason: 'the coachless card that says Roman needs a coach; it records a view, no AI' },
   { rule: 3, key: 'POST /coachless/roman-card/not-now', reason: 'the coachless card that says Roman needs a coach; it records Not now, no AI' },
 ];
-const EXEMPT_CEILING = 11;
+const EXEMPT_CEILING = 9;
 
 const uuid = (n: number) => `0000000${n}-0000-4000-8000-00000000000${n}`;
 const [OLD, NEW, MOVED, COACHLESS, COACHED, ROW] = [1, 2, 3, 4, 5, 6].map(uuid);
@@ -189,6 +187,9 @@ async function seed(state: State): Promise<void> {
   const def = world.table('WearableMetricDef')[0];
   const metrics = Object.keys(METRIC_BUCKET) as Array<keyof typeof METRIC_BUCKET>;
   world.rows.set('WearableMetricDef', metrics.map((m) => ({ ...def, id: m, metric: m, bucket: METRIC_BUCKET[m], aggregation: METRIC_AGGREGATION[m] })));
+  // A broadcast's author is its coach or a sub-coach (lockSendAuthority), and sub-coach reads are scoped by it, so it
+  // holds the coach. Who it skipped is the client: exclude_client_ids names them (ALL-ON-FIX-BE).
+  Object.assign(world.table('CoachBroadcast')[0], { author_user_id: OLD, segment: { match: 'all', rules: [], exclude_client_ids: [MOVED] } });
   if (state !== 'before') await move();
 }
 
@@ -227,8 +228,10 @@ async function call(user: string, method: string, path: string): Promise<{ statu
 const ok = (status: number) => status >= 200 && status < 300;
 const namesMoved = (t: string) => t.includes(MOVED) || t.includes('moved:');
 // Coach ids, times, new ids and request ids aside; the new coach's own session notes are 4b-checked instead.
+// A coach with no invite code gets a random TGP-XXXXXXX one on first read (the coach's own record, owner 4b keeps
+// nothing of the old coach's in it), so two reads differ only by that mint: read it as one more generated id.
 const normal = (t: string) =>
-  t.split(OLD).join('C').split(NEW).join('C').replace(/\d{4}-\d\d-\d\dT[\d:.]+Z|gen-\d+|"request_id":"\w+"/g, '_').replace(/"s:CoachingSession\.coach_notes_md"/g, 'null');
+  t.split(OLD).join('C').split(NEW).join('C').replace(/\d{4}-\d\d-\d\dT[\d:.]+Z|gen-\d+|"request_id":"\w+"|\bTGP-[A-Z0-9]{7}\b/g, '_').replace(/"s:CoachingSession\.coach_notes_md"/g, 'null');
 const listed = (rule: Rule) => new Set([...KNOWN_GAPS, ...EXEMPT].filter((g) => g.rule === rule).map((g) => g.key));
 const unexpected = (rule: Rule, keys: string[]) => keys.filter((k) => !listed(rule).has(k));
 // A check that is not one route (rule 1's move, rule 4's outbox): skipped while listed, and seen by the guard.

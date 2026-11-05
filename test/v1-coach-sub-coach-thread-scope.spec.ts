@@ -43,6 +43,9 @@ type Where = Record<string, unknown>;
 function matches(row: Record<string, unknown>, where: Where): boolean {
   return Object.entries(where).every(([key, cond]) => {
     if (key === 'AND') return (cond as Where[]).every((w) => matches(row, w));
+    if (key === 'OR') return (cond as Where[]).some((w) => matches(row, w));
+    // ACTUAL-AUTHOR-READS-BE: the author's block relation; this world has no blocks (userBlock is empty).
+    if (key === 'sender') return true;
     const cell = row[key];
     if (cond !== null && typeof cond === 'object' && !(cond instanceof Date)) {
       const ops = Object.keys(cond);

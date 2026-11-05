@@ -654,6 +654,7 @@ describe('R3 renderer — delimiting, hash and the token cap', () => {
         name: pad(60),
         sets: 3,
         reps_or_duration_seconds: 10,
+        unit: 'seconds' as const,
         cue: pad(80),
       }));
       big.plan.today_session = big.plan.next_session;

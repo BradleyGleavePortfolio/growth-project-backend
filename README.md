@@ -192,7 +192,7 @@ optional on `POST /log/food`, returned by `GET /log/daily`, never editable.
 
 `FoodService` caches the merged + scored search result list in Redis
 (when `REDIS_URL` is set) or an in-process map otherwise. Key:
-`food:search:v1:<normalized food name>`, TTL 24h. Cache hits skip both
+`food:search:v6:<normalized food name>`, TTL 24h. Cache hits skip both
 USDA + OFF.
 
 ### Seeded common foods
@@ -208,6 +208,30 @@ npm run seed:foods -- --refresh   # update existing rows with the seed values
 Refreshing the fixture is intentionally manual: live USDA pulls drift
 over time and we want auditable diffs. To add a food, edit the JSON,
 run with `--refresh` against staging, and PR the change.
+
+Every deploy now does the insert for you: `scripts/release.sh` step 5
+runs a compiled copy of `scripts/seed-built-in-foods.ts`
+(`tsconfig.food-seed.json`, built in the Dockerfile) that adds each food in
+this file the shared catalog (`created_by_user_id` NULL) is missing, keyed on
+name + brand with letter case and spacing folded (so a USDA import named
+`BANANA,  RAW` counts as `Banana, raw`), as the same row `npm run seed:foods` makes. It never updates
+or deletes a row and never touches a member's own food, and it prints
+`[release] built-in foods: <n> present, <m> added`. If any seed food is still
+missing afterwards, or the database refuses the insert, the release fails and
+the previous image keeps serving. `--refresh` stays a developer tool; the
+deploy never changes an existing row. `test/food-seed-file.spec.ts` checks the
+file in CI (65 foods, unique name + brand, sane per-100 g values).
+
+Step 6 then adds the USDA foods: `prisma/data/usda-foods.jsonl.gz` holds the
+USDA SR Legacy and Foundation foods (7,980: SR Legacy less the 60 that a
+built-in food already stands for, listed in `prisma/data/usda-built-in-map.json`,
+plus Foundation less the 75 named like a built-in or SR Legacy food and the one
+with no protein, carbohydrate or fat figure), built from USDA's own CSV downloads by `scripts/usda-foods/build.py` (the file's first line names both files and
+their sha256; run the script again to rebuild it byte for byte). A compiled
+copy of `scripts/load-usda-foods.ts` adds each one the shared catalog lacks,
+keyed on its `usda:<fdcId>` tag, as the row the live USDA import stores, and
+prints `[release] USDA foods: <n> present, <m> added`. Like step 5 it never
+updates or deletes a row, and a food still missing fails the release.
 
 ### Required env
 

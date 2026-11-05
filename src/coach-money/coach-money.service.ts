@@ -7,6 +7,8 @@ import {
   isHeldRenewal,
   NOT_HELD_RENEWAL,
 } from '../checkout/dunning-v2/coach-account-hold';
+import { dunningCycleKey } from '../checkout/dunning-v2/dunning-cycle';
+import { isBillingPauseReason } from '../checkout/dunning-v2/dunning-v2.service';
 import { movedAwayClientIds } from '../checkout/moved-client-money';
 import { movedAwayDates } from '../checkout/plan-renewal/switch-tell';
 
@@ -65,6 +67,35 @@ export const REFUNDED_PURCHASE_STATUS = 'refunded';
  * thank-you email and carries no card-update link.
  */
 export const CARD_UPDATE_LINK_ATTEMPT_KINDS = ['soft', 'urgent', 'final', 'cancelled'] as const;
+
+type CardLinkSends = {
+  entered_at?: Date | null;
+  last_failure_reason?: string | null;
+  attempts?: Array<{ sent_at: Date | null }>;
+  notice_deliveries?: Array<{ sent_at: Date | null; cycle_key: string }>;
+};
+
+/**
+ * The newest "Update payment" email of the current cycle, from either dunning
+ * path: v1's sent attempt (a reopened cycle deletes the old attempts) or v2's
+ * sent client email, counted only when its cycle_key is the live cycle's.
+ * FR-1217R1 (LS-1217 B2): a dispute or refund cycle's client email carries no
+ * update-card link (the dispatcher renders it as a dispute notice), so a v2
+ * delivery in a billing-pause cycle is never reported as a sent link.
+ */
+function cardUpdateLinkSentAt(d: CardLinkSends | null | undefined): string | null {
+  const v1 = d?.attempts?.[0]?.sent_at ?? null;
+  const v2 = d?.notice_deliveries?.[0];
+  const v2At =
+    v2?.sent_at &&
+    d?.entered_at &&
+    !isBillingPauseReason(d.last_failure_reason) &&
+    v2.cycle_key === dunningCycleKey(d.entered_at)
+      ? v2.sent_at
+      : null;
+  const newest = v1 && v2At ? (v2At > v1 ? v2At : v1) : (v1 ?? v2At);
+  return newest ? newest.toISOString() : null;
+}
 
 export type ChargeStatusFilter = 'all' | 'paid' | 'failed' | 'refunded' | 'disputed';
 export const CHARGE_STATUS_FILTERS: readonly ChargeStatusFilter[] = [
@@ -185,12 +216,12 @@ export interface MoneyChargeDto {
   created_at: string;
   /**
    * HOLD-FU-BE (LS-1195 C2): `coach_account` when this charge is a renewal
-   * held because the coach's own Stripe account can't take payments (PF-7)
-   * and no payment has gone through on the sale yet (HELD_NEVER_PAID). It is
-   * not the client's failed charge: its state is `pending` (still owed, never
-   * `paid`), it is left out of the `failed` list, and this field names the
-   * cause. Null otherwise, including a held renewal on a plan paid before,
-   * which keeps `failed` with its earlier payments (FR-1202).
+   * held because the coach's own Stripe account can't take payments (PF-7).
+   * It is not the client's failed charge: its state is `pending` (still owed,
+   * never `paid`), it is left out of the `failed` list, and this field names
+   * the cause. HELD-RENEWAL-BE: the same whether or not the plan was paid
+   * before; the breakdown's `settled` still says whether earlier payments
+   * went through (the phone keeps them on the charge screen). Null otherwise.
    */
   waiting_on: 'coach_account' | null;
   /**
@@ -236,8 +267,9 @@ export interface MoneyAttentionItem {
     locked_out_at: string | null;
     /**
      * When the client was last emailed an "Update payment" link for this
-     * failure: the newest DunningAttempt the dunning tick stamped `sent`
-     * (B-641-1). Null when no reminder email has gone out yet.
+     * failure: the newest of the DunningAttempt the v1 dunning tick stamped
+     * `sent` (B-641-1) and this cycle's v2 client email the v2 sweep
+     * recorded `sent` (ALL-ON-FIX-BE). Null when no such email has gone out.
      */
     card_update_link_sent_at: string | null;
     last_failure_reason: string | null;
@@ -273,27 +305,6 @@ interface SliceRow {
 
 const COUNTED_SLICE_STATUSES = ['posted', 'reversed'];
 
-/**
- * FR-1202 (LO-1202B B1, LS-1202B B1): a sale with a counted coach slice has
- * had a payment go through. The same rule as `chargeSelect().splits` and
- * getChargeBreakdown's `settled`.
- */
-const PAID_BEFORE_WHERE: Prisma.ClientPurchaseWhereInput = {
-  splits: { some: { kind: 'destination', status: { in: COUNTED_SLICE_STATUSES } } },
-};
-
-/**
- * FR-1202: a renewal held on the coach's own account (PF-7) is shown as
- * `pending` only while no payment has gone through on the sale. The phone
- * installed today reads `pending` as "No payment has gone through for this
- * yet" and hides the plan's earlier payments (mobile MoneyChargeScreen), so a
- * held renewal on a plan paid before keeps main's `failed` row, which keeps
- * them ("Latest payment failed ... Earlier payments are counted below").
- * The Failed filter leaves out only the rows this marks.
- */
-const NOT_HELD_NEVER_PAID: Prisma.ClientPurchaseWhereInput = {
-  OR: [NOT_HELD_RENEWAL, PAID_BEFORE_WHERE],
-};
 const LOST_DISPUTE_STATUS_LIST: string[] = [...LOST_DISPUTE_STATUSES];
 
 /**
@@ -1622,7 +1633,7 @@ export class CoachMoneyService {
       opts.status === 'paid'
         ? PAID_NOW_WHERE
         : opts.status === 'failed'
-          ? { status: { in: [...FAILED_PURCHASE_STATUSES] }, ...NOT_HELD_NEVER_PAID }
+          ? { status: { in: [...FAILED_PURCHASE_STATUSES] }, ...NOT_HELD_RENEWAL }
           : opts.status === 'refunded'
             ? REFUNDED_WHERE
             : opts.status === 'disputed'
@@ -1761,8 +1772,8 @@ export class CoachMoneyService {
     const chargedBack = r.status === CHARGEBACK_LOST_PURCHASE_STATUS || lostDisputes.length > 0;
     const failed = (FAILED_PURCHASE_STATUSES as readonly string[]).includes(r.status);
     // HOLD-FU-BE (LS-1195 C2): a renewal held on the coach's account is owed, not failed.
-    // FR-1202: only while no payment has gone through (NOT_HELD_NEVER_PAID).
-    const held = failed && isHeldRenewal(r.dunning) && r.splits.length === 0;
+    // HELD-RENEWAL-BE: paid before or not (the Failed filter's NOT_HELD_RENEWAL).
+    const held = failed && isHeldRenewal(r.dunning);
     let state: MoneyChargeDto['state'];
     // B-641-2: a lost chargeback is checked first — the ledger keeps its
     // (reversed) destination slice, which must never read as `paid`.
@@ -1839,6 +1850,17 @@ export class CoachMoneyService {
                 take: 1,
                 select: { sent_at: true },
               },
+              // ALL-ON-FIX-BE: with FEATURE_DUNNING_V2 on the v1 tick sends
+              // nothing; the v2 sweep emails the link (update_card_url) and
+              // DunningV2Service.recordDelivery stamps the client_email
+              // delivery 'sent' + sent_at. Its cycle_key says which cycle.
+              entered_at: true,
+              notice_deliveries: {
+                where: { channel: 'client_email', status: 'sent', sent_at: { not: null } },
+                orderBy: { sent_at: 'desc' },
+                take: 1,
+                select: { sent_at: true, cycle_key: true },
+              },
             },
           },
         },
@@ -1906,9 +1928,7 @@ export class CoachMoneyService {
           // is the next reminder email, never a card try. So: unknown, null.
           next_retry_at: null,
           locked_out_at: d?.locked_out_at ? d.locked_out_at.toISOString() : null,
-          card_update_link_sent_at: d?.attempts[0]?.sent_at
-            ? d.attempts[0].sent_at.toISOString()
-            : null,
+          card_update_link_sent_at: cardUpdateLinkSentAt(d),
           last_failure_reason: d?.last_failure_reason ?? p.last_error ?? null,
         },
       });

@@ -136,13 +136,14 @@ export class AiGatewayController {
     const limitNum = limit ? Math.max(1, Math.min(parseInt(limit, 10) || 50, 200)) : 50;
     // COPILOT-BE: `order=oldest` is the paged queue ({ items, total, next_cursor }); without it the list stays an array.
     if (order === 'oldest') {
-      return this.approvals.pageQueue({ tenantCoachId: req.user.role === 'coach' ? req.user.id : undefined, limit: limitNum, after });
+      return this.approvals.pageQueue({ tenantCoachId: req.user.role === 'coach' ? req.user.id : undefined, limit: limitNum, after, readerId: req.user.id });
     }
     return this.approvals.listPending({
       tenantCoachId: req.user.role === 'coach' ? req.user.id : undefined,
       limit: limitNum,
       subjectUserId: clientId,
       status: status,
+      readerId: req.user.id,
     });
   }
 

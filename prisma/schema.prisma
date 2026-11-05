@@ -1127,6 +1127,15 @@ model ExerciseSet {
   rpe            Float?
   notes          String?
   video_url      String?
+  // SET-ASKED-BE: what her plan asked that day, copied by the server when the set is logged from a
+  // plan row (her assignment's id and the row's order). The copy is the record: no foreign key, so a
+  // later plan edit or delete changes nothing. All null for a set logged without a plan row.
+  plan_assignment_id String?
+  plan_order         Int?
+  asked_sets         Int?
+  asked_count        Int?
+  asked_unit         PlanExerciseUnit?
+  asked_weight_lbs   Float?
 
   // HOME-BE: the coach Home's lifting-best read joins sets by session.
   @@index([workout_id])
@@ -1184,6 +1193,10 @@ model WeightLog {
   weight_lbs Float
   notes      String?
   logged_at  DateTime @default(now())
+  /// WATER-WEIGHT-KEYS-BE (#191-D3): the phone's one-time key for this save, as LoggedFoodEntry.client_uuid.
+  /// A resend with the same key returns this row and stores nothing; unique across all members. Null = a save
+  /// without a key (every row before 20270502010800).
+  client_uuid String? @unique
 
   // Hot path: weight charts query by (user_id, date desc).
   @@index([user_id, date])
@@ -1581,6 +1594,10 @@ model WaterLog {
   amount_ml  Int
   logged_at  DateTime @default(now()) @db.Timestamptz
   created_at DateTime @default(now()) @db.Timestamptz
+  /// WATER-WEIGHT-KEYS-BE (#191-D3): the phone's one-time key for this save, as LoggedFoodEntry.client_uuid.
+  /// A resend with the same key returns this row and stores nothing; unique across all members. Null = a save
+  /// without a key (every row before 20270502010800).
+  client_uuid String? @unique
 
   // Hot path: water intake summaries filter by (user_id, logged_at).
   @@index([user_id, logged_at])
@@ -1916,6 +1933,7 @@ model Recipe {
   created_by_id String
   created_by    User          @relation("RecipeCreator", fields: [created_by_id], references: [id])
   saved_by      SavedRecipe[]
+  meal_templates MealTemplate[]
   created_at    DateTime      @default(now())
   updated_at    DateTime      @updatedAt
 
@@ -1955,9 +1973,13 @@ model ListItem {
   unit             String?
   is_checked       Boolean  @default(false)
   source_recipe_id String?
+  // PLAN-SWAPS-BE: the plan meal (a slot of a plan assigned to this user) the item was added from.
+  source_plan_slot_id String?
+  source_plan_slot    DailyMealPlanSlot? @relation(fields: [source_plan_slot_id], references: [id], onDelete: SetNull)
   added_at         DateTime @default(now())
 
   @@index([user_id, list_type])
+  @@index([source_plan_slot_id])
 }
 
 // ============================================================
@@ -2919,7 +2941,7 @@ model WorkoutPlanExercise {
   exercise_external_id     String
   order                    Int
   sets                     Int
-  // Dual-purpose: rep count (e.g. 12) or time-based duration (e.g. 60 seconds).
+  // The count, read in `unit`: a rep count (e.g. 12) or a time in seconds (e.g. 60).
   reps_or_duration_seconds Int
   weight_lbs               Float?
   rest_seconds             Int?
@@ -2929,6 +2951,8 @@ model WorkoutPlanExercise {
   archived_at              DateTime?
   // C1V2-C1: the coach's chosen swaps (ids as exercise_external_id holds them), first choice first.
   alternative_external_ids String[]    @default([])
+  // TIMED-SETS-BE: whether reps_or_duration_seconds is reps or seconds. Rows saved without one are reps.
+  unit                     PlanExerciseUnit @default(reps)
 
   // (workout_plan_id, order) uniqueness is a *partial* unique index
   // declared in raw SQL (WHERE archived_at IS NULL) — Prisma cannot
@@ -2936,6 +2960,12 @@ model WorkoutPlanExercise {
   @@index([workout_plan_id])
   @@index([workout_plan_id, archived_at])
   @@index([exercise_external_id])
+}
+
+/// TIMED-SETS-BE: what a plan exercise's number counts.
+enum PlanExerciseUnit {
+  reps
+  seconds
 }
 
 model ClientWorkoutAssignment {
@@ -3321,10 +3351,16 @@ model MealTemplate {
   items         Json?
   created_at    DateTime  @default(now())
   archived_at   DateTime?
+  // PLAN-SWAPS-BE (C2 S2): the coach's swaps for this meal (ids of their own live templates, never this one)
+  // and the coach's own recipe for it. Plain ids: GET /me/meal-plan/today re-checks both on every read.
+  swap_template_ids String[] @default([])
+  recipe_id         String?
+  recipe            Recipe?   @relation(fields: [recipe_id], references: [id], onDelete: SetNull)
 
   meal_plan_slots DailyMealPlanSlot[]
 
   @@index([coach_id, archived_at])
+  @@index([recipe_id])
 }
 
 model DailyMealPlan {
@@ -3335,9 +3371,12 @@ model DailyMealPlan {
   notes       String?
   created_at  DateTime  @default(now())
   archived_at DateTime?
+  // PLAN-SWAPS-BE: the last time the plan row was written (set on every edit).
+  updated_at  DateTime  @default(now()) @updatedAt
 
   slots       DailyMealPlanSlot[]
   assignments DailyMealPlanAssignment[]
+  revisions   DailyMealPlanRevision[]
 
   @@index([coach_id, archived_at])
 }
@@ -3353,10 +3392,27 @@ model DailyMealPlanSlot {
   // C2-C0: the coach's planned time for this meal, local "HH:MM" (24-hour); null = plan order, no time.
   time_of_day        String?
   food_log_entries   LoggedFoodEntry[]
+  list_items         ListItem[]
 
   @@unique([daily_meal_plan_id, slot_label, order])
   @@index([daily_meal_plan_id])
   @@index([meal_template_id])
+}
+
+// PLAN-SWAPS-BE (C2 S2): one row per meal change in a coach's edit of a day plan, written in the same
+// transaction as the slot change. A changed meal is from -> to; an added meal has no from, a removed one no
+// to. Ids are history (no foreign key to the slot or the templates); the row goes with its plan.
+model DailyMealPlanRevision {
+  id               String        @id @default(uuid())
+  plan_id          String
+  plan             DailyMealPlan @relation(fields: [plan_id], references: [id], onDelete: Cascade)
+  slot_id          String
+  slot_label       String
+  from_template_id String?
+  to_template_id   String?
+  changed_at       DateTime      @default(now())
+
+  @@index([plan_id, changed_at])
 }
 
 model DailyMealPlanAssignment {

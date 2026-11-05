@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { describeFailure } from '../observability/log-pii';
+import { joinCoachFor } from '../packages/coach-selling';
 import {
   INVITE_ATTACH_ERROR,
   InviteCodesService,
@@ -117,9 +118,12 @@ export class CoachCodeRedemptionService {
     if (refusal || !resolved)
       return { valid: false, code: refusal ?? COACHLESS_ERROR.CODE_INVALID };
     const card = await this.lookup.coachCard(resolved.coachId);
-    return card
-      ? { valid: true, coach: card }
-      : { valid: false, code: COACHLESS_ERROR.CODE_INVALID };
+    if (!card) return { valid: false, code: COACHLESS_ERROR.CODE_INVALID };
+    // 1TO1-FU-BE: the join's own coaching rule (planJoin), so a coach who cannot take this buyer
+    // is "not accepting" here too, not a coach card whose Join then refuses.
+    if (!(await joinCoachFor(this.prisma, resolved.coachId, user.id)))
+      return { valid: false, code: COACHLESS_ERROR.COACH_NOT_ACCEPTING };
+    return { valid: true, coach: card };
   }
 
   async redeem(args: {

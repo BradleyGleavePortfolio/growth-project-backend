@@ -1,9 +1,13 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma } from '@prisma/client';
+import { FoodItem, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
-import { getGramsForVolume, supportsVolumeUnits } from './food-density';
+import { volumeWeightsFor } from './food-density';
 import { parseFoodQuery } from './food-query-parser';
+import {
+  SourceEvidence, TRUTH_TAG_PREFIX, evidenceTags, heldRowConfirmed, legacyPackagedZero, numbersCanBeTrue,
+  storedNumbersCanBeTrue, withinHardCaps,
+} from './food-truth';
 
 export interface FoodSearchResponse {
   results: FoodResult[];
@@ -34,6 +38,8 @@ interface UsdaFood {
   householdServingFullText?: string;
   servingSize?: number;
   servingSizeUnit?: string;
+  /** 'Foundation', 'SR Legacy', 'Survey (FNDDS)', 'Branded'. */
+  dataType?: string;
 }
 
 interface UsdaSearchResponse {
@@ -117,13 +123,29 @@ export interface FoodResult {
   cup_grams?: number;
   tbsp_grams?: number;
   tsp_grams?: number;
+  /**
+   * FOOD-1-BE (R3): a basic food — USDA Foundation or SR Legacy, or the seeded
+   * common-foods catalog. Search ranks its whole-word matches first.
+   */
+  basic_food: boolean;
 }
 
-function volumeWeights(category: string) {
+// Tags on stored rows: the seed importer's and the USDA importer's marks.
+const SEED_TAG = 'seed:common-foods';
+const BASIC_TAG = 'basic-food';
+const CATEGORY_TAG = 'category:';
+
+/**
+ * R1 (no guessed portions): volume chips only with a weight from the food's
+ * own household measure or the density table for its real category.
+ */
+function portionFields(measure: string, grams: number, category: string | null, name: string | null) {
+  const w = volumeWeightsFor(measure, grams, category, name);
   return {
-    cup_grams: getGramsForVolume(category, 'cup', 1) ?? undefined,
-    tbsp_grams: getGramsForVolume(category, 'tbsp', 1) ?? undefined,
-    tsp_grams: getGramsForVolume(category, 'tsp', 1) ?? undefined,
+    supports_volume_units: w !== null,
+    cup_grams: w?.cup_grams,
+    tbsp_grams: w?.tbsp_grams,
+    tsp_grams: w?.tsp_grams,
   };
 }
 
@@ -135,80 +157,292 @@ function visibleFoodsWhere(viewerId: string): Prisma.FoodItemWhereInput {
   return { OR: [{ created_by_user_id: null }, { created_by_user_id: viewerId }] };
 }
 
+/**
+ * FOOD-USDA-BE (U3): the words of a typed search, letters and digits only, lower-cased, at most 8. Everything else
+ * (quotes, colons, &, |, !, backslashes, emoji, %) separates words and never reaches SQL or tsquery syntax.
+ */
+export function foodSearchWords(query: string): string[] {
+  return (query.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).slice(0, 8);
+}
+
+/**
+ * The two tsquery texts for the typed words, passed to to_tsquery('english', $n) as bound parameters: `whole` needs
+ * every word as a whole (stemmed) word; `typing` lets the last one be the start of a word, because the phone searches
+ * as the client types (LogScreen sends q after a 600 ms pause from 2 characters on), so "chick" finds chicken.
+ * Built from foodSearchWords only: letters, digits, " & " and a final ":*".
+ */
+export function foodWordQueries(query: string): { whole: string; typing: string } {
+  const words = foodSearchWords(query);
+  return {
+    whole: words.join(' & '),
+    typing: words.map((w, i) => (i === words.length - 1 ? `${w}:*` : w)).join(' & '),
+  };
+}
+
+/**
+ * Rows the word search hands to rankFoodResults (U3): more than a page, because the SQL order (how well the words
+ * match, then built-in foods, then shorter names) is not rankFoodResults' order, and the right food must be among
+ * them. Set from the score (PR body): every right answer the catalog holds was within the first 40.
+ */
+export const LOCAL_SEARCH_TAKE = 40;
+
+/**
+ * U4: when the catalog already has this many shared rows holding every typed word as a whole word, the shared search
+ * answers from the catalog alone and does not wait on USDA or Open Food Facts (set from the score, PR body).
+ */
+export const LOCAL_ENOUGH_WHOLE = 5;
+
 function canSeeFood(item: { created_by_user_id?: string | null }, viewerId: string): boolean {
   return item.created_by_user_id == null || item.created_by_user_id === viewerId;
 }
 
-/** Weighted relevance score of one result for the (parsed) query. */
-function scoreFoodResult(item: FoodResult, rawQuery: string): number {
-  // Singular/plural normalization: strip trailing 's' for comparison
-  const normalize = (s: string) =>
-    s.toLowerCase().trim().replace(/\s+/g, ' ').replace(/s$/, '');
+/** Words of a name or query, lowercased, a plain plural folded ("eggs" -> "egg"). */
+function words(text: string): string[] {
+  return text
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}%]+/u)
+    .filter(Boolean)
+    .map((w) => {
+      if (w.length <= 3) return w;
+      if (w.endsWith('ies')) return `${w.slice(0, -3)}y`;
+      if (w.endsWith('oes')) return w.slice(0, -2);
+      return w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w;
+    });
+}
 
-  const normalizedName = normalize(item.name);
-  const normalizedQuery = normalize(rawQuery);
+const startsWithWords = (list: string[], q: string[]) => q.every((w, i) => list[i] === w);
+const sameWords = (list: string[], q: string[]) => list.length === q.length && startsWithWords(list, q);
+const containsRun = (list: string[], q: string[]) =>
+  list.some((_, i) => startsWithWords(list.slice(i), q));
 
-  let score: number;
+function isBranded(item: FoodResult): boolean {
+  return (
+    !!item.brand_or_restaurant ||
+    item.id.startsWith('off_') ||
+    (item.tags ?? []).some((t) => t.startsWith('off:')) ||
+    brandInUsdaName(item)
+  );
+}
 
-  // Exact match
-  if (normalizedName === normalizedQuery) {
-    score = 100;
-  } else if (normalizedName.startsWith(normalizedQuery)) {
-    // Starts with
-    score = 80;
-  } else if (normalizedName.includes(normalizedQuery)) {
-    // Contains as whole phrase
-    score = 60;
-  } else {
-    const tokens = normalizedQuery.split(' ');
-    if (tokens.every((t) => normalizedName.includes(t))) {
-      // All query tokens found in name
-      score = 30;
-    } else {
-      // Found in tags/aliases
-      const allText = [
-        ...(item.tags || []),
-        ...(item.search_aliases || []),
-      ]
-        .join(' ')
-        .toLowerCase();
-      if (tokens.some((t) => allText.includes(normalize(t)))) {
-        score = 10;
-      } else {
-        score = 5;
-      }
-    }
-  }
-
-  // Single-ingredient boost: category 'generic' or name is <= 3 words
-  const wordCount = item.name.trim().split(/\s+/).length;
-  if (item.category === 'generic' || wordCount <= 3) {
-    score += 20;
-  }
-
-  return score;
+// FR-1212R1 (LO-1212 B2): SR Legacy and Foundation keep a brand inside the name, written in capitals
+// ("Yogurt, Greek, whole, plain, CHOBANI", "Cereals, QUAKER, ..."), and USDA marks them as basic foods all the same.
+// A USDA row (loaded or live) with a run of 3 or more capitals is a brand, except USDA's own words: NFS (not
+// further specified), USDA, NFSMI (its school-meals recipes) and BBQ.
+const USDA_CAPITALS = new Set(['NFS', 'USDA', 'NFSMI', 'BBQ']);
+function brandInUsdaName(item: FoodResult): boolean {
+  const usda = item.id.startsWith('usda_') || (item.tags ?? []).some((t) => t.startsWith('usda:'));
+  return usda && (item.name.match(/[A-Z]{3,}/g) ?? []).some((run) => !USDA_CAPITALS.has(run));
 }
 
 /**
- * De-duplicate by name (the first source listed wins), then score DESC and
- * alphabetical on ties, then take `limit`.
+ * Match quality of a name for the query. `whole`: every query word is a whole
+ * word of the name ("egg" is not in "eggplant"). USDA names lead with the food
+ * ("Bananas, raw"), so the part before the first comma counts as the name.
  */
-function rankFoodResults(items: FoodResult[], q: string, limit: number): FoodResult[] {
-  const merged: FoodResult[] = [];
-  const seen = new Set<string>();
+function matchOf(item: FoodResult, rawQuery: string): { score: number; whole: boolean } {
+  const q = words(rawQuery);
+  const name = words(item.name);
+  const head = words(item.name.split(',')[0]);
+  const whole = q.length > 0 && q.every((w) => name.includes(w));
+  if (sameWords(name, q) || sameWords(head, q)) return { score: 100, whole };
+  if (startsWithWords(head, q)) return { score: 80, whole };
+  if (containsRun(name, q)) return { score: 60, whole };
+  if (whole) return { score: 40, whole };
+  const text = item.name.toLowerCase();
+  if (text.includes(rawQuery.toLowerCase().trim())) return { score: 20, whole };
+  if (q.every((w) => text.includes(w))) return { score: 15, whole };
+  const tags = (item.tags || []).filter((t) => !t.startsWith(TRUTH_TAG_PREFIX));
+  const aliases = words([...tags, ...(item.search_aliases || [])].join(' '));
+  return { score: q.some((w) => aliases.includes(w)) ? 10 : 5, whole };
+}
+
+/**
+ * R5 (LS-FOOD B5): one food, not one name. Same name with another brand,
+ * barcode / USDA id or calories is another food. A stored import carries its
+ * source tag (usda:<fdcId>, off:<barcode>), so it still meets its upstream row.
+ */
+function identityOf(item: FoodResult): string {
+  // FR-1198 (LS-1198 B2): a stored row with no upstream source (a custom or
+  // seeded food) is its own food, so its id is its identity; two custom foods
+  // with one name and calories but other macros both stay.
+  const source = /^(usda|off)_/.test(item.id)
+    ? item.id.replace('_', ':')
+    : (item.tags ?? []).find((t) => /^(usda|off):/.test(t)) ?? `id:${item.id}`;
+  return [nameAndBrandOf(item), Math.round(Number(item.calories)), source].join('|');
+}
+
+const norm = (v: string | null | undefined) => (v ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+const nameAndBrandOf = (item: FoodResult) => `${norm(item.name)}|${norm(item.brand_or_restaurant)}`;
+
+/**
+ * FOOD-TRUE-BE (LO-FOOD C9): where a shared row came from: USDA (live, or loaded or stored with its usda: tag), Open
+ * Food Facts (live, or stored with its off: tag) or our own catalog (the built-in foods and other shared rows). Null
+ * for the caller's own custom food, which is theirs and is never folded into a shared row.
+ */
+function sourceOf(item: FoodResult, own: ReadonlySet<string>): string | null {
+  if (own.has(item.id)) return null;
+  const tagged = (item.tags ?? []).find((t) => /^(usda|off):/.test(t));
+  return /^(usda|off)_/.exec(item.id)?.[1] ?? tagged?.split(':')[0] ?? 'catalog';
+}
+
+// USDA names the plain form of a food "..., raw" or "..., whole" ("Bananas, raw",
+// "Eggs, Grade A, Large, egg whole"); among equal matches it comes before a part
+// of the food ("egg yolk") or a prepared form. FR-1198 (LO-1198 C3): "whole"
+// counts only as its own comma part ("Milk, whole") or "egg whole", not inside
+// "whole grain" or "whole milk".
+const PLAIN_PARTS = new Set(['whole', 'egg whole']);
+const plainForm = (item: FoodResult) =>
+  words(item.name).includes('raw') || item.name.split(',').some((part) => PLAIN_PARTS.has(words(part).join(' ')))
+    ? 1
+    : 0;
+
+/**
+ * FR-1198R2 (LS-1198R2 B1, LO-1198R2 C1): how a row names the food. 2: the
+ * food is the row's whole name or whole head before the first comma
+ * ("Oatmeal, NFS", "Pancakes, plain"). 1: USDA's group-first form
+ * "<Group>, <food>, <form>", a one-word group then the food ("Fish, sardine,
+ * Atlantic, ...", "Beans, black, ...", "Yogurt, Greek, ..." for "greek
+ * yogurt"), or a head of the query's words in another order ("Greek yogurt,
+ * plain" for "yogurt greek"). 0: a head that only begins with the food and
+ * goes on to another dish ("Sardine sandwich", "Salmon salad") or any other
+ * mention.
+ */
+function namesFood(item: FoodResult, score: number, rawQuery: string): 0 | 1 | 2 {
+  const q = words(rawQuery);
+  const [group, food, ...rest] = item.name.split(',').map((part) => words(part));
+  // FR-1212R1 (LO-1212 B3): USDA's "Babyfood, <food>, ..." rows are a baby food made of the food, not the food in
+  // its group, so they get no group-first credit ("Babyfood, green beans, ..." is not "green beans").
+  if (group.join(' ') === 'babyfood') return 0;
+  if (score === 100) {
+    // FR-1198R3 (LO-1198R3 B1): a head-only match whose later comma part holds
+    // the head's words inside a longer name ("Fish, fish sticks, ...",
+    // "Butter, Clarified butter (ghee)", "Pork, cured, salt pork, raw") is
+    // USDA's group-first form for that other food, so 1, not 2. "egg whole"
+    // (PLAIN_PARTS) is the plain form of the head, not another food.
+    if (sameWords(words(item.name), q)) return 2;
+    const otherFood = [food, ...rest].some(
+      (part) => !!part && part.length > group.length && containsRun(part, group) && !PLAIN_PARTS.has(part.join(' ')),
+    );
+    return otherFood ? 1 : 2;
+  }
+  const sorted = (list: string[]) => [...list].sort().join(' ');
+  // The query's words in another order ("yogurt greek" for "Greek yogurt, plain").
+  if (sorted(group) === sorted(q)) return 1;
+  if (!food || group.length !== 1) return 0;
+  return sameWords(food, q) || sorted([...group, ...food]) === sorted(q) ? 1 : 0;
+}
+
+/** USDA's food category of a row (a stored row keeps it as a category:<name> tag); '' when it has none. */
+function categoryOf(item: FoodResult): string {
+  const tagged = (item.tags ?? []).find((t) => t.startsWith(CATEGORY_TAG))?.slice(CATEGORY_TAG.length);
+  const category = tagged ?? item.category ?? '';
+  return category === 'generic' ? '' : category;
+}
+/** FR-1212R1: an unbranded row holding every typed word as a whole word and named for the food (namesFood level 2). */
+function namesTheFood(item: FoodResult, q: string): boolean {
+  const { score, whole } = matchOf(item, q);
+  return whole && !isBranded(item) && namesFood(item, score, q) === 2;
+}
+const wholeName = (item: FoodResult, q: string[]) => (sameWords(words(item.name), q) ? 1 : 0);
+const builtIn = (item: FoodResult) => ((item.tags ?? []).includes(SEED_TAG) ? 1 : 0);
+
+/**
+ * De-duplicate by food identity (the first source listed wins), then rank.
+ * R3 (LO-FOOD B1): whole-word matches come first, a basic food before any
+ * other unbranded food before a branded one, then the rest by match quality.
+ * FR-1198 (LS-1198 B1, LO-1198 B1) and FR-1198R2: ahead of all of those, an
+ * unbranded row that names the food (namesFood: its whole head first, then
+ * USDA's group-first form) comes before an unbranded row that only mentions
+ * it ("Oatmeal, NFS" before "Bread, oatmeal"; "Fish, sardine, ..." before
+ * "Sardine sandwich"), whatever its USDA data type. FR-1198R3: at each naming
+ * level a row filed under another category than the food's own rows comes
+ * after them. The exact whole name, the plain form, a built-in row, shorter
+ * names and then A-Z break ties.
+ */
+function rankFoodResults(
+  items: FoodResult[],
+  q: string,
+  limit: number,
+  own: ReadonlySet<string> = new Set(),
+): FoodResult[] {
+  const byIdentity = new Map<string, FoodResult>();
+  // FOOD-TRUE-BE (LO-FOOD C9): one food from two sources shows once. A name plus brand already listed from another
+  // source is that food again (the first source listed wins: catalog, then USDA, then Open Food Facts); one source's
+  // other products with that name and brand (another barcode or USDA id) stay, as R5 keeps them.
+  const sourceOfName = new Map<string, string>();
   for (const item of items) {
-    const key = item.name.toLowerCase().replace(/\s+/g, ' ').trim();
-    if (!seen.has(key)) {
-      seen.add(key);
-      merged.push(item);
+    const key = identityOf(item);
+    const kept = byIdentity.get(key);
+    if (kept) {
+      if (item.basic_food && !kept.basic_food) byIdentity.set(key, { ...kept, basic_food: true });
+      continue;
     }
+    const source = sourceOf(item, own);
+    if (source) {
+      const first = sourceOfName.get(nameAndBrandOf(item));
+      if (first && first !== source) continue;
+      if (!first) sourceOfName.set(nameAndBrandOf(item), source);
+    }
+    byIdentity.set(key, item);
   }
 
-  const scored = merged.map((item) => ({ item, score: scoreFoodResult(item, q) }));
-  scored.sort((a, b) => {
-    if (b.score !== a.score) return b.score - a.score;
-    return a.item.name.localeCompare(b.item.name);
+  const qWords = words(q);
+  const scored = [...byIdentity.values()].map((item) => {
+    const { score, whole } = matchOf(item, q);
+    const tier = item.basic_food && !brandInUsdaName(item) ? 2 : isBranded(item) ? 0 : 1;
+    const named = whole && tier > 0 ? namesFood(item, score, q) : 0;
+    // FR-1212R1 (LO-1212 B3): a whole-word unbranded row whose first comma part holds a typed word ("Milk, ...",
+    // "Beans, snap, green, ...") comes before one holding the words only in a later part ("Egg custards, dry mix,
+    // prepared with 2% milk").
+    const lead = whole && tier > 0 && words(item.name.split(',')[0]).some((w) => qWords.includes(w)) ? 1 : 0;
+    return { item, score, named, tier, whole, group: whole ? tier : 0, lead, offCategory: 0 };
   });
+
+  // FR-1198R3 (LO-1198R3 C1, owner #192-D2 op 1): USDA's food category. The
+  // basic rows (SR Legacy, Foundation and the built-in foods) are filed under
+  // USDA's food groups ("Pork Products"), the other unbranded rows (FNDDS)
+  // under its survey categories ("Sausages"), so a category is compared only
+  // inside its own tier. The food's own category in a tier is the one most of
+  // that tier's whole-word rows are filed under (a tie: none). A row that is
+  // named for the food (level 2) but filed under another category ranks after
+  // the rows named for it at that level ("Sausage, NFS" before a "Sausage, ..."
+  // row filed under legumes). A row with no category ranks as before.
+  // A built-in food is the catalog's own row for its food, so when built-in
+  // rows are named for the food their category is the basic tier's own one.
+  const ownCategory = new Map<number, string>();
+  for (const tier of [1, 2]) {
+    const inTier = scored.filter((s) => s.whole && s.tier === tier && categoryOf(s.item));
+    const builtInNamed = inTier.filter((s) => s.named === 2 && builtIn(s.item));
+    const counts = new Map<string, number>();
+    for (const s of builtInNamed.length ? builtInNamed : inTier) {
+      const category = categoryOf(s.item);
+      counts.set(category, (counts.get(category) ?? 0) + 1);
+    }
+    const [top, next] = [...counts].sort((a, b) => b[1] - a[1]);
+    if (top && (!next || top[1] > next[1])) ownCategory.set(tier, top[0]);
+  }
+  for (const s of scored) {
+    const category = categoryOf(s.item);
+    const own = ownCategory.get(s.tier);
+    s.offCategory = s.named === 2 && category && own && category !== own ? 1 : 0;
+  }
+
+  scored.sort(
+    (a, b) =>
+      b.named - a.named ||
+      a.offCategory - b.offCategory ||
+      b.group - a.group ||
+      b.lead - a.lead ||
+      b.score - a.score ||
+      // FR-1198R3 (LO-1198R3 C2): the row named exactly the query before a row
+      // whose head only is the query (ahead of the plain form), and a built-in
+      // row before a USDA row (ahead of the length tiebreak).
+      wholeName(b.item, qWords) - wholeName(a.item, qWords) ||
+      plainForm(b.item) - plainForm(a.item) ||
+      builtIn(b.item) - builtIn(a.item) ||
+      a.item.name.length - b.item.name.length ||
+      a.item.name.localeCompare(b.item.name),
+  );
 
   return scored.slice(0, limit).map((s) => s.item);
 }
@@ -216,7 +450,116 @@ function rankFoodResults(items: FoodResult[], q: string, limit: number): FoodRes
 // 24h TTL on cached search results — USDA/OFF data is effectively static at
 // the per-day level and the upstream APIs are slow + rate-limited.
 const SEARCH_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const SEARCH_CACHE_KEY_PREFIX = 'food:search:v1:';
+// v3 (FOOD-USDA-BE): the catalog's word search and catalog-first answers; v1 and
+// b#1198's v2 entries are never served after this change. v4 (FOOD-TRUE-BE): an
+// answer holds no food whose numbers cannot be true, so a v3 answer (which may) is
+// never served. v5 (FIX-1222): real low-energy foods, alcohol held in tags and the
+// limit taken after the check, so a v4 answer (which may hide them) is never served. v6 (FIX-1222R2): an answer
+// holds no USDA Branded row stored before FIX-1222 with a 0 g macro and keeps foods whose fibre sits outside
+// their carbohydrate, so a v5 answer (which may show the one and hide the other) is never served.
+const SEARCH_CACHE_KEY_PREFIX = 'food:search:v6:';
+// R2's label "100 g", with a no-break space so the number and unit stay on one line.
+export const HUNDRED_GRAMS = '100\u00a0g';
+
+/** Throws on an upstream answer we must not keep; a 404 is "nothing found", as before. */
+function upstreamFailed(response: Response, source: string): void {
+  if (!response.ok && response.status !== 404) throw new Error(`${source} search failed: ${response.status}`);
+}
+
+const USDA_MACROS = ['Protein', 'Carbohydrate, by difference', 'Total lipid (fat)'];
+
+/** A USDA nutrient's raw amount per 100 g, or null when the food does not list it. */
+function usdaAmount(food: UsdaFood, name: string): number | null {
+  const match = (food.foodNutrients ?? []).find((n) => {
+    const nutrientName = n.nutrientName ?? n.name ?? n.nutrient?.name;
+    return nutrientName === name || (name === USDA_MACROS[1] && nutrientName === 'Carbohydrates, by difference');
+  });
+  const value = match ? Number(match.value ?? match.amount) : Number.NaN;
+  return Number.isFinite(value) ? value : null;
+}
+
+/**
+ * FOOD-TRUE-BE: a USDA food the phone may get. A packaged (Branded) food must list its protein, carbs and fat (never
+ * read as 0 g); every food's numbers must be able to be true, its alcohol counted at 7 kcal a gram.
+ */
+function usdaNumbersUsable(food: UsdaFood, mapped: FoodResult): boolean {
+  if (food.dataType === 'Branded' && USDA_MACROS.some((name) => usdaAmount(food, name) === null)) return false;
+  return numbersCanBeTrue(mapped, usdaAlcoholG(food), usdaPolyolsG(food));
+}
+
+/** The sugar alcohols a USDA food lists, in grams per 100 g (0 when it lists none). */
+function usdaPolyolsG(food: UsdaFood): number {
+  return usdaAmount(food, 'Total sugar alcohols') ?? usdaAmount(food, 'Sugar alcohols') ?? 0;
+}
+
+/**
+ * FIX-1222R2: what USDA lists for a food. A basic (non-Branded) food missing a macro lists it as 0 g, as its import
+ * reads it (generic USDA missing macro reads 0 g); a Branded label that leaves one out lists nothing for it.
+ */
+function usdaEvidence(food: UsdaFood): SourceEvidence {
+  const macro = (name: string) => usdaAmount(food, name) ?? (food.dataType === 'Branded' ? null : 0);
+  return {
+    protein_g: macro(USDA_MACROS[0]), carbs_g: macro(USDA_MACROS[1]), fat_g: macro(USDA_MACROS[2]),
+    alcoholG: usdaAlcoholG(food), polyolsG: usdaPolyolsG(food),
+  };
+}
+
+/** The alcohol a USDA food lists, in grams per 100 g (0 when it lists none). */
+function usdaAlcoholG(food: UsdaFood): number {
+  return usdaAmount(food, 'Alcohol, ethyl') ?? 0;
+}
+
+/**
+ * FOOD-TRUE-BE: an Open Food Facts product the phone may get: its label lists calories (kcal or kJ), protein, carbs
+ * and fat per 100 g (never read as 0 g), and the numbers can be true. Open Food Facts gives alcohol as % by volume;
+ * at about 0.79 g a millilitre that is its grams per 100 g.
+ */
+function offNumbersUsable(product: OpenFoodFactsProduct, mapped: FoodResult): boolean {
+  const n = product.nutriments ?? {};
+  const listed = (k: string) => n[k] != null && Number.isFinite(Number(n[k]));
+  if (!listed('energy-kcal_100g') && !listed('energy_100g')) return false;
+  if (!['proteins_100g', 'carbohydrates_100g', 'fat_100g'].every(listed)) return false;
+  return numbersCanBeTrue(mapped, offAlcoholG(product), offEvidence(product).polyolsG);
+}
+
+/** FIX-1222R2: what an Open Food Facts label lists per 100 g (a macro it leaves out lists nothing). */
+function offEvidence(product: OpenFoodFactsProduct): SourceEvidence {
+  const n = product.nutriments ?? {};
+  const amount = (k: string) => (n[k] != null && Number.isFinite(Number(n[k])) ? Number(n[k]) : null);
+  return {
+    protein_g: amount('proteins_100g'), carbs_g: amount('carbohydrates_100g'), fat_g: amount('fat_100g'),
+    alcoholG: offAlcoholG(product), polyolsG: amount('polyols_100g') ?? 0,
+  };
+}
+
+/** The alcohol an Open Food Facts product lists, in grams per 100 g (0 when it lists none). */
+function offAlcoholG(product: OpenFoodFactsProduct): number {
+  const value = Number((product.nutriments ?? {})['alcohol_100g']);
+  return Number.isFinite(value) ? value * 0.789 : 0;
+}
+
+/**
+ * FIX-1222 (LS-1222 B4), FIX-1222R2 (LS-1222R2 B2): a stored shared row a list may show (lists cannot ask the source):
+ * its numbers can be true, read with the alcohol its tags hold, and it is not a packaged row (an Open Food Facts or
+ * USDA Branded import) stored before FIX-1222 with a 0 g macro (its 0 may be a macro the label left out; search
+ * still shows the source's own record). USDA gives a brand only on a Branded food (mapUSDAFood), so a USDA row with
+ * no brand is a generic food, whose missing macro reads 0 g. The caller's own foods are theirs.
+ */
+function storedRowShows(row: FoodItemRow & { created_by_user_id?: string | null }): boolean {
+  if (row.created_by_user_id) return true;
+  const branded = (row.tags ?? []).some((t) => t.startsWith('off:')) || !!row.brand_or_restaurant?.trim();
+  return storedNumbersCanBeTrue(row) && !(branded && legacyPackagedZero(row, BASIC_TAG));
+}
+
+/**
+ * FIX-1222, FIX-1222R2: where a held row is read again. `read` gives what the source lists for it now (null when the
+ * source has no such food); `listsAlcohol` when that source lists a food's alcohol (the only evidence that can make
+ * failing stored numbers true: listed polyols only narrow the check).
+ */
+interface HeldSource {
+  listsAlcohol: boolean;
+  read: () => Promise<SourceEvidence | null>;
+}
 
 @Injectable()
 export class FoodService implements OnModuleInit {
@@ -267,12 +610,14 @@ export class FoodService implements OnModuleInit {
 
     if (!rawQ || rawQ.length < 2) {
       const defaults = await this.prisma.foodItem.findMany({
-        where: visibleFoodsWhere(viewerId),
+        // FOOD-USDA-BE (U6): not the loaded USDA rows (shared + basic-food).
+        where: { AND: [visibleFoodsWhere(viewerId), { NOT: { created_by_user_id: null, tags: { has: BASIC_TAG } } }] },
         take: limit,
         orderBy: { name: 'asc' },
       });
       return {
-        results: defaults.map(this.toResult),
+        // FOOD-TRUE-BE: a shared row whose numbers cannot be true is left out; the caller's own foods are theirs.
+        results: defaults.filter((row) => storedRowShows(row)).map(this.toResult),
         suggestions: [],
         did_you_mean: false,
         query: rawQ,
@@ -294,7 +639,8 @@ export class FoodService implements OnModuleInit {
     const shared = cached ? cached.results : await this.searchShared(q, limit, cacheKey);
 
     // Own foods first on a name tie, then the same relevance order as before.
-    const results = rankFoodResults([...(await ownPromise), ...shared], q, limit);
+    const own = await ownPromise;
+    const results = rankFoodResults([...own, ...shared], q, limit, new Set(own.map((item) => item.id)));
 
     return {
       results,
@@ -306,21 +652,37 @@ export class FoodService implements OnModuleInit {
     };
   }
 
-  /** USDA + OpenFoodFacts + the shared local catalog, ranked and cached. */
+  /**
+   * The shared local catalog, then USDA + OpenFoodFacts only for gaps (FOOD-USDA-BE U4), ranked and cached. When the
+   * catalog has LOCAL_ENOUGH_WHOLE rows holding every typed word as a whole word, it answers alone.
+   */
   private async searchShared(q: string, limit: number, cacheKey: string): Promise<FoodResult[]> {
-    // Run all 3 sources in parallel
-    const [usdaResults, offResults, localResults] = await Promise.allSettled([
-      this.searchUSDA(q, 20),
-      this.searchOpenFoodFacts(q, 20),
-      this.searchLocalDB(q, 10, null),
-    ]);
-
-    const usda = usdaResults.status === 'fulfilled' ? usdaResults.value : [];
-    const off = offResults.status === 'fulfilled' ? offResults.value : [];
-    const local = localResults.status === 'fulfilled' ? localResults.value : [];
+    // R4 (b#1198): set when USDA or Open Food Facts fails or times out, so the list stays out of the cache below.
+    // FOOD-TRUE-BE (LO-FOOD C8): the catalog is a source too; a catalog query the database refuses finds nothing, as
+    // before (and still asks USDA and Open Food Facts), and that answer is not cached either.
+    let failed = false;
+    const catalog = await this.searchCatalog(q, LOCAL_SEARCH_TAKE, null).catch(() => {
+      failed = true;
+      return { rows: [], whole: 0 };
+    });
+    const local = catalog.rows;
+    let usda: FoodResult[] = [];
+    let off: FoodResult[] = [];
+    // FR-1212R1 (LS-1212 B1, LO-1212 B1): the catalog answers alone only when it also holds a row named for the food
+    // itself; 40 rows made with it ("Bread, oatmeal", "Cookies, oatmeal") still ask USDA, as on main.
+    if (catalog.whole < LOCAL_ENOUGH_WHOLE || !local.some((item) => namesTheFood(item, q))) {
+      const settled = await Promise.allSettled([this.searchUSDA(q, 20), this.searchOpenFoodFacts(q, 20)]);
+      [usda, off] = settled.map((r) => (r.status === 'fulfilled' ? r.value : []));
+      failed = failed || settled.some((r) => r.status === 'rejected');
+    }
 
     // Merge: local catalog first, then USDA (reliable nutrition), then OFF (images)
     const results = rankFoodResults([...local, ...usda, ...off], q, limit);
+
+    // R4 (LS-FOOD B4): a failed or timed-out upstream is not an answer. Keep
+    // this list out of the cache so the next search asks again; a real
+    // (possibly empty) answer from every source is cached as before.
+    if (failed) return results;
 
     // Cache the merged+scored shared list (sans the query echo / parsed_*
     // fields, which are rebuilt per-call so callers with different leading
@@ -377,64 +739,75 @@ export class FoodService implements OnModuleInit {
    * (cacheable); a user id: that user's own custom foods only.
    */
   private async searchLocalDB(query: string, limit: number, ownerId: string | null): Promise<FoodResult[]> {
-    const owner =
-      ownerId === null
-        ? Prisma.sql`"created_by_user_id" IS NULL`
-        : Prisma.sql`"created_by_user_id" = ${ownerId}`;
-    try {
-      const trgmResults = await this.prisma.$queryRaw<FoodItemRow[]>`
-        SELECT
-          id, name, brand_or_restaurant, category, serving_description,
-          serving_size_grams, calories, protein_g, carbs_g, fat_g,
-          fiber_g, sugar_g, sodium_mg, tags, search_aliases, image_url,
-          nutrient_basis,
-          similarity(
-            lower(name) || ' ' ||
-            lower(coalesce(brand_or_restaurant, '')) || ' ' ||
-            lower(array_to_string(search_aliases, ' ')),
-            lower(${query})
-          ) AS score
-        FROM "FoodItem"
-        WHERE ${owner} AND
-          similarity(
-            lower(name) || ' ' ||
-            lower(coalesce(brand_or_restaurant, '')) || ' ' ||
-            lower(array_to_string(search_aliases, ' ')),
-            lower(${query})
-          ) > 0.08
-        ORDER BY score DESC
-        LIMIT ${limit}
-      `;
-      return trgmResults.map(this.toResult);
-    } catch {
-      // pg_trgm not installed — try ILIKE fallback
-      try {
-        const likeQ = `%${query}%`;
-        const ilikeResults = await this.prisma.$queryRaw<FoodItemRow[]>`
-          SELECT DISTINCT
-            id, name, brand_or_restaurant, category, serving_description,
-            serving_size_grams, calories, protein_g, carbs_g, fat_g,
-            fiber_g, sugar_g, sodium_mg, tags, search_aliases, image_url,
-            nutrient_basis
-          FROM "FoodItem"
-          WHERE ${owner} AND (
-            lower(name) LIKE lower(${likeQ})
-            OR lower(coalesce(brand_or_restaurant, '')) LIKE lower(${likeQ})
-            OR EXISTS (
-              SELECT 1 FROM unnest(search_aliases) AS alias
-              WHERE lower(alias) LIKE lower(${likeQ})
-            )
-          )
-          ORDER BY
-            CASE WHEN lower(name) LIKE lower(${likeQ}) THEN 0 ELSE 1 END,
-            name
-          LIMIT ${limit}
-        `;
-        return ilikeResults.map(this.toResult);
-      } catch {
-        return [];
-      }
-    }
+    // As before, a query the database refuses finds nothing rather than failing the search.
+    return (await this.searchCatalog(query, limit, ownerId).catch(() => ({ rows: [] }))).rows;
+  }
+
+  /**
+   * FOOD-USDA-BE (U3): the word search. A row matches when every typed word is among its words (name, brand,
+   * search_aliases) under Postgres's built-in 'english' text search, so "eggs" finds "Egg", in any order, the last
+   * word also as the start of a word ("chick" finds "Chicken"); or, for text the word search drops (2%, 80/20, a lone
+   * stop word), when it contains the typed text, as the ILIKE fallback matched before. Ordered by how well the words
+   * match (all whole words, then the last as a word start, then contains only; the name's first part holding the first
+   * word first), then built-in foods, then shorter names. The words reach SQL only as bound parameters (foodWordQueries).
+   *
+   * Without an index (U3): the to_tsvector of every row is the cost (about 55 ms over the 8,000-row catalog), so a
+   * cheap LIKE first keeps it to the rows holding each typed word's English stem ("chick", "egg", "berr" for berry:
+   * a stem ending in i or e loses that letter, which stemming may have changed, as in berry -> berri). A row the word
+   * search matches holds a word with that stem, and a row containing the typed text holds the typed words, so the
+   * LIKE never drops a match. Stop words have no stem, so they ask nothing. The patterns are built in SQL from the
+   * stems of the letters-and-digits words (a bound parameter), so no wildcard the member typed reaches them.
+   *
+   * The pg_trgm similarity query that stood here is gone: production and CI have no pg_trgm extension, so it failed
+   * on every search, and its ILIKE fallback failed too (SELECT DISTINCT with an ORDER BY outside the select list), so
+   * the shared catalog answered no search at all. No extension is needed now.
+   * `whole` counts the rows that hold every typed word as a whole word, for U4.
+   */
+  private async searchCatalog(
+    query: string,
+    limit: number,
+    ownerId: string | null,
+  ): Promise<{ rows: FoodResult[]; whole: number }> {
+    const { whole, typing } = foodWordQueries(query);
+    const first = foodSearchWords(query)[0];
+    const lead = first ? `${first}:*` : '';
+    const words = foodSearchWords(query).join(' ');
+    const contains = `%${query}%`;
+    const owner = ownerId === null ? Prisma.sql`f."created_by_user_id" IS NULL` : Prisma.sql`f."created_by_user_id" = ${ownerId}`;
+    const doc = Prisma.sql`to_tsvector('english'::regconfig, f."name" || ' ' || coalesce(f."brand_or_restaurant", '') || ' ' ||
+      array_to_string(f."search_aliases", ' '))`;
+    const rows = await this.prisma.$queryRaw<(FoodItemRow & { word_match: number })[]>`
+      SELECT f."id", f."name", f."brand_or_restaurant", f."category", f."serving_description",
+             f."serving_size_grams", f."calories", f."protein_g", f."carbs_g", f."fat_g",
+             f."fiber_g", f."sugar_g", f."sodium_mg", f."tags", f."search_aliases", f."image_url", f."nutrient_basis",
+             CASE WHEN numnode(to_tsquery('english', ${whole})) > 0 AND ${doc} @@ to_tsquery('english', ${whole}) THEN 0
+                  WHEN numnode(to_tsquery('english', ${typing})) > 0 AND ${doc} @@ to_tsquery('english', ${typing}) THEN 1
+                  ELSE 2 END AS word_match
+      FROM "FoodItem" f
+      WHERE ${owner}
+        AND lower(f."name" || ' ' || coalesce(f."brand_or_restaurant", '') || ' ' || array_to_string(f."search_aliases", ' '))
+            LIKE ALL (ARRAY(SELECT '%' || CASE WHEN right(l, 1) IN ('i', 'e') THEN left(l, length(l) - 1) ELSE l END || '%'
+                            FROM unnest(tsvector_to_array(to_tsvector('english', ${words}))) AS l))
+        AND ((numnode(to_tsquery('english', ${typing})) > 0 AND ${doc} @@ to_tsquery('english', ${typing}))
+             OR lower(f."name") LIKE lower(${contains})
+             OR lower(coalesce(f."brand_or_restaurant", '')) LIKE lower(${contains})
+             OR EXISTS (SELECT 1 FROM unnest(f."search_aliases") a WHERE lower(a) LIKE lower(${contains})))
+      ORDER BY word_match,
+               CASE WHEN numnode(to_tsquery('english', ${lead})) > 0
+                         AND to_tsvector('english'::regconfig, split_part(f."name", ',', 1)) @@ to_tsquery('english', ${lead})
+                    THEN 0 ELSE 1 END,
+               CASE WHEN f."tags" @> ARRAY[${SEED_TAG}]::text[] THEN 0 ELSE 1 END,
+               length(f."name"), f."name", f."id"
+      LIMIT ${limit}
+    `;
+    // FOOD-TRUE-BE: a shared row whose numbers cannot be true is left out; and a built-in food (C9) is listed only
+    // for typed words that are its own words (word_match 0 or 1), never for typed text inside another word ("ham" in
+    // "Graham crackers"). The caller's own foods are theirs and stay as they are.
+    const kept =
+      ownerId !== null
+        ? rows
+        : rows.filter((r) => storedRowShows(r) && !((r.tags ?? []).includes(SEED_TAG) && Number(r.word_match) === 2));
+    return { rows: kept.map(this.toResult), whole: kept.filter((r) => Number(r.word_match) === 0).length };
   }
 
   private async searchUSDA(query: string, limit: number = 20): Promise<FoodResult[]> {
@@ -447,13 +820,13 @@ export class FoodService implements OnModuleInit {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
 
+    // A failure or timeout throws (R4): searchShared then skips the cache.
     try {
       const response = await fetch(url, {
         signal: controller.signal,
         headers: { 'User-Agent': 'TheGrowthProject/1.0' },
       });
-      clearTimeout(timeout);
-
+      upstreamFailed(response, 'USDA');
       if (!response.ok) return [];
 
       const data = (await response.json()) as UsdaSearchResponse;
@@ -461,11 +834,14 @@ export class FoodService implements OnModuleInit {
 
       return foods
         .filter((f) => f.description && f.description.trim())
+        .map((f) => ({ food: f, mapped: this.mapUSDAFood(f) }))
+        // FOOD-TRUE-BE: a food whose numbers cannot be true, or a packaged one missing a macro, is left out, before
+        // the limit is taken (FIX-1222), so a left-out food does not cost a usable one its place.
+        .filter(({ food, mapped }) => usdaNumbersUsable(food, mapped))
         .slice(0, limit)
-        .map((f) => this.mapUSDAFood(f));
-    } catch {
+        .map(({ mapped }) => mapped);
+    } finally {
       clearTimeout(timeout);
-      return [];
     }
   }
 
@@ -496,8 +872,10 @@ export class FoodService implements OnModuleInit {
     const sugar = getNutrient('Sugars, total including NLEA') || getNutrient('Sugars, total');
     const sodium = getNutrient('Sodium, Na');
 
+    // R2 (LO-FOOD B2): with no package serving the portion is 100 g, so it is
+    // called "100 g", never "1 serving".
     const servingDesc = food.householdServingFullText ||
-      (food.servingSize ? `${food.servingSize}${food.servingSizeUnit || 'g'}` : '1 serving');
+      (food.servingSize ? `${food.servingSize}${food.servingSizeUnit || 'g'}` : HUNDRED_GRAMS);
 
     // CANONICAL BASIS: USDA FDC's `foodNutrients[].value` is reported per 100g
     // for Foundation / SR Legacy / Branded entries. We keep that basis verbatim
@@ -526,8 +904,10 @@ export class FoodService implements OnModuleInit {
       search_aliases: [],
       image_url: null,
       nutrient_basis: 'PER_100G',
-      supports_volume_units: supportsVolumeUnits(category),
-      ...volumeWeights(category),
+      // R1: its own household measure ("1/2 cup" of servingSize g), else its
+      // USDA category's density, else no volume.
+      ...portionFields(servingDesc, food.servingSize || 100, category, food.description),
+      basic_food: food.dataType === 'Foundation' || food.dataType === 'SR Legacy',
     };
   }
 
@@ -540,31 +920,30 @@ export class FoodService implements OnModuleInit {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
 
+    // A failure or timeout throws (R4): searchShared then skips the cache.
     try {
       const response = await fetch(url, {
         signal: controller.signal,
         headers: { 'User-Agent': 'TheGrowthProject/1.0' },
       });
-      clearTimeout(timeout);
-
+      upstreamFailed(response, 'OpenFoodFacts');
       if (!response.ok) return [];
 
       const data = (await response.json()) as OpenFoodFactsSearchResponse;
       const products: OpenFoodFactsProduct[] = data?.products || [];
 
       return products
-        .filter((p) => {
-          // Filter out products with no name or no nutrition data
-          if (!p.product_name || !p.product_name.trim()) return false;
-          const n = p.nutriments || {};
-          const cals = n['energy-kcal_100g'] ?? (n['energy_100g'] ? n['energy_100g'] / 4.184 : null);
-          return cals != null && cals > 0;
-        })
+        // Products with no name are left out. A listed 0 kcal is kept (FIX-1222, LS-1222 B1: water, sweeteners);
+        // offNumbersUsable leaves out a product whose label lists no calories.
+        .filter((p) => p.product_name && p.product_name.trim())
+        .map((p) => ({ product: p, mapped: this.mapOpenFoodFactsProduct(p) }))
+        // FOOD-TRUE-BE: a product whose numbers cannot be true, or missing its protein, carbs or fat, is left out,
+        // before the limit is taken (FIX-1222).
+        .filter(({ product, mapped }) => offNumbersUsable(product, mapped))
         .slice(0, limit)
-        .map((p) => this.mapOpenFoodFactsProduct(p));
-    } catch {
+        .map(({ mapped }) => mapped);
+    } finally {
       clearTimeout(timeout);
-      return [];
     }
   }
 
@@ -598,8 +977,10 @@ export class FoodService implements OnModuleInit {
       search_aliases: [],
       image_url: product.image_front_small_url || null,
       nutrient_basis: 'PER_100G',
-      supports_volume_units: supportsVolumeUnits('generic'),
-      ...volumeWeights('generic'),
+      // R1 (LO-FOOD B3): a product row has no household measure or category
+      // density here, so no cup / tbsp / tsp — grams and ounces only.
+      ...portionFields('100g', 100, null, null),
+      basic_food: false,
     };
   }
 
@@ -683,7 +1064,96 @@ export class FoodService implements OnModuleInit {
     // Another person's custom food is reported exactly like a missing id.
     const existing = await this.prisma.foodItem.findUnique({ where: { id } });
     if (!existing || !canSeeFood(existing, viewerId)) throw new Error(`FoodItem ${id} not found`);
+    // FIX-1222 (LS-1222 B4), FIX-1222R2 (LS-1222R2 B1, LO-1222R2 B1): a saved id (recents, repeat, favourites, saved
+    // meals) passes the same numbers check as its usda_ or off_ id and never newly logs a missing macro as 0 g.
+    if (!(await this.heldUsable(existing, this.sourceFor(existing)))) throw new Error(`FoodItem ${id} not found`);
     return existing.id;
+  }
+
+  /**
+   * FIX-1222 (LS-1222 B3, LO-1222 B1, C1), FIX-1222R2 (LS-1222R2 B1, B2; LO-1222R2 B1, B2): a stored shared row read
+   * again (barcode, usda_, off_, saved id, saved meal) passes what a new import of it passes. Its numbers are read
+   * with the alcohol its tags hold. When they fail (within the hard caps, from a source that lists alcohol: a wine
+   * stored before FIX-1222), or it is a packaged row stored before FIX-1222 with a 0 g macro, its source is read
+   * again and the stored numbers must pass with what the source lists (heldRowConfirmed), never the source's own
+   * numbers. Nothing stored is changed; a source that cannot be reached throws, so a queued log retries.
+   */
+  private async heldUsable(row: FoodItem, source: HeldSource | null): Promise<boolean> {
+    if (row.created_by_user_id !== null) return true;
+    const numbersPass = storedNumbersCanBeTrue(row);
+    if (numbersPass && !legacyPackagedZero(row, BASIC_TAG)) return true;
+    if (source === null || (!numbersPass && !(source.listsAlcohol && withinHardCaps(row)))) return false;
+    const listed = await source.read();
+    return listed !== null && heldRowConfirmed(row, listed, BASIC_TAG);
+  }
+
+  /** The source a stored row came from: its USDA id, else its Open Food Facts code or barcode. */
+  private sourceFor(row: FoodItem): HeldSource | null {
+    const fdcId = (row.tags ?? []).find((t) => t.startsWith('usda:'))?.slice(5);
+    if (fdcId) return this.usdaSource(fdcId, (row.tags ?? []).includes(BASIC_TAG));
+    const code = (row.tags ?? []).find((t) => t.startsWith('off:'))?.slice(4) ?? row.barcode;
+    return code ? this.offSource(code) : null;
+  }
+
+  /** USDA lists alcohol for its basic foods (SR Legacy, Foundation), not on a Branded label. */
+  private usdaSource(fdcId: string, basic: boolean): HeldSource {
+    return {
+      listsAlcohol: basic,
+      read: async () => {
+        const food = await this.fetchUSDAFood(fdcId);
+        return food === null ? null : usdaEvidence(food);
+      },
+    };
+  }
+
+  private offSource(code: string): HeldSource {
+    return {
+      listsAlcohol: true,
+      read: async () => {
+        const product = await this.fetchOpenFoodFactsProduct(code);
+        return product === null ? null : offEvidence(product);
+      },
+    };
+  }
+
+  /** USDA's record for one food, or null when USDA has none (404). Any other failure throws. */
+  private async fetchUSDAFood(fdcId: string): Promise<UsdaFood | null> {
+    const apiKey = process.env.USDA_API_KEY;
+    if (!apiKey) throw new Error('USDA_API_KEY is not configured');
+
+    const url = `https://api.nal.usda.gov/fdc/v1/food/${encodeURIComponent(fdcId)}?api_key=${apiKey}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: { 'User-Agent': 'TheGrowthProject/1.0' },
+      });
+      if (response.status === 404) return null;
+      if (!response.ok) throw new Error(`USDA fetch failed: ${response.status}`);
+      return (await response.json()) as UsdaFood;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  /** Open Food Facts' product for one code, or null when it has none (404 or no product). Any other failure throws. */
+  private async fetchOpenFoodFactsProduct(code: string): Promise<OpenFoodFactsProduct | null> {
+    const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: { 'User-Agent': 'TheGrowthProject/1.0' },
+      });
+      if (response.status === 404) return null;
+      if (!response.ok) throw new Error(`OpenFoodFacts fetch failed: ${response.status}`);
+      const payload = (await response.json()) as OpenFoodFactsProductResponse;
+      return payload?.product ?? null;
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   private async upsertFromUSDA(fdcId: string): Promise<string> {
@@ -694,27 +1164,18 @@ export class FoodService implements OnModuleInit {
     const existing = await this.prisma.foodItem.findFirst({
       where: { tags: { has: tag }, created_by_user_id: null },
     });
-    if (existing) return existing.id;
-
-    const apiKey = process.env.USDA_API_KEY;
-    if (!apiKey) throw new Error('USDA_API_KEY is not configured');
-
-    const url = `https://api.nal.usda.gov/fdc/v1/food/${encodeURIComponent(fdcId)}?api_key=${apiKey}`;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-    let food: UsdaFood;
-    try {
-      const response = await fetch(url, {
-        signal: controller.signal,
-        headers: { 'User-Agent': 'TheGrowthProject/1.0' },
-      });
-      if (!response.ok) throw new Error(`USDA fetch failed: ${response.status}`);
-      food = (await response.json()) as UsdaFood;
-    } finally {
-      clearTimeout(timeout);
+    if (existing) {
+      // FIX-1222 (LS-1222 B3): a held USDA row passes what a new import of it passes, or reads as not found.
+      const source = this.usdaSource(fdcId, (existing.tags ?? []).includes(BASIC_TAG));
+      if (!(await this.heldUsable(existing, source))) throw new Error(`USDA food ${fdcId} not found`);
+      return existing.id;
     }
 
+    const food = await this.fetchUSDAFood(fdcId);
+    if (!food) throw new Error(`USDA food ${fdcId} not found`);
     const mapped = this.mapUSDAFood(food);
+    // FOOD-TRUE-BE: the stored import keeps search's rules; such a food is not stored and reads as not found.
+    if (!usdaNumbersUsable(food, mapped)) throw new Error(`USDA food ${fdcId} not found`);
     // Guard against mid-flush races: if two concurrent flush calls try to
     // create the same USDA item, the second create will throw a unique
     // constraint violation on the tags GIN index (not available as a Prisma
@@ -734,7 +1195,15 @@ export class FoodService implements OnModuleInit {
           fiber_g: mapped.fiber_g,
           sugar_g: mapped.sugar_g,
           sodium_mg: mapped.sodium_mg,
-          tags: [tag],
+          // The USDA category and basic mark, so the stored row offers the
+          // same portions and rank as its search row (R1, R3).
+          tags: [
+            tag,
+            ...(mapped.category !== 'generic' ? [`${CATEGORY_TAG}${mapped.category}`] : []),
+            ...(mapped.basic_food ? [BASIC_TAG] : []),
+            // FIX-1222 (LS-1222 B2, LO-1222 B1): checked, and the alcohol USDA listed, so a later read passes too.
+            ...evidenceTags(usdaAlcoholG(food)),
+          ],
           search_aliases: [],
           image_url: mapped.image_url,
         },
@@ -759,28 +1228,22 @@ export class FoodService implements OnModuleInit {
     const held = await this.prisma.foodItem.findUnique({ where: { barcode: code } });
     if (held) {
       if (!canSeeFood(held, viewerId)) throw new Error(`OpenFoodFacts product ${code} not found`);
+      // FOOD-TRUE-BE, FIX-1222 (LO-1222 B1, C1): a held shared row passes what a new scan of it passes, or reads as
+      // not found (the row is not changed).
+      if (!(await this.heldUsable(held, this.offSource(code)))) {
+        throw new Error(`OpenFoodFacts product ${code} not found`);
+      }
       return held.id;
     }
 
     // Barcode is unique in FoodItem — use a true Prisma upsert so concurrent
     // flush calls don't race to create a duplicate row (Fix 3).
-    const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json`;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-    let payload: OpenFoodFactsProductResponse;
-    try {
-      const response = await fetch(url, {
-        signal: controller.signal,
-        headers: { 'User-Agent': 'TheGrowthProject/1.0' },
-      });
-      if (!response.ok) throw new Error(`OpenFoodFacts fetch failed: ${response.status}`);
-      payload = (await response.json()) as OpenFoodFactsProductResponse;
-    } finally {
-      clearTimeout(timeout);
-    }
-
-    if (!payload?.product) throw new Error(`OpenFoodFacts product ${code} not found`);
-    const mapped = this.mapOpenFoodFactsProduct(payload.product);
+    const product = await this.fetchOpenFoodFactsProduct(code);
+    if (!product) throw new Error(`OpenFoodFacts product ${code} not found`);
+    const mapped = this.mapOpenFoodFactsProduct(product);
+    // FOOD-TRUE-BE: the barcode and the stored import keep search's rules: a product missing its calories, protein,
+    // carbs or fat, or whose numbers cannot be true, is not stored as 0 g and reads as not found.
+    if (!offNumbersUsable(product, mapped)) throw new Error(`OpenFoodFacts product ${code} not found`);
 
     // upsert on barcode (unique) — no-op update so a race just returns the
     // existing row's id rather than throwing a unique constraint violation.
@@ -799,7 +1262,8 @@ export class FoodService implements OnModuleInit {
         fiber_g: mapped.fiber_g,
         sugar_g: mapped.sugar_g,
         sodium_mg: mapped.sodium_mg,
-        tags: [`off:${code}`],
+        // FIX-1222 (LS-1222 B2, LO-1222 B1): checked, and the alcohol the label listed, so a later read passes too.
+        tags: [`off:${code}`, ...evidenceTags(offAlcoholG(product))],
         search_aliases: [],
         image_url: mapped.image_url,
         barcode: code,
@@ -810,27 +1274,39 @@ export class FoodService implements OnModuleInit {
   }
 
   /** Normalize a raw DB row or Prisma object to FoodResult shape */
-  private toResult = (item: FoodItemRow): FoodResult => ({
-    id: item.id,
-    name: item.name,
-    brand_or_restaurant: item.brand_or_restaurant ?? null,
-    category: item.category,
-    serving_description: item.serving_description,
-    serving_size_grams: Number(item.serving_size_grams),
-    calories: Number(item.calories),
-    protein_g: Number(item.protein_g),
-    carbs_g: Number(item.carbs_g),
-    fat_g: Number(item.fat_g),
-    fiber_g: item.fiber_g != null ? Number(item.fiber_g) : null,
-    sugar_g: item.sugar_g != null ? Number(item.sugar_g) : null,
-    sodium_mg: item.sodium_mg != null ? Number(item.sodium_mg) : null,
-    tags: item.tags ?? [],
-    search_aliases: item.search_aliases ?? [],
-    image_url: item.image_url ?? null,
-    // Default for legacy rows / raw query paths that don't select the column:
-    // PER_100G matches the assumption the rest of the system already makes.
-    nutrient_basis: item.nutrient_basis ?? 'PER_100G',
-    supports_volume_units: supportsVolumeUnits(item.category),
-    ...volumeWeights(item.category),
-  });
+  private toResult = (item: FoodItemRow): FoodResult => {
+    const tags = item.tags ?? [];
+    const grams = Number(item.serving_size_grams);
+    // R2: a USDA import stored before FOOD-1-BE says "1 serving" for 100 g.
+    const serving =
+      item.serving_description === '1 serving' && grams === 100 && tags.some((t) => t.startsWith('usda:'))
+        ? HUNDRED_GRAMS
+        : item.serving_description;
+    // R1: the row's own household measure, else its real category (seeded and
+    // USDA-imported rows keep it as a category:<name> tag), else none.
+    const category = tags.find((t) => t.startsWith(CATEGORY_TAG))?.slice(CATEGORY_TAG.length) ?? item.category;
+    return {
+      id: item.id,
+      name: item.name,
+      brand_or_restaurant: item.brand_or_restaurant ?? null,
+      category: item.category,
+      serving_description: serving,
+      serving_size_grams: grams,
+      calories: Number(item.calories),
+      protein_g: Number(item.protein_g),
+      carbs_g: Number(item.carbs_g),
+      fat_g: Number(item.fat_g),
+      fiber_g: item.fiber_g != null ? Number(item.fiber_g) : null,
+      sugar_g: item.sugar_g != null ? Number(item.sugar_g) : null,
+      sodium_mg: item.sodium_mg != null ? Number(item.sodium_mg) : null,
+      tags,
+      search_aliases: item.search_aliases ?? [],
+      image_url: item.image_url ?? null,
+      // Default for legacy rows / raw query paths that don't select the column:
+      // PER_100G matches the assumption the rest of the system already makes.
+      nutrient_basis: item.nutrient_basis ?? 'PER_100G',
+      ...portionFields(item.serving_description, grams, category, item.name),
+      basic_food: tags.includes(SEED_TAG) || tags.includes(BASIC_TAG),
+    };
+  };
 }

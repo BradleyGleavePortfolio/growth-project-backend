@@ -28,6 +28,7 @@ import type { AnalyticsService } from '../../src/analytics/analytics.service';
 import type { PtmService } from '../../src/ptm/ptm.service';
 import type { ClientAIContextService } from '../../src/ai/client-ai-context.service';
 import { liveTestDatabaseUrl } from '../utils/live-test-db';
+import { carbsFor, fatFor } from '../support/food-true-numbers';
 
 const DB_URL = liveTestDatabaseUrl();
 if (!DB_URL && process.env.CI === 'true') {
@@ -110,8 +111,11 @@ function stub<T>(value: unknown): T {
   const forced = () => prisma.$queryRawUnsafe<{ relname: string; forced: boolean }[]>(
     `SELECT relname::text AS relname, relrowsecurity AND relforcerowsecurity AS forced FROM pg_class
       WHERE relnamespace = 'public'::regnamespace AND relname = ANY($1::text[]) ORDER BY relname`, [...TABLES]);
+  // FIX-1222R2: a shared food logged by its id passes the numbers check, so a fixture's carbs and fat make up the
+  // calories its protein leaves (half from each; test/support/food-true-numbers.ts).
   const catalogFood = (name: string, calories: number, protein_g: number) => prisma.foodItem.create({
-    data: { name, serving_description: '100 g', serving_size_grams: 100, calories, protein_g, carbs_g: 20, fat_g: 3 },
+    data: { name, serving_description: '100 g', serving_size_grams: 100, calories, protein_g,
+      carbs_g: carbsFor(calories - 4 * protein_g), fat_g: fatFor(calories - 4 * protein_g) },
   }).then((f) => f.id);
 
   beforeAll(async () => {
@@ -249,8 +253,9 @@ function stub<T>(value: unknown): T {
 
   it(`limits: ${FAVORITES_MAX} favourites, ${SAVED_MEALS_MAX} saved meals, 30 foods a meal`, async () => {
     const foods = Array.from({ length: FAVORITES_MAX + 1 }, () => randomUUID());
+    // FIX-1222R2: a filler's 1 kcal is 0.25 g of carbs, so the numbers check passes it as a new use.
     await prisma.foodItem.createMany({ data: foods.map((id) => ({ id, name: 'RLS filler', serving_description: '1',
-      serving_size_grams: 1, calories: 1, protein_g: 0, carbs_g: 0, fat_g: 0 })) });
+      serving_size_grams: 1, calories: 1, protein_g: 0, carbs_g: 0.25, fat_g: 0 })) });
     await prisma.foodFavorite.createMany({ data: foods.slice(0, FAVORITES_MAX).map((food_item_id) => ({ user_id: c, food_item_id })) });
     await expect(saved.addFavorite(c, foods[FAVORITES_MAX])).rejects.toThrow(ConflictException);
     expect((await saved.addFavorite(c, foods[0])).food_item_id).toBe(foods[0]);

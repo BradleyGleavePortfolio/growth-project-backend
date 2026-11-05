@@ -157,6 +157,7 @@ function makePrisma() {
         }
         return { ...row };
       }),
+      findUnique: jest.fn(async ({ where }: any) => users.find((u) => u.id === where.id) ?? null),
     },
     mealPlan: {
       create: jest.fn(async ({ data }: any) => {
@@ -291,6 +292,17 @@ function makePrisma() {
     },
     // FOODLINK: no food is logged in these specs; the moved-client link follow is in the live suite.
     loggedFoodEntry: { updateMany: jest.fn(async () => ({ count: 0 })) },
+    // FIX-1221: the freeze also moves the moved clients' grocery items (none here; the live suite
+    // test/rls/ls-1221-moved-plan-history-live.spec.ts proves it).
+    listItem: { updateMany: jest.fn(async () => ({ count: 0 })) },
+    // PLAN-SWAPS-BE: a meal change writes its revision; today's read finds the client's zone
+    // (test/plan-swaps-be.spec.ts covers both).
+    dailyMealPlanRevision: {
+      createMany: jest.fn(async ({ data }: any) => ({ count: data.length })),
+      findMany: jest.fn(async () => []),
+    },
+    notificationPreferences: { findUnique: jest.fn(async () => null) },
+    coachProfile: { findUnique: jest.fn(async () => null) },
     dailyMealPlanAssignment: {
       create: jest.fn(async ({ data }: any) => {
         const row = {
