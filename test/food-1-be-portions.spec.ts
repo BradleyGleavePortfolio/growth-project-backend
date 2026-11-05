@@ -21,6 +21,9 @@ type Row = Record<string, unknown>;
 const nutrients = [
   { nutrientName: 'Energy', unitName: 'KCAL', value: 143 },
   { nutrientName: 'Protein', unitName: 'G', value: 12.6 },
+  // FOOD-TRUE-BE: numbers a food can have (an egg: 143 kcal from 12.6 g protein, 0.7 g carbs, 9.5 g fat).
+  { nutrientName: 'Carbohydrate, by difference', unitName: 'G', value: 0.7 },
+  { nutrientName: 'Total lipid (fat)', unitName: 'G', value: 9.5 },
 ];
 const usda = (extra: Row) => ({ fdcId: 1, description: 'Food', foodNutrients: nutrients, ...extra });
 const off = (extra: Row = {}) => ({

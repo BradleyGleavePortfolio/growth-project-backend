@@ -8,6 +8,7 @@
 //   - the fewer-than-2-characters list leaves the loaded USDA rows (shared + basic-food) out.
 import { Prisma } from '@prisma/client';
 import {
+import { carbsFor, fatFor } from './support/food-true-numbers';
   FoodService,
   LOCAL_ENOUGH_WHOLE,
   LOCAL_SEARCH_TAKE,
@@ -32,7 +33,7 @@ const INJECTIONS = [
 function row(name: string, word_match: number, extra: Record<string, unknown> = {}) {
   return {
     id: `id-${name}`, name, brand_or_restaurant: null, category: 'generic', serving_description: '100 g',
-    serving_size_grams: 100, calories: 100, protein_g: 1, carbs_g: 1, fat_g: 1, fiber_g: null, sugar_g: null,
+    serving_size_grams: 100, calories: 100, protein_g: 0, carbs_g: carbsFor(100), fat_g: fatFor(100), fiber_g: null, sugar_g: null,
     sodium_mg: null, tags: ['basic-food'], search_aliases: [], image_url: null, nutrient_basis: 'PER_100G', word_match,
     ...extra,
   };

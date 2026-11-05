@@ -600,7 +600,7 @@ export class FoodService implements OnModuleInit {
     if (catalog.whole < LOCAL_ENOUGH_WHOLE || !local.some((item) => namesTheFood(item, q))) {
       const settled = await Promise.allSettled([this.searchUSDA(q, 20), this.searchOpenFoodFacts(q, 20)]);
       [usda, off] = settled.map((r) => (r.status === 'fulfilled' ? r.value : []));
-      failed = settled.some((r) => r.status === 'rejected');
+      failed = failed || settled.some((r) => r.status === 'rejected');
     }
 
     // Merge: local catalog first, then USDA (reliable nutrition), then OFF (images)

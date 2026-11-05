@@ -1,5 +1,6 @@
 import { FoodService } from '../src/food/food.service';
 import type { PrismaService } from '../src/prisma.service';
+import { usdaNutrientsFor } from './support/food-true-numbers';
 
 function stub<T>(value: unknown): T {
   return value as T;
@@ -15,7 +16,7 @@ type Candidate = {
 
 const candidate = (fdcId: number, description: string, dataType: string, foodCategory: string, calories: number): Candidate => ({
   fdcId, description, dataType, foodCategory,
-  foodNutrients: [{ nutrientName: 'Energy', unitName: 'KCAL', value: calories }],
+  foodNutrients: usdaNutrientsFor(calories),
 });
 
 describe('LS-1198 B1: a basic source is not necessarily the plain food', () => {

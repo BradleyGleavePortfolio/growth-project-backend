@@ -22,6 +22,7 @@ import { FoodService, LOCAL_SEARCH_TAKE } from '../src/food/food.service';
 import type { PrismaService } from '../src/prisma.service';
 import { parseUsdaFoods, usdaFoodRow } from '../scripts/load-usda-foods';
 import { parseSeedFoods, seedFoodRow } from '../scripts/seed-built-in-foods';
+import { usdaNutrientsFor } from './support/food-true-numbers';
 
 const ROOT = join(__dirname, '..');
 const stub = <T>(v: unknown) => v as T;
@@ -83,7 +84,7 @@ async function search(typed: string, rows: unknown[]) {
 let fdc = 990000;
 const usda = (description: string, dataType: string) => ({
   fdcId: ++fdc, description, dataType, foodCategory: 'Test category',
-  foodNutrients: [{ nutrientName: 'Energy', unitName: 'KCAL', value: 100 + (fdc % 50) }],
+  foodNutrients: usdaNutrientsFor(100 + (fdc % 50)),
 });
 
 describe('S1: the catalog answers alone only when it holds a row named for the food', () => {

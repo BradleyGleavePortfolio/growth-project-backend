@@ -7,7 +7,8 @@ function stub<T>(value: unknown): T {
 }
 
 const product = (id: string, brand: string) => ({
-  id, name: 'Protein bar', brand, category: 'packaged',
+  // FOOD-TRUE-BE: brand_or_restaurant is the brand search reads (one food from two sources is one name plus brand).
+  id, name: 'Protein bar', brand, brand_or_restaurant: brand, category: 'packaged',
   calories: brand === 'Alpha' ? 350 : 420, protein: 20, carbs: 30, fat: 10,
   serving_size_description: '1 bar', serving_size_grams: 60,
   nutrient_basis: 'PER_100G', tags: [], search_aliases: [],

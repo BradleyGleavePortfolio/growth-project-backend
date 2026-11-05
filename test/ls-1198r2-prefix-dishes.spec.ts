@@ -9,6 +9,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { FoodService } from '../src/food/food.service';
 import type { PrismaService } from '../src/prisma.service';
+import { usdaNutrientsFor } from './support/food-true-numbers';
 
 type Fixture = { query: string; foods: Array<Record<string, unknown>> };
 const fixtures = JSON.parse(readFileSync(
@@ -24,8 +25,22 @@ afterEach(() => {
   else process.env.USDA_API_KEY = originalKey;
 });
 
+type Nutrient = { nutrientName?: string; unitName?: string; value?: number };
+/**
+ * FOOD-TRUE-BE: the sardines and pancakes captures kept only Energy. Search now leaves out a food whose calories
+ * are far from 4/4/9 of its macros (and a Branded one missing a macro), so a food captured without macros gets
+ * macros whose 4/4/9 is its calories; a food captured with them is served as captured.
+ */
+const withMacros = (food: Record<string, unknown>) => {
+  const nutrients = (food.foodNutrients ?? []) as Nutrient[];
+  if (nutrients.some((n) => n.nutrientName === 'Protein')) return food;
+  const kcal = nutrients.find((n) => n.nutrientName === 'Energy' && n.unitName === 'KCAL')?.value ?? 0;
+  return { ...food, foodNutrients: [...nutrients, ...usdaNutrientsFor(kcal).slice(1)] };
+};
+
 function world(query: string, local: unknown[] = []) {
-  const fixture = fixtures.find((f) => f.query === query)!;
+  const found = fixtures.find((f) => f.query === query)!;
+  const fixture = { ...found, foods: found.foods.map(withMacros) };
   const fetcher = jest.spyOn(global, 'fetch').mockImplementation(async (url) =>
     stub<Response>({
       ok: true, status: 200,
