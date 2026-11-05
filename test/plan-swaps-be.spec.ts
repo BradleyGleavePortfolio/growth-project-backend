@@ -23,7 +23,8 @@ import {
   CoachMealTemplatesController,
 } from '../src/real-meal-plans/real-meal-plans.controller';
 import { BulkAddListItemsDto } from '../src/lists/lists.dto';
-import { CreateMealTemplateDto } from '../src/real-meal-plans/real-meal-plans.dto';
+import { CreateMealTemplateDto, UpdateMealTemplateDto } from '../src/real-meal-plans/real-meal-plans.dto';
+import { BadRequestException, ValidationPipe } from '@nestjs/common';
 import {
   MEAL_RECIPE_INVALID,
   MEAL_SWAP_INVALID,
@@ -140,6 +141,8 @@ function world() {
             .filter((s) => assignments.some((a) => a.daily_meal_plan_id === s.daily_meal_plan_id && a.client_id === client))
             .map((s) => ({ id: s.id }));
         }
+        // FIX-1221R2: updateTemplate's lookup of the plans whose slots hold a meal.
+        if (where.meal_template_id) return slots.filter((s) => s.meal_template_id === where.meal_template_id).map((s) => ({ ...s }));
         return slots.filter((s) => s.daily_meal_plan_id === where.daily_meal_plan_id).map((s) => ({ ...s }));
       }),
       deleteMany: jest.fn(async ({ where }: Row) => {
@@ -164,10 +167,13 @@ function world() {
         return { count: data.length };
       }),
       findMany: jest.fn(async ({ where, take }: Row) =>
-        revisions
-          .filter((r) => where.plan_id.in.includes(r.plan_id) && r.changed_at >= where.changed_at.gte && r.changed_at <= where.changed_at.lte)
-          .sort((a, b) => a.changed_at - b.changed_at)
-          .slice(0, take),
+        where.OR
+          // FIX-1221R2: updateTemplate's lookup of the plans whose changes name a meal.
+          ? revisions.filter((r) => (where.OR as Row[]).some((w) => Object.entries(w).every(([k, v]) => r[k] === v)))
+          : revisions
+            .filter((r) => where.plan_id.in.includes(r.plan_id) && r.changed_at >= where.changed_at.gte && r.changed_at <= where.changed_at.lte)
+            .sort((a, b) => a.changed_at - b.changed_at)
+            .slice(0, take),
       ),
     },
     dailyMealPlanAssignment: {
@@ -276,11 +282,48 @@ describe('PLAN-SWAPS-BE 1: a meal template carries the coach\'s own swaps and re
     expect(await codeOf(meals.updateTemplate(COACH, 'tpl-oats', { recipe_id: id }))).toBe(MEAL_RECIPE_INVALID);
   });
 
+  // FIX-1221R2 (LO-1221R2B C2): swap_template_ids is optional string[] (CONTRACT 6641656549); a null is
+  // refused by the global pipe (main.ts) with a 400, before the service, never a database error (500).
+  it.each([
+    ['PATCH /coach/meal-templates/:id', UpdateMealTemplateDto, {}],
+    ['POST /coach/meal-templates', CreateMealTemplateDto, base],
+  ])('%s with swap_template_ids: null is a 400, and [] still clears', async (_route, metatype, body) => {
+    const pipe = new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true });
+    const run = (value: Row) => pipe.transform({ ...body, ...value }, { type: 'body', metatype: metatype as never });
+    await expect(run({ swap_template_ids: null })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(run({ swap_template_ids: [] })).resolves.toMatchObject({ swap_template_ids: [] });
+    await expect(run({})).resolves.not.toHaveProperty('swap_template_ids');
+  });
+
   it('the DTO bounds the swap list and refuses repeats', async () => {
     const errs = async (body: Row) => (await validate(plainToInstance(CreateMealTemplateDto, { ...base, ...body }))).map((e) => e.property);
     expect(await errs({ swap_template_ids: ['a', 'a'] })).toEqual(['swap_template_ids']);
     expect(await errs({ swap_template_ids: Array.from({ length: 11 }, (_, i) => `t${i}`) })).toEqual(['swap_template_ids']);
     expect(await errs({ swap_template_ids: ['a'], recipe_id: 'r' })).toEqual([]);
+  });
+});
+
+describe('FIX-1221R2 (LS-1221R2B B1): updateTemplate holds every plan that depends on the meal', () => {
+  // Live proof (moved client, real freeze, RLS): test/rls/fix-1221r2-history-dependency-live.spec.ts.
+  it.each<[string, string, Row | null, string[]]>([
+    ['in a slot', 'tpl-oats', null, ['plan-a']],
+    ['named only as from in a change', 'tpl-eggs-old', { from_template_id: 'tpl-eggs-old', to_template_id: 'tpl-eggs' }, ['plan-a', 'plan-h']],
+    ['named only as to in a change', 'tpl-eggs-old', { from_template_id: 'tpl-eggs', to_template_id: 'tpl-eggs-old' }, ['plan-a', 'plan-h']],
+  ])('a meal %s reaches the moved-client freeze first', async (_what, target, change, want) => {
+    const { meals, revisions, templates } = world();
+    templates.push({ id: 'tpl-eggs-old', coach_id: COACH, name: 'Eggs old', archived_at: null, swap_template_ids: [], recipe_id: null });
+    if (change) {
+      revisions.push(
+        { id: 'rev-a', plan_id: 'plan-a', slot_id: 'slot-l', slot_label: 'lunch', changed_at: new Date(), ...change },
+        { id: 'rev-h', plan_id: 'plan-h', slot_id: 'gone', slot_label: 'lunch', changed_at: new Date(), ...change },
+      );
+    }
+    const freeze = jest
+      .spyOn(meals as unknown as { freezeForMovedClients: (...a: unknown[]) => Promise<void> }, 'freezeForMovedClients')
+      .mockResolvedValue(undefined);
+    await meals.updateTemplate(COACH, target, { name: 'Renamed' });
+    expect(freeze).toHaveBeenCalledTimes(1);
+    expect((freeze.mock.calls[0][2] as string[]).slice().sort()).toEqual(want);
   });
 });
 
@@ -359,9 +402,62 @@ describe('PLAN-SWAPS-BE 2: a meal change in a plan edit writes one revision in t
       new Date('2026-11-04T15:00:00Z'),
       () => `r${++n}`,
     );
+    // FIX-1221R2 (LO-1221R2B C1): what is left under one label pairs as one change.
     expect(rows.map((r) => [r.slot_id, r.from_template_id, r.to_template_id])).toEqual([
-      ['s2', 'c', null],
-      ['s6', null, 'd'],
+      ['s6', 'c', 'd'],
+    ]);
+  });
+
+  // FIX-1221R2 (LO-1221R2B C1): rows are keyed by label#order, so a removal shifts later meals onto other
+  // rows; one removal is still one change. Each case is the plan before and after, as the coach saves it
+  // (order is the index across the whole plan, mobile MealPickerScreen), diffed the way updatePlan does.
+  it.each<[string, [string, string][], [string, string][], [string, string | null, string | null][]]>([
+    ['the first of two snacks removed',
+      [['snack', 'apple'], ['snack', 'yogurt']], [['snack', 'yogurt']],
+      [['snack', 'apple', null]]],
+    ['lunch removed from breakfast, lunch, snack, snack, dinner',
+      [['breakfast', 'oats'], ['lunch', 'soup'], ['snack', 'apple'], ['snack', 'yogurt'], ['dinner', 'fish']],
+      [['breakfast', 'oats'], ['snack', 'apple'], ['snack', 'yogurt'], ['dinner', 'fish']],
+      [['lunch', 'soup', null]]],
+    ['a meal added before two snacks',
+      [['snack', 'apple'], ['snack', 'yogurt']], [['breakfast', 'oats'], ['snack', 'apple'], ['snack', 'yogurt']],
+      [['breakfast', null, 'oats']]],
+    ['one snack changed, the other kept',
+      [['snack', 'apple'], ['snack', 'yogurt']], [['snack', 'pear'], ['snack', 'yogurt']],
+      [['snack', 'apple', 'pear']]],
+    ['the second snack removed and the first changed',
+      [['snack', 'apple'], ['snack', 'yogurt']], [['snack', 'pear']],
+      [['snack', 'apple', 'pear'], ['snack', 'yogurt', null]]],
+    ['the two snacks swapped round', [['snack', 'apple'], ['snack', 'yogurt']], [['snack', 'yogurt'], ['snack', 'apple']], []],
+  ])('one change per meal: %s', (_what, beforePlan, afterPlan, want) => {
+    let n = 0;
+    const key = (label: string, order: number) => `${label}#${order}`;
+    const before = beforePlan.map(([slot_label, meal_template_id], order) => ({ id: `old-${order}`, slot_label, order, meal_template_id }));
+    const after = new Map(afterPlan.map(([slot_label, meal_template_id], order) => [key(slot_label, order), { slot_label, order, meal_template_id }]));
+    const kept = before.filter((b) => after.has(key(b.slot_label, b.order)))
+      .map((b) => ({ before: b, afterTemplateId: after.get(key(b.slot_label, b.order))!.meal_template_id }));
+    const removed = before.filter((b) => !after.has(key(b.slot_label, b.order)));
+    const had = new Set(before.map((b) => key(b.slot_label, b.order)));
+    const added = [...after.entries()].filter(([k]) => !had.has(k)).map(([k, a]) => ({ id: `new-${k}`, ...a }));
+    const rows = revisionsFor('p', kept, removed, added, new Date('2026-11-04T15:00:00Z'), () => `r${++n}`);
+    expect(rows.map((r) => [r.slot_label, r.from_template_id, r.to_template_id])).toEqual(want);
+  });
+
+  it('FIX-1221R2 (LO-1221R2B C1): removing the first of two snacks through the coach route writes one removal', async () => {
+    const { meals, revisions, slots } = world();
+    slots.push(
+      { id: 'slot-s0', daily_meal_plan_id: 'plan-a', slot_label: 'snack', order: 2, meal_template_id: 'tpl-oats', time_of_day: null },
+      { id: 'slot-s1', daily_meal_plan_id: 'plan-a', slot_label: 'snack', order: 3, meal_template_id: 'tpl-eggs', time_of_day: null },
+    );
+    await meals.updatePlan(COACH, 'plan-a', {
+      slots: [
+        { slot_label: 'breakfast', order: 0, meal_template_id: 'tpl-oats' },
+        { slot_label: 'lunch', order: 1, meal_template_id: 'tpl-eggs' },
+        { slot_label: 'snack', order: 2, meal_template_id: 'tpl-eggs' },
+      ],
+    });
+    expect(revisions.map((r) => [r.slot_label, r.from_template_id, r.to_template_id])).toEqual([
+      ['snack', 'tpl-oats', null],
     ]);
   });
 

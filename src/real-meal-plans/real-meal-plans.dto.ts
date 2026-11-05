@@ -13,6 +13,7 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { IsTimeOfDay } from '../common/validators/time-of-day';
@@ -53,8 +54,10 @@ export class CreateMealTemplateDto {
 
   // PLAN-SWAPS-BE (C2 S2): the coach's swaps for this meal (their own live meals, never this one) and
   // their own recipe for it; null clears the recipe. The service checks every id (MEAL_SWAP_INVALID,
-  // MEAL_RECIPE_INVALID).
-  @IsOptional() @IsArray() @ArrayMaxSize(MAX_MEAL_SWAPS) @ArrayUnique() @IsString({ each: true }) @MaxLength(64, { each: true })
+  // MEAL_RECIPE_INVALID). FIX-1221R2 (LO-1221R2B C2): the swap list is optional but never null (the
+  // CONTRACT's string[]; [] clears it), so a null is a 400 here, not a database error.
+  @ValidateIf((_dto, value) => value !== undefined)
+  @IsArray() @ArrayMaxSize(MAX_MEAL_SWAPS) @ArrayUnique() @IsString({ each: true }) @MaxLength(64, { each: true })
   swap_template_ids?: string[];
   @IsOptional() @IsString() @MaxLength(64) recipe_id?: string | null;
 }
@@ -72,8 +75,10 @@ export class UpdateMealTemplateDto {
 
   // PLAN-SWAPS-BE (C2 S2): the coach's swaps for this meal (their own live meals, never this one) and
   // their own recipe for it; null clears the recipe. The service checks every id (MEAL_SWAP_INVALID,
-  // MEAL_RECIPE_INVALID).
-  @IsOptional() @IsArray() @ArrayMaxSize(MAX_MEAL_SWAPS) @ArrayUnique() @IsString({ each: true }) @MaxLength(64, { each: true })
+  // MEAL_RECIPE_INVALID). FIX-1221R2 (LO-1221R2B C2): the swap list is optional but never null (the
+  // CONTRACT's string[]; [] clears it), so a null is a 400 here, not a database error.
+  @ValidateIf((_dto, value) => value !== undefined)
+  @IsArray() @ArrayMaxSize(MAX_MEAL_SWAPS) @ArrayUnique() @IsString({ each: true }) @MaxLength(64, { each: true })
   swap_template_ids?: string[];
   @IsOptional() @IsString() @MaxLength(64) recipe_id?: string | null;
 }

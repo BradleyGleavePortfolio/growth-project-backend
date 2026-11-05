@@ -82,10 +82,13 @@ export interface RevisionRow {
 }
 
 /**
- * The revisions one plan edit writes: a kept slot whose meal changed (from -> to), a removed slot
- * (from -> null) and an added slot (null -> to). Every row of one edit carries the same `changedAt`.
- * FIX-1221 (LO-1221 C3): a removed slot and an added slot with the same label and meal are the same meal
- * moved (a reorder or a renumbered save), not a change, and write nothing.
+ * The revisions one plan edit writes: a meal changed (from -> to), a meal removed (from -> null) and a meal
+ * added (null -> to). Every row of one edit carries the same `changedAt`.
+ * FIX-1221R2 (LO-1221R2B C1): slot rows are keyed by label#order, so removing one meal shifts the meals
+ * after it onto other rows. The meals of each slot label are compared as a multiset instead: a meal on
+ * both sides is not a change (wherever its row moved), a surplus meal before is removed, a surplus meal
+ * after is added, and what is left under the same label pairs as from -> to (a row keeping its own id
+ * first). So one removal is one change.
  */
 export function revisionsFor(
   planId: string,
@@ -96,7 +99,7 @@ export function revisionsFor(
   newId: () => string,
 ): RevisionRow[] {
   // A revision is history, not a slot write (test/c2-c0-planned-times.spec.ts walks slot writers).
-  const row = ({ id: slot_id, slot_label }: SlotRow, from: string | null, to: string | null): RevisionRow => ({
+  const row = (slot_id: string, slot_label: string, from: string | null, to: string | null): RevisionRow => ({
     id: newId(),
     plan_id: planId,
     slot_id,
@@ -105,19 +108,37 @@ export function revisionsFor(
     to_template_id: to,
     changed_at: changedAt,
   });
-  const same = (a: SlotRow, b: SlotRow) => a.slot_label === b.slot_label && a.meal_template_id === b.meal_template_id;
-  const gone = [...removed];
-  const fresh = added.filter((s) => {
-    const i = gone.findIndex((g) => same(g, s));
-    if (i < 0) return true;
-    gone.splice(i, 1);
-    return false;
-  });
-  return [
-    ...kept
-      .filter((k) => k.before.meal_template_id !== k.afterTemplateId)
-      .map((k) => row(k.before, k.before.meal_template_id, k.afterTemplateId)),
-    ...gone.map((s) => row(s, s.meal_template_id, null)),
-    ...fresh.map((s) => row(s, null, s.meal_template_id)),
-  ];
+  const before: SlotRow[] = [...kept.map((k) => k.before), ...removed];
+  const after: SlotRow[] = [...kept.map((k) => ({ ...k.before, meal_template_id: k.afterTemplateId })), ...added];
+  const changes: RevisionRow[] = [];
+  const gone: RevisionRow[] = [];
+  const fresh: RevisionRow[] = [];
+  for (const label of [...new Set([...before, ...after].map((s) => s.slot_label))]) {
+    let b = before.filter((s) => s.slot_label === label);
+    const a = after.filter((s) => s.slot_label === label);
+    // The same meal on both sides is no change: its own row first, then any row under the label.
+    const take = (match: (x: SlotRow, y: SlotRow) => boolean) => {
+      b = b.filter((x) => {
+        const i = a.findIndex((y) => x.meal_template_id === y.meal_template_id && match(x, y));
+        if (i < 0) return true;
+        a.splice(i, 1);
+        return false;
+      });
+    };
+    take((x, y) => x.id === y.id);
+    take(() => true);
+    // A row whose own meal changed is that row's change; the rest pair in order.
+    b = b.filter((x) => {
+      const i = a.findIndex((y) => y.id === x.id);
+      if (i < 0) return true;
+      changes.push(row(x.id, label, x.meal_template_id, a[i].meal_template_id));
+      a.splice(i, 1);
+      return false;
+    });
+    const pairs = Math.min(b.length, a.length);
+    for (let i = 0; i < pairs; i++) changes.push(row(a[i].id, label, b[i].meal_template_id, a[i].meal_template_id));
+    for (const x of b.slice(pairs)) gone.push(row(x.id, label, x.meal_template_id, null));
+    for (const y of a.slice(pairs)) fresh.push(row(y.id, label, null, y.meal_template_id));
+  }
+  return [...changes, ...gone, ...fresh];
 }
