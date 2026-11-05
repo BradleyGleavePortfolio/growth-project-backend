@@ -89,6 +89,10 @@ const field = (name: string, want: number): Check => (b) => {
   return got === want ? null : `${name} is ${JSON.stringify(got)}, want ${want}`;
 };
 const contains = (s: string): Check => (b) => (b.includes(s) ? null : `does not mention ${s}`);
+const listed = (name: string): Check => (b) => {
+  const got = (JSON.parse(b) as Record<string, unknown>)[name];
+  return Array.isArray(got) && got.length > 0 ? null : `${name} is ${JSON.stringify(got)}, want a non-empty list`;
+};
 
 function reads(now: Date): Read[] {
   const C = clientId(0);
@@ -112,9 +116,9 @@ function reads(now: Date): Read[] {
     { screen: 'Inbox', path: '/coach/messages/unread-count', check: ok },
     // One client's file (ClientDetailScreen.tsx, client-detail/useThisWeek.ts, useClientDetailData.ts).
     { screen: 'Client file', path: `/coach/clients/${C}/summary?date=${today}`, check: ok },
-    { screen: 'Client file', path: `/coach/clients/${C}/week`, check: ok },
+    { screen: 'Client file', path: `/coach/clients/${C}/week`, check: listed('assignments') },
     { screen: 'Client file', path: `/coach/clients/${C}/timeline?days=8`, check: contains(FOOD_NAME) },
-    { screen: 'Client file', path: `/coach/clients/${C}/macros/current`, check: ok },
+    { screen: 'Client file', path: `/coach/clients/${C}/macros/current`, check: contains('calories_kcal') },
     { screen: 'Client file', path: `/coach/clients/${C}/timeline?days=90`, check: contains(FOOD_NAME) },
     // Money (money/MoneyScreen.tsx); payouts and the Stripe status call Stripe and are not timed here.
     { screen: 'Money', path: `/v1/coach/money/summary?${q({ from, to, compare_from: cFrom, compare_to: from })}`, check: ok },
@@ -151,8 +155,14 @@ async function seed(db: Db, now: Date): Promise<Record<string, number>> {
   const food = (await db.foodItem.create({ data: { name: FOOD_NAME, serving_description: '1 bowl', serving_size_grams: 80, calories: 300, protein_g: 10, carbs_g: 54, fat_g: 6 } })) as { id: string };
 
   const meals = ['breakfast', 'lunch', 'dinner'] as const;
-  const rows: Record<string, unknown[]> = { loggedFoodEntry: [], waterLog: [], weightLog: [], workoutSession: [], checkIn: [], coachMessage: [], clientSignal: [], coachingSession: [] };
+  // The coach's program: a strength day assigned on each training day, 90 days back to a week ahead.
+  const plan = (await db.workoutPlan.create({ data: { coach_id: COACH_ID, name: 'Full body', type: 'strength' } })) as { id: string };
+  const rows: Record<string, unknown[]> = { loggedFoodEntry: [], waterLog: [], weightLog: [], workoutSession: [], checkIn: [], coachMessage: [], clientSignal: [], coachingSession: [], clientWorkoutAssignment: [], macroTarget: [] };
   CLIENT_IDS.forEach((uid, c) => {
+    rows.macroTarget.push({ client_id: uid, coach_id: COACH_ID, calories_kcal: 2200, protein_g: 160, carbs_g: 230, fats_g: 70, effective_from: created, created_at: created });
+    for (let d = -7; d < DAYS; d++)
+      if (((d % 7) + 7) % 7 !== 6)
+        rows.clientWorkoutAssignment.push({ workout_plan_id: plan.id, client_id: uid, assigned_by_coach_id: COACH_ID, scheduled_for: at(d, 0), completed_at: d > 0 ? at(d, -1) : null });
     for (let d = 0; d < DAYS; d++) {
       meals.forEach((meal_type, m) => rows.loggedFoodEntry.push({ user_id: uid, date: day(d), meal_type, food_item_id: food.id, quantity_multiplier: 1, logged_at: at(d, 12 - m * 4) }));
       for (let w = 0; w < 4; w++) rows.waterLog.push({ user_id: uid, amount_ml: 500, logged_at: at(d, 14 - w * 3), created_at: at(d, 14 - w * 3) });
@@ -295,7 +305,7 @@ const median = (xs: number[]) => {
       '',
       '| Screen | Read (GET /api...) | Status | Bytes | Median ms | Worst ms | Warm-up ms | Result |',
       '|---|---|---|---|---|---|---|---|',
-      ...results.map((x) => `| ${x.screen} | ${x.path.replace(/\?.*$/, (m) => (m.length > 40 ? '?...' : m))} | ${x.status} | ${x.bytes} | ${x.median.toFixed(1)} | ${x.worst.toFixed(1)} | ${x.warmWorst.toFixed(1)} | ${x.problem ? `FAIL: ${x.problem}` : x.median > BUDGET_MS || x.worst > BUDGET_MS ? 'FAIL: over budget' : 'ok'} |`),
+      ...results.map((x) => `| ${x.screen} | ${x.path.replace(clientId(0), ':id').replace(/\?from=.*$/, '?from=..&to=..&compare_from=..&compare_to=..')} | ${x.status} | ${x.bytes} | ${x.median.toFixed(1)} | ${x.worst.toFixed(1)} | ${x.warmWorst.toFixed(1)} | ${x.problem ? `FAIL: ${x.problem}` : x.median > BUDGET_MS || x.worst > BUDGET_MS ? 'FAIL: over budget' : 'ok'} |`),
     ];
       console.log(lines.join('\n'));
     if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n') + '\n');
@@ -313,6 +323,8 @@ const median = (xs: number[]) => {
     expect(counts.checkIn).toBe(CLIENTS * DAYS);
     expect(counts.coachMessage).toBe(CLIENTS * DAYS * 2);
     expect(counts.workoutSession).toBeGreaterThan(CLIENTS * 70);
+    expect(counts.clientWorkoutAssignment).toBeGreaterThan(CLIENTS * 80);
+    expect(counts.macroTarget).toBe(CLIENTS);
   });
 
   it('times every read of the six screens', () => {
