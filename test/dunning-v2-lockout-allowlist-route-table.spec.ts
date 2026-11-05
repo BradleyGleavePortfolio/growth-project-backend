@@ -211,6 +211,7 @@ const EXPECTED_REACHABLE_WHILE_LOCKED: readonly string[] = [
   'messages/report', // MessagesSafetyController POST — report a message
   'messages/unread-count', // ClientMessagingController GET unread count
   'readyz',
+  'roman/messages/:id/report', // RomanMessageReportController POST — report a Roman reply (ROMAN-HOLD-BE), like messages/report
   'roman/sessions',
   'roman/sessions/:id',
   'roman/sessions/:id/messages',

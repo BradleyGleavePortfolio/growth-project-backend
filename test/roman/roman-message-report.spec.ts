@@ -21,6 +21,7 @@ import { PrismaService } from '../../src/prisma.service';
 import { RomanMessageReportController } from '../../src/roman/roman-message-report.controller';
 import { RomanMessageReportService } from '../../src/roman/roman-message-report.service';
 import { RomanFeatureGuard } from '../../src/roman/roman-feature.guard';
+import { ROMAN_REQUIRES_COACH, ROMAN_REQUIRES_COACH_MESSAGE } from '../../src/roman/roman-requires-coach';
 import { ROMAN_ERROR_SESSION_NOT_FOUND, ROMAN_SESSION_NOT_FOUND_MESSAGE } from '../../src/roman/roman.constants';
 
 type Msg = { id: string; user_id: string; role: 'user' | 'roman'; session_deleted: boolean };
@@ -141,6 +142,7 @@ describe('RomanMessageReportService', () => {
 describe('POST /roman/messages/:id/report', () => {
   let app: INestApplication;
   let baseUrl = '';
+  let signedIn: Record<string, unknown> = { id: 'user-A', role: 'student', coach_id: 'coach-K' };
   const service = {
     report: jest.fn(async (..._a: unknown[]) => ({ reportId: 'rep_1', status: 'received' as const })),
   };
@@ -153,7 +155,7 @@ describe('POST /roman/messages/:id/report', () => {
       .overrideGuard(JwtAuthGuard)
       .useValue({
         canActivate: (ctx: ExecutionContext) => {
-          ctx.switchToHttp().getRequest<{ user?: unknown }>().user = { id: 'user-A', role: 'student' };
+          ctx.switchToHttp().getRequest<{ user?: unknown }>().user = signedIn;
           return true;
         },
       })
@@ -171,7 +173,10 @@ describe('POST /roman/messages/:id/report', () => {
     if (app) await app.close();
   });
 
-  beforeEach(() => service.report.mockClear());
+  beforeEach(() => {
+    service.report.mockClear();
+    signedIn = { id: 'user-A', role: 'student', coach_id: 'coach-K' };
+  });
 
   const post = (id: string, body: unknown) =>
     fetch(`${baseUrl}/roman/messages/${encodeURIComponent(id)}/report`, {
@@ -188,6 +193,14 @@ describe('POST /roman/messages/:id/report', () => {
       reason: 'self_harm',
       details: 'worrying',
     });
+  });
+
+  it('refuses a client with no coach with the shipped 403 ROMAN_REQUIRES_COACH (owner rule 139-15) and files nothing', async () => {
+    signedIn = { id: 'user-A', role: 'student', coach_id: null };
+    const res = await post('msg_roman_a', { reason: 'spam' });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ code: ROMAN_REQUIRES_COACH, message: ROMAN_REQUIRES_COACH_MESSAGE });
+    expect(service.report).not.toHaveBeenCalled();
   });
 
   it.each(REPORT_REASONS.map((r) => [r]))('accepts the DM report reason %s (the same list the report flow sends)', async (reason) => {

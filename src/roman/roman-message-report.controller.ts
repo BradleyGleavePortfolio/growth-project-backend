@@ -6,6 +6,7 @@ import type { AuthedRequest } from '../auth/auth-request';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { REPORT_REASONS, type ReportReason } from '../messages-safety/dto/report-message.dto';
+import { assertRomanHasCoach } from './roman-requires-coach';
 import { RomanMessageReportResult, RomanMessageReportService } from './roman-message-report.service';
 
 /** The body of a Roman report: the DM report's reason list and details cap; no message text. */
@@ -22,8 +23,9 @@ export class ReportRomanMessageDto {
 /**
  * ROMAN-HOLD-BE: POST /roman/messages/:id/report, the server half of press-and-hold Report on one of
  * Roman's replies (owner #197-D3). Not behind the Roman chat switch, like the chat list and delete
- * routes (RomanChatsController): a client who can see a reply can always report it. Every signed-in
- * role, limited like POST /messages/report (20 an hour).
+ * routes (RomanChatsController). Every signed-in role, limited like POST /messages/report (20 an hour).
+ * A client with no coach gets 403 ROMAN_REQUIRES_COACH (owner rule 139-15, product rule 3): the
+ * coachless exemptions are owner rulings (CONTRACT-2) and this route is not one of them.
  */
 @Controller('roman')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -38,6 +40,7 @@ export class RomanMessageReportController {
     @Param('id') id: string,
     @Body() dto: ReportRomanMessageDto,
   ): Promise<RomanMessageReportResult> {
+    assertRomanHasCoach(req.user);
     const body: { reason: ReportReason; details?: string } = { reason: dto.reason };
     if (dto.details !== undefined) body.details = dto.details;
     return this.reports.report({ id: req.user.id, role: req.user.role }, id, body);
