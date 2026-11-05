@@ -18,7 +18,7 @@ describe('LS-1222 B4: legacy absent packaged macros are not represented as real 
   beforeEach(() => {
     process.env.USDA_API_KEY = 'fixture-key';
     jest.spyOn(global, 'fetch').mockImplementation(async (url) => {
-      const usda = String(url).includes('api.nal.usda.gov');
+      const usda = new URL(String(url)).hostname === 'api.nal.usda.gov';
       const food = {
         fdcId: 1222004, description: held.name, dataType: 'Branded', foodNutrients: [
           { nutrientName: 'Energy', unitName: 'KCAL', value: 60 },

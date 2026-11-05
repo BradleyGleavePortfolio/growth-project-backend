@@ -108,7 +108,7 @@ describe('FIX-1222 held rows and their sources', () => {
   it('H5: unusable foods are left out before the limit', async () => {
     const product = (code: string, protein: number | undefined) => ({ code, product_name: `Bar ${code}`, nutriments: {
       'energy-kcal_100g': 400, ...(protein === undefined ? {} : { proteins_100g: protein }), carbohydrates_100g: 60, fat_100g: 10 } });
-    fetchMock.mockImplementation(async (url) => String(url).includes('openfoodfacts')
+    fetchMock.mockImplementation(async (url) => new URL(String(url)).hostname === 'world.openfoodfacts.org'
       ? answer({ products: [product('1', undefined), product('2', undefined), product('3', 20)] })
       : answer({ foods: [] }));
     const service = new FoodService(stub<PrismaService>({}));

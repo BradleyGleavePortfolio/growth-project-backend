@@ -5,19 +5,11 @@
  */
 import { Prisma } from '@prisma/client';
 import { FoodService } from '../src/food/food.service';
-import { numbersCanBeTrue } from '../src/food/food-truth';
 import type { PrismaService } from '../src/prisma.service';
 
 const stub = <T>(v: unknown) => v as T;
 type Row = Record<string, unknown>;
 const VIEWER = 'viewer-lo-1222';
-
-const stored = (id: string, name: string, extra: Row = {}): Row => ({
-  id, name, brand_or_restaurant: null, category: 'generic', serving_description: '100 g', serving_size_grams: 100,
-  calories: 100, protein_g: 5, carbs_g: 10, fat_g: 4.4, fiber_g: null, sugar_g: null, sodium_mg: null,
-  tags: ['basic-food'], search_aliases: [], image_url: null, nutrient_basis: 'PER_100G', word_match: 0,
-  created_by_user_id: null, ...extra,
-});
 
 function setup(local: Row[] = []) {
   const $queryRaw = jest.fn(async (strings: TemplateStringsArray, ...values: unknown[]) =>

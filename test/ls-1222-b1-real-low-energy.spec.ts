@@ -50,7 +50,7 @@ describe('LS-1222 B1: complete real low-energy foods remain usable', () => {
     async (source) => {
       const product = off('Erythritol', erythritol);
       jest.spyOn(global, 'fetch').mockImplementation(async (url) => stub<Response>({
-        ok: true, status: 200, json: async () => String(url).includes('api.nal.usda.gov')
+        ok: true, status: 200, json: async () => new URL(String(url)).hostname === 'api.nal.usda.gov'
           ? { foods: source === 'USDA' ? [usda('Erythritol', erythritol)] : [] }
           : { products: source === 'OFF' ? [product] : [] },
       }));
@@ -82,7 +82,7 @@ describe('LS-1222 B1: complete real low-energy foods remain usable', () => {
 
   it('a complete zero-calorie drink from OFF remains searchable', async () => {
     jest.spyOn(global, 'fetch').mockImplementation(async (url) => stub<Response>({
-      ok: true, status: 200, json: async () => String(url).includes('api.nal.usda.gov')
+      ok: true, status: 200, json: async () => new URL(String(url)).hostname === 'api.nal.usda.gov'
         ? { foods: [] } : { products: [off('Sparkling water', water)] },
     }));
     const service = new FoodService(stub<PrismaService>({ $queryRaw: jest.fn().mockResolvedValue([]) }));

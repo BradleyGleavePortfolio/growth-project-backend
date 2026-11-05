@@ -73,7 +73,7 @@ describe.each(foods)('LS-1222 complete real food: $name', (food) => {
     jest.spyOn(global, 'fetch').mockImplementation(async (url) => {
       const text = String(url);
       const body = text.includes('/food/') ? usda : text.includes('/product/') ? { product }
-        : text.includes('api.nal.usda.gov') ? { foods: path === 'USDA search' ? [usda] : [] }
+        : new URL(text).hostname === 'api.nal.usda.gov' ? { foods: path === 'USDA search' ? [usda] : [] }
           : { products: path === 'OFF search' ? [product] : [] };
       return stub<Response>({ ok: true, status: 200, json: async () => body });
     });
