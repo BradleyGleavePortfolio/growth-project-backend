@@ -47,7 +47,7 @@ describe('LS-1222R3 catalog and per-serving consistency controls', () => {
     ];
     for (const row of cases) {
       const serving = {
-        ...row, nutrient_basis: 'PER_SERVING', serving_size_grams: grams,
+        ...row, nutrient_basis: 'PER_SERVING' as const, serving_size_grams: grams,
         calories: row.calories * grams / 100,
         protein_g: row.protein_g * grams / 100,
         carbs_g: row.carbs_g * grams / 100,
