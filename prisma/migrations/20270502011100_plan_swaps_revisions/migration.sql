@@ -26,7 +26,14 @@
 -- UPDATE, swaps and a recipe the row already stores under the same coach stay (a swap archived later may
 -- be saved back, as the coach routes accept). The helper is SECURITY DEFINER (search_path pinned) so it
 -- sees rows the caller cannot read (Recipe is server-only, another coach's template is unreadable).
--- Live proof: test/rls/plan-revisions-rls.spec.ts (rls-live-tests). Reverse: down.sql.
+-- FIX-1221R2 (LS-1221R2B B1): a revision names meals (from/to) that may no longer sit in any slot. So
+-- app.caller_keeps_meal_template (20270419000000) also counts a plan whose revisions name the template:
+-- the coach keeps the template only while every client holding each such plan is still theirs. The
+-- template SELECT (archived), UPDATE and DELETE policies already call it, so a former coach can no longer
+-- rename a meal that only a departed client's held history still names. Redefined here (CREATE OR
+-- REPLACE, same signature, grants kept); down.sql restores the 20270419000000 body and comment exactly.
+-- Live proof: test/rls/plan-revisions-rls.spec.ts and test/rls/ls-1221r2b-history-dependency-live.spec.ts
+-- (rls-live-tests). Reverse: down.sql.
 -- Placement: sorts after 20270502010900 (main) and 20270502011000 (#1219, not yet merged).
 
 BEGIN;
@@ -71,6 +78,28 @@ CREATE POLICY "p_dailymealplanrevision_select_coach" ON "DailyMealPlanRevision"
   FOR SELECT TO public
   USING (app.current_user_id() IS NOT NULL AND EXISTS (SELECT 1 FROM public."DailyMealPlan" dmp WHERE dmp."id" = "DailyMealPlanRevision"."plan_id" AND dmp."coach_id" = app.current_user_id() AND app.caller_keeps_meal_plan(dmp."id")));
 COMMENT ON POLICY "p_dailymealplanrevision_select_coach" ON "DailyMealPlanRevision" IS '20270502011100: the plan''s coach reads its changes while every client holding the plan is still theirs. No API role writes.';
+
+CREATE OR REPLACE FUNCTION app.caller_keeps_meal_template(target_template_id text)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT NOT EXISTS (
+    SELECT 1
+    FROM public."DailyMealPlanSlot" s
+    WHERE s."meal_template_id" = target_template_id
+      AND NOT app.caller_keeps_meal_plan(s."daily_meal_plan_id")
+  ) AND NOT EXISTS (
+    SELECT 1
+    FROM public."DailyMealPlanRevision" r
+    WHERE (r."from_template_id" = target_template_id OR r."to_template_id" = target_template_id)
+      AND NOT app.caller_keeps_meal_plan(r."plan_id")
+  )
+$$;
+COMMENT ON FUNCTION app.caller_keeps_meal_template(text) IS
+  '20270502011100 (FIX-1221R2): true when every plan using the template in a slot or naming it in a revision passes app.caller_keeps_meal_plan. Reads no MealTemplate row.';
 
 CREATE OR REPLACE FUNCTION app.meal_template_links_ok(p_id text, p_coach text, p_swaps text[], p_recipe text)
 RETURNS boolean

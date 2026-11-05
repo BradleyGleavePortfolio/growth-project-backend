@@ -138,11 +138,20 @@ export class RealMealPlansService {
     await this.assertTemplateOwnedBy(coachId, templateId);
     await this.assertTemplateLinks(coachId, dto, templateId);
     return this.prisma.$transaction(async (tx) => {
+      // FIX-1221R2 (LS-1221R2B B1): a plan depends on this meal through a slot or through a change that
+      // names it (from or to), so a meal swapped out still freezes for a moved client's history first; the
+      // database rule matches (app.caller_keeps_meal_template, 20270502011100).
       const used = await tx.dailyMealPlanSlot.findMany({
         where: { meal_template_id: templateId },
         select: { daily_meal_plan_id: true },
       });
-      await this.freezeForMovedClients(tx, coachId, used.map((u) => u.daily_meal_plan_id));
+      const named = await tx.dailyMealPlanRevision.findMany({
+        where: { OR: [{ from_template_id: templateId }, { to_template_id: templateId }] },
+        select: { plan_id: true },
+      });
+      await this.freezeForMovedClients(tx, coachId, [
+        ...new Set([...used.map((u) => u.daily_meal_plan_id), ...named.map((r) => r.plan_id)]),
+      ]);
       return tx.mealTemplate.update({
         where: { id: templateId },
         data: {
