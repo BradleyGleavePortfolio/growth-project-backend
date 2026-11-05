@@ -17,7 +17,7 @@ import { ListsService } from './lists.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
-import { AddListItemDto, UpdateListItemDto } from './lists.dto';
+import { AddListItemDto, BulkAddListItemsDto, UpdateListItemDto } from './lists.dto';
 import { ListType } from '@prisma/client';
 
 function parseListType(type: string): ListType {
@@ -60,7 +60,7 @@ export class ListsController {
   async bulkAdd(
     @Request() req: AuthedRequest,
     @Param('type') type: string,
-    @Body() body: { items: AddListItemDto[] },
+    @Body() body: BulkAddListItemsDto,
   ) {
     if (!Array.isArray(body.items) || body.items.length === 0) {
       throw new BadRequestException('items must be a non-empty array');
