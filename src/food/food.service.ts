@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { volumeWeightsFor } from './food-density';
 import { parseFoodQuery } from './food-query-parser';
+import { numbersCanBeTrue } from './food-truth';
 
 export interface FoodSearchResponse {
   results: FoodResult[];
@@ -263,8 +264,21 @@ function identityOf(item: FoodResult): string {
   const source = /^(usda|off)_/.test(item.id)
     ? item.id.replace('_', ':')
     : (item.tags ?? []).find((t) => /^(usda|off):/.test(t)) ?? `id:${item.id}`;
-  const norm = (v: string | null | undefined) => (v ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
-  return [norm(item.name), norm(item.brand_or_restaurant), Math.round(Number(item.calories)), source].join('|');
+  return [nameAndBrandOf(item), Math.round(Number(item.calories)), source].join('|');
+}
+
+const norm = (v: string | null | undefined) => (v ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+const nameAndBrandOf = (item: FoodResult) => `${norm(item.name)}|${norm(item.brand_or_restaurant)}`;
+
+/**
+ * FOOD-TRUE-BE (LO-FOOD C9): where a shared row came from: USDA (live, or loaded or stored with its usda: tag), Open
+ * Food Facts (live, or stored with its off: tag) or our own catalog (the built-in foods and other shared rows). Null
+ * for the caller's own custom food, which is theirs and is never folded into a shared row.
+ */
+function sourceOf(item: FoodResult, own: ReadonlySet<string>): string | null {
+  if (own.has(item.id)) return null;
+  const tagged = (item.tags ?? []).find((t) => /^(usda|off):/.test(t));
+  return /^(usda|off)_/.exec(item.id)?.[1] ?? tagged?.split(':')[0] ?? 'catalog';
 }
 
 // USDA names the plain form of a food "..., raw" or "..., whole" ("Bananas, raw",
@@ -341,13 +355,26 @@ const builtIn = (item: FoodResult) => ((item.tags ?? []).includes(SEED_TAG) ? 1 
  * after them. The exact whole name, the plain form, a built-in row, shorter
  * names and then A-Z break ties.
  */
-function rankFoodResults(items: FoodResult[], q: string, limit: number): FoodResult[] {
+function rankFoodResults(items: FoodResult[], q: string, limit: number, own: ReadonlySet<string> = new Set()): FoodResult[] {
   const byIdentity = new Map<string, FoodResult>();
+  // FOOD-TRUE-BE (LO-FOOD C9): one food from two sources shows once. A name plus brand already listed from another
+  // source is that food again (the first source listed wins: catalog, then USDA, then Open Food Facts); one source's
+  // other products with that name and brand (another barcode or USDA id) stay, as R5 keeps them.
+  const sourceOfName = new Map<string, string>();
   for (const item of items) {
     const key = identityOf(item);
     const kept = byIdentity.get(key);
-    if (!kept) byIdentity.set(key, item);
-    else if (item.basic_food && !kept.basic_food) byIdentity.set(key, { ...kept, basic_food: true });
+    if (kept) {
+      if (item.basic_food && !kept.basic_food) byIdentity.set(key, { ...kept, basic_food: true });
+      continue;
+    }
+    const source = sourceOf(item, own);
+    if (source) {
+      const first = sourceOfName.get(nameAndBrandOf(item));
+      if (first && first !== source) continue;
+      if (!first) sourceOfName.set(nameAndBrandOf(item), source);
+    }
+    byIdentity.set(key, item);
   }
 
   const qWords = words(q);
@@ -415,14 +442,50 @@ function rankFoodResults(items: FoodResult[], q: string, limit: number): FoodRes
 // the per-day level and the upstream APIs are slow + rate-limited.
 const SEARCH_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 // v3 (FOOD-USDA-BE): the catalog's word search and catalog-first answers; v1 and
-// b#1198's v2 entries are never served after this change.
-const SEARCH_CACHE_KEY_PREFIX = 'food:search:v3:';
+// b#1198's v2 entries are never served after this change. v4 (FOOD-TRUE-BE): an
+// answer holds no food whose numbers cannot be true, so a v3 answer (which may) is
+// never served.
+const SEARCH_CACHE_KEY_PREFIX = 'food:search:v4:';
 // R2's label "100 g", with a no-break space so the number and unit stay on one line.
 export const HUNDRED_GRAMS = '100\u00a0g';
 
 /** Throws on an upstream answer we must not keep; a 404 is "nothing found", as before. */
 function upstreamFailed(response: Response, source: string): void {
   if (!response.ok && response.status !== 404) throw new Error(`${source} search failed: ${response.status}`);
+}
+
+const USDA_MACROS = ['Protein', 'Carbohydrate, by difference', 'Total lipid (fat)'];
+
+/** A USDA nutrient's raw amount per 100 g, or null when the food does not list it. */
+function usdaAmount(food: UsdaFood, name: string): number | null {
+  const match = (food.foodNutrients ?? []).find((n) => {
+    const nutrientName = n.nutrientName ?? n.name ?? n.nutrient?.name;
+    return nutrientName === name || (name === USDA_MACROS[1] && nutrientName === 'Carbohydrates, by difference');
+  });
+  const value = match ? Number(match.value ?? match.amount) : Number.NaN;
+  return Number.isFinite(value) ? value : null;
+}
+
+/**
+ * FOOD-TRUE-BE: a USDA food the phone may get. A packaged (Branded) food must list its protein, carbs and fat (never
+ * read as 0 g); every food's numbers must be able to be true, its alcohol counted at 7 kcal a gram.
+ */
+function usdaNumbersUsable(food: UsdaFood, mapped: FoodResult): boolean {
+  if (food.dataType === 'Branded' && USDA_MACROS.some((name) => usdaAmount(food, name) === null)) return false;
+  return numbersCanBeTrue(mapped, usdaAmount(food, 'Alcohol, ethyl') ?? 0);
+}
+
+/**
+ * FOOD-TRUE-BE: an Open Food Facts product the phone may get: its label lists calories (kcal or kJ), protein, carbs
+ * and fat per 100 g (never read as 0 g), and the numbers can be true. Open Food Facts gives alcohol as % by volume;
+ * at about 0.79 g a millilitre that is its grams per 100 g.
+ */
+function offNumbersUsable(product: OpenFoodFactsProduct, mapped: FoodResult): boolean {
+  const n = product.nutriments ?? {};
+  const listed = (k: string) => n[k] != null && Number.isFinite(Number(n[k]));
+  if (!listed('energy-kcal_100g') && !listed('energy_100g')) return false;
+  if (!['proteins_100g', 'carbohydrates_100g', 'fat_100g'].every(listed)) return false;
+  return numbersCanBeTrue(mapped, listed('alcohol_100g') ? Number(n['alcohol_100g']) * 0.789 : 0);
 }
 
 @Injectable()
@@ -480,7 +543,8 @@ export class FoodService implements OnModuleInit {
         orderBy: { name: 'asc' },
       });
       return {
-        results: defaults.map(this.toResult),
+        // FOOD-TRUE-BE: a shared row whose numbers cannot be true is left out; the caller's own foods are theirs.
+        results: defaults.filter((row) => row.created_by_user_id !== null || numbersCanBeTrue(row)).map(this.toResult),
         suggestions: [],
         did_you_mean: false,
         query: rawQ,
@@ -502,7 +566,8 @@ export class FoodService implements OnModuleInit {
     const shared = cached ? cached.results : await this.searchShared(q, limit, cacheKey);
 
     // Own foods first on a name tie, then the same relevance order as before.
-    const results = rankFoodResults([...(await ownPromise), ...shared], q, limit);
+    const own = await ownPromise;
+    const results = rankFoodResults([...own, ...shared], q, limit, new Set(own.map((item) => item.id)));
 
     return {
       results,
@@ -519,11 +584,15 @@ export class FoodService implements OnModuleInit {
    * catalog has LOCAL_ENOUGH_WHOLE rows holding every typed word as a whole word, it answers alone.
    */
   private async searchShared(q: string, limit: number, cacheKey: string): Promise<FoodResult[]> {
-    // As before, a catalog query the database refuses finds nothing (and still asks USDA and Open Food Facts).
-    const catalog = await this.searchCatalog(q, LOCAL_SEARCH_TAKE, null).catch(() => ({ rows: [], whole: 0 }));
-    const local = catalog.rows;
     // R4 (b#1198): set when USDA or Open Food Facts fails or times out, so the list stays out of the cache below.
+    // FOOD-TRUE-BE (LO-FOOD C8): the catalog is a source too; a catalog query the database refuses finds nothing, as
+    // before (and still asks USDA and Open Food Facts), and that answer is not cached either.
     let failed = false;
+    const catalog = await this.searchCatalog(q, LOCAL_SEARCH_TAKE, null).catch(() => {
+      failed = true;
+      return { rows: [], whole: 0 };
+    });
+    const local = catalog.rows;
     let usda: FoodResult[] = [];
     let off: FoodResult[] = [];
     // FR-1212R1 (LS-1212 B1, LO-1212 B1): the catalog answers alone only when it also holds a row named for the food
@@ -658,7 +727,14 @@ export class FoodService implements OnModuleInit {
                length(f."name"), f."name", f."id"
       LIMIT ${limit}
     `;
-    return { rows: rows.map(this.toResult), whole: rows.filter((r) => Number(r.word_match) === 0).length };
+    // FOOD-TRUE-BE: a shared row whose numbers cannot be true is left out; and a built-in food (C9) is listed only
+    // for typed words that are its own words (word_match 0 or 1), never for typed text inside another word ("ham" in
+    // "Graham crackers"). The caller's own foods are theirs and stay as they are.
+    const kept =
+      ownerId !== null
+        ? rows
+        : rows.filter((r) => numbersCanBeTrue(r) && !((r.tags ?? []).includes(SEED_TAG) && Number(r.word_match) === 2));
+    return { rows: kept.map(this.toResult), whole: kept.filter((r) => Number(r.word_match) === 0).length };
   }
 
   private async searchUSDA(query: string, limit: number = 20): Promise<FoodResult[]> {
@@ -686,7 +762,10 @@ export class FoodService implements OnModuleInit {
       return foods
         .filter((f) => f.description && f.description.trim())
         .slice(0, limit)
-        .map((f) => this.mapUSDAFood(f));
+        .map((f) => ({ food: f, mapped: this.mapUSDAFood(f) }))
+        // FOOD-TRUE-BE: a food whose numbers cannot be true, or a packaged one missing a macro, is left out.
+        .filter(({ food, mapped }) => usdaNumbersUsable(food, mapped))
+        .map(({ mapped }) => mapped);
     } finally {
       clearTimeout(timeout);
     }
@@ -788,7 +867,10 @@ export class FoodService implements OnModuleInit {
           return cals != null && cals > 0;
         })
         .slice(0, limit)
-        .map((p) => this.mapOpenFoodFactsProduct(p));
+        .map((p) => ({ product: p, mapped: this.mapOpenFoodFactsProduct(p) }))
+        // FOOD-TRUE-BE: a product whose numbers cannot be true, or missing its protein, carbs or fat, is left out.
+        .filter(({ product, mapped }) => offNumbersUsable(product, mapped))
+        .map(({ mapped }) => mapped);
     } finally {
       clearTimeout(timeout);
     }
@@ -943,6 +1025,8 @@ export class FoodService implements OnModuleInit {
     }
 
     const mapped = this.mapUSDAFood(food);
+    // FOOD-TRUE-BE: the stored import keeps search's rules; such a food is not stored and reads as not found.
+    if (!usdaNumbersUsable(food, mapped)) throw new Error(`USDA food ${fdcId} not found`);
     // Guard against mid-flush races: if two concurrent flush calls try to
     // create the same USDA item, the second create will throw a unique
     // constraint violation on the tags GIN index (not available as a Prisma
@@ -993,6 +1077,10 @@ export class FoodService implements OnModuleInit {
     const held = await this.prisma.foodItem.findUnique({ where: { barcode: code } });
     if (held) {
       if (!canSeeFood(held, viewerId)) throw new Error(`OpenFoodFacts product ${code} not found`);
+      // FOOD-TRUE-BE: a stored shared row whose numbers cannot be true reads as not found (the row is not changed).
+      if (held.created_by_user_id === null && !numbersCanBeTrue(held)) {
+        throw new Error(`OpenFoodFacts product ${code} not found`);
+      }
       return held.id;
     }
 
@@ -1015,6 +1103,9 @@ export class FoodService implements OnModuleInit {
 
     if (!payload?.product) throw new Error(`OpenFoodFacts product ${code} not found`);
     const mapped = this.mapOpenFoodFactsProduct(payload.product);
+    // FOOD-TRUE-BE: the barcode and the stored import keep search's rules: a product missing its calories, protein,
+    // carbs or fat, or whose numbers cannot be true, is not stored as 0 g and reads as not found.
+    if (!offNumbersUsable(payload.product, mapped)) throw new Error(`OpenFoodFacts product ${code} not found`);
 
     // upsert on barcode (unique) — no-op update so a race just returns the
     // existing row's id rather than throwing a unique constraint violation.
