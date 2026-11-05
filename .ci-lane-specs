@@ -1,0 +1,13 @@
+test/food-1-be-portions.spec.ts
+test/food-1-be-search.spec.ts
+test/food-custom-privacy.spec.ts
+test/food-logging-contract.spec.ts
+test/food-true-be.spec.ts
+test/food-usda-search.spec.ts
+test/fr-1198-class-first.spec.ts
+test/fr-1198r2-names-food.spec.ts
+test/fr-1212r1-class-first.spec.ts
+test/ls-1198-branded-catalog-ids.spec.ts
+test/ls-1198-plain-search.spec.ts
+test/ls-1198r2-prefix-dishes.spec.ts
+test/ls-food-brand-identity.spec.ts
