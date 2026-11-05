@@ -172,21 +172,24 @@ describe('FIX-1222R2 R1/R2: every new use of a stored shared row reads the store
 });
 
 describe('FIX-1222R2 R2: lists leave out legacy packaged zeros, USDA Branded as well as Open Food Facts', () => {
-  const LISTED: Array<[string, Row, string[], boolean]> = [
-    ['USDA Branded 0 g protein, before FIX-1222', cereal(0), ['usda:1222900'], false],
-    ['Open Food Facts 0 g protein, before FIX-1222', cereal(0), [`off:${code}`], false],
-    ['USDA Branded 0 g protein, checked', cereal(0), ['usda:1222900', 'truth:checked'], true],
-    ['USDA basic food 0 g fat (generic: 0 g)', cereal(0), ['usda:1222900', 'basic-food'], true],
-    ['seed row 0 g fat', cereal(0), ['seed:common-foods'], true],
-    ['USDA Branded impossible numbers', { ...milk, calories: 418 }, ['usda:1222900', 'truth:checked'], false],
+  // [case, stored numbers, tags, brand, shown]: USDA gives a brand only on a Branded food.
+  const LISTED: Array<[string, Row, string[], string | null, boolean]> = [
+    ['USDA Branded 0 g protein, before FIX-1222', cereal(0), ['usda:1222900'], 'Acme', false],
+    ['Open Food Facts 0 g protein, before FIX-1222', cereal(0), [`off:${code}`], null, false],
+    ['Open Food Facts 0 g protein with a brand', cereal(0), [`off:${code}`], 'Acme', false],
+    ['USDA Branded 0 g protein, checked', cereal(0), ['usda:1222900', 'truth:checked'], 'Acme', true],
+    ['USDA generic, no brand, no basic tag, 0 g fat (generic: 0 g)', cereal(0), ['usda:1222900'], null, true],
+    ['USDA basic food 0 g fat (generic: 0 g)', cereal(0), ['usda:1222900', 'basic-food'], null, true],
+    ['seed row 0 g fat', cereal(0), ['seed:common-foods'], null, true],
+    ['USDA Branded impossible numbers', { ...milk, calories: 418 }, ['usda:1222900', 'truth:checked'], 'Acme', false],
   ];
-  it.each(LISTED)('typed search: %s', async (_name, numbers, tags, shown) => {
-    const row = stored(numbers, tags, { name: 'Packaged cereal', barcode: null });
+  it.each(LISTED)('typed search: %s', async (_name, numbers, tags, brand, shown) => {
+    const row = stored(numbers, tags, { name: 'Packaged cereal', barcode: null, brand_or_restaurant: brand });
     const { food } = world(row, null);
     expect((await food.search('Packaged cereal', 50, viewer)).results.map((r) => r.id)).toEqual(shown ? [row.id] : []);
   });
-  it.each(LISTED.filter(([, , tags]) => !tags.includes('basic-food')))('short list: %s', async (_name, numbers, tags, shown) => {
-    const row = stored(numbers, tags, { name: 'Packaged cereal', barcode: null });
+  it.each(LISTED.filter(([, , tags]) => !tags.includes('basic-food')))('short list: %s', async (_name, numbers, tags, brand, shown) => {
+    const row = stored(numbers, tags, { name: 'Packaged cereal', barcode: null, brand_or_restaurant: brand });
     const { food } = world(row, null);
     expect((await food.search('', 50, viewer)).results.map((r) => r.id)).toEqual(shown ? [row.id] : []);
   });

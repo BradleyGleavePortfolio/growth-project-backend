@@ -540,13 +540,15 @@ function offAlcoholG(product: OpenFoodFactsProduct): number {
 
 /**
  * FIX-1222 (LS-1222 B4), FIX-1222R2 (LS-1222R2 B2): a stored shared row a list may show (lists cannot ask the source):
- * its numbers can be true, read with the alcohol its tags hold, and it is not a packaged row (an Open Food Facts,
- * USDA Branded or FNDDS import) stored before FIX-1222 with a 0 g macro (its 0 may be a macro the label
- * left out; search still shows the source's own record). The caller's own foods are theirs.
+ * its numbers can be true, read with the alcohol its tags hold, and it is not a packaged row (an Open Food Facts or
+ * USDA Branded import) stored before FIX-1222 with a 0 g macro (its 0 may be a macro the label left out; search
+ * still shows the source's own record). USDA gives a brand only on a Branded food (mapUSDAFood), so a USDA row with
+ * no brand is a generic food, whose missing macro reads 0 g. The caller's own foods are theirs.
  */
 function storedRowShows(row: FoodItemRow & { created_by_user_id?: string | null }): boolean {
   if (row.created_by_user_id) return true;
-  return storedNumbersCanBeTrue(row) && !legacyPackagedZero(row, BASIC_TAG);
+  const branded = (row.tags ?? []).some((t) => t.startsWith('off:')) || !!row.brand_or_restaurant?.trim();
+  return storedNumbersCanBeTrue(row) && !(branded && legacyPackagedZero(row, BASIC_TAG));
 }
 
 /**
