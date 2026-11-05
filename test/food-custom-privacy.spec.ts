@@ -17,6 +17,7 @@ import { FoodService } from '../src/food/food.service';
 import { LogService } from '../src/log/log.service';
 import type { AuthedRequest } from '../src/auth/auth-request';
 import type { PrismaService } from '../src/prisma.service';
+import { usdaNutrientsFor } from './support/food-true-numbers';
 
 function stub<T>(value: unknown): T {
   return value as T;
@@ -66,7 +67,7 @@ function matches(row: Row, where: Record<string, unknown>): boolean {
 
 function setup(opts: { trigram?: boolean } = {}) {
   const rows: Row[] = [
-    food('shared-lasagne', 'Lasagne', { calories: 135, nutrient_basis: 'PER_100G', serving_size_grams: 100 }),
+    food('shared-lasagne', 'Lasagne', { calories: 135, protein_g: 8, carbs_g: 12, fat_g: 6.5, nutrient_basis: 'PER_100G', serving_size_grams: 100 }),
   ];
   let created = 0;
   const sqlTexts: string[] = [];
@@ -240,7 +241,7 @@ describe('custom foods are private to their creator (UX-FOOD-PRIV-124)', () => {
         json: async () => ({
           fdcId: 168872,
           description: 'Oats',
-          foodNutrients: [{ nutrientName: 'Energy', unitName: 'KCAL', value: 379 }],
+          foodNutrients: usdaNutrientsFor(379),
         }),
       }),
     );

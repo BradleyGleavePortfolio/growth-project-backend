@@ -1,9 +1,13 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma } from '@prisma/client';
+import { FoodItem, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { volumeWeightsFor } from './food-density';
 import { parseFoodQuery } from './food-query-parser';
+import {
+  SourceEvidence, TRUTH_TAG_PREFIX, evidenceTags, heldRowConfirmed, legacyPackagedZero, numbersCanBeTrue,
+  storedNumbersCanBeTrue, withinHardCaps,
+} from './food-truth';
 
 export interface FoodSearchResponse {
   results: FoodResult[];
@@ -247,7 +251,8 @@ function matchOf(item: FoodResult, rawQuery: string): { score: number; whole: bo
   const text = item.name.toLowerCase();
   if (text.includes(rawQuery.toLowerCase().trim())) return { score: 20, whole };
   if (q.every((w) => text.includes(w))) return { score: 15, whole };
-  const aliases = words([...(item.tags || []), ...(item.search_aliases || [])].join(' '));
+  const tags = (item.tags || []).filter((t) => !t.startsWith(TRUTH_TAG_PREFIX));
+  const aliases = words([...tags, ...(item.search_aliases || [])].join(' '));
   return { score: q.some((w) => aliases.includes(w)) ? 10 : 5, whole };
 }
 
@@ -263,8 +268,21 @@ function identityOf(item: FoodResult): string {
   const source = /^(usda|off)_/.test(item.id)
     ? item.id.replace('_', ':')
     : (item.tags ?? []).find((t) => /^(usda|off):/.test(t)) ?? `id:${item.id}`;
-  const norm = (v: string | null | undefined) => (v ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
-  return [norm(item.name), norm(item.brand_or_restaurant), Math.round(Number(item.calories)), source].join('|');
+  return [nameAndBrandOf(item), Math.round(Number(item.calories)), source].join('|');
+}
+
+const norm = (v: string | null | undefined) => (v ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+const nameAndBrandOf = (item: FoodResult) => `${norm(item.name)}|${norm(item.brand_or_restaurant)}`;
+
+/**
+ * FOOD-TRUE-BE (LO-FOOD C9): where a shared row came from: USDA (live, or loaded or stored with its usda: tag), Open
+ * Food Facts (live, or stored with its off: tag) or our own catalog (the built-in foods and other shared rows). Null
+ * for the caller's own custom food, which is theirs and is never folded into a shared row.
+ */
+function sourceOf(item: FoodResult, own: ReadonlySet<string>): string | null {
+  if (own.has(item.id)) return null;
+  const tagged = (item.tags ?? []).find((t) => /^(usda|off):/.test(t));
+  return /^(usda|off)_/.exec(item.id)?.[1] ?? tagged?.split(':')[0] ?? 'catalog';
 }
 
 // USDA names the plain form of a food "..., raw" or "..., whole" ("Bananas, raw",
@@ -341,13 +359,31 @@ const builtIn = (item: FoodResult) => ((item.tags ?? []).includes(SEED_TAG) ? 1 
  * after them. The exact whole name, the plain form, a built-in row, shorter
  * names and then A-Z break ties.
  */
-function rankFoodResults(items: FoodResult[], q: string, limit: number): FoodResult[] {
+function rankFoodResults(
+  items: FoodResult[],
+  q: string,
+  limit: number,
+  own: ReadonlySet<string> = new Set(),
+): FoodResult[] {
   const byIdentity = new Map<string, FoodResult>();
+  // FOOD-TRUE-BE (LO-FOOD C9): one food from two sources shows once. A name plus brand already listed from another
+  // source is that food again (the first source listed wins: catalog, then USDA, then Open Food Facts); one source's
+  // other products with that name and brand (another barcode or USDA id) stay, as R5 keeps them.
+  const sourceOfName = new Map<string, string>();
   for (const item of items) {
     const key = identityOf(item);
     const kept = byIdentity.get(key);
-    if (!kept) byIdentity.set(key, item);
-    else if (item.basic_food && !kept.basic_food) byIdentity.set(key, { ...kept, basic_food: true });
+    if (kept) {
+      if (item.basic_food && !kept.basic_food) byIdentity.set(key, { ...kept, basic_food: true });
+      continue;
+    }
+    const source = sourceOf(item, own);
+    if (source) {
+      const first = sourceOfName.get(nameAndBrandOf(item));
+      if (first && first !== source) continue;
+      if (!first) sourceOfName.set(nameAndBrandOf(item), source);
+    }
+    byIdentity.set(key, item);
   }
 
   const qWords = words(q);
@@ -415,14 +451,114 @@ function rankFoodResults(items: FoodResult[], q: string, limit: number): FoodRes
 // the per-day level and the upstream APIs are slow + rate-limited.
 const SEARCH_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 // v3 (FOOD-USDA-BE): the catalog's word search and catalog-first answers; v1 and
-// b#1198's v2 entries are never served after this change.
-const SEARCH_CACHE_KEY_PREFIX = 'food:search:v3:';
+// b#1198's v2 entries are never served after this change. v4 (FOOD-TRUE-BE): an
+// answer holds no food whose numbers cannot be true, so a v3 answer (which may) is
+// never served. v5 (FIX-1222): real low-energy foods, alcohol held in tags and the
+// limit taken after the check, so a v4 answer (which may hide them) is never served. v6 (FIX-1222R2): an answer
+// holds no USDA Branded row stored before FIX-1222 with a 0 g macro and keeps foods whose fibre sits outside
+// their carbohydrate, so a v5 answer (which may show the one and hide the other) is never served.
+const SEARCH_CACHE_KEY_PREFIX = 'food:search:v6:';
 // R2's label "100 g", with a no-break space so the number and unit stay on one line.
 export const HUNDRED_GRAMS = '100\u00a0g';
 
 /** Throws on an upstream answer we must not keep; a 404 is "nothing found", as before. */
 function upstreamFailed(response: Response, source: string): void {
   if (!response.ok && response.status !== 404) throw new Error(`${source} search failed: ${response.status}`);
+}
+
+const USDA_MACROS = ['Protein', 'Carbohydrate, by difference', 'Total lipid (fat)'];
+
+/** A USDA nutrient's raw amount per 100 g, or null when the food does not list it. */
+function usdaAmount(food: UsdaFood, name: string): number | null {
+  const match = (food.foodNutrients ?? []).find((n) => {
+    const nutrientName = n.nutrientName ?? n.name ?? n.nutrient?.name;
+    return nutrientName === name || (name === USDA_MACROS[1] && nutrientName === 'Carbohydrates, by difference');
+  });
+  const value = match ? Number(match.value ?? match.amount) : Number.NaN;
+  return Number.isFinite(value) ? value : null;
+}
+
+/**
+ * FOOD-TRUE-BE: a USDA food the phone may get. A packaged (Branded) food must list its protein, carbs and fat (never
+ * read as 0 g); every food's numbers must be able to be true, its alcohol counted at 7 kcal a gram.
+ */
+function usdaNumbersUsable(food: UsdaFood, mapped: FoodResult): boolean {
+  if (food.dataType === 'Branded' && USDA_MACROS.some((name) => usdaAmount(food, name) === null)) return false;
+  return numbersCanBeTrue(mapped, usdaAlcoholG(food), usdaPolyolsG(food));
+}
+
+/** The sugar alcohols a USDA food lists, in grams per 100 g (0 when it lists none). */
+function usdaPolyolsG(food: UsdaFood): number {
+  return usdaAmount(food, 'Total sugar alcohols') ?? usdaAmount(food, 'Sugar alcohols') ?? 0;
+}
+
+/**
+ * FIX-1222R2: what USDA lists for a food. A basic (non-Branded) food missing a macro lists it as 0 g, as its import
+ * reads it (generic USDA missing macro reads 0 g); a Branded label that leaves one out lists nothing for it.
+ */
+function usdaEvidence(food: UsdaFood): SourceEvidence {
+  const macro = (name: string) => usdaAmount(food, name) ?? (food.dataType === 'Branded' ? null : 0);
+  return {
+    protein_g: macro(USDA_MACROS[0]), carbs_g: macro(USDA_MACROS[1]), fat_g: macro(USDA_MACROS[2]),
+    alcoholG: usdaAlcoholG(food), polyolsG: usdaPolyolsG(food),
+  };
+}
+
+/** The alcohol a USDA food lists, in grams per 100 g (0 when it lists none). */
+function usdaAlcoholG(food: UsdaFood): number {
+  return usdaAmount(food, 'Alcohol, ethyl') ?? 0;
+}
+
+/**
+ * FOOD-TRUE-BE: an Open Food Facts product the phone may get: its label lists calories (kcal or kJ), protein, carbs
+ * and fat per 100 g (never read as 0 g), and the numbers can be true. Open Food Facts gives alcohol as % by volume;
+ * at about 0.79 g a millilitre that is its grams per 100 g.
+ */
+function offNumbersUsable(product: OpenFoodFactsProduct, mapped: FoodResult): boolean {
+  const n = product.nutriments ?? {};
+  const listed = (k: string) => n[k] != null && Number.isFinite(Number(n[k]));
+  if (!listed('energy-kcal_100g') && !listed('energy_100g')) return false;
+  if (!['proteins_100g', 'carbohydrates_100g', 'fat_100g'].every(listed)) return false;
+  return numbersCanBeTrue(mapped, offAlcoholG(product), offEvidence(product).polyolsG);
+}
+
+/** FIX-1222R2: what an Open Food Facts label lists per 100 g (a macro it leaves out lists nothing). */
+function offEvidence(product: OpenFoodFactsProduct): SourceEvidence {
+  const n = product.nutriments ?? {};
+  const amount = (k: string) => (n[k] != null && Number.isFinite(Number(n[k])) ? Number(n[k]) : null);
+  return {
+    protein_g: amount('proteins_100g'), carbs_g: amount('carbohydrates_100g'), fat_g: amount('fat_100g'),
+    alcoholG: offAlcoholG(product), polyolsG: amount('polyols_100g') ?? 0,
+  };
+}
+
+/** The alcohol an Open Food Facts product lists, in grams per 100 g (0 when it lists none). */
+function offAlcoholG(product: OpenFoodFactsProduct): number {
+  const value = Number((product.nutriments ?? {})['alcohol_100g']);
+  return Number.isFinite(value) ? value * 0.789 : 0;
+}
+
+/**
+ * FIX-1222 (LS-1222 B4), FIX-1222R2 (LS-1222R2 B2): a stored shared row a list may show (lists cannot ask the source):
+ * its numbers can be true, read with the alcohol its tags hold, and it is not a packaged row (an Open Food Facts or
+ * USDA Branded import) stored before FIX-1222 with a 0 g macro (its 0 may be a macro the label left out; search
+ * still shows the source's own record). USDA gives a brand only on a Branded food (mapUSDAFood), so a USDA row with
+ * no brand is a generic food, whose missing macro reads 0 g. The caller's own foods are theirs.
+ */
+function storedRowShows(row: FoodItemRow & { created_by_user_id?: string | null }): boolean {
+  if (row.created_by_user_id) return true;
+  const branded = (row.tags ?? []).some((t) => t.startsWith('off:')) || !!row.brand_or_restaurant?.trim();
+  return storedNumbersCanBeTrue(row) && !(branded && legacyPackagedZero(row, BASIC_TAG));
+}
+
+/**
+ * FIX-1222, FIX-1222R2: where a held row is read again. `read` gives what the source lists for it now (null when the
+ * source has no such food); `listsAlcohol` when that source lists a food's alcohol (the only evidence that can make
+ * failing stored numbers true: listed polyols only narrow the check).
+ */
+interface HeldSource {
+  listsAlcohol: boolean;
+  read: () => Promise<SourceEvidence | null>;
 }
 
 @Injectable()
@@ -480,7 +616,8 @@ export class FoodService implements OnModuleInit {
         orderBy: { name: 'asc' },
       });
       return {
-        results: defaults.map(this.toResult),
+        // FOOD-TRUE-BE: a shared row whose numbers cannot be true is left out; the caller's own foods are theirs.
+        results: defaults.filter((row) => storedRowShows(row)).map(this.toResult),
         suggestions: [],
         did_you_mean: false,
         query: rawQ,
@@ -502,7 +639,8 @@ export class FoodService implements OnModuleInit {
     const shared = cached ? cached.results : await this.searchShared(q, limit, cacheKey);
 
     // Own foods first on a name tie, then the same relevance order as before.
-    const results = rankFoodResults([...(await ownPromise), ...shared], q, limit);
+    const own = await ownPromise;
+    const results = rankFoodResults([...own, ...shared], q, limit, new Set(own.map((item) => item.id)));
 
     return {
       results,
@@ -519,11 +657,15 @@ export class FoodService implements OnModuleInit {
    * catalog has LOCAL_ENOUGH_WHOLE rows holding every typed word as a whole word, it answers alone.
    */
   private async searchShared(q: string, limit: number, cacheKey: string): Promise<FoodResult[]> {
-    // As before, a catalog query the database refuses finds nothing (and still asks USDA and Open Food Facts).
-    const catalog = await this.searchCatalog(q, LOCAL_SEARCH_TAKE, null).catch(() => ({ rows: [], whole: 0 }));
-    const local = catalog.rows;
     // R4 (b#1198): set when USDA or Open Food Facts fails or times out, so the list stays out of the cache below.
+    // FOOD-TRUE-BE (LO-FOOD C8): the catalog is a source too; a catalog query the database refuses finds nothing, as
+    // before (and still asks USDA and Open Food Facts), and that answer is not cached either.
     let failed = false;
+    const catalog = await this.searchCatalog(q, LOCAL_SEARCH_TAKE, null).catch(() => {
+      failed = true;
+      return { rows: [], whole: 0 };
+    });
+    const local = catalog.rows;
     let usda: FoodResult[] = [];
     let off: FoodResult[] = [];
     // FR-1212R1 (LS-1212 B1, LO-1212 B1): the catalog answers alone only when it also holds a row named for the food
@@ -531,7 +673,7 @@ export class FoodService implements OnModuleInit {
     if (catalog.whole < LOCAL_ENOUGH_WHOLE || !local.some((item) => namesTheFood(item, q))) {
       const settled = await Promise.allSettled([this.searchUSDA(q, 20), this.searchOpenFoodFacts(q, 20)]);
       [usda, off] = settled.map((r) => (r.status === 'fulfilled' ? r.value : []));
-      failed = settled.some((r) => r.status === 'rejected');
+      failed = failed || settled.some((r) => r.status === 'rejected');
     }
 
     // Merge: local catalog first, then USDA (reliable nutrition), then OFF (images)
@@ -658,7 +800,14 @@ export class FoodService implements OnModuleInit {
                length(f."name"), f."name", f."id"
       LIMIT ${limit}
     `;
-    return { rows: rows.map(this.toResult), whole: rows.filter((r) => Number(r.word_match) === 0).length };
+    // FOOD-TRUE-BE: a shared row whose numbers cannot be true is left out; and a built-in food (C9) is listed only
+    // for typed words that are its own words (word_match 0 or 1), never for typed text inside another word ("ham" in
+    // "Graham crackers"). The caller's own foods are theirs and stay as they are.
+    const kept =
+      ownerId !== null
+        ? rows
+        : rows.filter((r) => storedRowShows(r) && !((r.tags ?? []).includes(SEED_TAG) && Number(r.word_match) === 2));
+    return { rows: kept.map(this.toResult), whole: kept.filter((r) => Number(r.word_match) === 0).length };
   }
 
   private async searchUSDA(query: string, limit: number = 20): Promise<FoodResult[]> {
@@ -685,8 +834,12 @@ export class FoodService implements OnModuleInit {
 
       return foods
         .filter((f) => f.description && f.description.trim())
+        .map((f) => ({ food: f, mapped: this.mapUSDAFood(f) }))
+        // FOOD-TRUE-BE: a food whose numbers cannot be true, or a packaged one missing a macro, is left out, before
+        // the limit is taken (FIX-1222), so a left-out food does not cost a usable one its place.
+        .filter(({ food, mapped }) => usdaNumbersUsable(food, mapped))
         .slice(0, limit)
-        .map((f) => this.mapUSDAFood(f));
+        .map(({ mapped }) => mapped);
     } finally {
       clearTimeout(timeout);
     }
@@ -780,15 +933,15 @@ export class FoodService implements OnModuleInit {
       const products: OpenFoodFactsProduct[] = data?.products || [];
 
       return products
-        .filter((p) => {
-          // Filter out products with no name or no nutrition data
-          if (!p.product_name || !p.product_name.trim()) return false;
-          const n = p.nutriments || {};
-          const cals = n['energy-kcal_100g'] ?? (n['energy_100g'] ? n['energy_100g'] / 4.184 : null);
-          return cals != null && cals > 0;
-        })
+        // Products with no name are left out. A listed 0 kcal is kept (FIX-1222, LS-1222 B1: water, sweeteners);
+        // offNumbersUsable leaves out a product whose label lists no calories.
+        .filter((p) => p.product_name && p.product_name.trim())
+        .map((p) => ({ product: p, mapped: this.mapOpenFoodFactsProduct(p) }))
+        // FOOD-TRUE-BE: a product whose numbers cannot be true, or missing its protein, carbs or fat, is left out,
+        // before the limit is taken (FIX-1222).
+        .filter(({ product, mapped }) => offNumbersUsable(product, mapped))
         .slice(0, limit)
-        .map((p) => this.mapOpenFoodFactsProduct(p));
+        .map(({ mapped }) => mapped);
     } finally {
       clearTimeout(timeout);
     }
@@ -911,7 +1064,96 @@ export class FoodService implements OnModuleInit {
     // Another person's custom food is reported exactly like a missing id.
     const existing = await this.prisma.foodItem.findUnique({ where: { id } });
     if (!existing || !canSeeFood(existing, viewerId)) throw new Error(`FoodItem ${id} not found`);
+    // FIX-1222 (LS-1222 B4), FIX-1222R2 (LS-1222R2 B1, LO-1222R2 B1): a saved id (recents, repeat, favourites, saved
+    // meals) passes the same numbers check as its usda_ or off_ id and never newly logs a missing macro as 0 g.
+    if (!(await this.heldUsable(existing, this.sourceFor(existing)))) throw new Error(`FoodItem ${id} not found`);
     return existing.id;
+  }
+
+  /**
+   * FIX-1222 (LS-1222 B3, LO-1222 B1, C1), FIX-1222R2 (LS-1222R2 B1, B2; LO-1222R2 B1, B2): a stored shared row read
+   * again (barcode, usda_, off_, saved id, saved meal) passes what a new import of it passes. Its numbers are read
+   * with the alcohol its tags hold. When they fail (within the hard caps, from a source that lists alcohol: a wine
+   * stored before FIX-1222), or it is a packaged row stored before FIX-1222 with a 0 g macro, its source is read
+   * again and the stored numbers must pass with what the source lists (heldRowConfirmed), never the source's own
+   * numbers. Nothing stored is changed; a source that cannot be reached throws, so a queued log retries.
+   */
+  private async heldUsable(row: FoodItem, source: HeldSource | null): Promise<boolean> {
+    if (row.created_by_user_id !== null) return true;
+    const numbersPass = storedNumbersCanBeTrue(row);
+    if (numbersPass && !legacyPackagedZero(row, BASIC_TAG)) return true;
+    if (source === null || (!numbersPass && !(source.listsAlcohol && withinHardCaps(row)))) return false;
+    const listed = await source.read();
+    return listed !== null && heldRowConfirmed(row, listed, BASIC_TAG);
+  }
+
+  /** The source a stored row came from: its USDA id, else its Open Food Facts code or barcode. */
+  private sourceFor(row: FoodItem): HeldSource | null {
+    const fdcId = (row.tags ?? []).find((t) => t.startsWith('usda:'))?.slice(5);
+    if (fdcId) return this.usdaSource(fdcId, (row.tags ?? []).includes(BASIC_TAG));
+    const code = (row.tags ?? []).find((t) => t.startsWith('off:'))?.slice(4) ?? row.barcode;
+    return code ? this.offSource(code) : null;
+  }
+
+  /** USDA lists alcohol for its basic foods (SR Legacy, Foundation), not on a Branded label. */
+  private usdaSource(fdcId: string, basic: boolean): HeldSource {
+    return {
+      listsAlcohol: basic,
+      read: async () => {
+        const food = await this.fetchUSDAFood(fdcId);
+        return food === null ? null : usdaEvidence(food);
+      },
+    };
+  }
+
+  private offSource(code: string): HeldSource {
+    return {
+      listsAlcohol: true,
+      read: async () => {
+        const product = await this.fetchOpenFoodFactsProduct(code);
+        return product === null ? null : offEvidence(product);
+      },
+    };
+  }
+
+  /** USDA's record for one food, or null when USDA has none (404). Any other failure throws. */
+  private async fetchUSDAFood(fdcId: string): Promise<UsdaFood | null> {
+    const apiKey = process.env.USDA_API_KEY;
+    if (!apiKey) throw new Error('USDA_API_KEY is not configured');
+
+    const url = `https://api.nal.usda.gov/fdc/v1/food/${encodeURIComponent(fdcId)}?api_key=${apiKey}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: { 'User-Agent': 'TheGrowthProject/1.0' },
+      });
+      if (response.status === 404) return null;
+      if (!response.ok) throw new Error(`USDA fetch failed: ${response.status}`);
+      return (await response.json()) as UsdaFood;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  /** Open Food Facts' product for one code, or null when it has none (404 or no product). Any other failure throws. */
+  private async fetchOpenFoodFactsProduct(code: string): Promise<OpenFoodFactsProduct | null> {
+    const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: { 'User-Agent': 'TheGrowthProject/1.0' },
+      });
+      if (response.status === 404) return null;
+      if (!response.ok) throw new Error(`OpenFoodFacts fetch failed: ${response.status}`);
+      const payload = (await response.json()) as OpenFoodFactsProductResponse;
+      return payload?.product ?? null;
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   private async upsertFromUSDA(fdcId: string): Promise<string> {
@@ -922,27 +1164,18 @@ export class FoodService implements OnModuleInit {
     const existing = await this.prisma.foodItem.findFirst({
       where: { tags: { has: tag }, created_by_user_id: null },
     });
-    if (existing) return existing.id;
-
-    const apiKey = process.env.USDA_API_KEY;
-    if (!apiKey) throw new Error('USDA_API_KEY is not configured');
-
-    const url = `https://api.nal.usda.gov/fdc/v1/food/${encodeURIComponent(fdcId)}?api_key=${apiKey}`;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-    let food: UsdaFood;
-    try {
-      const response = await fetch(url, {
-        signal: controller.signal,
-        headers: { 'User-Agent': 'TheGrowthProject/1.0' },
-      });
-      if (!response.ok) throw new Error(`USDA fetch failed: ${response.status}`);
-      food = (await response.json()) as UsdaFood;
-    } finally {
-      clearTimeout(timeout);
+    if (existing) {
+      // FIX-1222 (LS-1222 B3): a held USDA row passes what a new import of it passes, or reads as not found.
+      const source = this.usdaSource(fdcId, (existing.tags ?? []).includes(BASIC_TAG));
+      if (!(await this.heldUsable(existing, source))) throw new Error(`USDA food ${fdcId} not found`);
+      return existing.id;
     }
 
+    const food = await this.fetchUSDAFood(fdcId);
+    if (!food) throw new Error(`USDA food ${fdcId} not found`);
     const mapped = this.mapUSDAFood(food);
+    // FOOD-TRUE-BE: the stored import keeps search's rules; such a food is not stored and reads as not found.
+    if (!usdaNumbersUsable(food, mapped)) throw new Error(`USDA food ${fdcId} not found`);
     // Guard against mid-flush races: if two concurrent flush calls try to
     // create the same USDA item, the second create will throw a unique
     // constraint violation on the tags GIN index (not available as a Prisma
@@ -968,6 +1201,8 @@ export class FoodService implements OnModuleInit {
             tag,
             ...(mapped.category !== 'generic' ? [`${CATEGORY_TAG}${mapped.category}`] : []),
             ...(mapped.basic_food ? [BASIC_TAG] : []),
+            // FIX-1222 (LS-1222 B2, LO-1222 B1): checked, and the alcohol USDA listed, so a later read passes too.
+            ...evidenceTags(usdaAlcoholG(food)),
           ],
           search_aliases: [],
           image_url: mapped.image_url,
@@ -993,28 +1228,22 @@ export class FoodService implements OnModuleInit {
     const held = await this.prisma.foodItem.findUnique({ where: { barcode: code } });
     if (held) {
       if (!canSeeFood(held, viewerId)) throw new Error(`OpenFoodFacts product ${code} not found`);
+      // FOOD-TRUE-BE, FIX-1222 (LO-1222 B1, C1): a held shared row passes what a new scan of it passes, or reads as
+      // not found (the row is not changed).
+      if (!(await this.heldUsable(held, this.offSource(code)))) {
+        throw new Error(`OpenFoodFacts product ${code} not found`);
+      }
       return held.id;
     }
 
     // Barcode is unique in FoodItem — use a true Prisma upsert so concurrent
     // flush calls don't race to create a duplicate row (Fix 3).
-    const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json`;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-    let payload: OpenFoodFactsProductResponse;
-    try {
-      const response = await fetch(url, {
-        signal: controller.signal,
-        headers: { 'User-Agent': 'TheGrowthProject/1.0' },
-      });
-      if (!response.ok) throw new Error(`OpenFoodFacts fetch failed: ${response.status}`);
-      payload = (await response.json()) as OpenFoodFactsProductResponse;
-    } finally {
-      clearTimeout(timeout);
-    }
-
-    if (!payload?.product) throw new Error(`OpenFoodFacts product ${code} not found`);
-    const mapped = this.mapOpenFoodFactsProduct(payload.product);
+    const product = await this.fetchOpenFoodFactsProduct(code);
+    if (!product) throw new Error(`OpenFoodFacts product ${code} not found`);
+    const mapped = this.mapOpenFoodFactsProduct(product);
+    // FOOD-TRUE-BE: the barcode and the stored import keep search's rules: a product missing its calories, protein,
+    // carbs or fat, or whose numbers cannot be true, is not stored as 0 g and reads as not found.
+    if (!offNumbersUsable(product, mapped)) throw new Error(`OpenFoodFacts product ${code} not found`);
 
     // upsert on barcode (unique) — no-op update so a race just returns the
     // existing row's id rather than throwing a unique constraint violation.
@@ -1033,7 +1262,8 @@ export class FoodService implements OnModuleInit {
         fiber_g: mapped.fiber_g,
         sugar_g: mapped.sugar_g,
         sodium_mg: mapped.sodium_mg,
-        tags: [`off:${code}`],
+        // FIX-1222 (LS-1222 B2, LO-1222 B1): checked, and the alcohol the label listed, so a later read passes too.
+        tags: [`off:${code}`, ...evidenceTags(offAlcoholG(product))],
         search_aliases: [],
         image_url: mapped.image_url,
         barcode: code,

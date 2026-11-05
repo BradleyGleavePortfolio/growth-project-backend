@@ -155,6 +155,9 @@ describe('USDA search-to-log detail import', () => {
         foodNutrients: [
           ...nutrients,
           { amount: 13, nutrient: { name: 'Protein', unitName: 'g' } },
+          // FOOD-TRUE-BE: numbers oat flour can have (389 kcal from 13 g protein, 67.7 g carbs, 6.9 g fat).
+          { amount: 67.7, nutrient: { name: 'Carbohydrate, by difference', unitName: 'g' } },
+          { amount: 6.9, nutrient: { name: 'Total lipid (fat)', unitName: 'g' } },
         ],
       }),
     } as Response);
@@ -174,6 +177,8 @@ describe('USDA search-to-log detail import', () => {
         foodNutrients: [
           { amount: 389, nutrient: { name: 'Energy (Atwater General Factors)', unitName: 'kcal' } },
           { amount: 13, nutrient: { name: 'Protein', unitName: 'g' } },
+          { amount: 67.7, nutrient: { name: 'Carbohydrate, by difference', unitName: 'g' } },
+          { amount: 6.9, nutrient: { name: 'Total lipid (fat)', unitName: 'g' } },
         ],
       }),
     } as Response);

@@ -23,6 +23,7 @@
  */
 import { FoodService } from '../src/food/food.service';
 import type { PrismaService } from '../src/prisma.service';
+import { usdaNutrientsFor, offNutrimentsFor } from './support/food-true-numbers';
 
 const stub = <T>(value: unknown): T => value as T;
 
@@ -39,10 +40,10 @@ type Off = { code: string; product_name: string; brands?: string; nutriments: Re
 let fdc = 950000;
 const usda = (description: string, dataType: string): Usda => ({
   fdcId: ++fdc, description, dataType, foodCategory: 'Test category',
-  foodNutrients: [{ nutrientName: 'Energy', unitName: 'KCAL', value: 100 + (fdc % 50) }],
+  foodNutrients: usdaNutrientsFor(100 + (fdc % 50)),
 });
 const off = (code: string, product_name: string, brands?: string): Off => ({
-  code, product_name, brands, nutriments: { 'energy-kcal_100g': 210 },
+  code, product_name, brands, nutriments: offNutrimentsFor(210),
 });
 const catalogRow = (id: string, name: string, tags: string[] = []) => ({
   id, name, brand_or_restaurant: null, category: 'generic', created_by_user_id: null,

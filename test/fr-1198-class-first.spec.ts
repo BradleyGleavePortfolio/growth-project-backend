@@ -23,6 +23,7 @@ import { LogService } from '../src/log/log.service';
 import type { FoodService as FoodServiceType } from '../src/food/food.service';
 import type { PrismaService } from '../src/prisma.service';
 import type { LogFoodDto } from '../src/log/log.dto';
+import { usdaNutrientsFor } from './support/food-true-numbers';
 
 function stub<T>(value: unknown): T {
   return value as T;
@@ -42,7 +43,7 @@ type Usda = {
 let fdc = 900000;
 const usda = (description: string, dataType: string, extra: Partial<Usda> = {}): Usda => ({
   fdcId: ++fdc, description, dataType, foodCategory: 'Test category',
-  foodNutrients: [{ nutrientName: 'Energy', unitName: 'KCAL', value: 100 + (fdc % 50) }],
+  foodNutrients: usdaNutrientsFor(100 + (fdc % 50)),
   ...extra,
 });
 
@@ -182,6 +183,8 @@ describe('F3: a custom food is its own food', () => {
     const stored = {
       ...custom('stored-1', 13), name: 'Oats, raw', created_by_user_id: null, serving_description: '100\u00a0g',
       serving_size_grams: 100, calories: upstream.foodNutrients[0].value, tags: [`usda:${upstream.fdcId}`],
+      // FOOD-TRUE-BE: the stored import holds its upstream row's numbers, which can be true.
+      protein_g: 0, carbs_g: upstream.foodNutrients[2].value, fat_g: upstream.foodNutrients[3].value,
     };
     const { results } = await searchService([stored]).search('oats', 50, 'viewer');
     expect(results.filter((r) => r.name === 'Oats, raw')).toHaveLength(1);

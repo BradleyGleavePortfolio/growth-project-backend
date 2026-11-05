@@ -14,6 +14,7 @@ import {
   foodSearchWords,
   foodWordQueries,
 } from '../src/food/food.service';
+import { carbsFor, fatFor } from './support/food-true-numbers';
 
 const VIEWER = '00000000-0000-0000-0000-000000000193';
 const INJECTIONS = [
@@ -32,7 +33,7 @@ const INJECTIONS = [
 function row(name: string, word_match: number, extra: Record<string, unknown> = {}) {
   return {
     id: `id-${name}`, name, brand_or_restaurant: null, category: 'generic', serving_description: '100 g',
-    serving_size_grams: 100, calories: 100, protein_g: 1, carbs_g: 1, fat_g: 1, fiber_g: null, sugar_g: null,
+    serving_size_grams: 100, calories: 100, protein_g: 0, carbs_g: carbsFor(100), fat_g: fatFor(100), fiber_g: null, sugar_g: null,
     sodium_mg: null, tags: ['basic-food'], search_aliases: [], image_url: null, nutrient_basis: 'PER_100G', word_match,
     ...extra,
   };
@@ -119,14 +120,14 @@ describe('FOOD-USDA-BE: catalog first (U4)', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
-  it('the shared answer is cached under food:search:v3:, past b#1198\'s v2', async () => {
+  it('the shared answer is cached under food:search:v6: (FIX-1222R2), past v5, v4, v3 and b#1198\'s v2', async () => {
     // FR-1212R1: rows named for the food ("Egg, whole, raw"), so the catalog answers alone (LS-1212 B1).
     const { service } = setup(Array.from({ length: LOCAL_ENOUGH_WHOLE }, (_, i) => row(`Egg, whole, raw ${i}`, 0)));
     await service.search('eggs', 20, VIEWER);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const keys = [...(service as any).memoryCache.keys()] as string[];
     expect(keys.length).toBe(1);
-    expect(keys[0].startsWith('food:search:v3:')).toBe(true);
+    expect(keys[0].startsWith('food:search:v6:')).toBe(true);
   });
 });
 

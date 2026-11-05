@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import { Prisma } from '@prisma/client';
 import { FoodService, FoodResult } from '../src/food/food.service';
 import type { PrismaService } from '../src/prisma.service';
+import { usdaNutrientsFor, offNutrimentsFor, carbsFor, fatFor } from './support/food-true-numbers';
 
 function stub<T>(value: unknown): T {
   return value as T;
@@ -22,7 +23,7 @@ function stub<T>(value: unknown): T {
 
 type Row = Record<string, unknown>;
 
-const kcal = (value: number) => [{ nutrientName: 'Energy', unitName: 'KCAL', value }];
+const kcal = (value: number) => usdaNutrientsFor(value);
 let fdc = 1000;
 const basic = (description: string, dataType = 'Foundation') =>
   ({ fdcId: ++fdc, description, dataType, foodCategory: 'Dairy and Egg Products', foodNutrients: kcal(100) });
@@ -31,10 +32,10 @@ const survey = (description: string) =>
 const branded = (description: string, brandOwner: string, category = 'Candy') =>
   ({ fdcId: ++fdc, description, dataType: 'Branded', brandOwner, foodCategory: category, servingSize: 28, servingSizeUnit: 'g', foodNutrients: kcal(500) });
 const product = (code: string, product_name: string, brands: string, kcal100 = 300) =>
-  ({ code, product_name, brands, nutriments: { 'energy-kcal_100g': kcal100 } });
+  ({ code, product_name, brands, nutriments: offNutrimentsFor(kcal100) });
 const seedRow = (id: string, name: string) => ({
   id, name, brand_or_restaurant: null, category: 'generic', serving_description: '100g', serving_size_grams: 100,
-  calories: 100, protein_g: 1, carbs_g: 1, fat_g: 1, fiber_g: null, sugar_g: null, sodium_mg: null,
+  calories: 100, protein_g: 0, carbs_g: carbsFor(100), fat_g: fatFor(100), fiber_g: null, sugar_g: null, sodium_mg: null,
   tags: ['seed:common-foods'], search_aliases: [], image_url: null, nutrient_basis: 'PER_100G',
 });
 
@@ -228,8 +229,10 @@ describe('R5: one row per food, not per name', () => {
   });
 
   it('a stored import meets its upstream row once (the stored row wins)', async () => {
+    // FIX-1222: stored by today's import (checked); an unchecked one with its 0 g protein is left out of lists (LS-1222 B4).
     const stored = {
-      ...seedRow('stored-alpha', 'Protein bar'), brand_or_restaurant: 'Alpha', calories: 350, tags: ['off:11'],
+      ...seedRow('stored-alpha', 'Protein bar'), brand_or_restaurant: 'Alpha', calories: 350, carbs_g: carbsFor(350), fat_g: fatFor(350),
+      tags: ['off:11', 'truth:checked'],
     };
     upstreams([], [bar('11', 'Alpha', 350)]);
     const { results } = await setup({ local: [stored] }).search('protein bar', 50, 'viewer');

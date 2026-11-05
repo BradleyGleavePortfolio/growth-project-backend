@@ -60,7 +60,7 @@ describe('LS-1198 independent control: distinct branded catalog IDs remain selec
       brands: 'Acme',
       nutriments: {
         'energy-kcal_100g': kcal,
-        proteins_100g: 20, carbohydrates_100g: 30, fat_100g: 10,
+        proteins_100g: 20, carbohydrates_100g: (kcal - 170) / 4, fat_100g: 10,
       },
     });
     jest.spyOn(global, 'fetch').mockImplementation(async (url: RequestInfo | URL) =>
