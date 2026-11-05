@@ -124,5 +124,8 @@ export interface ClientContext {
   food_log_totals_last_7d: ClientContextFoodLogTotals;
   recent_check_ins: ClientContextCheckIn[];
   coach: ClientContextCoach;
+  // FR-1205: the author of coach.last_coach_message_excerpt (null for none or
+  // a system row). Never sent to a model; absent on snapshots saved before it.
+  excerpt_author_id?: string | null;
   generated_at: string;
 }

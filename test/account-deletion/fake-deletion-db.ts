@@ -147,13 +147,14 @@ export class FakeDeletionDb {
         this.applyRaw(strings, values, null);
         return 1;
       },
-      // The vendor-erasure retry reads its work rows by event.
-      $queryRaw: async (strings: TemplateStringsArray, ...values: unknown[]) =>
-        strings.join('?').includes('FROM "deletion_audit"')
-          ? this.audit
-              .filter((a) => a.event === values[0])
-              .map((a) => ({ user_id: a.subjectId, metadata: a.metadata }))
-          : [],
+      // The vendor-erasure retry reads its work rows by event; the cron counts them.
+      $queryRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
+        const sql = strings.join('?');
+        if (!sql.includes('FROM "deletion_audit"')) return [];
+        const rows = this.audit.filter((a) => a.event === values[0]);
+        if (sql.includes('count(*)')) return [{ n: rows.length }];
+        return rows.map((a) => ({ user_id: a.subjectId, metadata: a.metadata }));
+      },
       user: userDelegate,
     };
     return new Proxy(top, {

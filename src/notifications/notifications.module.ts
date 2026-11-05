@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { NotificationsController } from './notifications.controller';
 import { DigestUnsubscribeController } from './digest-unsubscribe.controller';
 import { NotificationsService } from './notifications.service';
+import { InboxBlockRule } from './inbox-block-rule';
 import { DigestService } from './digest.service';
 import { DigestScheduler } from './digest.scheduler';
 import { MilestoneReachedEmitter } from './emitters/milestone-reached.emitter';
@@ -56,6 +57,9 @@ import { VoiceModule } from '../roman/voice/voice.module';
   providers: [
     NotificationsService,
     PushDeliveryService,
+    // B-LONOTIFY3-1: the inbox's block rule (NotificationsService fails a
+    // production boot without it).
+    InboxBlockRule,
     DigestService,
     DigestScheduler,
     MilestoneReachedEmitter,

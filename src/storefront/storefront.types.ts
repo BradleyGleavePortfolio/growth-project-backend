@@ -36,7 +36,7 @@ export interface PublicPackageData {
   coach: PublicPackageCoach;
   stripe_publishable_key: string;
   share_link_enabled: boolean;
-  /** GC-1: what checkout charges today (chargeQuote, no trial: #GC-TRIAL interim). */
+  /** GC-1: what checkout charges today (chargeQuote; GC-3: 0 for a trial). */
   due_today_cents: number;
   /** GC-1: null for a one-time package. */
   recurring: PublicPackageRecurring | null;
@@ -53,6 +53,9 @@ export interface GuestCheckoutResult {
   // can wire its server-side state to the same id Stripe webhooks use.
   // Null for pure one-time checkouts.
   subscription_id?: string | null;
+  // GC-3 — 'setup' for a free trial: client_secret is the trial's SetupIntent
+  // (card saved, nothing charged today) and payment_intent_id is its seti_ id.
+  intent?: 'payment' | 'setup';
   // r48 #8 — wallet capability flags returned alongside the PaymentIntent
   // so the storefront can render Apple Pay / Google Pay buttons only when
   // the coach's connected account actually supports them. Defaults to

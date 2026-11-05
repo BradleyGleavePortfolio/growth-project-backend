@@ -145,7 +145,8 @@ export class AiTriageService {
    * Generate (or serve cached) triage for the requesting coach's unanswered
    * community inbox. Authorization: the caller must coach at least one cohort
    * (coachedCohortIds non-empty) — otherwise 403 not_coach, mirroring the v1-6
-   * inbox. Every candidate is bounded to those coached cohorts.
+   * inbox. Every candidate is bounded to those coached cohorts and to the
+   * caller's own clients' rows in public spaces (fetchCandidates).
    */
   async generateForCoach(user: User): Promise<TriageResponse> {
     const cohortIds = await this.repo.coachedCohortIds(user.id);
@@ -363,8 +364,9 @@ export class AiTriageService {
   /**
    * Fetch unanswered messages + posts across the coached cohorts and shape them
    * into sanitised candidates. Tenant boundary: cohortIds came from
-   * coachedCohortIds(user.id), so this can only ever read the caller's own
-   * coached cohorts.
+   * coachedCohortIds(user.id), so this reads the caller's own coached cohorts,
+   * plus (owner rule D, SPACE-OWNER-ALERTS) the caller's own current clients'
+   * rows in other coaches' public spaces, never anyone else's there.
    */
   private async fetchCandidates(cohortIds: string[], viewerId: string): Promise<Candidate[]> {
     const [messages, posts] = await Promise.all([

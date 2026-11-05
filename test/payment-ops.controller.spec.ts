@@ -599,6 +599,24 @@ describe('CoachPaymentOpsController', () => {
     expect(out.failed[0].id).toBe('p1');
   });
 
+  it('PF-5-BE (B9): an unpaid purchase is a failed payment on the roster too', async () => {
+    const { ctrl, prisma } = makeCoachController();
+    prisma._purchases.push(
+      { id: 'p1', coach_user_id: 'me', status: 'unpaid' },
+      { id: 'p2', coach_user_id: 'me', status: 'payment_failed' },
+      { id: 'p3', coach_user_id: 'me', status: 'active' },
+    );
+    prisma.clientPurchase.findMany = jest.fn(async ({ where }: any) =>
+      prisma._purchases.filter(
+        (p: any) =>
+          p.coach_user_id === where.coach_user_id &&
+          where.OR.some((c: any) => c.status === p.status),
+      ),
+    );
+    const out = await ctrl.failedOnRoster(makeReq('me'));
+    expect(out.failed.map((p: { id: string }) => p.id).sort()).toEqual(['p1', 'p2']);
+  });
+
   it('exposes the effective fee-policy snapshot for the coach', async () => {
     const { ctrl } = makeCoachController();
     const out = await ctrl.getOwnFeePolicy(makeReq('me'));

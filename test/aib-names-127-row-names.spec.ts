@@ -83,7 +83,7 @@ describe('AI workout builder on rows from exercise search (AIB-NAMES-127)', () =
     const { svc, sent } = await build({ rows: [row('r1', 'seed:push-001', 0, 3), row('r2', '0043', 1, 3)], changes: [update('r1', { rest_seconds: 120 })] });
     await svc.propose(coach, edit({ instruction: 'Swap squats for something knee-friendly' }));
     const [seedRow, searchRow] = sentRows(sent);
-    expect(seedRow).toEqual({ client_ref: 'r1', exercise_external_id: 'seed:push-001', sets: 3, reps_or_duration_seconds: 8, weight_lbs: null, rest_seconds: 90 });
+    expect(seedRow).toEqual({ client_ref: 'r1', exercise_external_id: 'seed:push-001', sets: 3, reps_or_duration_seconds: 8, unit: 'reps', weight_lbs: null, rest_seconds: 90 });
     expect(searchRow).toMatchObject({ client_ref: 'r2', exercise_external_id: '0043', name: 'Barbell full squat', muscle: 'glutes' });
   });
 
@@ -149,6 +149,6 @@ describe('AI workout builder on rows from exercise search (AIB-NAMES-127)', () =
     const { svc, lookup, sent } = await build({ rows: [row('r1', 'seed:legs-001', 0, 3)], changes: [update('r1', { rest_seconds: 120 })] });
     await svc.propose(coach, edit());
     expect(lookup).not.toHaveBeenCalled();
-    expect(Object.keys(sentRows(sent)[0])).toEqual(['client_ref', 'exercise_external_id', 'sets', 'reps_or_duration_seconds', 'weight_lbs', 'rest_seconds']);
+    expect(Object.keys(sentRows(sent)[0])).toEqual(['client_ref', 'exercise_external_id', 'sets', 'reps_or_duration_seconds', 'unit', 'weight_lbs', 'rest_seconds']);
   });
 });

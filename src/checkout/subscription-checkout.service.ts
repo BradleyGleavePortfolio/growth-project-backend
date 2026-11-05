@@ -9,6 +9,7 @@ import {
 import type { ClientPurchase, CoachPackage, Prisma } from '@prisma/client';
 import { ConnectModuleState } from '../connect/connect.module-state';
 import { ConnectService } from '../connect/connect.service';
+import { isConnectAccountReadyForSale, readinessRow } from '../connect/connect-readiness';
 import { FeePolicyService } from '../connect/fees/fee-policy.service';
 import {
   StripeConnectApiService,
@@ -180,7 +181,7 @@ export class SubscriptionCheckoutService {
       select: { id: true, email: true, name: true, coach_id: true },
     });
     if (!client) throw clientNotFound();
-    const pkg = await this.packages.getById(input.package_id);
+    const pkg = await this.packages.getById(input.package_id, clientUserId);
     // Same visibility rule as the one-time path: unpublished, archived,
     // inactive, or another coach's package is a non-leaking 404.
     if (!pkg || !pkg.is_active || pkg.archived_at || !pkg.published_at) {
@@ -287,11 +288,11 @@ export class SubscriptionCheckoutService {
     }
     // B-CONNECT-126: a ready row makes no Stripe call; a not-ready row is
     // re-read from Stripe once (cooldown) before the Buy is refused.
-    const connectAccount =
-      savedAccount.charges_enabled || savedAccount.deauthorized_at || !this.connect
-        ? savedAccount
-        : await this.connect.refreshNotReady(savedAccount);
-    if (!connectAccount.charges_enabled || connectAccount.deauthorized_at) {
+    // HOLD-FU-BE (LS-1195 C1): ready by the one readiness rule, not charges alone.
+    const connectAccount = savedAccount.deauthorized_at
+      ? savedAccount
+      : await readinessRow(savedAccount, this.connect);
+    if (!isConnectAccountReadyForSale(connectAccount)) {
       throw new ConflictException({
         code: 'COACH_NOT_PAYOUT_READY',
         error: 'COACH_NOT_PAYOUT_READY',
@@ -527,7 +528,10 @@ export class SubscriptionCheckoutService {
       where: { id: row.id, updated_at: row.updated_at },
       data: { cancel_at_period_end: !!sub.cancel_at_period_end, current_period_end: periodEnd },
     });
-    const updated = await this.prisma.clientPurchase.findUnique({ where: { id: row.id } });
+    const updated = await this.prisma.clientPurchase.findUnique({
+      where: { id: row.id },
+      include: PLAN_COACH,
+    });
     this.logger.log(`billing.client_plan_resumed purchase=${row.id} superseded=${res.count !== 1}`);
     return planView(updated ?? row, pkg);
   }

@@ -143,7 +143,18 @@ function recipients(push: ReturnType<typeof build>['communityPush']): string[] {
   return push.sendCommunityPush.mock.calls.map(([input]) => input.recipientId);
 }
 
-describe('CommunityMessagesService.send — group chat push (C-S-PUSH-4)', () => {
+describe('CommunityMessagesService.send — group chat push (C-S-PUSH-4, space push off)', () => {
+  // With FEATURE_COMMUNITY_SPACE_PUSH on the space push alone tells the space (SC-PUSH), so the
+  // per-member push is skipped on purpose; this suite sets it off itself.
+  const savedSpacePush = process.env.FEATURE_COMMUNITY_SPACE_PUSH;
+  beforeEach(() => {
+    process.env.FEATURE_COMMUNITY_SPACE_PUSH = 'false';
+  });
+  afterEach(() => {
+    if (savedSpacePush === undefined) delete process.env.FEATURE_COMMUNITY_SPACE_PUSH;
+    else process.env.FEATURE_COMMUNITY_SPACE_PUSH = savedSpacePush;
+  });
+
   it('pushes every other active member of the cohort, with ids and a deep link only', async () => {
     const { service, communityPush } = build({
       memberships: [member(SENDER), member(MATE), member(MATE2, { notify_level: 'live' })],
@@ -159,6 +170,10 @@ describe('CommunityMessagesService.send — group chat push (C-S-PUSH-4)', () =>
         targetType: 'message',
         targetId: MESSAGE_ID,
         deepLink: `tgp://community/cohorts/${COHORT}`,
+        // PF-3-BE (KG-HELD-BLOCK-MESSAGE): the sender, so a held push re-checks blocks.
+        otherUserId: SENDER,
+        // FR-1192 (F1): its community, so a held push re-checks a ban there.
+        workspaceId: WORKSPACE,
       });
       // Never the message text (lock-screen privacy).
       expect(JSON.stringify(input)).not.toContain('leg day');

@@ -798,6 +798,13 @@ describe('CoachBriefService head-coach mode — business-only response (P1-3) + 
     // and dunning is the second. Assert both filter by client_user_id
     // and neither leaks coach_user_id (the head-coach revenue-leak
     // invariant from P1-7 must hold for both raw queries).
+    // FR-1191 (LS-1191 B4): the client scope stays, and the sale must also be
+    // the team's own (sold by the head or a seated sub-coach), so a client who
+    // moved onto the team brings no money from their former coach. A
+    // sub-coach's independent clients still never match the client scope.
+    expect(firstAggCall.where.purchase).toMatchObject({
+      coach_user_id: { in: expect.arrayContaining([coachId]) },
+    });
     const queryRawCalls = (prisma.$queryRaw as jest.Mock).mock.calls;
     expect(queryRawCalls.length).toBe(2);
     for (const call of queryRawCalls) {
@@ -805,8 +812,9 @@ describe('CoachBriefService head-coach mode — business-only response (P1-3) + 
       const queryRawText = Array.isArray(callArg?.strings)
         ? (callArg.strings as string[]).join('')
         : '';
-      expect(queryRawText).toMatch(/client_user_id/);
-      expect(queryRawText).not.toMatch(/coach_user_id/);
+      expect(queryRawText).toMatch(/cp\."client_user_id" = ANY/);
+      expect(queryRawText).toMatch(/AND cp\."coach_user_id" = ANY/);
+      expect(JSON.stringify(callArg?.values)).toContain(ownClientId);
     }
   });
 
@@ -1034,8 +1042,11 @@ describe('CoachBriefService moved client — owner 4b', () => {
 
   it('SHARE-BE: an unread share card shows no preview (as the command-center inbox), never the voice label', async () => {
     const { prisma, svc } = newCoachBrief();
+    // HOLD-FU-BE: one time for both rows (two new Date() calls a millisecond
+    // apart reordered the newest-first list and made this test flaky).
+    const sentAt = new Date();
     const unread = (client_id: string, card: { id: string } | null) =>
-      ({ client_id, client: { name: client_id }, body: null, card, created_at: new Date() });
+      ({ client_id, client: { name: client_id }, body: null, card, created_at: sentAt });
     prisma.coachMessage.findMany.mockResolvedValue([unread(OTHER, { id: 'k1' }), unread(MOVED, null)]);
     await svc.generateBrief(NEW_COACH, 'America/Los_Angeles', '2026-10-12', { force: true });
     const items: Array<{ type: string; client_id: string; detail: string }> =

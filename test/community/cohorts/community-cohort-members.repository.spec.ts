@@ -8,6 +8,8 @@
  * is returned for a lowercase lookup.
  */
 import { CommunityCohortMembersRepository } from '../../../src/community/cohorts/community-cohort-members.repository';
+import type { PrismaService } from '../../../src/prisma.service';
+import { stub } from '../../utils/trial-fakes';
 
 describe('CommunityCohortMembersRepository.findUserByEmail', () => {
   let prisma: { user: { findFirst: jest.Mock } };
@@ -74,5 +76,46 @@ describe('CommunityCohortMembersRepository.findUserByEmail', () => {
       where: { id: 'user-9', ...SCOPED_FILTER },
       select: { id: true, name: true, email: true },
     });
+  });
+});
+
+// FR-1168R2 B1 (LO-1168 B1, LS-1168R1, LO-1168R1): the member list (GET /community/cohorts/:cohortId/members)
+// is the people of the space now. A person who left it (left_at on their row for that space) is not listed,
+// for the coach or for members; once they join again (left_at cleared) they are listed again. The listed
+// rule (a pending invitation counts, C6-BVIS) stays.
+describe('CommunityCohortMembersRepository.people (FR-1168R2 B1: a person who left the space is not listed)', () => {
+  const space = { id: 'space-1', workspace_id: 'ws-1' };
+  const world = (leftIds: string[]) => {
+    const prisma = {
+      $queryRaw: jest.fn(async (..._args: unknown[]) => ['coach-1', 'stays-1', 'left-1'].map((id) => ({ id }))),
+      communitySpaceRead: {
+        findMany: jest.fn(async (args: { where: { cohort_id: string; user_id: { in: string[] } } }) =>
+          leftIds
+            .filter((id) => args.where.cohort_id === space.id && args.where.user_id.in.includes(id))
+            .map((user_id) => ({ user_id }))),
+      },
+      user: {
+        findMany: jest.fn(async (args: { where: { id: { in: string[] } } }) =>
+          args.where.id.in.map((id) => ({ id, name: `Person ${id}`, community_memberships: [] }))),
+      },
+    };
+    return { prisma, repo: new CommunityCohortMembersRepository(stub<PrismaService>(prisma)) };
+  };
+
+  it('leaves out a person whose row for that space has left_at set', async () => {
+    const { prisma, repo } = world(['left-1']);
+    expect((await repo.people(space)).map((p) => p.id)).toEqual(['coach-1', 'stays-1']);
+    expect(prisma.communitySpaceRead.findMany).toHaveBeenCalledWith({
+      where: { cohort_id: 'space-1', user_id: { in: ['coach-1', 'stays-1', 'left-1'] }, left_at: { not: null } },
+      select: { user_id: true },
+    });
+    expect(prisma.user.findMany.mock.calls[0][0].where.id.in).toEqual(['coach-1', 'stays-1']);
+  });
+
+  it('lists them again once they join again, and keeps the listed rule (a pending invitation counts)', async () => {
+    const { prisma, repo } = world([]);
+    expect((await repo.people(space)).map((p) => p.id)).toEqual(['coach-1', 'left-1', 'stays-1']);
+    const values = prisma.$queryRaw.mock.calls[0].slice(1);
+    expect(values[values.length - 1]).toBe(true); // readersNow(..., listed = true), as before
   });
 });

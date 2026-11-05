@@ -24,6 +24,7 @@ import {
 } from '../dto/community-post.dto';
 import { CommunitySafetyService } from '../safety/community-safety.service';
 import { placeOf } from '../community-space-access';
+import { countedReactions } from '../../common/count-rule';
 import { z } from 'zod';
 import { RemovedKeys, coachRemoved, publishPostChanged, removedByOf, type Removed } from './community-post-removal';
 
@@ -141,9 +142,12 @@ export class CommunityPostsService {
         items.map((i) => [i.spaceId, i.authorId] as const),
       ),
     ]);
-    // Two-way block: reactions by anyone in a block relation with the viewer
-    // are not counted (as in CommunityReactionsService.visibleReactions).
-    const visible = await this.safety.filterBlocked(viewer.id, rows, (r) => r.user_id);
+    // The count rule (COUNT-DELETED-BE, common/count-rule.ts), as in
+    // CommunityReactionsService.visibleReactions: no reaction by anyone in a
+    // block with the viewer either way, banned from the community, or gone
+    // from the item's space is counted.
+    const spaceOf = new Map(items.map((i) => [i.id, i.spaceId]));
+    const visible = await countedReactions(this.safety, viewer.id, rows, (r) => [r.workspace_id, spaceOf.get(r.target_id) ?? null]);
     const byTarget = new Map<string, CommunityResponse[]>();
     for (const r of visible) {
       const forTarget = byTarget.get(r.target_id);
@@ -303,30 +307,46 @@ export class CommunityPostsService {
 
   /** Resolve a readable post for the caller, or throw 404 (FR-1165R3: `removed` lets a coach's removal through). */
   private async readablePost(user: User, postId: string, removed = false): Promise<CommunityPost> {
+    const { post, outside } = await this.findReadable(user, postId, removed);
+    if (outside) throw new NotFoundException(POST_NOT_FOUND);
+    return post;
+  }
+
+  /**
+   * The post and how the caller reads it. C6-BVIS: a post of a space opens by the rule for that space, its
+   * comments with it. Rule D (FR-1173, LS-INBOX2 B2): a public space's post by the caller's own client opens to
+   * that coach too, `outside` the space: read only, that post and that client's own comments on it.
+   */
+  private async findReadable(user: User, postId: string, removed: boolean): Promise<{ post: CommunityPost; outside: boolean }> {
     const post = await this.posts.findById(postId);
     if (!post || (post.deleted_at && !(removed && coachRemoved(post)))) throw new NotFoundException(POST_NOT_FOUND);
-    // C6-BVIS: a post of a space opens by the rule for that space, its comments with it.
     const open = post.cohort_id
       ? await this.access.canAccessCohort({ id: post.cohort_id, workspace_id: post.workspace_id }, user)
       : await this.access.canAccessWorkspace(post.workspace_id, user);
-    if (!open) throw new NotFoundException(POST_NOT_FOUND);
-    return post;
+    if (open) return { post, outside: false };
+    if (post.cohort_id && (await this.posts.isPublicRowOfMyClient(post.cohort_id, user.id, post.author_id))) {
+      return { post, outside: true };
+    }
+    throw new NotFoundException(POST_NOT_FOUND);
   }
 
   /**
    * A readable post that is also not hidden by a block in either direction
    * (404, same body). Used by every read of a single post and its thread;
-   * edit/remove stay on readablePost (author-only / coach paths).
+   * edit/remove stay on readablePost (author-only / coach paths), and a reply
+   * needs a way into the space (addComment refuses `outside`).
    */
-  private async visiblePost(user: User, postId: string, removed = false): Promise<CommunityPost> {
-    const post = await this.readablePost(user, postId, removed);
-    await this.safety.assertVisibleTo(user.id, post.author_id, POST_NOT_FOUND, placeOf(post));
-    return post;
+  private async visiblePost(user: User, postId: string, removed = false): Promise<{ post: CommunityPost; outside: boolean }> {
+    const read = await this.findReadable(user, postId, removed);
+    await this.safety.assertVisibleTo(user.id, read.post.author_id, POST_NOT_FOUND, placeOf(read.post));
+    return read;
   }
 
   async getOne(user: User, postId: string, shown = false) {
-    const post = await this.visiblePost(user, postId, shown);
-    return this.postResponse(user, post, shown);
+    const { post, outside } = await this.visiblePost(user, postId, shown);
+    const res = await this.postResponse(user, post, shown);
+    // Rule D: the own coach reads the post, not the space's reactions to it (other people's rows).
+    return outside ? { post: { ...res.post, reactions: [] } } : res;
   }
 
   async edit(
@@ -386,8 +406,9 @@ export class CommunityPostsService {
   async addComment(user: User, postId: string, body: string): Promise<CommunityCommentResponse> {
     // A blocked pair can neither see nor reply to each other's posts, so the
     // reply push below can never reach the other side of a block.
-    const post = await this.visiblePost(user, postId);
-    // Any active workspace member (client or coach) may comment.
+    const { post, outside } = await this.visiblePost(user, postId);
+    // Any active workspace member (client or coach) may comment; rule D's own coach reads only (FR-1173).
+    if (outside) throw new NotFoundException(POST_NOT_FOUND);
     this.safety.assertAllowed(body);
     const created = await this.messages.createComment({
       workspaceId: post.workspace_id,
@@ -418,6 +439,8 @@ export class CommunityPostsService {
         targetType: 'post',
         targetId: post.id,
         deepLink: `tgp://community/posts/${post.id}`,
+        otherUserId: created.sender_id,
+        workspaceId: post.workspace_id,
       });
     }
     return CommunityCommentResponseSchema.parse({
@@ -426,12 +449,16 @@ export class CommunityPostsService {
   }
 
   async listComments(user: User, postId: string, shown = false) {
-    const post = await this.visiblePost(user, postId, shown);
+    const { post, outside } = await this.visiblePost(user, postId, shown);
     // FR-1165R3: a removed post's placeholder shows no replies.
-    const rows = post.deleted_at ? [] : await this.messages.listComments(post.id, shown);
+    let rows = post.deleted_at ? [] : await this.messages.listComments(post.id, shown);
+    // Rule D (FR-1173): outside the space, the own coach reads their own clients' replies, no one else's.
+    if (outside) {
+      const mine = await this.posts.clientsAmong(user.id, [...new Set(rows.map((m) => m.sender_id))]);
+      rows = rows.filter((m) => mine.has(m.sender_id));
+    }
     const visible = await this.safety.filterBlocked(user.id, rows, (m) => m.sender_id, placeOf);
-    return CommentRowListSchema.parse({
-      comments: await this.commentViews(user, visible, shown),
-    });
+    const comments = await this.commentViews(user, visible, shown);
+    return CommentRowListSchema.parse({ comments: outside ? comments.map((c) => ({ ...c, reactions: [] })) : comments });
   }
 }

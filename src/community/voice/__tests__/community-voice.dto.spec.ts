@@ -9,7 +9,7 @@
  */
 import 'reflect-metadata';
 import { BadRequestException, ValidationPipe } from '@nestjs/common';
-import { CreateVoiceNoteDto } from '../community-voice.dto';
+import { CreateVoiceNoteDto, IssueVoiceUploadDto } from '../community-voice.dto';
 
 const pipe = new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true });
 const meta = { type: 'body' as const, metatype: CreateVoiceNoteDto, data: '' };
@@ -76,5 +76,24 @@ describe('CreateVoiceNoteDto (global ValidationPipe)', () => {
     await expect(pipe.transform({ ...VALID, transcript: 'x' }, meta)).rejects.toBeInstanceOf(
       BadRequestException,
     );
+  });
+});
+
+// BPF-1: the upload may name the space the note is for, so that space's own rule decides.
+describe('IssueVoiceUploadDto (global ValidationPipe)', () => {
+  const upload = { type: 'body' as const, metatype: IssueVoiceUploadDto, data: '' };
+  const BODY = { duration_ms: 5000, bytes: 120000, mime_type: 'audio/mp4' };
+
+  it('BPF-1: takes an optional space (cohort_id), the field the send already takes', async () => {
+    const out = await pipe.transform({ ...BODY, cohort_id: VALID.cohort_id }, upload);
+    expect(out).toBeInstanceOf(IssueVoiceUploadDto);
+    expect(out.cohort_id).toBe(VALID.cohort_id);
+    await expect(pipe.transform({ ...BODY }, upload)).resolves.toBeInstanceOf(IssueVoiceUploadDto);
+  });
+
+  it('BPF-1: refuses a space that is not a uuid, and any other target', async () => {
+    for (const extra of [{ cohort_id: 'space-1' }, { conversation_id: VALID.cohort_id }, { parent_message_id: VALID.cohort_id }]) {
+      await expect(pipe.transform({ ...BODY, ...extra }, upload)).rejects.toBeInstanceOf(BadRequestException);
+    }
   });
 });

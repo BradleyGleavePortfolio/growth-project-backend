@@ -538,6 +538,8 @@ model User {
   community_voice_note_listens       CommunityVoiceNoteListen[]
   community_voice_consent            CommunityVoiceConsent?
   community_space_reads              CommunitySpaceRead[]
+  community_thread_prefs             CommunityThreadPref[]
+  community_space_departures         CommunitySpaceDeparture[]
   community_workspace_bans           CommunityWorkspaceBan[]           @relation("CommunityWorkspaceBanUser")
   // A4 broadcasts, saved replies and client tags (additive back-relations;
   // migration 20270304000000_a4_broadcasts_cards_saved_replies).
@@ -1085,9 +1087,13 @@ model WorkoutSession {
   exercises        ExerciseSet[]
   comments         WorkoutComment[]
   created_at       DateTime      @default(now())
+  // WK-1-BE: the phone's Idempotency-Key on POST /workouts; a resend with the same key returns this row.
+  client_key       String?
 
   // Hot path: coach alerts, community leaderboard, workout history all filter by (user_id, date).
   @@index([user_id, date])
+  // 20270502010500_workout_session_client_key: one workout per user per key (NULLs never collide).
+  @@unique([user_id, client_key])
 }
 
 // TRAIN-BE2: a coach's comment on a client's logged workout, one per coach per workout. Row rules:
@@ -1121,6 +1127,15 @@ model ExerciseSet {
   rpe            Float?
   notes          String?
   video_url      String?
+  // SET-ASKED-BE: what her plan asked that day, copied by the server when the set is logged from a
+  // plan row (her assignment's id and the row's order). The copy is the record: no foreign key, so a
+  // later plan edit or delete changes nothing. All null for a set logged without a plan row.
+  plan_assignment_id String?
+  plan_order         Int?
+  asked_sets         Int?
+  asked_count        Int?
+  asked_unit         PlanExerciseUnit?
+  asked_weight_lbs   Float?
 
   // HOME-BE: the coach Home's lifting-best read joins sets by session.
   @@index([workout_id])
@@ -1151,6 +1166,13 @@ model RoutineExercise {
   default_rest_seconds Int            @default(90)
   video_url            String?
   order_index          Int
+  // EXID-BE (#189-D4 op 1): the library exercise this row came from, so Watch video opens its video.
+  // Null for an exercise of the client's own and for rows saved before it; a library item removed later
+  // leaves null. The server stores only ids of library rows that exist (WorkoutService).
+  catalog_exercise_id  String?
+  catalog_exercise     ExerciseCatalogItem? @relation(fields: [catalog_exercise_id], references: [id], onDelete: SetNull)
+
+  @@index([catalog_exercise_id])
 }
 
 model FastingWindow {
@@ -1171,6 +1193,10 @@ model WeightLog {
   weight_lbs Float
   notes      String?
   logged_at  DateTime @default(now())
+  /// WATER-WEIGHT-KEYS-BE (#191-D3): the phone's one-time key for this save, as LoggedFoodEntry.client_uuid.
+  /// A resend with the same key returns this row and stores nothing; unique across all members. Null = a save
+  /// without a key (every row before 20270502010800).
+  client_uuid String? @unique
 
   // Hot path: weight charts query by (user_id, date desc).
   @@index([user_id, date])
@@ -1241,8 +1267,11 @@ model NotificationPreferences {
   // time on plan days). Default ON; Settings > Notifications toggles both.
   workout_reminder_push    Boolean @default(true)
   workout_reminder_inapp   Boolean @default(true)
-  // RENEWAL-BE: "plan renewal reminders" (default ON). Off stops the renewal app notifications.
+  // RENEWAL-BE: "plan renewal reminders" (default ON). Since STORE-B2 it governs only the Day 0 notice.
   plan_renewal_push        Boolean @default(true)
+  // STORE-B2 (App Store 4.5.4): when the person said yes in the app to plan renewal offers (Day 1 and Day 7).
+  // NULL = no (every account until it says yes); turning the switch off clears it. Day 0 keeps plan_renewal_push.
+  plan_renewal_offers_opt_in_at DateTime?
   // PR-15A — COACH_NEW_PURCHASE (selling coach learns of a new buyer at
   // entitlement). Default ON for push + in-app per decision #9 mirror —
   // a coach who is SELLING packages wants to know. email default OFF
@@ -1565,6 +1594,10 @@ model WaterLog {
   amount_ml  Int
   logged_at  DateTime @default(now()) @db.Timestamptz
   created_at DateTime @default(now()) @db.Timestamptz
+  /// WATER-WEIGHT-KEYS-BE (#191-D3): the phone's one-time key for this save, as LoggedFoodEntry.client_uuid.
+  /// A resend with the same key returns this row and stores nothing; unique across all members. Null = a save
+  /// without a key (every row before 20270502010800).
+  client_uuid String? @unique
 
   // Hot path: water intake summaries filter by (user_id, logged_at).
   @@index([user_id, logged_at])
@@ -1900,6 +1933,7 @@ model Recipe {
   created_by_id String
   created_by    User          @relation("RecipeCreator", fields: [created_by_id], references: [id])
   saved_by      SavedRecipe[]
+  meal_templates MealTemplate[]
   created_at    DateTime      @default(now())
   updated_at    DateTime      @updatedAt
 
@@ -1939,9 +1973,13 @@ model ListItem {
   unit             String?
   is_checked       Boolean  @default(false)
   source_recipe_id String?
+  // PLAN-SWAPS-BE: the plan meal (a slot of a plan assigned to this user) the item was added from.
+  source_plan_slot_id String?
+  source_plan_slot    DailyMealPlanSlot? @relation(fields: [source_plan_slot_id], references: [id], onDelete: SetNull)
   added_at         DateTime @default(now())
 
   @@index([user_id, list_type])
+  @@index([source_plan_slot_id])
 }
 
 // ============================================================
@@ -2903,7 +2941,7 @@ model WorkoutPlanExercise {
   exercise_external_id     String
   order                    Int
   sets                     Int
-  // Dual-purpose: rep count (e.g. 12) or time-based duration (e.g. 60 seconds).
+  // The count, read in `unit`: a rep count (e.g. 12) or a time in seconds (e.g. 60).
   reps_or_duration_seconds Int
   weight_lbs               Float?
   rest_seconds             Int?
@@ -2913,6 +2951,8 @@ model WorkoutPlanExercise {
   archived_at              DateTime?
   // C1V2-C1: the coach's chosen swaps (ids as exercise_external_id holds them), first choice first.
   alternative_external_ids String[]    @default([])
+  // TIMED-SETS-BE: whether reps_or_duration_seconds is reps or seconds. Rows saved without one are reps.
+  unit                     PlanExerciseUnit @default(reps)
 
   // (workout_plan_id, order) uniqueness is a *partial* unique index
   // declared in raw SQL (WHERE archived_at IS NULL) — Prisma cannot
@@ -2920,6 +2960,12 @@ model WorkoutPlanExercise {
   @@index([workout_plan_id])
   @@index([workout_plan_id, archived_at])
   @@index([exercise_external_id])
+}
+
+/// TIMED-SETS-BE: what a plan exercise's number counts.
+enum PlanExerciseUnit {
+  reps
+  seconds
 }
 
 model ClientWorkoutAssignment {
@@ -3305,10 +3351,16 @@ model MealTemplate {
   items         Json?
   created_at    DateTime  @default(now())
   archived_at   DateTime?
+  // PLAN-SWAPS-BE (C2 S2): the coach's swaps for this meal (ids of their own live templates, never this one)
+  // and the coach's own recipe for it. Plain ids: GET /me/meal-plan/today re-checks both on every read.
+  swap_template_ids String[] @default([])
+  recipe_id         String?
+  recipe            Recipe?   @relation(fields: [recipe_id], references: [id], onDelete: SetNull)
 
   meal_plan_slots DailyMealPlanSlot[]
 
   @@index([coach_id, archived_at])
+  @@index([recipe_id])
 }
 
 model DailyMealPlan {
@@ -3319,9 +3371,12 @@ model DailyMealPlan {
   notes       String?
   created_at  DateTime  @default(now())
   archived_at DateTime?
+  // PLAN-SWAPS-BE: the last time the plan row was written (set on every edit).
+  updated_at  DateTime  @default(now()) @updatedAt
 
   slots       DailyMealPlanSlot[]
   assignments DailyMealPlanAssignment[]
+  revisions   DailyMealPlanRevision[]
 
   @@index([coach_id, archived_at])
 }
@@ -3337,10 +3392,27 @@ model DailyMealPlanSlot {
   // C2-C0: the coach's planned time for this meal, local "HH:MM" (24-hour); null = plan order, no time.
   time_of_day        String?
   food_log_entries   LoggedFoodEntry[]
+  list_items         ListItem[]
 
   @@unique([daily_meal_plan_id, slot_label, order])
   @@index([daily_meal_plan_id])
   @@index([meal_template_id])
+}
+
+// PLAN-SWAPS-BE (C2 S2): one row per meal change in a coach's edit of a day plan, written in the same
+// transaction as the slot change. A changed meal is from -> to; an added meal has no from, a removed one no
+// to. Ids are history (no foreign key to the slot or the templates); the row goes with its plan.
+model DailyMealPlanRevision {
+  id               String        @id @default(uuid())
+  plan_id          String
+  plan             DailyMealPlan @relation(fields: [plan_id], references: [id], onDelete: Cascade)
+  slot_id          String
+  slot_label       String
+  from_template_id String?
+  to_template_id   String?
+  changed_at       DateTime      @default(now())
+
+  @@index([plan_id, changed_at])
 }
 
 model DailyMealPlanAssignment {
@@ -5940,6 +6012,9 @@ model ExerciseCatalogItem {
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
+  // EXID-BE: routine exercises picked from this library item (RoutineExercise.catalog_exercise_id).
+  routine_exercises RoutineExercise[]
+
   @@index([category])
   @@index([primary_muscle])
   @@index([mux_asset_id])
@@ -7475,6 +7550,8 @@ model CommunityCohort {
   voice_notes CommunityVoiceNote[]
   packages    CommunityCohortPackage[]
   reads       CommunitySpaceRead[]
+  thread_prefs CommunityThreadPref[]
+  departures   CommunitySpaceDeparture[]
 
   @@unique([workspace_id, name])
   // Cohort list ordered for a workspace (coach + client surfaces).
@@ -9222,6 +9299,7 @@ model CommunitySpaceRead {
   last_read_message_id String?   @db.Uuid
   notify_mode          String?
   silenced_until       DateTime? @db.Timestamptz(6)
+  left_at              DateTime? @db.Timestamptz(6) // LEAVE-MUTE-BE: when they left the space (null = in it)
   updated_at           DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
   user   User            @relation(fields: [user_id], references: [id], onDelete: Cascade)
@@ -9230,6 +9308,41 @@ model CommunitySpaceRead {
   @@id([user_id, cohort_id])
   @@index([cohort_id])
   @@map("community_space_reads")
+}
+
+// LEAVE-MUTE-BE (agent 176, owner D2b): a person's muted or left thread, by its first message (no foreign key:
+// community_messages is partitioned on (id, created_at)). state 'muted' | 'left' | 'followed' (CHECK in
+// 20270502009600; FR-1168: 'followed' = muted or left, then undone; replies up to `since` stay read).
+model CommunityThreadPref {
+  user_id           String
+  thread_message_id String   @db.Uuid
+  cohort_id         String   @db.Uuid
+  state             String
+  since             DateTime @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  user   User            @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  cohort CommunityCohort @relation(fields: [cohort_id], references: [id], onDelete: Cascade)
+
+  @@id([user_id, thread_message_id])
+  @@index([user_id, cohort_id])
+  @@map("community_thread_prefs")
+}
+
+// FR-1168 (LS-1168 B4, owner D2d): one row each time a person leaves a space, behind the "{name} left" line in
+// its chat; joining again keeps it. RLS forced (20270502009600): own rows only.
+model CommunitySpaceDeparture {
+  cohort_id String   @db.Uuid
+  user_id   String
+  left_at   DateTime @db.Timestamptz(6)
+
+  user   User            @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  cohort CommunityCohort @relation(fields: [cohort_id], references: [id], onDelete: Cascade)
+
+  @@id([cohort_id, user_id, left_at])
+  @@index([cohort_id, left_at])
+  @@index([user_id])
+  @@map("community_space_departures")
 }
 
 // SC-BE3 (agent 168): the photo behind a kind 'image' space chat message.

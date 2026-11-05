@@ -5,8 +5,8 @@ import { PrismaService } from '../prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationKind } from '../notifications/notification-kind';
 import { pushAllowedByPreferences } from '../notifications/push/push-preferences';
-import { isDunningV2Enabled } from '../checkout/dunning-v2/dunning-v2.feature';
 import { isWorkoutRemindersEnabled } from './engagement.flags';
+import { ELIGIBLE_CLIENT, dayAssignments, workoutReminderSkip } from './workout-reminder-due';
 import {
   dateFromKey,
   dateKey,
@@ -69,7 +69,6 @@ const PAGE_SIZE = 200;
  * is deliberately not an env override.
  */
 export const WORKOUT_REMINDER_CRON = '*/5 * * * *';
-const DAY_MS = 86_400_000;
 
 export interface ReminderTickStats {
   considered: number;
@@ -83,9 +82,6 @@ export interface ReminderTickStats {
   /** Deleted, deletion-scheduled or no longer a client at send time. */
   ineligible: number;
 }
-
-/** The eligibility predicate, shared by the page filter and the send-time checks. */
-const ELIGIBLE_CLIENT = { deleted_at: null, deletion_scheduled_at: null, role: 'student' } as const;
 
 function isUniqueViolation(err: unknown): boolean {
   return (
@@ -213,12 +209,7 @@ export class WorkoutReminderService {
     // Pass 1: which local day is it, and does it carry a plan workout?
     const probe = decideReminder({ ...clockInput, planDates: new Set<string>() });
     const dayStart = dateFromKey(probe.localDate);
-    const dayEnd = new Date(dayStart.getTime() + DAY_MS);
-    const assignments = await this.prisma.clientWorkoutAssignment.findMany({
-      where: { client_id: clientId, scheduled_for: { gte: dayStart, lt: dayEnd }, skipped_at: null },
-      select: { id: true, completed_at: true },
-      orderBy: { scheduled_for: 'asc' },
-    });
+    const assignments = await dayAssignments(this.prisma, clientId, dayStart);
     const decision = decideReminder({
       now,
       timezone,
@@ -228,15 +219,10 @@ export class WorkoutReminderService {
     });
     if (!decision.send) return 'not_due';
 
-    // Already trained today -> no reminder.
-    if (assignments.some((a) => a.completed_at !== null)) return 'already_logged';
-    const logged = await this.prisma.workoutSession.findFirst({
-      where: { user_id: clientId, date: dayStart },
-      select: { id: true },
-    });
-    if (logged) return 'already_logged';
-
-    if (isDunningV2Enabled() && (await this.isDunningLockedOut(clientId))) return 'locked_out';
+    // Already trained today, or locked at Day 10 -> no reminder (the same
+    // check the push worker asks again of a reminder that waited, FR-1192R3).
+    const skip = await workoutReminderSkip(this.prisma, clientId, dayStart, assignments);
+    if (skip) return skip;
 
     const { title, body } = reminderCopy(
       decision.localDate,
@@ -306,11 +292,24 @@ export class WorkoutReminderService {
         });
         return 'ineligible';
       }
-      const push = await this.notifications.pushToUser(clientId, title, body, {
-        kind: NotificationKind.WORKOUT_REMINDER,
-        deep_link: deepLink,
-        ...payload,
-      });
+      // PF-3-BE: the one send path. The reminder keeps the time the client
+      // chose (quietHoursFor: own time), its switch is read again when it
+      // goes, and one claimed delivery is posted once (dedupe key).
+      const push = await this.notifications.pushToUser(
+        clientId,
+        title,
+        body,
+        { kind: NotificationKind.WORKOUT_REMINDER, deep_link: deepLink, ...payload },
+        undefined,
+        {
+          kind: NotificationKind.WORKOUT_REMINDER,
+          dedupeKey: `workout_reminder:${claim.deliveryId}`,
+          workoutReminder: {
+            localDate: decision.localDate,
+            ...(assignments[0] ? { assignmentId: assignments[0].id } : {}),
+          },
+        },
+      );
       delivered = push.delivered || delivered;
     }
     await this.prisma.workoutReminderDelivery.update({
@@ -318,23 +317,6 @@ export class WorkoutReminderService {
       data: delivered ? { status: 'sent', sent_at: now } : { status: 'failed' },
     });
     return delivered ? 'sent' : 'failed';
-  }
-
-  /**
-   * Same predicate as DunningLockoutGuard.isClientLockedOut (Day-10 hard
-   * lockout): any active DunningState with locked_out_at set on one of the
-   * client's purchases whose entitlement is off.
-   */
-  private async isDunningLockedOut(clientId: string): Promise<boolean> {
-    const row = await this.prisma.dunningState.findFirst({
-      where: {
-        locked_out_at: { not: null },
-        status: 'active',
-        purchase: { client_user_id: clientId, entitlement_active: false },
-      },
-      select: { id: true },
-    });
-    return row != null;
   }
 
   /**

@@ -12,6 +12,7 @@ import {
   IsArray,
   IsDateString,
   IsEnum,
+  IsIn,
   IsInt,
   IsISO8601,
   IsNotEmpty,
@@ -27,6 +28,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { IsTimeOfDay } from '../common/validators/time-of-day';
+import { PLAN_EXERCISE_UNITS, type PlanExerciseUnitValue } from './plan-exercise-fields';
 
 // ─── Enums (mirror Prisma) ────────────────────────────────────────────────────
 
@@ -91,12 +93,17 @@ export class UpsertExerciseRowDto {
   sets!: number;
 
   /**
-   * Either a rep count (e.g. 12) or a duration in seconds (e.g. 60).
+   * Either a rep count (e.g. 12) or a duration in seconds (e.g. 60), as `unit` says.
    * Column name intentionally generic to support both.
    */
   @IsInt()
   @Min(1)
   reps_or_duration_seconds!: number;
+
+  /** TIMED-SETS-BE: what reps_or_duration_seconds counts. Absent = reps (a phone without the field). */
+  @IsOptional()
+  @IsIn(PLAN_EXERCISE_UNITS)
+  unit?: PlanExerciseUnitValue;
 
   @IsOptional()
   @IsNumber()

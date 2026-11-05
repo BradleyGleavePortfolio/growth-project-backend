@@ -11,11 +11,11 @@ function buildPrismaStub() {
       findFirst: jest.fn(),
       create: jest.fn(),
     },
-    // searchLocalDB falls back to ILIKE when pg_trgm raises. Returning a
-    // rejected $queryRaw forces the unit test through that fallback, which
-    // also returns [] under jest. Net: zero local hits, so we only assert
-    // against the NL-parsed query echoed in the response.
-    $queryRaw: jest.fn().mockRejectedValue(new Error('no pg_trgm in test')),
+    // Zero local hits, so we only assert against the NL-parsed query echoed
+    // in the response. FOOD-TRUE-BE (LO-FOOD C8): a catalog query the
+    // database refuses is a failed source whose answer is not cached, so the
+    // catalog answers with no rows here rather than refusing.
+    $queryRaw: jest.fn().mockResolvedValue([]),
   } as any;
 }
 

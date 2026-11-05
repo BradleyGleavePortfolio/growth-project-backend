@@ -69,7 +69,7 @@ describe('consult-consent-v3 text parity with mobile #310', () => {
     expect(V3.box2Label?.startsWith('Optional: ')).toBe(true);
   });
 
-  it('the registry knows v3 to v18 and the coach-free v5 to v17 only (no compat window for v2 or v1)', () => {
+  it('the registry knows v3 to v19 and the coach-free v5 to v18 only (no compat window for v2 or v1)', () => {
     expect(Object.keys(CONSULT_CONSENT_COPIES)).toEqual([
       CONSULT_CONSENT_V3,
       CONSULT_CONSENT_V4,
@@ -102,6 +102,9 @@ describe('consult-consent-v3 text parity with mobile #310', () => {
       'consult-consent-v17-coach-free',
       'consult-consent-v17',
       'consult-consent-v18',
+      // STORE-E4: the one-box screens (test/onboarding-consent-one-box.spec.ts).
+      'consult-consent-v19',
+      'consult-consent-v18-coach-free',
     ]);
     expect(consultConsentTextSha256('consult-consent-v3')).toBe(CONSULT_CONSENT_V3_TEXT_SHA256);
     expect(consultConsentTextSha256('consult-consent-v2')).toBeNull();
@@ -120,7 +123,7 @@ describe('accepted versions and the P0 truth rule', () => {
     text_sha256: MOBILE_CONSENT_COPY_SHA256,
   };
 
-  it('acceptedConsentVersions: default v3 to v18 + coach-free v5 to v17; the override keeps only versions with known text', () => {
+  it('acceptedConsentVersions: default v3 to v19 + coach-free v5 to v18; the override keeps only versions with known text', () => {
     const defaults = [
       'consult-consent-v3',
       'consult-consent-v4',
@@ -151,6 +154,8 @@ describe('accepted versions and the P0 truth rule', () => {
       'consult-consent-v17-coach-free',
       'consult-consent-v17',
       'consult-consent-v18',
+      'consult-consent-v19',
+      'consult-consent-v18-coach-free',
     ];
     expect(acceptedConsentVersions({})).toEqual(defaults);
     expect(acceptedConsentVersions({ CONSULT_CONSENT_COPY_VERSIONS: '' })).toEqual(defaults);
@@ -199,9 +204,9 @@ describe('CONSULT_CONSENT_COPY_VERSIONS env rule (S-ENVTRUTH)', () => {
   it('is registered as optional with its real default (every name, in order) and no boot validator', () => {
     expect(rule).toBeDefined();
     expect(rule?.tier).toBe('optional');
-    expect(DEFAULT_CONSULT_CONSENT_COPY_VERSIONS).toHaveLength(29);
+    expect(DEFAULT_CONSULT_CONSENT_COPY_VERSIONS).toHaveLength(31);
     expect(rule?.default).toBe(
-      `${DEFAULT_CONSULT_CONSENT_COPY_VERSIONS.join(',')} (unset, empty, or no known name -> all twenty-nine)`,
+      `${DEFAULT_CONSULT_CONSENT_COPY_VERSIONS.join(',')} (unset, empty, or no known name -> all thirty-one)`,
     );
     expect(rule?.validate).toBeUndefined();
   });

@@ -142,6 +142,7 @@ function makePrisma() {
       alert('a5', 'c3', 'consecutive_misses', 5),
       alert('a6', 'c3', 'risk_red_transition', 6),
     ],
+    communityCohort: [], // FR-1152R3 B1: no public space
   };
   const model = (name: string) => ({
     findMany: jest.fn(async (a: { where?: Where } = {}) => t[name].filter((r) => matches(r, a.where ?? {}))),

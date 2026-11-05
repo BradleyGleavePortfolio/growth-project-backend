@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import type { CommunityVoiceNote } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { fullNamesFor } from '../community-space-access';
+import { isPublicRowOfMyClient } from '../community-public-row';
 import { openClientMessagesReadBy } from '../messages/community-messages.repository';
 import { storeRemovalNotice } from '../safety/community-moderation-notices';
 import {
@@ -145,6 +146,11 @@ export interface VoiceListFilter {
 @Injectable()
 export class CommunityVoiceRepository {
   constructor(private readonly prisma: PrismaService) {}
+
+  /** Rule D (FR-1173R2): is the viewer the note author's own coach for this public space note (community-public-row.ts)? */
+  isPublicRowOfMyClient(cohortId: string, viewerId: string, authorId: string): Promise<boolean> {
+    return isPublicRowOfMyClient(this.prisma, cohortId, viewerId, authorId);
+  }
 
   /**
    * Insert a voice note in one transaction. VOICE-BE: a space note also gets

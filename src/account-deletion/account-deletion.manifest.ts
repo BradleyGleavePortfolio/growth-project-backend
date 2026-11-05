@@ -690,6 +690,10 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'CommunityMembership', field: 'user_id', action: del },
   // SC-BE2: the person's read line and notification setting per space.
   { model: 'CommunitySpaceRead', field: 'user_id', action: del },
+  // LEAVE-MUTE-BE: the person's muted and left threads.
+  { model: 'CommunityThreadPref', field: 'user_id', action: del },
+  // FR-1168: the person's own departure rows (the "{name} left" lines).
+  { model: 'CommunitySpaceDeparture', field: 'user_id', action: del },
   { model: 'CommunitySearchEntry', field: 'authorId', action: del, uuid: true },
   { model: 'CommunityModerationAction', field: 'reported_by_id', action: detach('reported_by_id') },
   { model: 'CommunityModerationAction', field: 'actor_id', action: detach('actor_id') },

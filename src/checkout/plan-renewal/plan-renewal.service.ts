@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { NotificationKind } from '../../notifications/notification-kind';
 import { quietHoursFor } from '../../notifications/push/push-quiet-hours';
+import { RENEWAL_OFFER } from '../../notifications/push/push-preferences';
 import { resolveRecipientTimeZone } from '../../notifications/recipient-timezone';
 import { dunningErrorCode } from '../dunning-v2/dunning-v2.safe-error';
 import {
@@ -148,6 +149,9 @@ export class PlanRenewalService {
           deep_link: 'tgp://home',
           // No buttons (OPERATOR RULING v3 6328335815): the tap opens Home and its renewal pop-up.
           dedupe_key: `plan_renewal:${row.id}:${step}`,
+          // STORE-B2 (App Store 4.5.4): Day 1 and Day 7 are offers, sent only after the person's yes in the app
+          // and stopped by Mute all (push-preferences.ts RENEWAL_OFFER). Day 0 is the notice that the plan ended.
+          ...(step > 0 ? { context: RENEWAL_OFFER } : {}),
         },
         tx,
       );

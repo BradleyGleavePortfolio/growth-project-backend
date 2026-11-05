@@ -28,6 +28,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { MuxService } from '../video/mux.service';
+import { visibleAssignmentExercises } from '../workout-builder/assignment-exercises';
 import {
   CreateCatalogItemDto,
   ExerciseCatalogDetailDto,
@@ -127,25 +128,42 @@ export class ExerciseCatalogService {
     if (!row.mux_playback_id || row.mux_asset_status !== 'ready') return false;
     if (row.mux_playback_policy !== 'signed') return true;
     if (caller.role === 'owner' || caller.role === 'coach') return true;
-    // Students: require an active workout assignment whose plan references
-    // this catalog row via WorkoutPlanExercise.exercise_external_id
-    // (which stores either the catalog item id or the slug — both shapes
-    // are produced by the workout-builder seed/AI paths).
+    // Students: only for an exercise the client is actually shown (WK-1-BE).
+    // A plan row's exercise_external_id may hold any identity the detail
+    // lookup resolves — catalog id, slug or external reference — and nothing
+    // wider. The basis is the presenter's (visibleAssignmentExercises): the
+    // frozen snapshot when there is one, else the live (non-archived) plan
+    // rows of a legacy assignment; never a retained plan revision.
+    const refs = [row.id, row.slug, row.source_ref].filter(
+      (ref): ref is string => typeof ref === 'string' && ref.length > 0,
+    );
     try {
-      const hit = await this.prisma.clientWorkoutAssignment.findFirst({
+      // Legacy assignment (no snapshot): its live plan rows are what it shows.
+      const legacy = await this.prisma.clientWorkoutAssignment.findFirst({
         where: {
           client_id: caller.userId,
+          snapshot: { is: null },
           workout_plan: {
             exercises: {
-              some: {
-                exercise_external_id: { in: [row.id, row.slug].filter(Boolean) },
-              },
+              some: { archived_at: null, exercise_external_id: { in: refs } },
             },
           },
         },
-        select: { id: true },
+        select: { id: true, snapshot: { select: { id: true } } },
       });
-      return !!hit;
+      // Re-checked on the row: plan rows never authorize a frozen assignment.
+      if (legacy && !legacy.snapshot) return true;
+      // Frozen assignments: only the snapshot's rows count.
+      const frozen = await this.prisma.clientWorkoutAssignment.findMany({
+        where: { client_id: caller.userId, snapshot: { isNot: null } },
+        select: { snapshot: { select: { exercises_json: true } } },
+      });
+      return frozen.some((a) =>
+        visibleAssignmentExercises(a).some((ex) => {
+          const ref = (ex as { exercise_external_id?: unknown } | null)?.exercise_external_id;
+          return typeof ref === 'string' && refs.includes(ref);
+        }),
+      );
     } catch {
       // If the schema relation isn't present (older deploy mid-migration),
       // fail closed — student gets no signed URL until coach assigns it.

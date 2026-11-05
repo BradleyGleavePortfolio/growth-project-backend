@@ -12,6 +12,7 @@ import {
   User,
 } from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
+import { placeOf } from '../community-space-access';
 import { CommunityRealtimeService } from '../realtime/community-realtime.service';
 import { CommunityNotificationsService } from '../notifications/community-notifications.service';
 import { CommunitySafetyService } from '../safety/community-safety.service';
@@ -172,7 +173,7 @@ export class CommunityEventsService {
     if (!canRead) throw new NotFoundException(EVENT_NOT_FOUND);
     // Two-way block: an event created by someone in a block relation with the
     // caller reads as "does not exist" (read, RSVP and every other action).
-    await this.safety.assertVisibleTo(user.id, event.created_by_id, EVENT_NOT_FOUND);
+    await this.safety.assertVisibleTo(user.id, event.created_by_id, EVENT_NOT_FOUND, placeOf(event));
     return event;
   }
 
@@ -291,7 +292,8 @@ export class CommunityEventsService {
 
     // Two-way block: drop events created by anyone in a block relation with
     // the caller (cursor stays on the unfiltered page, as on every list).
-    const visibleRows = await this.safety.filterBlocked(user.id, rows, (e) => e.created_by_id);
+    // ALL-ON-FIX-BE (C6-WINS-MOVE, owner rule 1): an event by a client who left drops out, as on posts.
+    const visibleRows = await this.safety.filterBlocked(user.id, rows, (e) => e.created_by_id, placeOf);
     const views = await Promise.all(visibleRows.map((e) => this.buildView(e, user.id)));
     const next = rows.length === limit ? rows[rows.length - 1].starts_at.toISOString() : null;
     return CommunityEventListResponseSchema.parse({
@@ -735,6 +737,10 @@ export class CommunityEventsService {
         targetType: 'event',
         targetId: event.id,
         deepLink: `tgp://community/events/${event.id}`,
+        // FR-1192 (R1): the creator block and the reader's access (a ban)
+        // checked above are checked again when a held reminder goes.
+        otherUserId: event.created_by_id,
+        workspaceId: event.workspace_id,
       });
     }
   }

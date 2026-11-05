@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { CommunityPost, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { storeRemovalNotice } from '../safety/community-moderation-notices';
+import { clientsAmong, isPublicRowOfMyClient } from '../community-public-row';
 
 /**
  * Data access for Lab posts.
@@ -36,6 +37,16 @@ export class CommunityPostsRepository {
   /** `tx`: run inside the caller's transaction (moderation act, B-610-13). */
   async findById(postId: string, tx?: Prisma.TransactionClient): Promise<CommunityPost | null> {
     return (tx ?? this.prisma).communityPost.findUnique({ where: { id: postId } });
+  }
+
+  /** Rule D (FR-1173): is the viewer the post author's own coach in this public space (community-public-row.ts)? */
+  isPublicRowOfMyClient(cohortId: string, viewerId: string, authorId: string): Promise<boolean> {
+    return isPublicRowOfMyClient(this.prisma, cohortId, viewerId, authorId);
+  }
+
+  /** Rule D (FR-1173): the people among `ids` who are the viewer's current clients. */
+  clientsAmong(viewerId: string, ids: string[]): Promise<Set<string>> {
+    return clientsAmong(this.prisma, viewerId, ids);
   }
 
   /**

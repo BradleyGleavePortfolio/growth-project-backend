@@ -248,7 +248,7 @@ const DAY = PLAN_RENEWAL_DAY_MS;
     expect(['A', 'B', 'E', 'J'].map((who) => pushesTo(who).length)).toEqual([3, 1, 0, 2]);
     const a = await row('A');
     expect(pushesTo('A')[2]).toEqual({ user_id: u.A, kind: 'plan_renewal', body: 'Your plan has ended.', deep_link: 'tgp://home',
-      dedupe_key: `plan_renewal:${a.id}:7` });
+      dedupe_key: `plan_renewal:${a.id}:7`, context: { renewalOffer: true } }); // STORE-B2: an offer, sent only after a yes
     // The Day 7 pop-up, then the banner alone until Day 29.
     expect(await view('A', 7 * DAY)).toMatchObject({ popup_due: true, popup_step: 7, banner_due: true });
     expect((await service.ackPopup(u.A, 7, at(7 * DAY))).renewal).toMatchObject({ popup_due: false, banner_due: true });

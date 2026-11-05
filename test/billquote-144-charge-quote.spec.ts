@@ -187,6 +187,9 @@ describe('BILLQUOTE — the quote equals what the checkout sends to Stripe (mock
       coach_user_id: COACH,
       stripe_account_id: 'acct_coach',
       charges_enabled: true,
+      payouts_enabled: true, // HOLD-FU-BE: ready by the one readiness rule
+      details_submitted: true,
+      disabled_reason: null,
       deauthorized_at: null,
     });
     const packages: any = { getById: jest.fn(async () => pkg) };
@@ -258,6 +261,9 @@ describe('BILLQUOTE — the quote equals what the checkout sends to Stripe (mock
         coach_user_id: COACH,
         stripe_account_id: 'acct_coach',
         charges_enabled: true,
+        payouts_enabled: true, // HOLD-FU-BE: ready by the one readiness rule
+        details_submitted: true,
+        disabled_reason: null,
         deauthorized_at: null,
       });
       const stripe: any = {
@@ -336,7 +342,7 @@ describe('BILLQUOTE — client package reads carry the quote, own coach only', (
     const combo = pkgRow({ id: 'p-combo', ...COMBO });
     const { controller, packages } = build([monthly, trial, combo]);
     const res = await controller.list(req(COACH));
-    expect(packages.listPublicForCoach).toHaveBeenCalledWith(COACH);
+    expect(packages.listPublicForCoach).toHaveBeenCalledWith(COACH, CLIENT);
     const byId = new Map<string, ChargeQuote | null>();
     for (const p of res.packages) byId.set(p.id, p.quote);
     expect(byId.get('p-monthly')?.due_today_cents).toBe(4900);
@@ -415,6 +421,9 @@ describe('FIX998 — the quote shows the dates of the attempt the checkout resum
       coach_user_id: COACH,
       stripe_account_id: 'acct_coach',
       charges_enabled: true,
+      payouts_enabled: true, // HOLD-FU-BE: ready by the one readiness rule
+      details_submitted: true,
+      disabled_reason: null,
       deauthorized_at: null,
     });
     const packages = {

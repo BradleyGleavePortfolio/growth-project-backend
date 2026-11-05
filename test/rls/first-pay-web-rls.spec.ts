@@ -101,6 +101,8 @@ const mail = (local: string) => `${local}\u0040example.com`;
     undefined,
     fanout,
     undefined,
+    // GC-3 (main): trialUsage takes this slot; FIRST-PAY-WEB's service is last.
+    undefined,
     firstPayment,
   ]);
   Reflect.set(guest, 'sendWelcomeEmail', async () => undefined);

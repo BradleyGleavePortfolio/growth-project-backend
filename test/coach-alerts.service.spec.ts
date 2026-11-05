@@ -27,6 +27,7 @@ function buildPrisma(initial: any[] = []) {
   let counter = 0;
   return {
     rows: () => rows,
+    communityCohort: { findMany: jest.fn(async () => []) }, // FR-1152R3 B1: leads no public space
     coachAlert: {
       findFirst: jest.fn(async ({ where, orderBy: _orderBy }: any) => {
         const candidates = rows.filter((r) => {

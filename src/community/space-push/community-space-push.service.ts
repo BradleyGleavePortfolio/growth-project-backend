@@ -1,16 +1,20 @@
 /**
  * SC-PUSH: the space chat's pushes. CommunityRealtimeService calls `messageStored` once for every stored space
  * message (text and voice today; images ride the same messageCreated point), behind FEATURE_COMMUNITY_SPACE_PUSH
- * (default off). Only chat messages push: the rows the unread count counts (scope cohort, no plan tag, not
- * deleted), so a post comment never does. A sender banned from the community causes none. Recipients are
- * everyone who may read the space now (app.community_can_access, so no banned member), minus the sender and
- * anyone who blocks the sender or is blocked by them (owner 10-22: hide ALL messaging), each with their own
- * setting for the space and their own unread count. A reply or High alert opens the space at that message; the
- * unread notification opens it at the read line. Delivery is the push outbox (NotificationsService.sendPush):
- * the master switch, quiet hours held to the morning and the lock-screen rule apply as for every other push.
- * Fire-and-forget: it never throws into the write.
+ * (default off; spacePushOn() in space-push-policy.ts is the only switch on this path: FEATURE_COMMUNITY_PUSH
+ * gates community-notifications.service.ts, not the space chat push). Only chat messages push: the rows the
+ * unread count counts (scope cohort, no plan tag, not deleted), so a post comment never does. A sender banned
+ * from the community causes none. Recipients are everyone who may read the space now (app.community_can_access,
+ * so no banned member), minus the sender and anyone who blocks the sender or is blocked by them (owner 10-22:
+ * hide ALL messaging), minus anyone who left the space and, for a reply, anyone who muted or left its thread
+ * (LEAVE-MUTE-PUSH, owner D2: no push of any kind from there; joining again or unmuting brings them back; FR-1168R2
+ * B1: a muted thread still hears the coach's High alert, a left thread or space does not), each
+ * with their own setting for the space and their own unread count. A reply or High alert opens the space at that
+ * message; the unread notification opens it at the read line. Delivery is the push outbox
+ * (NotificationsService.sendPush): the master switch, quiet hours held to the morning and the lock-screen rule
+ * apply as for every other push. Fire-and-forget: it never throws into the write.
  */
-import { ForbiddenException, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { NotificationKind } from '../../notifications/notification-kind';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { PrismaService } from '../../prisma.service';
@@ -20,6 +24,7 @@ import { memberName } from '../member-display-name';
 import { CommunityRealtimeService } from '../realtime/community-realtime.service';
 import { notifySettingOf, spaceUnreadCounts } from '../space-reads/community-space-reads.service';
 import { HIGH_ALERT_DAILY_LIMIT, planSpacePush, spacePushOn, type SpacePushReader } from './space-push-policy';
+import { quietThreadStates } from './space-push-still-due';
 
 export interface HighAlertAllowance {
   reach: number;
@@ -41,22 +46,61 @@ export class CommunitySpacePushService implements OnModuleInit {
     this.realtime.onSpaceMessageStored((messageId) => this.messageStored(messageId));
   }
 
-  /** Who would hear a High alert in this space now: readers minus the sender, blocked pairs and Mute all. */
-  async highAlertReach(senderId: string, workspaceId: string, cohortId: string): Promise<number> {
-    const readers = await this.readers(senderId, workspaceId, cohortId, false);
+  /** Who would hear a High alert in this space now: readers minus the sender, blocked pairs, those who left the
+   * space and Mute all. FR-1168R2 C1: for a reply, `threadId` (its thread's first message) also leaves out those
+   * who left that thread, by the push's own rule (readers() for a High alert), so the reach is who it will ring. */
+  async highAlertReach(senderId: string, workspaceId: string, cohortId: string, threadId: string | null = null): Promise<number> {
+    const readers = await this.readers(senderId, workspaceId, cohortId, false, threadId, true);
     return readers.filter((r) => r.effectiveMode !== 'mute_all').length;
   }
 
   /** Only the coach of the space's community may send a High alert; at most HIGH_ALERT_DAILY_LIMIT there a
    * day (UTC day; deleted ones still count). 403 `community.high_alert.coach_only` for anyone else. */
-  async highAlertAllowance(userId: string, cohort: { id: string; workspace_id: string }): Promise<HighAlertAllowance> {
-    const ws = await this.prisma.communityWorkspace.findUnique({ where: { id: cohort.workspace_id }, select: { coach_id: true } });
+  async highAlertAllowance(
+    userId: string,
+    cohort: { id: string; workspace_id: string },
+    threadId: string | null = null,
+  ): Promise<HighAlertAllowance> {
+    await this.coachOnly(userId, cohort.workspace_id);
+    return this.allowance(userId, cohort, threadId);
+  }
+
+  /** GET .../high-alert/preview (FR-1168R2 C1): the allowance before a High alert is sent. With `replyTo` (the
+   * message a reply answers) the reach is its thread's, by the send path's rule: a reply to a reply joins the first
+   * message's thread, and anything but a live chat message of this space is the message 404. The coach rule runs
+   * first, so no one else learns anything about a message. */
+  async highAlertPreview(userId: string, cohort: { id: string; workspace_id: string }, replyTo: string | null): Promise<HighAlertAllowance> {
+    await this.coachOnly(userId, cohort.workspace_id);
+    return this.allowance(userId, cohort, replyTo ? await this.threadOf(cohort.id, replyTo) : null);
+  }
+
+  private async coachOnly(userId: string, workspaceId: string): Promise<void> {
+    const ws = await this.prisma.communityWorkspace.findUnique({ where: { id: workspaceId }, select: { coach_id: true } });
     if (!ws || ws.coach_id !== userId) throw new ForbiddenException({ code: 'community.high_alert.coach_only' });
+  }
+
+  /** The first message of the thread a reply to `messageId` joins (community-messages.service.ts replyParent). */
+  private async threadOf(cohortId: string, messageId: string): Promise<string> {
+    const tapped = await this.prisma.communityMessage.findFirst({
+      where: { id: messageId, cohort_id: cohortId, scope: 'cohort', plan_context_type: null, deleted_at: null },
+      select: { id: true, parent_message_id: true },
+    });
+    const root = tapped?.parent_message_id
+      ? await this.prisma.communityMessage.findFirst({
+          where: { id: tapped.parent_message_id, cohort_id: cohortId, scope: 'cohort', plan_context_type: null, deleted_at: null },
+          select: { id: true },
+        })
+      : tapped;
+    if (!root) throw new NotFoundException({ code: 'community.message.not_found' });
+    return root.id;
+  }
+
+  private async allowance(userId: string, cohort: { id: string; workspace_id: string }, threadId: string | null): Promise<HighAlertAllowance> {
     const since = new Date();
     since.setUTCHours(0, 0, 0, 0);
     const [used_today, reach] = await Promise.all([
       this.prisma.communityMessage.count({ where: { cohort_id: cohort.id, high_alert: true, created_at: { gte: since } } }),
-      this.highAlertReach(userId, cohort.workspace_id, cohort.id),
+      this.highAlertReach(userId, cohort.workspace_id, cohort.id, threadId),
     ]);
     return { reach, used_today, limit: HIGH_ALERT_DAILY_LIMIT };
   }
@@ -85,7 +129,7 @@ export class CommunitySpacePushService implements OnModuleInit {
         isBannedFromWorkspace(this.prisma, m.workspace_id, m.sender_id),
       ]);
       if (!cohort || banned) return;
-      const readers = await this.readers(m.sender_id, m.workspace_id, cohortId, true);
+      const readers = await this.readers(m.sender_id, m.workspace_id, cohortId, true, m.parent_message_id, m.high_alert);
       const pushes = planSpacePush({ senderId: m.sender_id, repliedToId: parent?.sender_id ?? null, highAlert: m.high_alert }, readers);
       for (const p of pushes) {
         const from = p.kind === 'reply' ? await this.nameIn(cohortId, m.workspace_id, m.sender_id, p.userId) : undefined;
@@ -115,21 +159,42 @@ export class CommunitySpacePushService implements OnModuleInit {
     return memberName(user.name, full(cohortId, senderId));
   }
 
-  private async readers(senderId: string, workspaceId: string, cohortId: string, withUnread: boolean): Promise<SpacePushReader[]> {
+  /** `threadId`: for a reply, the message it replies to (replies are one level deep, so the thread's first).
+   *  `highAlert`: a coach High alert, which a muted thread still hears (quietThreadStates, FR-1168R2 B1). */
+  private async readers(
+    senderId: string,
+    workspaceId: string,
+    cohortId: string,
+    withUnread: boolean,
+    threadId: string | null = null,
+    highAlert = false,
+  ): Promise<SpacePushReader[]> {
     const everyone = (await readersNow(this.prisma, workspaceId, cohortId)).filter((id) => id !== senderId);
     if (everyone.length === 0) return [];
-    const [blocks, rows, cohort] = await Promise.all([
+    const [blocks, rows, cohort, quiet] = await Promise.all([
       this.prisma.userBlock.findMany({
         where: { OR: [{ blocker_id: senderId, blocked_id: { in: everyone } }, { blocked_id: senderId, blocker_id: { in: everyone } }] },
         select: { blocker_id: true, blocked_id: true },
       }),
       this.prisma.communitySpaceRead.findMany({
         where: { cohort_id: cohortId, user_id: { in: everyone } },
-        select: { user_id: true, notify_mode: true, silenced_until: true },
+        select: { user_id: true, notify_mode: true, silenced_until: true, left_at: true },
       }),
       this.prisma.communityCohort.findUniqueOrThrow({ where: { id: cohortId }, select: { kind: true } }),
+      // FR-1168: only a muted or left thread is quiet; a 'followed' row (muted or left, then undone) pushes again.
+      // FR-1168R2 B1: for a High alert only a left thread is.
+      threadId
+        ? this.prisma.communityThreadPref.findMany({
+            where: { cohort_id: cohortId, thread_message_id: threadId, user_id: { in: everyone }, state: { in: [...quietThreadStates(highAlert)] } },
+            select: { user_id: true },
+          })
+        : [],
     ]);
-    const hidden = new Set(blocks.flatMap((b) => [b.blocker_id, b.blocked_id]));
+    const hidden = new Set([
+      ...blocks.flatMap((b) => [b.blocker_id, b.blocked_id]),
+      ...rows.filter((r) => r.left_at).map((r) => r.user_id),
+      ...quiet.map((q) => q.user_id),
+    ]);
     const rowOf = new Map(rows.map((r) => [r.user_id, r]));
     const now = new Date();
     const out: SpacePushReader[] = [];

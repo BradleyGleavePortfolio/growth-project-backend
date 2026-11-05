@@ -218,6 +218,7 @@ describe('every copy of a planned exercise carries the coach swaps', () => {
     'src/community/plan-context/plan-context.service.ts:row': 'a community plan read; copies nothing',
     'src/roman/context/roman-client-context.service.ts:select': 'Roman reads the day; copies nothing',
     'src/ai/context/workout-context.service.ts:select': 'AI context reads the plan; copies nothing',
+    'src/workout/workout.service.ts:select': 'SET-ASKED-BE: a logged set copies what was asked (sets, count, unit, weight), not the swaps',
   };
   const files = (dir: string): string[] =>
     readdirSync(dir, { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? files(join(dir, d.name)) : d.name.endsWith('.ts') ? [join(dir, d.name)] : []));

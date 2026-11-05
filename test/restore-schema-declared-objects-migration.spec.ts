@@ -45,6 +45,7 @@ const NEW_COLUMNS: Record<string, string[]> = {
 const ADDED_LATER: ReadonlyArray<[table: string, column: string, migration: string]> = [
   ['Recipe', 'allergens', '20270404000000_recipe_declared_allergens'],
   ['Recipe', 'allergens_declared', '20270404000000_recipe_declared_allergens'],
+  ['ListItem', 'source_plan_slot_id', '20270502011100_plan_swaps_revisions'],
 ];
 
 /** SQL with `--` comment lines removed, so header prose never satisfies an assertion. */
@@ -224,10 +225,15 @@ describe(`${NAME}: matches what schema.prisma declares`, () => {
       ['SavedRecipe_recipe_id_fkey', 'recipe_id', 'Recipe', 'ON DELETE RESTRICT ON UPDATE CASCADE'],
       ['ListItem_user_id_fkey', 'user_id', 'User', 'ON DELETE RESTRICT ON UPDATE CASCADE'],
     ]);
-    // None of these relations declares onDelete, which is what makes RESTRICT correct.
+    // None of these relations declares onDelete, which is what makes RESTRICT correct. A relation a
+    // later migration adds (ADDED_LATER, e.g. ListItem.source_plan_slot_id: SET NULL) is that migration's.
     for (const model of NEW_TABLES) {
       const start = SCHEMA.indexOf(`\nmodel ${model} {`);
-      const block = SCHEMA.slice(start, SCHEMA.indexOf('\n}', start));
+      const later = ADDED_LATER.filter(([t]) => t === model).map(([, column]) => column);
+      const block = SCHEMA.slice(start, SCHEMA.indexOf('\n}', start))
+        .split('\n')
+        .filter((l) => !later.some((c) => l.includes(`fields: [${c}]`)))
+        .join('\n');
       expect(block).not.toMatch(/onDelete/);
     }
   });

@@ -9,10 +9,16 @@ import { ConfigService } from '@nestjs/config';
 import type { ConnectAccount } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { ConnectService } from '../connect/connect.service';
+import {
+  isConnectAccountReadyForCheckout,
+  readinessRow,
+  type ReadinessAccount,
+} from '../connect/connect-readiness';
 import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
 import { SHARE_TOKEN_REGEX } from '../share-link/share-link.service';
+import { COACHING_COACH } from '../packages/coach-selling';
 import { chargeQuote, isRecurringPackage } from '../checkout/checkout.service';
-import { planPriceFor } from '../checkout/subscription-plan';
+import { packageTrialDays, planPriceFor } from '../checkout/subscription-plan';
 import type {
   BillingCycle,
   PublicPackageData,
@@ -22,51 +28,21 @@ import type {
 // service, public controller) can refer to a single canonical regex.
 export { SHARE_TOKEN_REGEX };
 
-// Audit #3 P1-8 — connected-account readiness gate. The previous build
-// only checked `charges_enabled`, but a Stripe Connect account can be
-// charges-enabled with `disabled_reason` set or `payouts_enabled` /
-// `details_submitted` false, meaning Stripe is collecting fees we
-// cannot pay out and may already be deferring the coach's payouts.
-// Phase 1 storefront purchases must only be accepted when the coach can
-// actually be paid: every readiness axis must be true.
-//
-// We expose the helper as a free function so the public package GET and
-// the checkout POST both gate on the exact same predicate. The public
-// surface intentionally returns a generic ACCOUNT_NOT_READY / 404 — no
-// enumeration of which axis failed leaks through to the buyer.
-export interface ReadinessAccount {
-  charges_enabled: boolean;
-  payouts_enabled: boolean;
-  details_submitted: boolean;
-  disabled_reason: string | null;
-}
-
-export function isConnectAccountReadyForCheckout(
-  account: ReadinessAccount | null | undefined,
-): boolean {
-  if (!account) return false;
-  if (!account.charges_enabled) return false;
-  if (!account.payouts_enabled) return false;
-  if (!account.details_submitted) return false;
-  if (account.disabled_reason !== null && account.disabled_reason !== undefined) {
-    return false;
-  }
-  return true;
-}
+// Audit #3 P1-8 / HOLD-FU-BE: the readiness rule lives in
+// connect/connect-readiness.ts (one rule for every sale); re-exported here
+// for the storefront callers. The public surface intentionally returns a
+// generic ACCOUNT_NOT_READY / 404 — no enumeration of which axis failed
+// leaks through to the buyer.
+export { isConnectAccountReadyForCheckout };
+export type { ReadinessAccount };
 
 // B-GUESTPAY-127: the share link (public GET and guest checkout POST) gates
-// on the saved ConnectAccount row, and account.updated for a coach's Express
-// account does not reach the platform webhook. A row that fails the predicate
-// above is re-read from Stripe once through b#821's
-// ConnectService.refreshNotReady (same 60 s per-account cooldown; deauthorized
-// rows untouched; any failure returns the saved row) before the buyer is
-// refused. A ready row makes no Stripe call.
+// on the saved ConnectAccount row, re-read from Stripe when not ready.
 export async function shareLinkReadinessRow(
   row: ConnectAccount | null,
   connect: ConnectService | undefined,
 ): Promise<ConnectAccount | null> {
-  if (!row || !connect || isConnectAccountReadyForCheckout(row)) return row;
-  return connect.refreshNotReady(row);
+  return row ? readinessRow(row, connect) : row;
 }
 
 @Injectable()
@@ -107,8 +83,10 @@ export class StorefrontService {
       });
     }
 
+    // STORE-1TO1: the web shows a package only while its coach can coach one to one (the same
+    // seller rule as the app, coach-selling.ts).
     const pkg = await this.prisma.coachPackage.findUnique({
-      where: { share_token: token },
+      where: { share_token: token, coach: COACHING_COACH },
       include: {
         coach: {
           include: {
@@ -200,10 +178,13 @@ export class StorefrontService {
       pkg.interval_count,
     );
 
-    // GC-1 — what checkout charges, from the checkout's own rule. No trial
-    // on the web yet (#GC-TRIAL interim): the guest checkout charges today.
-    const quote = chargeQuote(pkg, 0);
-    const plan = isRecurringPackage(pkg) ? planPriceFor(pkg, 0) : null;
+    // GC-1 — what checkout charges, from the checkout's own rule. GC-3
+    // (#GC-TRIAL op 1): a pure recurring package's trial runs on the web too
+    // (packageTrialDays: combo packages never have one), so the quote is the
+    // in-app one: nothing due today, first charge at the trial's end.
+    const trialDays = packageTrialDays(pkg);
+    const quote = chargeQuote(pkg, trialDays);
+    const plan = isRecurringPackage(pkg) ? planPriceFor(pkg, trialDays) : null;
 
     const data: PublicPackageData = {
       package_id: pkg.id,
@@ -212,10 +193,8 @@ export class StorefrontService {
       price_cents: pkg.amount_cents,
       currency: pkg.currency,
       billing_cycle: billingCycle,
-      // Stripe trial_period_days lives on the Price object — Phase 1 of the
-      // storefront does not surface trials, so we serve null. Adding this
-      // later is a value-only change.
-      trial_days: null,
+      // GC-3 — the trial the guest checkout starts (null = none).
+      trial_days: trialDays > 0 ? trialDays : null,
       // CoachPackage has no `features` JSON column yet (deferred to Phase 2,
       // see spec §20). Return an empty array so the storefront can render
       // a deterministic empty state without an extra null check.

@@ -16,7 +16,7 @@ import { CheckoutContractGate } from '../contracts/checkout-contract-gate.servic
 import { ContractRequiredException } from '../contracts/contract-required.exception';
 import { isContractsEnabled } from '../contracts/contracts.feature';
 import { PurchaseFanoutService } from '../packages/purchase-fanout.service';
-import { SELLING_COACH } from '../packages/coach-selling';
+import { coachingCoachFor } from '../packages/coach-selling';
 import { ConsentScope, ConsentService } from '../consent/consent.service';
 
 // Partner launch C01 — invite-code → package grants and free packages.
@@ -393,7 +393,11 @@ export class InviteGrantService implements OnModuleInit {
     db: GrantDb = this.prisma,
   ): Promise<GrantOutcome> {
     const active = input.active !== false;
-    const pkg = await db.coachPackage.findUnique({ where: { id: input.packageId } });
+    // STORE-1TO1: every invite / free / prepaid entitlement (and its consent activation) is
+    // written here, so the buyer-specific coaching rule lives here (coach-selling.ts).
+    const pkg = await db.coachPackage.findUnique({
+      where: { id: input.packageId, coach: coachingCoachFor(input.clientUserId) },
+    });
     if (!pkg || pkg.coach_id !== input.coachUserId || !pkg.is_active || pkg.archived_at) {
       throw new NotFoundException({ error: 'PACKAGE_NOT_FOUND', message: 'Package not available' });
     }
@@ -866,9 +870,10 @@ export class InviteGrantService implements OnModuleInit {
       });
     }
     const pkg = await this.prisma.coachPackage.findUnique({
-      where: { id: packageId, coach: SELLING_COACH },
+      where: { id: packageId, coach: coachingCoachFor(client.id) },
     });
-    // Non-leaking 404 for another coach's package, or one of a leaving coach (same rule as checkout).
+    // Non-leaking 404 for another coach's package, or one of a coach who cannot coach this client
+    // one to one (same rule as checkout; STORE-1TO1).
     if (
       !pkg ||
       !client.coach_id ||

@@ -33,6 +33,7 @@ import {
 // (err instanceof Prisma.PrismaClientKnownRequestError && err.code==='P2002').
 // We import the REAL class so the instanceof check passes.
 import { Prisma } from '@prisma/client';
+import { FakePrisma } from './support/dunning-v2-fake-prisma';
 
 function makePrismaStub() {
   const packages: any[] = [];
@@ -387,6 +388,34 @@ describe('PackagePushService', () => {
   });
 
   // ── SHIPPED_STATUSES constant (G4) ───────────────────────────────────
+  it.each(['all', 'active', 'cohort'] as const)(
+    'LS-1190 B2: inline %s push skips a locked purchase after F6 resync',
+    async (audience) => {
+      seedPurchase(prisma, { id: 'locked-plan', package_id: 'pkg-1', status: 'past_due' });
+      seedPurchase(prisma, { id: 'live-plan', package_id: 'pkg-1', status: 'active' });
+      // customer.subscription.updated has restored the bit, but no invoice
+      // was paid and the persisted Day-10 lock remains authoritative.
+      const store = new FakePrisma();
+      for (const p of prisma._purchases) store.seed('clientPurchase', p);
+      store.seed('dunningState', {
+        id: 'locked-cycle', purchase_id: 'locked-plan', status: 'active',
+        locked_out_at: new Date(Date.now() - 60_000),
+      });
+      prisma.clientPurchase.findMany = store.client().clientPurchase.findMany;
+      const now = new Date();
+      await svc.pushContentToExistingBuyers('coach-1', 'pkg-1', 'content-1', {
+        audience, cohortPurchaseIds: ['locked-plan', 'live-plan'],
+        fireAt: now, mode: 'push_existing', notify: true,
+      });
+
+      expect(resolvers.materialise.mock.calls.map((call) => call[1].clientId))
+        .toEqual(['client-live-plan']);
+      expect(prisma._drops.filter((d: { client_purchase_id: string; status: string }) =>
+        d.client_purchase_id === 'locked-plan' && ['fired', 'delivered'].includes(d.status),
+      )).toHaveLength(0);
+    },
+  );
+
   it('centralizes the shipped-status set as fired + delivered (G4)', () => {
     expect([...SHIPPED_STATUSES].sort()).toEqual(['delivered', 'fired']);
   });

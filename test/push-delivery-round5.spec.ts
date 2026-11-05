@@ -69,6 +69,7 @@ function world(prefs: Record<string, unknown> = {}) {
       findUnique: jest.fn(async () => ({ client_id: 'u-1', coach_id: 'coach-1', status: 'scheduled' })),
       findMany: jest.fn(async () => []), // a coach's sessions with someone not their client: none
     },
+    communityCohort: { findMany: jest.fn(async () => []) }, // FR-1152R3 B1: leads no public space
     scheduledDrop: { updateMany: jest.fn(async () => ({ count: 1 })) },
   };
   const delivery = new Clocked(Object.create(db), client);
@@ -278,7 +279,13 @@ describe('Sol B-648-9: consent is read again after the handoff', () => {
 
 describe('Opus B-693-1: every push names a channel the app creates', () => {
   it('the channel list is the mobile PUSH_CHANNEL list, and every kind maps into it', () => {
-    expect(Object.values(ANDROID_PUSH_CHANNELS).sort()).toEqual(['client-bot', 'coach-messages', 'milestones', 'system']);
+    expect(Object.values(ANDROID_PUSH_CHANNELS).sort()).toEqual([
+      'client-bot',
+      'coach-messages',
+      'default',
+      'milestones',
+      'system',
+    ]);
     const allowed = new Set<string>(Object.values(ANDROID_PUSH_CHANNELS));
     for (const kind of [...Object.values(NotificationKind), 'unknown_kind']) {
       expect(allowed.has(androidChannelFor(kind))).toBe(true);
@@ -287,7 +294,8 @@ describe('Opus B-693-1: every push names a channel the app creates', () => {
     expect(androidChannelFor(NotificationKind.BOOKING_REMINDER_1H)).toBe('system');
     expect(androidChannelFor(NotificationKind.COACH_ALERT)).toBe('system');
     expect(androidChannelFor(NotificationKind.MILESTONE_REACHED)).toBe('milestones');
-    expect(androidChannelFor(NotificationKind.NUDGE_INACTIVE)).toBe('client-bot');
+    // FR-1192 (R2): the nudges keep the channel they sounded on before ('default').
+    expect(androidChannelFor(NotificationKind.NUDGE_INACTIVE)).toBe('default');
   });
 
   it('the worker sends that channel and only the template copy, whatever the row holds', async () => {

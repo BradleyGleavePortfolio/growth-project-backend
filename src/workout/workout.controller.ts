@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Put, Delete, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Get, Put, Delete, Body, Param, Query, UseGuards, Request, Headers } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { WorkoutService } from './workout.service';
@@ -7,6 +7,7 @@ import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guar
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { OpenToCoachlessClient } from '../common/decorators/open-to-coachless-client.decorator';
+import { keepRomanContextFor } from '../roman/context/roman-context-invalidation';
 import {
   ExerciseHistoryQueryDto,
   CreateWorkoutDto,
@@ -25,8 +26,17 @@ export class WorkoutController {
   constructor(private workoutService: WorkoutService) {}
 
   @Post('workouts')
-  async createWorkout(@Request() req: AuthedRequest, @Body() body: CreateWorkoutDto) {
-    return this.workoutService.createWorkout(req.user.id, body);
+  // WK-1-BE: an optional Idempotency-Key (the phone's queue key) makes a resend
+  // after a lost answer return the stored workout instead of a second one; that
+  // resend stores nothing new, so it keeps Roman's context.
+  async createWorkout(
+    @Request() req: AuthedRequest,
+    @Body() body: CreateWorkoutDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
+  ) {
+    return this.workoutService.createWorkout(req.user.id, body, idempotencyKey, () =>
+      keepRomanContextFor(req),
+    );
   }
 
   @Get('workouts')

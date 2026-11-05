@@ -2509,3 +2509,97 @@ describe('W-BRAND-AGREEMENT: the TGP Fitness agreement, and people who already a
     expect(w.revisions).toHaveLength(0);
   });
 });
+
+describe('STORE-E4: a ticked one-box agreement records the plan renewal offers yes in the same save', () => {
+  type Prefs = { user_id: string; plan_renewal_offers_opt_in_at: Date | null; digest_push?: boolean };
+  const agreedTo = (copy_version: string) => ({
+    ...CONSENT,
+    copy_version,
+    text_sha256: consultConsentTextSha256(copy_version) ?? '',
+  });
+  const { P0: _p0, ...answers } = COMPLETE;
+  const later = new Date(NOW.getTime() + 60_000);
+  const withPrefs = (w: ReturnType<typeof makeWorld>, rows: Prefs[]) => {
+    const upsert = jest.fn(
+      async (args: { where: { user_id: string }; create: Prefs; update: Partial<Prefs> }) => {
+        const row = rows.find((r) => r.user_id === args.where.user_id);
+        if (row) return Object.assign(row, args.update);
+        const created = { ...args.create };
+        rows.push(created);
+        return created;
+      },
+    );
+    Object.assign(w.prisma, { notificationPreferences: { upsert } });
+    return upsert;
+  };
+
+  it.each(['consult-consent-v19', 'consult-consent-v18-coach-free'])(
+    'a %s agreement stamps the yes at the time of agreeing, creating the preferences row',
+    async (version) => {
+      const w = makeWorld();
+      const rows: Prefs[] = [];
+      const upsert = withPrefs(w, rows);
+      await w.svc.saveConsultation('client-1', { version: 'consult-v1', answers: { P0: agreedTo(version) } }, NOW);
+      expect(w.intakes[0]).toMatchObject({ disclaimer_version: version, disclaimer_accepted_at: NOW });
+      expect(rows).toEqual([{ user_id: 'client-1', plan_renewal_offers_opt_in_at: NOW }]);
+      expect(upsert).toHaveBeenCalledTimes(1);
+      expect((await w.svc.getOnboarding('client-1')).consent_recorded).toBe(true);
+    },
+  );
+
+  it('an existing preferences row keeps its other choices and gets the yes', async () => {
+    const w = makeWorld();
+    const rows: Prefs[] = [{ user_id: 'client-1', plan_renewal_offers_opt_in_at: null, digest_push: true }];
+    withPrefs(w, rows);
+    await w.svc.saveConsultation(
+      'client-1',
+      { version: 'consult-v1', answers: { P0: agreedTo('consult-consent-v19') } },
+      NOW,
+    );
+    expect(rows).toEqual([{ user_id: 'client-1', plan_renewal_offers_opt_in_at: NOW, digest_push: true }]);
+  });
+
+  it('later saves and a resume of the same agreement never write it again (a Settings "off" stays off)', async () => {
+    const w = makeWorld();
+    const rows: Prefs[] = [];
+    const upsert = withPrefs(w, rows);
+    const P0 = agreedTo('consult-consent-v19');
+    await w.svc.saveConsultation('client-1', { version: 'consult-v1', answers: { P0 } }, NOW);
+    rows[0].plan_renewal_offers_opt_in_at = null; // turned off in Settings
+    await w.svc.saveConsultation('client-1', { version: 'consult-v1', answers }, later);
+    await w.svc.saveConsultation('client-1', { version: 'consult-v1', answers: { ...answers, P0 } }, later);
+    expect(upsert).toHaveBeenCalledTimes(1);
+    expect(rows[0].plan_renewal_offers_opt_in_at).toBeNull();
+    expect(w.intakes[0]).toMatchObject({ disclaimer_version: 'consult-consent-v19', disclaimer_accepted_at: NOW });
+  });
+
+  it.each([
+    'consult-consent-v3',
+    'consult-consent-v11',
+    'consult-consent-v17',
+    'consult-consent-v18',
+    'consult-consent-v12-coach-free',
+    'consult-consent-v17-coach-free',
+  ])('an older %s agreement never writes it (existing accounts: offers stay off)', async (version) => {
+    const w = makeWorld();
+    const rows: Prefs[] = [];
+    const upsert = withPrefs(w, rows);
+    await w.svc.saveConsultation('client-1', { version: 'consult-v1', answers: { P0: agreedTo(version) } }, NOW);
+    await w.svc.saveConsultation('client-1', { version: 'consult-v1', answers }, later);
+    expect(w.intakes[0]).toMatchObject({ disclaimer_version: version, disclaimer_accepted_at: NOW });
+    expect(upsert).not.toHaveBeenCalled();
+    expect(rows).toEqual([]);
+  });
+
+  it('a refused one-box P0 (wrong digest) stores nothing and writes no yes', async () => {
+    const w = makeWorld();
+    const rows: Prefs[] = [];
+    const upsert = withPrefs(w, rows);
+    const bad = { ...agreedTo('consult-consent-v19'), text_sha256: consultConsentTextSha256('consult-consent-v18') ?? '' };
+    await expect(
+      w.svc.saveConsultation('client-1', { version: 'consult-v1', answers: { P0: bad } }, NOW),
+    ).rejects.toThrow();
+    expect(upsert).not.toHaveBeenCalled();
+    expect(w.intakes).toHaveLength(0);
+  });
+});

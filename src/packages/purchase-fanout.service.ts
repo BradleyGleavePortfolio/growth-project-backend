@@ -8,6 +8,7 @@ import { computeFireAt, type CadenceKind } from './drip-fire-at';
 import { attachPaidJoinTx } from '../invite-codes/join-package';
 import { alertCoachOfFlaggedJoinTx } from '../onboarding/flagged-join-alert';
 import { moveToHouseCoachTx } from '../checkout/plan-renewal/house-join';
+import { isLiveAccess } from '../checkout/dunning-v2/dunning-grace';
 import {
   SchedulingSessionLifecycleService,
   type MoveCancelledSession,
@@ -257,6 +258,7 @@ export class PurchaseFanoutService {
     // --- (2) Load the purchase + the package's authoring rows -----------
     const purchaseRow = await tx.clientPurchase.findUnique({
       where: { id: purchase.id },
+      include: { dunning: { select: { status: true, locked_out_at: true } } },
     });
     if (!purchaseRow) {
       // Should never happen — entitlement just wrote it. Treat as a
@@ -328,8 +330,15 @@ export class PurchaseFanoutService {
       where: { client_purchase_id: purchase.id },
     });
 
+    // FR-1190 (LS-1190 B4): the caller has just written the entitlement, but a Stripe resync (F6)
+    // writes it on a plan under its own Day-10 lock too, so the rest of the live rule is read here.
+    // A plan that is not live delivers nothing inline; its drops stay pending and the dispatcher
+    // (dueWhere, same rule) delivers them once the plan is live again.
+    const live =
+      purchaseRow.entitlement_active !== false && isLiveAccess({ ...purchaseRow, entitlement_active: true }, now);
     const dueNow = persisted.filter(
       (d) =>
+        live &&
         d.materialised_ref == null &&
         d.fire_at != null &&
         d.fire_at.getTime() <= now.getTime() &&

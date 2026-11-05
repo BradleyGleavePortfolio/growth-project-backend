@@ -1,5 +1,6 @@
 import type { Prisma } from '@prisma/client';
 import type { PrismaService } from '../../prisma.service';
+import { dunningGraceWhere, NOT_DUNNING_LOCKED } from './dunning-grace';
 
 /**
  * S-DUNNING-R3 (B-628-7): the ONE rule for "does a Day-10 lock actually stop
@@ -22,8 +23,8 @@ export interface EffectiveLock {
 }
 
 /**
- * Live access other than `excludePurchaseId`: an entitled, unexpired
- * purchase in a paid status whose own cycle (if any) is not locked.
+ * Live access other than `excludePurchaseId`: an entitled purchase whose own
+ * cycle (if any) is not locked, unexpired in a paid status or in live grace.
  */
 export async function hasOtherLiveAccess(
   db: Db,
@@ -35,20 +36,25 @@ export async function hasOtherLiveAccess(
   // fetched is a live grant however many locked alternatives the client
   // holds (a page of the first N rows could be all locked and hide it). The
   // same test on the row keeps the answer right for any caller-supplied db.
+  const grace = dunningGraceWhere();
   const others = await db.clientPurchase.findMany({
     where: {
       client_user_id: clientUserId,
       id: { not: excludePurchaseId },
       entitlement_active: true,
-      status: { in: ['paid', 'active', 'trialing'] },
       AND: [
-        { OR: [{ access_expires_at: null }, { access_expires_at: { gt: now } }] },
+        // FR-1190 (LS-1190 B3): a paid plan inside its window, or (v2 on) another failed renewal in
+        // its live grace, the rule the guard and the shared reads give that plan's own access.
         {
           OR: [
-            { dunning: { is: null } },
-            { dunning: { isNot: { status: 'active', locked_out_at: { not: null } } } },
+            {
+              status: { in: ['paid', 'active', 'trialing'] },
+              OR: [{ access_expires_at: null }, { access_expires_at: { gt: now } }],
+            },
+            ...(grace ? [grace] : []),
           ],
         },
+        NOT_DUNNING_LOCKED,
       ],
     },
     select: {

@@ -1,7 +1,8 @@
 // BLOCK-ALL-BE (agent 168), owner rule #168-4 and #170-1 BAN-SCOPE (a ban covers the coach's whole community): the
 // banned person sees no messages there and cannot type there; a block closes every conversation between the two
 // people both ways. FX-1141: the same rule holds for raw reads under forced row security. Live, on the replayed migration chain, with the real services: A and B coach; V and X are A's clients; X
-// also writes in B's public space. The moderation Ban records the ban for A's community (community_workspace_bans).
+// also writes in B's public space, so (owner rule D, SPACE-OWNER-ALERTS) that row, mXb, is in X's coach A's inbox too.
+// The moderation Ban records the ban for A's community (community_workspace_bans).
 // Every 0 follows a 1: each read runs before the ban (or block), after it, and after the unban (or unblock).
 import { randomUUID } from 'crypto';
 import { readFileSync } from 'fs';
@@ -118,7 +119,7 @@ const ROLE = (k: Key) => (k === 'A' || k === 'B' ? 'coach' : 'student');
   it('a ban hides every row the banned person wrote in that community from everyone else; unban restores them', async () => {
     expect(await chatOf('V', space.cli)).toEqual(sorted('mV', 'mX'));
     expect(await byId('V', 'mX')).toBe('ok');
-    expect(await inboxOf('A')).toEqual(sorted('mV', 'mX'));
+    expect(await inboxOf('A')).toEqual(sorted('mV', 'mX', 'mXb'));
     expect((await authorsWhoLeft(db, [space.cli])).length).toBe(0);
     expect(await inboxUnderRls()).toEqual(sorted('mV', 'mX'));
     await ban(null);
@@ -126,12 +127,12 @@ const ROLE = (k: Key) => (k === 'A' || k === 'B' ? 'coach' : 'student');
     expect(await chatOf('V', space.cli)).toEqual(sorted('mV'));
     expect(await chatOf('A', space.cli)).toEqual(sorted('mV'));
     expect(await byId('V', 'mX')).toBe(404);
-    expect(await inboxOf('A')).toEqual(sorted('mV'));
+    expect(await inboxOf('A')).toEqual(sorted('mV', 'mXb')); // the ban covers A's community only, not B's public space
     expect(await authorsWhoLeft(db, [space.cli])).toEqual([[space.cli, id.X]]);
     await ban(new Date());
     expect(await chatOf('V', space.cli)).toEqual(sorted('mV', 'mX'));
     expect(await byId('V', 'mX')).toBe('ok');
-    expect(await inboxOf('A')).toEqual(sorted('mV', 'mX'));
+    expect(await inboxOf('A')).toEqual(sorted('mV', 'mX', 'mXb'));
     expect(await inboxUnderRls()).toEqual(sorted('mV', 'mX'));
   });
 
@@ -161,7 +162,7 @@ const ROLE = (k: Key) => (k === 'A' || k === 'B' ? 'coach' : 'student');
     await prisma.userBlock.create({ data: { blocker_id: id.V, blocked_id: id.A } }); // V blocked their coach
     expect(await inBlockWith(db, id.A, [id.V, id.X])).toEqual(new Set([id.V]));
     expect(await inBlockWith(db, id.V, [id.A, id.X])).toEqual(new Set([id.A, id.X]));
-    expect(await inboxOf('A')).toEqual(sorted('mX'));
+    expect(await inboxOf('A')).toEqual(sorted('mX', 'mXb'));
     // Broadcasts skip the pair whichever side blocked (V blocked A here; A blocks X next).
     const coachScope = { actorId: id.A, tenantId: id.A, clientIds: [id.V, id.X] };
     expect(await segments.blockedAmong(coachScope, [id.V, id.X])).toEqual(new Set([id.V]));
@@ -170,7 +171,7 @@ const ROLE = (k: Key) => (k === 'A' || k === 'B' ? 'coach' : 'student');
     await prisma.userBlock.deleteMany({ where: { blocker_id: id.A } });
     await prisma.userBlock.deleteMany({ where: { OR: [{ blocker_id: id.X }, { blocker_id: id.V }] } });
     expect(await chatOf('V', space.cli)).toEqual(sorted('mV', 'mX'));
-    expect(await inboxOf('A')).toEqual(sorted('mV', 'mX'));
+    expect(await inboxOf('A')).toEqual(sorted('mV', 'mX', 'mXb'));
   });
 
   it('FX-1141 B4: under row security a ban or a block either way hides the words; the probe only answers its caller', async () => {

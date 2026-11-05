@@ -40,6 +40,7 @@ import {
 } from '../consent/coach-sharing-notice';
 import { alertCoachOfFlaggedJoinTx } from '../onboarding/flagged-join-alert';
 import { TrialUsageService } from '../packages/trials/trial-usage.service';
+import { joinCoachFor } from '../packages/coach-selling';
 import { packageQuote, resumableAttempts } from '../checkout/checkout.service';
 
 type ValidationSuccess = {
@@ -161,7 +162,10 @@ export function inviteCodeLookupCandidates(raw: unknown): string[] {
 export const INVITE_ATTACH_ERROR = {
   /** Code unknown, revoked, expired, exhausted, or failed the seat race. */
   INVITE_CODE_INVALID: 'invite_code_invalid',
-  /** Never thrown now (owner TM-P1: no coach plans); kept so older app builds still map it. */
+  /**
+   * The coach cannot take this buyer one to one (the coaching rule refused the join: nameless,
+   * locked for deletion, or in a block with the buyer). 1TO1-FU-BE: thrown again for that refusal.
+   */
   COACH_NOT_ACCEPTING_CLIENTS: 'coach_not_accepting_clients',
   /** Redeemer is already a client of a DIFFERENT coach; refuse to re-parent. */
   ALREADY_ATTACHED_TO_DIFFERENT_COACH: 'already_attached_to_different_coach',
@@ -246,6 +250,14 @@ function joinPackageUnavailable(): BadRequestException {
   return new BadRequestException({
     code: INVITE_ATTACH_ERROR.JOIN_PACKAGE_UNAVAILABLE,
     message: "This code's package cannot be added to your account. Ask your coach for a new code.",
+  });
+}
+
+/** 1TO1-FU-BE: a new join the coach cannot take (planJoin -> null). Existing code and words. */
+function coachNotAcceptingClients(): BadRequestException {
+  return new BadRequestException({
+    code: INVITE_ATTACH_ERROR.COACH_NOT_ACCEPTING_CLIENTS,
+    message: 'This coach is not currently accepting new clients.',
   });
 }
 
@@ -1072,7 +1084,10 @@ export class InviteCodesService {
 
     // B-PACKAGE-135 — attached ONLY together with the code's one package.
     // Legacy wiring without InviteGrantService (old unit specs) keeps attach-only.
-    const plan = this.grants ? await this.planJoin(target) : null;
+    const plan = this.grants ? await this.planJoin(target, userId) : null;
+    // STORE-1TO1: a new join to a coach who cannot coach this buyer is refused before any write,
+    // with the existing not-accepting code (1TO1-FU-BE), never a package answer.
+    if (this.grants && !plan) throw coachNotAcceptingClients();
     if (plan && plan.join.status === 'checkout_required') {
       // Paid: NOT attached, no seat. The app opens the checkout with this code
       // as `join_code`; the purchase's entitlement attaches (coachless till then).
@@ -1206,17 +1221,17 @@ export class InviteCodesService {
     return { ...result, ...(grant ? { grant } : {}), ...(plan ? { join: plan.join } : {}) };
   }
 
-  /** B-PACKAGE-135 — the join's one package (may create "Getting started"), its mode and screen. */
-  private async planJoin(target: AttachTarget): Promise<JoinPlan> {
+  /** B-PACKAGE-135 — the join's one package (may create "Getting started"), its mode and screen.
+   *  STORE-1TO1 (FR-1TO1R2): the coach is read first, through the buyer's coaching rule; null (a
+   *  coach who cannot coach this buyer one to one) = nothing is picked, published or granted. */
+  private async planJoin(target: AttachTarget, buyerId: string): Promise<JoinPlan | null> {
+    const coach = await joinCoachFor(this.prisma, target.coachId, buyerId);
+    if (!coach) return null;
     const picked = { package_id: target.packageId, grant_mode: target.grantMode };
     const pkg =
       (await findJoinPackage(this.prisma, target.coachId, target.packageId)) ??
       (await createGettingStartedPackage(this.prisma, target.coachId));
     const mode = joinGrantMode(pkg, picked);
-    const coach = await this.prisma.user.findUnique({
-      where: { id: target.coachId },
-      select: { name: true },
-    });
     return {
       pkg,
       binding: {
@@ -1231,7 +1246,7 @@ export class InviteCodesService {
         status: mode === 'none' ? 'checkout_required' : 'granted',
         grant_mode: mode,
         package: joinPackageView(pkg, mode),
-        coach: { id: target.coachId, first_name: coachFirstName(coach?.name) },
+        coach: { id: target.coachId, first_name: coachFirstName(coach.name) },
         code: target.code,
       },
     };
@@ -1245,7 +1260,10 @@ export class InviteCodesService {
     if (!this.grants) {
       return { grant: await this.grantAfterAttach(userId, target.coachId, target.code, 'replay'), join: null };
     }
-    const plan = await this.planJoin(target);
+    const plan = await this.planJoin(target, userId);
+    // A replay stays the idempotent success (SOL-C03-B1); nothing is published or granted for a
+    // coach who cannot coach this client one to one.
+    if (!plan) return { grant: null, join: null };
     if (plan.join.status === 'granted') {
       const outcome = await this.grants.grantForAttachedCode({
         clientUserId: userId,

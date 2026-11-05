@@ -102,14 +102,21 @@ export class SavedFoodsService {
    * returns them. With client_uuid, the item at position p is logged under the
    * key `<client_uuid>:<p>`; a retry finds those entries and returns them
    * without writing (the POST /log/food rule: another person's entry is never
-   * returned).
+   * returned). `onResend` runs on that stored answer (nothing new was saved),
+   * so the controller keeps the request's global Roman context bust off.
    */
-  async logSavedMeal(userId: string, mealId: string, data: LogSavedMealDto) {
+  async logSavedMeal(userId: string, mealId: string, data: LogSavedMealDto, onResend?: () => void) {
     const meal = await this.ownMeal(userId, mealId);
     const key = data.client_uuid;
     const keys = key ? meal.items.map((item) => `${key}:${item.position}`) : null;
     const earlier = keys && (await this.entriesWithKeys(userId, keys));
-    if (earlier) return earlier;
+    if (earlier) {
+      onResend?.();
+      return earlier;
+    }
+    // FIX-1222 (LS-1222 B4): each saved food is read as POST /log/food reads it, so a packaged row with a missing
+    // macro stored as 0 g is not newly logged; a refused food answers 404 "Food not found", as it does there.
+    await Promise.all(meal.items.map((item) => this.resolveFood(userId, item.food_item_id)));
 
     const logged_at = new Date();
     const writes = meal.items.map((item, i) =>
@@ -140,7 +147,10 @@ export class SavedFoodsService {
     } catch (err) {
       // Two retries at once: the loser's keys collide; answer with the winner's entries.
       const raced = keys && isUniqueViolation(err) && (await this.entriesWithKeys(userId, keys));
-      if (raced) return raced;
+      if (raced) {
+        onResend?.();
+        return raced;
+      }
       throw err;
     }
   }

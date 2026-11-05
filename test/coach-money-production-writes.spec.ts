@@ -10,7 +10,8 @@
 // Then CoachMoneyService answers from those rows through its own where
 // clauses (test/support/money-read-double.ts). No hand-shaped read rows.
 //
-// B-641-1  card_update_link_sent_at comes from the sent DunningAttempt.
+// B-641-1  card_update_link_sent_at comes from the sent DunningAttempt (v1)
+//          or, with FEATURE_DUNNING_V2 on, the sent v2 client email.
 // B-641-2  a lost chargeback is `charged_back`: never paid, never a new
 //          client, never the first client payment; a won dispute is paid.
 // C-641-1  a refund lands in the window it happened in.
@@ -37,6 +38,7 @@ function store(): StatefulPrisma {
     ['dunning_state_id', 'step_index'],
     ['email_idempotency_key'],
   ]);
+  db.model('dunningNoticeDelivery');
   db.model('paymentReminder', [['id'], ['purchase_id', 'kind', 'channel', 'window_key']]);
   db.model('chargeDispute', [['id'], ['stripe_dispute_id']], () => ({
     ledger_reversed: false,
@@ -138,7 +140,17 @@ const last30 = (now: Date) => ({
 });
 
 describe('B-641-1 — card update link sent comes from the dunning production write', () => {
-  it('is null until the reminder email goes out, then the sent attempt time', async () => {
+  // The v1 tick sends only with FEATURE_DUNNING_V2 off; these two set it off themselves.
+  const v2 = process.env.FEATURE_DUNNING_V2;
+  beforeEach(() => {
+    process.env.FEATURE_DUNNING_V2 = 'false';
+  });
+  afterEach(() => {
+    if (v2 === undefined) delete process.env.FEATURE_DUNNING_V2;
+    else process.env.FEATURE_DUNNING_V2 = v2;
+  });
+
+  it('dunning v2 off: is null until the reminder email goes out, then the sent attempt time', async () => {
     const db = store();
     db.state.clientPurchase.push({
       id: 'p-fail',
@@ -190,11 +202,13 @@ describe('B-641-1 — card update link sent comes from the dunning production wr
     const after = await money(db).getAttention(COACH);
     const item = after.items.find((i) => i.kind === 'failed_payment')!;
     expect(item.failed_payment?.card_update_link_sent_at).toBe(sent.sent_at.toISOString());
-    expect(item.failed_payment?.attempt).toBe(1);
+    // FR-1191R2 (LS-1191R2B B1): no bank try count is recorded, so the row
+    // sends the unknown form (the phone shows no "Try n of m").
+    expect(item.failed_payment).toMatchObject({ attempt: 0, max_attempts: 0 });
     expect(item.failed_payment?.last_failure_reason).toBe('card_declined');
   });
 
-  it('a failed send (provider error) is not reported as a sent link', async () => {
+  it('dunning v2 off: a failed send (provider error) is not reported as a sent link', async () => {
     const db = store();
     db.state.clientPurchase.push({
       id: 'p-fail',
@@ -224,6 +238,84 @@ describe('B-641-1 — card update link sent comes from the dunning production wr
     expect(db.state.dunningAttempt.some((a) => a.status === 'failed')).toBe(true);
     const out = await money(db).getAttention(COACH);
     expect(out.items[0].failed_payment?.card_update_link_sent_at).toBeNull();
+  });
+});
+
+describe('B-641-1 with dunning v2 on — the link date is the v2 client email', () => {
+  const v2 = process.env.FEATURE_DUNNING_V2;
+  beforeEach(() => {
+    process.env.FEATURE_DUNNING_V2 = 'true';
+  });
+  afterEach(() => {
+    if (v2 === undefined) delete process.env.FEATURE_DUNNING_V2;
+    else process.env.FEATURE_DUNNING_V2 = v2;
+  });
+
+  const ENTERED = new Date('2026-10-30T09:00:00.000Z');
+  function failedV2(db: StatefulPrisma): void {
+    db.state.clientPurchase.push({
+      id: 'p-v2',
+      coach_user_id: COACH,
+      client_user_id: 'client-1',
+      package_id: 'pkg-1',
+      amount_cents: 4900,
+      currency: 'usd',
+      billing_type: 'recurring',
+      status: 'past_due',
+      entitlement_active: true,
+      source: null,
+      last_error: null,
+      created_at: ENTERED,
+      updated_at: ENTERED,
+    });
+    db.state.dunningState.push({
+      id: 'ds-v2',
+      purchase_id: 'p-v2',
+      status: 'active',
+      entered_at: ENTERED,
+      locked_out_at: null,
+      last_failed_amount_cents: 4900,
+      last_failure_at: ENTERED,
+      last_failure_reason: 'card_declined',
+    });
+  }
+  // The row DunningV2Service.recordDelivery leaves: id "<state>:<cycle_key>:<step>:<channel>",
+  // cycle_key = dunningCycleKey(entered_at), status 'sent' with sent_at once the provider accepts it.
+  function delivery(over: Record<string, unknown>): Record<string, unknown> {
+    const cycle_key = String(ENTERED.getTime());
+    return {
+      id: `ds-v2:${cycle_key}:1:client_email`,
+      dunning_state_id: 'ds-v2',
+      cycle_key,
+      step_index: 1,
+      channel: 'client_email',
+      status: 'sent',
+      attempts: 1,
+      sent_at: new Date('2026-10-31T09:07:00.000Z'),
+      ...over,
+    };
+  }
+  const linkAt = async (db: StatefulPrisma) =>
+    (await money(db).getAttention(COACH)).items.find((i) => i.kind === 'failed_payment')!.failed_payment
+      ?.card_update_link_sent_at;
+
+  it('is null before the v2 email goes out, then its sent time', async () => {
+    const db = store();
+    failedV2(db);
+    expect(await linkAt(db)).toBeNull();
+    db.state.dunningNoticeDelivery.push(delivery({}));
+    expect(await linkAt(db)).toBe('2026-10-31T09:07:00.000Z');
+  });
+
+  it('a push, an unsent email or an earlier cycle is not a sent link', async () => {
+    const db = store();
+    failedV2(db);
+    db.state.dunningNoticeDelivery.push(
+      delivery({ id: 'push', channel: 'client_push' }),
+      delivery({ id: 'failed', status: 'failed', sent_at: null }),
+      delivery({ id: 'old', cycle_key: String(ENTERED.getTime() - 40 * DAY), sent_at: new Date('2026-10-31T10:00:00.000Z') }),
+    );
+    expect(await linkAt(db)).toBeNull();
   });
 });
 

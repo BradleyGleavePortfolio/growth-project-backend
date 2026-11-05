@@ -481,7 +481,15 @@ describe('two-way block: member list, leaderboard, wins, Today, search and voice
           findTodayContent: async () => ({
             event: null,
             challenge: null,
-            pinnedPost: { id: PINNED, title: 'Alice pinned', author_id: ALICE },
+            pinnedPosts: [
+              {
+                id: PINNED,
+                title: 'Alice pinned',
+                author_id: ALICE,
+                workspace_id: WS,
+                cohort_id: null,
+              },
+            ],
           }),
         };
         const svc = new CommunityService(
@@ -533,7 +541,7 @@ describe('two-way block: member list, leaderboard, wins, Today, search and voice
               ends_at: new Date('2026-10-09T00:00:00.000Z'),
               created_by_id: COACH,
             },
-            pinnedPost: null,
+            pinnedPosts: [],
           }),
         };
         const svc = new CommunityService(
@@ -877,6 +885,8 @@ const FILTERED: Record<string, { file: string; method: string; entry?: string }>
     method: 'readableChallenge',
     entry: 'getOne',
   },
+  // LEAVE-MUTE-BE: who left a space (the "{name} left" chat line) hides blocked people both ways.
+  'CommunityLeaveMuteController.left': { file: 'leave-mute/community-leave-mute.service.ts', method: 'leftMembers' },
 };
 
 const COACH_ONLY =
@@ -892,6 +902,7 @@ const EXEMPT: Record<string, string> = {
   'CommunitySpaceReadsController.getRead': "the caller's own read line (ids and a time), no member content",
   'CommunitySpacePushController.preview': COACH_ONLY,
   'CommunitySpaceReadsController.getNotify': "the caller's own notification setting for the space, no member content",
+  'CommunityLeaveMuteController.threads': "the caller's own muted and left threads (ids and times), no member content",
   'AiTriageController.getTriage': COACH_ONLY,
   'PlanContextController.resolve': 'resolves a plan reference id, no member-authored content',
   'CommunitySafetyController.info': 'static safety copy',

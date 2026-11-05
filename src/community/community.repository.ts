@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import type { CommunityCohort } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
-import { authorsWhoLeft, canEnterSpace, readersNow, rowsWithSpaceAccess } from './community-space-access';
+import { authorsWhoLeft, canEnterSpace, rowsWithSpaceAccess } from './community-space-access';
 
 /** Name of a coach's auto-created community (B-E2E-1); the seed script reuses it. */
 export const DEFAULT_WORKSPACE_NAME = 'Community';
@@ -136,12 +135,6 @@ export class CommunityRepository {
     return def?.id === cohort.id;
   }
 
-  /** C6-BVIS: everyone who can open the space now, the coach included; a client of a
-   * clients or package space counts with no row. The roster also lists a pending invitation. */
-  async cohortMemberCount(cohort: Pick<CommunityCohort, 'id' | 'workspace_id'>): Promise<number> {
-    return (await readersNow(this.prisma, cohort.workspace_id, cohort.id)).length;
-  }
-
   async findWorkspaceById(workspaceId: string) {
     return this.prisma.communityWorkspace.findUnique({
       where: { id: workspaceId },
@@ -224,14 +217,17 @@ export class CommunityRepository {
 
   /**
    * Bounded "Today" content for a workspace, fetched concurrently (no N+1):
-   * nearest upcoming event, most-recently-pinned post, active challenge with
-   * the nearest ends_at; workspace-wide or in a space the rule opens to the caller.
+   * nearest upcoming event, the pinned posts newest pin first, active challenge
+   * with the nearest ends_at; workspace-wide or in a space the rule opens to the
+   * caller. LS-1197 B2: every pin comes back, not only the newest, so getToday
+   * can apply the author rule (block, ban, departure) and keep the next pin
+   * that passes; pins are few (a coach pins each by hand).
    */
   async findTodayContent(workspaceId: string, userId: string, now: Date) {
     const spaces = await this.prisma.communityCohort.findMany({ where: { workspace_id: workspaceId }, select: { id: true } });
     const open = await rowsWithSpaceAccess(this.prisma, spaces, (c) => [c.id, userId] as const);
     const inSpace = { OR: [{ cohort_id: null }, { cohort_id: { in: open.map((c) => c.id) } }] };
-    const [event, pinnedPost, challenge] = await Promise.all([
+    const [event, pinnedPosts, challenge] = await Promise.all([
       this.prisma.communityEvent.findFirst({
         where: {
           ...inSpace,
@@ -242,7 +238,7 @@ export class CommunityRepository {
         },
         orderBy: { starts_at: 'asc' },
       }),
-      this.prisma.communityPost.findFirst({
+      this.prisma.communityPost.findMany({
         where: {
           ...inSpace,
           workspace_id: workspaceId,
@@ -250,7 +246,8 @@ export class CommunityRepository {
           visibility: 'active',
           deleted_at: null,
         },
-        orderBy: { pinned_at: 'desc' },
+        orderBy: [{ pinned_at: 'desc' }, { id: 'asc' }],
+        select: { id: true, title: true, author_id: true, workspace_id: true, cohort_id: true },
       }),
       this.prisma.communityChallenge.findFirst({
         where: {
@@ -263,7 +260,7 @@ export class CommunityRepository {
         orderBy: { ends_at: 'asc' },
       }),
     ]);
-    return { event, pinnedPost, challenge };
+    return { event, pinnedPosts, challenge };
   }
 
   /**

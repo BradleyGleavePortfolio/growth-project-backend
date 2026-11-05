@@ -205,7 +205,7 @@ function world(opts: { banned?: string[]; blocks?: Array<[string, string]>; acce
 }
 
 const req = stub<AuthedRequest>({ user: me });
-/** PHOTO-GPS: a clean photo's head (SOI, JFIF, SOS); the send check reads up to SOS. */
+/** PHOTO-GPS: a clean photo's head (SOI, JFIF, SOS, EOI); the send check reads every byte (FR-1187R2). */
 const JPEG = jpeg(JFIF);
 
 beforeEach(() => {
@@ -475,16 +475,21 @@ describe('POST messages kind image (SC-BE3)', () => {
       expect(w.removed).toEqual([]);
     });
 
-    it('reads only the first 256 KB of a larger photo; a shorter download is 503 and the upload is kept', async () => {
+    // FR-1187R2 (LS-1187R2 B2): the whole photo is read (at most IMAGE_MAX_BYTES), so a location after the first 256 KB is found.
+    it('reads the whole of a larger photo; a shorter download is 503 and the upload is kept', async () => {
       const w = world();
       expect(await code(sendPhoto(w, await uploaded(w)))).toBe('ok');
-      expect(w.reads).toEqual(['bytes=0-262143']);
+      expect(w.reads).toEqual([`bytes=0-${MB - 1}`]);
       const short = await uploaded(w, { served: 1000 });
       const e = await sendPhoto(w, short).catch((x: unknown) => x);
       expect(e).toBeInstanceOf(ServiceUnavailableException);
       expect((e as ServiceUnavailableException).getResponse()).toMatchObject({ code: 'community.image.storage_unavailable' });
       expect(w.objects.has(short)).toBe(true);
       expect(w.removed).toEqual([]);
+      // A world of its own (it replaces the fake storage w reads from).
+      const later = world();
+      const late = [...JPEG, ...new Array<number>(300 * 1024).fill(0), ...LOCATED['GPS in EXIF, little endian']];
+      expect(await code(sendPhoto(later, await uploaded(later, { head: late })))).toBe('community.image.has_location');
     });
 
     it('if the erase fails it still refuses, logs erase=deferred_to_link_expiry (no key), and the erasure row erases it at link death', async () => {

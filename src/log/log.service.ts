@@ -19,11 +19,30 @@ export class LogService {
     private aiContext: ClientAIContextService,
   ) {}
 
-  async logFood(userId: string, data: LogFoodDto) {
+  // `onResend` runs when the answer is this member's entry already stored
+  // under the key (a resend, or the loser of two sends at once): nothing new
+  // was saved, so the controller keeps the request's global Roman context bust
+  // off (keepRomanContextFor, src/common/save-once.ts). It never changes the answer.
+  async logFood(userId: string, data: LogFoodDto, onResend?: () => void) {
+    // R6 (LO-FOOD B6, LS-FOOD B3): a repeat of a keyed save whose answer was
+    // lost returns the stored entry and does nothing else — no food import, no
+    // second entry, no analytics event, meal_logged signal or Roman context
+    // reset. Another person's key reads as not found (D2 below).
+    if (data.client_uuid) {
+      const earlier = await this.prisma.loggedFoodEntry.findUnique({
+        where: { client_uuid: data.client_uuid },
+        include: { food_item: true },
+      });
+      if (earlier) {
+        if (earlier.user_id !== userId) throw new NotFoundException('Entry not found');
+        onResend?.();
+        return earlier;
+      }
+    }
     // Mobile client may send synthetic ids ("usda_123", "off_456") returned by food search.
     // Resolve them to real FoodItem.id via upsert-on-log so the FK below can't blow up.
     // Another person's custom food resolves as not found (UX-FOOD-PRIV-124).
-    const resolvedFoodItemId = await this.foodService.resolveOrImportId(data.food_item_id, userId);
+    const resolvedFoodItemId = await this.resolveFood(userId, data.food_item_id);
     const plan_slot_id = data.plan_slot_id
       ? await this.ownPlanSlot(userId, data.plan_slot_id, new Date(data.date))
       : null;
@@ -49,14 +68,32 @@ export class LogService {
     // D2 (AUTHB-03): no key means a plain create. client_uuid is unique across
     // all users, so a shared fallback key (or another person's key) used to
     // return their entry and save nothing; such an entry is never returned.
-    const created = data.client_uuid
-      ? await this.prisma.loggedFoodEntry.upsert({
-          where: { client_uuid: data.client_uuid },
-          create: { ...entryData, client_uuid: data.client_uuid },
-          update: {}, // no-op if already exists — idempotent on retry
-          include: { food_item: true },
-        })
-      : await this.prisma.loggedFoodEntry.create({ data: entryData, include: { food_item: true } });
+    const write = () =>
+      data.client_uuid
+        ? this.prisma.loggedFoodEntry.upsert({
+            where: { client_uuid: data.client_uuid },
+            create: { ...entryData, client_uuid: data.client_uuid },
+            update: {}, // no-op if already exists — idempotent on retry
+            include: { food_item: true },
+          })
+        : this.prisma.loggedFoodEntry.create({ data: entryData, include: { food_item: true } });
+    let created: Awaited<ReturnType<typeof write>>;
+    try {
+      created = await write();
+    } catch (err) {
+      // FR-1198 (LO-1198 C1): two saves with one key at once both miss the
+      // read above, and the loser's insert hits the unique key (P2002). The
+      // loser answers with the stored entry, like the saved-meal route.
+      if (!data.client_uuid || (err as { code?: string } | null)?.code !== 'P2002') throw err;
+      const stored = await this.prisma.loggedFoodEntry.findUnique({
+        where: { client_uuid: data.client_uuid },
+        include: { food_item: true },
+      });
+      if (!stored) throw err;
+      if (stored.user_id !== userId) throw new NotFoundException('Entry not found');
+      onResend?.();
+      return stored;
+    }
     if (created.user_id !== userId) throw new NotFoundException('Entry not found');
     this.analytics.capture(userId, Events.CLIENT_FOOD_LOGGED, {
       meal_type: data.meal_type,
@@ -200,5 +237,19 @@ export class LogService {
     });
 
     return Object.values(byDate);
+  }
+
+  /**
+   * FIX-1222 (LS-1222 B5, LO-1222 N1): a food that is missing or refused (its numbers cannot be true, a macro its
+   * source left out) answers 404 "Food not found", which the phone keeps as final, as saved meals already do; any
+   * other failure (a source not reached) still throws, so the queued log retries.
+   */
+  private async resolveFood(userId: string, ref: string): Promise<string> {
+    try {
+      return await this.foodService.resolveOrImportId(ref, userId);
+    } catch (err) {
+      if (err instanceof Error && /not found/i.test(err.message)) throw new NotFoundException('Food not found');
+      throw err;
+    }
   }
 }

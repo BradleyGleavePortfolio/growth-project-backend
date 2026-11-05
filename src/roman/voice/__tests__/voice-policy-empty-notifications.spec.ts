@@ -21,6 +21,7 @@ function fakePrisma(rows: unknown[]) {
     user: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn().mockResolvedValue(null) },
     subCoachAssignment: { findMany: jest.fn().mockResolvedValue([]) },
     coachingSession: { findMany: jest.fn().mockResolvedValue([]) },
+    communityCohort: { findMany: jest.fn().mockResolvedValue([]) }, // FR-1152R3 B1: leads no public space
     notification: {
       findMany: jest.fn().mockResolvedValue(rows),
       count: jest.fn().mockResolvedValue(0),

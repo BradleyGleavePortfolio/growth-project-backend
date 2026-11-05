@@ -98,6 +98,12 @@ export class IssueVoiceUploadDto {
 
   @IsIn(VOICE_NOTE_MIME_VALUES)
   mime_type!: VoiceNoteMimeType;
+
+  // BPF-1: the space the note is for (the id the create sends). With it, the
+  // upload answers to that space's rule; without it, the Hall's.
+  @IsOptional()
+  @IsUUID('4')
+  cohort_id?: string;
 }
 
 /**

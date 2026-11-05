@@ -61,6 +61,9 @@ const MODELS = [
   'dunningNoticeDelivery',
   'chargeDispute',
   'dunningDisputeObligation',
+  // PF-7-BE: the coach's Stripe account mirror and the once-a-day notice lease.
+  'connectAccount',
+  'cronLease',
 ] as const;
 
 export type FakeModelName = (typeof MODELS)[number];

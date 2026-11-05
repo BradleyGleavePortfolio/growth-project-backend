@@ -1,4 +1,5 @@
 import {
+  Allow,
   IsString,
   IsOptional,
   IsNumber,
@@ -8,6 +9,7 @@ import {
   ValidateNested,
   IsDateString,
   IsNotEmpty,
+  IsUUID,
   ValidateIf,
   MaxLength,
   ArrayMaxSize,
@@ -76,6 +78,17 @@ export class CreateExerciseSetDto {
   @IsNotEmpty()
   @MaxLength(200)
   exercise_external_id?: string;
+
+  /**
+   * SET-ASKED-BE: the plan row the set was logged from: her assignment's id and the row's order.
+   * The server copies what that row asked; a reference it cannot use (malformed, another member's,
+   * no row at that order) is ignored, never a 400, so the log is always saved.
+   */
+  @Allow()
+  plan_assignment_id?: unknown;
+
+  @Allow()
+  plan_order?: unknown;
 }
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
@@ -178,6 +191,13 @@ export class CreateRoutineExerciseDto {
   @IsInt()
   @Min(0)
   order_index!: number;
+
+  // EXID-BE (#189-D4 op 1): the library exercise (ExerciseCatalogItem id) this row came from, so Watch
+  // video opens its video. Omit or send null for an exercise of the client's own. An id with no library
+  // row is saved as null and the rest of the routine still saves (WorkoutService).
+  @IsOptional()
+  @IsUUID()
+  catalog_exercise_id?: string | null;
 }
 
 export class CreateRoutineDto {

@@ -159,6 +159,9 @@ describe('RENEWAL-BE app notifications', () => {
     expect(pushAllowedByPreferences({ plan_renewal_push: false }, NotificationKind.PLAN_RENEWAL)).toBe(false);
     expect(pushAllowedByPreferences({ plan_renewal_push: true, muted: true }, NotificationKind.PLAN_RENEWAL)).toBe(true);
     expect(pushAllowedByPreferences({ plan_renewal_push: false, muted: true }, NotificationKind.PLAN_RENEWAL)).toBe(false);
+    // STORE-B2: that rule is the Day 0 notice's. The Day 1 and Day 7 offers need the person's yes and Mute all
+    // stops them (test/store-b2-renewal-offer-consent.spec.ts).
+    expect(pushAllowedByPreferences({ plan_renewal_push: true }, NotificationKind.PLAN_RENEWAL, { renewalOffer: true })).toBe(false);
     // Turning renewal reminders off leaves every other kind alone.
     expect(pushAllowedByPreferences({ plan_renewal_push: false }, NotificationKind.MESSAGE_RECEIVED)).toBe(true);
   });

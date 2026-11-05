@@ -357,7 +357,12 @@ describe('dunning v2 service fix round (B-D12-116)', () => {
     });
     it('Sol B-688-7: a lock behind ten unlocked cycles is reported (DESC = nulls first)', async () => {
       const fake = new FakePrisma();
-      for (let i = 0; i < 10; i++) seed(fake, `p${i}`);
+      for (let i = 0; i < 10; i++) {
+        seed(fake, `p${i}`);
+        // FR-1190 (LS-1190 B3): a plan in its own live grace now waives the lock
+        // (B-628-7), so the ten unlocked cycles sit on plans that are not live.
+        row(fake, 'clientPurchase', `p${i}`).entitlement_active = false;
+      }
       seed(fake, 'pL', 3, { locked_out_at: at(10) });
       row(fake, 'clientPurchase', 'pL').entitlement_active = false;
       const status = await service(fake).getClientStatus('client-a');
@@ -384,7 +389,7 @@ describe('dunning v2 service fix round (B-D12-116)', () => {
       expect((await svc.handleLateReversal(input)).opened).toBe(true);
       expect(await svc.isDisputeCycleOpen('p1')).toBe(true);
     });
-    it('Operator B (amount) / Opus B-688-7: no renewal amount on a dispute; real attempts', async () => {
+    it('Operator B (amount) / Opus B-688-7 / FR-1191R2: no renewal amount on a dispute; no invented attempts', async () => {
       const fake = new FakePrisma();
       seed(fake, 'p1', 2, { last_failure_reason: 'charge_disputed', last_attempt_number: 2 });
       const svc = service(fake);
@@ -393,7 +398,9 @@ describe('dunning v2 service fix round (B-D12-116)', () => {
         (await stub(svc).buildDispatchContext({ dunningStateId: 'ds-p1', isLateReversalCycle }))
           .tokens;
       expect((await tokens(true)).amount).toBeUndefined();
-      expect(await tokens(false)).toMatchObject({ amount: '$150.00', attempts: '2' });
+      // FR-1191R2 (LS-1191R2B B1): Stripe's attempt_count is not the charges
+      // that really ran, so the coach email gets no attempts token.
+      expect(await tokens(false)).toMatchObject({ amount: '$150.00', attempts: undefined });
     });
   });
 });

@@ -17,6 +17,7 @@ import { PrismaService } from '../prisma.service';
 import {
   StripeConnectApiError,
   StripeConnectApiService,
+  type StripeSubscriptionCheckoutObject,
 } from '../connect/stripe-connect-api.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import {
@@ -39,9 +40,28 @@ import { PurchaseFanoutService } from '../packages/purchase-fanout.service';
 import { alertCoachOfFlaggedJoinTx } from '../onboarding/flagged-join-alert';
 import { type GuestCheckoutStatus } from './guest-checkout-status';
 import { EmailSenderConfigError, resolveEmailSender } from '../email/email-sender';
-import { SELLING_COACH } from '../packages/coach-selling';
-import { BuyerHasOtherCoachError, assertBuyerMayPay, buyerVerdict } from './buyer-check';
+import { COACHING_COACH } from '../packages/coach-selling';
+import {
+  BuyerHasOtherCoachError,
+  type BuyerVerdict,
+  assertBuyerMayPay,
+  buyerVerdict,
+  findBuyerAccount,
+} from './buyer-check';
 import { payPageUrl } from './storefront-links';
+import { GUEST_TRIAL_COPY } from './pay-done.html';
+import {
+  type GuestOutcome,
+  OUTCOME_MAIL_TRIES,
+  type OutcomeTry,
+  guestOutcome,
+  nextOutcomeTry,
+  outcomeMailKey,
+  outcomeMailRequestKey,
+} from './guest-outcome-mail';
+import { packageTrialDays } from '../checkout/subscription-plan';
+import { attachTrialCard } from '../checkout/trial-card';
+import { TrialUsageService } from '../packages/trials/trial-usage.service';
 import { CoachFirstPaymentService } from '../notifications/coach-first-payment.service';
 
 // S-FEE — guest storefront charges are separate charges and transfers, like
@@ -116,6 +136,26 @@ const SUPABASE_LIST_USERS_TIMEOUT_MS = 8_000;
 // interval columns and must NEVER be load-bearing for this guard.
 const CANONICAL_RECURRING_BILLING_TYPE = 'recurring';
 
+// GC-3 (#GC-TRIAL op 1) — a web trial's sentinel row keeps the trial's
+// SetupIntent id in stripe_payment_intent_id (no column added): the card is
+// saved and nothing is charged that day, so there is no PaymentIntent. Every
+// guest path that reads that column tells the two apart by this prefix.
+export function isGuestTrialIntent(id: string | null | undefined): boolean {
+  return typeof id === 'string' && id.startsWith('seti_');
+}
+
+// GC-3 — the buyer-facing words of a refused web trial live with the return
+// page, which shows them too (FR-1193); re-exported for the email below.
+export { GUEST_TRIAL_COPY };
+
+// GC-3 — conversion lost the one-trial claim (PackageTrialUsage, one per
+// client + coach, shared with the app): roll the conversion transaction back.
+class GuestTrialRefusedError extends Error {
+  constructor() {
+    super('trial_already_used');
+  }
+}
+
 // Audit #3 P1-6 — reconciliation retry cap. After 5 consecutive failures
 // the row moves to `conversion_failed_terminal` and the operator
 // dashboard pages on-call. The cap exists to bound how long a stuck row
@@ -173,9 +213,17 @@ type CheckoutWithRelations = GuestCheckout & {
   };
 };
 
+// FR-1199R2B (LS-1199R2 B2) — a welcome retry must send the body of its first
+// try (Resend refuses the same Idempotency-Key with another body). The
+// confirm link is a credential and is never stored, so it is kept here, in
+// memory only, for as long as Resend keeps the key.
+const WELCOME_LINK_KEEP_MS = 24 * 60 * 60_000;
+const WELCOME_LINK_KEEP_MAX = 500;
+
 @Injectable()
 export class GuestCheckoutService {
   private readonly logger = new Logger(GuestCheckoutService.name);
+  private readonly welcomeLinks = new Map<string, { link: string; at: number }>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -239,6 +287,10 @@ export class GuestCheckoutService {
     // @Optional() only for hand-built tests.
     @Optional()
     private readonly connect?: ConnectService,
+    // GC-3 — the app's one-trial ledger; a web trial claims it at
+    // conversion. Always injected in the app (PackagesModule exports it).
+    @Optional()
+    private readonly trialUsage?: TrialUsageService,
     // FIRST-PAY-WEB: the coach's once-ever first-payment notice, claimed in
     // the conversion transaction (StorefrontModule imports
     // NotificationsModule, which exports it); @Optional() for hand-built tests.
@@ -267,7 +319,7 @@ export class GuestCheckoutService {
     landingPageId?: string,
   ): Promise<GuestCheckoutResult> {
     const pkg = await this.prisma.coachPackage.findUnique({
-      where: { share_token: token, coach: SELLING_COACH },
+      where: { share_token: token, coach: COACHING_COACH },
       include: {
         coach: { include: { connect_account: true } },
       },
@@ -367,6 +419,9 @@ export class GuestCheckoutService {
       pkg.billing_type === 'one_time' &&
       pkg.recurring_amount_cents != null &&
       pkg.recurring_interval != null;
+    // GC-3 — the package's trial, as in the app: pure recurring only (a
+    // combo charges its one-time price today, so it never has one).
+    const trialDays = hasRecurringComponent && !isCombo ? packageTrialDays(pkg) : 0;
 
     // Audit #4 P1-5 — Stripe's hard floor for a USD PaymentIntent is 50¢;
     // anything below produces an opaque 400 from the Stripe SDK. Reject
@@ -392,7 +447,7 @@ export class GuestCheckoutService {
     // row, idempotency replay or Stripe object: a new email passes; an
     // existing TGP email needs a fresh code proof for this email + package,
     // then must be a buyer this coach can take (#SWITCH-V1 otherwise).
-    await assertBuyerMayPay(this.prisma, this.config, {
+    const buyerVerdictNow = await assertBuyerMayPay(this.prisma, this.config, {
       shareToken: token,
       sellingCoachId: pkg.coach.id,
       email: normalisedEmail,
@@ -453,6 +508,7 @@ export class GuestCheckoutService {
             client_secret: cached.client_secret,
             payment_intent_id: cached.payment_intent_id,
             guest_checkout_id: cachedRow.id,
+            intent: isGuestTrialIntent(cached.payment_intent_id) ? 'setup' : 'payment',
             supports_apple_pay: walletSupports.apple,
             supports_google_pay: walletSupports.google,
           };
@@ -539,6 +595,7 @@ export class GuestCheckoutService {
             billing_type: pkg.billing_type,
             interval: pkg.interval ?? null,
             interval_count: pkg.interval_count ?? null,
+            trial_days: trialDays,
           } as Prisma.InputJsonValue,
         },
       });
@@ -589,6 +646,8 @@ export class GuestCheckoutService {
           guestEmail: normalisedEmail,
           guestName: normalisedName,
           isCombo,
+          trialDays,
+          buyerVerdict: buyerVerdictNow,
         });
         paymentIntent = minted.paymentIntent;
         mintedSubscriptionId = minted.subscriptionId;
@@ -690,6 +749,7 @@ export class GuestCheckoutService {
       payment_intent_id: paymentIntent.id,
       guest_checkout_id: sentinel.id,
       subscription_id: mintedSubscriptionId,
+      intent: isGuestTrialIntent(paymentIntent.id) ? 'setup' : 'payment',
       supports_apple_pay: walletSupports.apple,
       supports_google_pay: walletSupports.google,
     };
@@ -718,6 +778,51 @@ export class GuestCheckoutService {
   // applySubscriptionUpdated / invoice.paid webhook handlers then claim
   // renewals and cancellations off stripe_subscription_id with no
   // divergent guest-only path.
+  /**
+   * TRIAL-FU-BE F2 — the Stripe customer of the TGP account this email
+   * belongs to (its ConnectCustomer), or null. Only called for an account
+   * assertBuyerMayPay has just proven by the email code.
+   */
+  private async provenBuyerCustomerId(email: string): Promise<string | null> {
+    const account = await findBuyerAccount(this.prisma, email);
+    if (!account) return null;
+    const row = await this.prisma.connectCustomer.findUnique({
+      where: { client_user_id: account.id },
+      select: { stripe_customer_id: true },
+    });
+    return row?.stripe_customer_id ?? null;
+  }
+
+  /**
+   * TRIAL-FU-BE F2 (LS-1193 C1) — the converted buyer's ConnectCustomer is the
+   * customer their web plan and its saved card are on, so Update card in the
+   * app (createCardSetup) finds it, and a card added there is the one the
+   * plan charges. Only ever adds the missing row: a client who already has a
+   * customer keeps it (never moved, never a second one). Best effort after
+   * commit, like the trial card attach: a failure is logged, the plan stands.
+   */
+  private async bindBuyerCustomer(clientUserId: string, stripeCustomerId: string | null): Promise<void> {
+    if (!stripeCustomerId) return;
+    try {
+      const { count } = await this.prisma.connectCustomer.createMany({
+        data: [{ client_user_id: clientUserId, stripe_customer_id: stripeCustomerId }],
+        skipDuplicates: true,
+      });
+      if (count === 1) return;
+      const row = await this.prisma.connectCustomer.findUnique({
+        where: { client_user_id: clientUserId },
+        select: { stripe_customer_id: true },
+      });
+      if (row?.stripe_customer_id !== stripeCustomerId) {
+        this.logger.warn(
+          `bindBuyerCustomer: client ${clientUserId} keeps its own customer; web plan is on another (customer=${stripeCustomerId})`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(`bindBuyerCustomer: failed for client ${clientUserId} (tag=${safeErrorTag(err)})`);
+    }
+  }
+
   private async mintRecurringForGuest(args: {
     pkg: CoachPackage;
     connectAccount: { stripe_account_id: string };
@@ -726,6 +831,9 @@ export class GuestCheckoutService {
     guestEmail: string;
     guestName: string;
     isCombo: boolean;
+    trialDays: number;
+    /** assertBuyerMayPay's verdict: anything but 'new' is an account proven by the email code. */
+    buyerVerdict: BuyerVerdict;
   }): Promise<{
     paymentIntent: { id: string; client_secret: string };
     subscriptionId: string;
@@ -736,20 +844,29 @@ export class GuestCheckoutService {
     // CheckoutService / FeePolicyService now fails at module boot, not
     // silently inside a money path. See the constructor doc-comment.
 
-    const { pkg, connectAccount, sentinelId, idempotencyKey, guestEmail, guestName, isCombo } = args;
+    const { pkg, connectAccount, sentinelId, idempotencyKey, guestEmail, guestName, isCombo, trialDays } =
+      args;
 
     // 1. Customer. Stripe Customer is required for subscriptions; guest
-    //    has no client_user_id so we don't write a ConnectCustomer row.
-    const customer = await this.stripe.createCustomer({
-      email: guestEmail,
-      name: guestName,
-      metadata: {
-        tgp_guest_checkout_id: sentinelId,
-        tgp_package_id: pkg.id,
-        tgp_coach_user_id: pkg.coach_id,
-      },
-      idempotencyKey: `guest-customer-${idempotencyKey}`,
-    });
+    //    has no client_user_id so we don't write a ConnectCustomer row here
+    //    (convertGuestToUser binds it, TRIAL-FU-BE F2). A proven TGP client
+    //    who already has their own customer keeps it, so the web plan and
+    //    its saved card sit where Update card in the app looks (LS-1193 C1),
+    //    and one client never gets a second customer.
+    const ownCustomerId =
+      args.buyerVerdict === 'new' ? null : await this.provenBuyerCustomerId(guestEmail);
+    const customer = ownCustomerId
+      ? { id: ownCustomerId }
+      : await this.stripe.createCustomer({
+          email: guestEmail,
+          name: guestName,
+          metadata: {
+            tgp_guest_checkout_id: sentinelId,
+            tgp_package_id: pkg.id,
+            tgp_coach_user_id: pkg.coach_id,
+          },
+          idempotencyKey: `guest-customer-${idempotencyKey}`,
+        });
 
     // 2. Recurring price. Combo packages put the recurring half in the
     //    companion fields; pure-recurring puts it in the primary fields.
@@ -786,8 +903,23 @@ export class GuestCheckoutService {
         // tgp_client_user_id is filled in at convertGuestToUser time —
         // intentionally absent here.
       },
+      // GC-3 — the in-app trial shape (createSubscription): trialing, $0
+      // first invoice, card collected through the SetupIntent, and a
+      // create-time end that only the winner's card attach lifts.
+      trialPeriodDays: trialDays > 0 ? trialDays : undefined,
       idempotencyKey: `guest-subscription-${idempotencyKey}`,
     });
+
+    if (trialDays > 0) {
+      const setup = await this.guestTrialSetup(subscription, {
+        sentinelId,
+        idempotencyKey,
+        customerId: customer.id,
+        onBehalfOf: connectAccount.stripe_account_id,
+      });
+      await this.patchSentinel(sentinelId, setup.id, subscription.id, customer.id);
+      return { paymentIntent: setup, subscriptionId: subscription.id, customerId: customer.id };
+    }
 
     // Extract the PaymentIntent client_secret from the expanded invoice.
     const inv = (subscription as { latest_invoice?: unknown }).latest_invoice;
@@ -837,7 +969,7 @@ export class GuestCheckoutService {
     } catch (err) {
       if (!this.isUniqueViolation(err)) {
         this.logger.warn(
-          `mintRecurringForGuest: sentinel patch failed for ${sentinelId} (will retry via outer patch / reconciler): ${(err as Error).message}`,
+          `mintRecurringForGuest: sentinel patch failed for ${sentinelId} (will retry via outer patch / reconciler; tag=${safeErrorTag(err)})`,
         );
       }
     }
@@ -847,6 +979,76 @@ export class GuestCheckoutService {
       subscriptionId: subscription.id,
       customerId: customer.id,
     };
+  }
+
+  // GC-3 — the SetupIntent a web trial saves its card through: Stripe's
+  // pending_setup_intent, or (when Stripe returned none) one made for this
+  // checkout, keyed on it. A subscription Stripe did not start trialing would
+  // charge today, so it is cancelled and the buyer is asked to try again.
+  private async guestTrialSetup(
+    sub: StripeSubscriptionCheckoutObject,
+    args: { sentinelId: string; idempotencyKey: string; customerId: string; onBehalfOf: string },
+  ): Promise<{ id: string; client_secret: string }> {
+    const refuse = () =>
+      new ServiceUnavailableException({
+        error: 'STRIPE_UNAVAILABLE',
+        message: 'Payment processing temporarily unavailable. Please try again.',
+      });
+    if (sub.status !== 'trialing') {
+      this.logger.error(`guest trial: subscription ${sub.id} is ${sub.status ?? 'unknown'}, not trialing; cancelled`);
+      await this.stripe.cancelSubscription(sub.id).catch((err) => {
+        this.logger.error(`guest trial: cancel of ${sub.id} failed (tag=${safeErrorTag(err)})`);
+      });
+      throw refuse();
+    }
+    const pending = sub.pending_setup_intent;
+    if (
+      pending &&
+      typeof pending === 'object' &&
+      isGuestTrialIntent(pending.id) &&
+      typeof pending.client_secret === 'string' &&
+      pending.status !== 'canceled'
+    ) {
+      return { id: pending.id as string, client_secret: pending.client_secret };
+    }
+    const own = await this.stripe.createSetupIntent({
+      customer: args.customerId,
+      onBehalfOf: args.onBehalfOf,
+      metadata: {
+        tgp_guest_checkout_id: args.sentinelId,
+        tgp_subscription_id: sub.id,
+        tgp_checkout: 'guest_subscription_trial',
+      },
+      idempotencyKey: `guest-trial-setup-${args.idempotencyKey}`,
+    });
+    if (!isGuestTrialIntent(own.id) || typeof own.client_secret !== 'string') throw refuse();
+    return { id: own.id, client_secret: own.client_secret };
+  }
+
+  // PR-14 R2 P1-2 — the sentinel carries the Stripe ids before createIntent
+  // returns (the outer patch repeats it), so the reconcilers can find it.
+  private async patchSentinel(
+    sentinelId: string,
+    intentId: string,
+    subscriptionId: string,
+    customerId: string,
+  ): Promise<void> {
+    try {
+      await this.prisma.guestCheckout.update({
+        where: { id: sentinelId },
+        data: {
+          stripe_payment_intent_id: intentId,
+          stripe_subscription_id: subscriptionId,
+          stripe_customer_id: customerId,
+        },
+      });
+    } catch (err) {
+      if (!this.isUniqueViolation(err)) {
+        this.logger.warn(
+          `mintRecurringForGuest: sentinel patch failed for ${sentinelId} (will retry via outer patch / reconciler): ${(err as Error).message}`,
+        );
+      }
+    }
   }
 
   // Replay path: a GuestCheckout row already exists for this key. We
@@ -900,6 +1102,9 @@ export class GuestCheckoutService {
     if (existing.stripe_payment_intent_id.startsWith('pending_')) {
       return null;
     }
+    if (isGuestTrialIntent(existing.stripe_payment_intent_id)) {
+      return this.replayTrialSetup(existing);
+    }
     try {
       const pi = await this.stripe.retrievePaymentIntent(
         existing.stripe_payment_intent_id,
@@ -926,6 +1131,32 @@ export class GuestCheckoutService {
         message: 'Payment processing temporarily unavailable. Please try again.',
       });
     }
+  }
+
+  // GC-3 — replay of a web trial: the same SetupIntent while the card form
+  // can still complete it (Stripe's copy, never a cached secret).
+  private async replayTrialSetup(existing: GuestCheckout): Promise<GuestCheckoutResult> {
+    let si: { status?: unknown; client_secret?: unknown };
+    try {
+      si = await this.stripe.retrieveSetupIntent(existing.stripe_payment_intent_id);
+    } catch (err) {
+      this.logger.error(`Failed to retrieve SetupIntent during idempotent replay (tag=${safeErrorTag(err)})`);
+      si = {};
+    }
+    const open = ['requires_payment_method', 'requires_confirmation', 'requires_action'];
+    if (typeof si.client_secret !== 'string' || !open.includes(String(si.status))) {
+      throw new ServiceUnavailableException({
+        error: 'STRIPE_UNAVAILABLE',
+        message: 'Payment processing temporarily unavailable. Please try again.',
+      });
+    }
+    return {
+      client_secret: si.client_secret,
+      payment_intent_id: existing.stripe_payment_intent_id,
+      guest_checkout_id: existing.id,
+      subscription_id: existing.stripe_subscription_id,
+      intent: 'setup',
+    };
   }
 
   // ── Stripe webhook entry points ─────────────────────────────────────────
@@ -1059,10 +1290,10 @@ export class GuestCheckoutService {
       // in the same outgoing email. resolveReceiptUrl is best-effort:
       // failures (Stripe blip, missing charge id) leave receipt_url null
       // and the welcome email omits the "View receipt" line.
-      const receiptUrl = await this.resolveReceiptUrl(
-        paymentIntentId,
-        chargeInfo,
-      );
+      // GC-3 — a web trial charged nothing, so it has no receipt.
+      const receiptUrl = isGuestTrialIntent(paymentIntentId)
+        ? null
+        : await this.resolveReceiptUrl(paymentIntentId, chargeInfo);
       if (receiptUrl) {
         await this.prisma.guestCheckout
           .updateMany({
@@ -1592,6 +1823,14 @@ export class GuestCheckoutService {
     // ClientPurchase.stripe_subscription_id), and entitlement still
     // flips to true so the buyer is not gated out on a transient blip.
     let liveSubscriptionStatus: string | null = null;
+    // GC-3 — a web trial (its row holds the SetupIntent id): the trial's end
+    // from Stripe, for the one-trial claim inside the conversion tx.
+    const trial = isGuestTrialIntent(checkout.stripe_payment_intent_id);
+    let trialEndsAt: Date | null = null;
+    if (trial && !this.trialUsage) {
+      await this.markRetryable(checkout.id, 'trial_usage_unavailable');
+      return;
+    }
     if (checkout.stripe_subscription_id) {
       try {
         const sub = await this.stripe.retrieveSubscription(
@@ -1599,6 +1838,8 @@ export class GuestCheckoutService {
         );
         const raw = (sub as { status?: string }).status;
         if (typeof raw === 'string') liveSubscriptionStatus = raw;
+        const end = (sub as { trial_end?: unknown }).trial_end;
+        if (typeof end === 'number') trialEndsAt = new Date(end * 1000);
       } catch (err) {
         this.logger.warn(
           `convertGuestToUser: live subscription status read failed for sub=${checkout.stripe_subscription_id} (tag=${safeErrorTag(err)}) — falling back to seed status`,
@@ -1615,8 +1856,15 @@ export class GuestCheckoutService {
     // PR-9 — hoisted so the post-tx alert flush / discard sees the
     // ClientPurchase id even though the row is created inside the
     // $transaction callback below.
+    // GC-3 — the trial's end is Stripe's (trial_end); a failed read falls
+    // back to the package's own days from now.
+    if (trial && !trialEndsAt) {
+      trialEndsAt = new Date(Date.now() + packageTrialDays(checkout.package) * 86_400_000);
+    }
+
     let entitledPurchaseId: string | null = null;
     let lostConversionClaim = false;
+    let convertedUserId = '';
 
     try {
       await this.prisma.$transaction(async (tx) => {
@@ -1715,7 +1963,11 @@ export class GuestCheckoutService {
             liveSubscriptionStatus === 'active' ||
             liveSubscriptionStatus === 'trialing'
           ) {
-            statusSnapshot = 'active';
+            // FR-1193 (LS-1193 B2) — a web trial is stored the way the app's
+            // trials are (the subscription webhook writes Stripe's status):
+            // 'trialing', so the trial view, the notice start/sweep paths and
+            // their still-due check reach it. Not a trial: 'active' as before.
+            statusSnapshot = trial && liveSubscriptionStatus === 'trialing' ? 'trialing' : 'active';
           } else if (liveSubscriptionStatus === 'past_due') {
             statusSnapshot = 'past_due';
           } else if (liveSubscriptionStatus === 'canceled') {
@@ -1738,9 +1990,11 @@ export class GuestCheckoutService {
             // entitlement on (the buyer paid; we don't want to gate them
             // out on a transient Stripe blip) and let the next webhook
             // refine. Subscription handler will fix status if needed.
-            statusSnapshot = 'active';
+            // FR-1193 — a web trial has charged nothing yet: still trialing.
+            statusSnapshot = trial ? 'trialing' : 'active';
           }
           try {
+            convertedUserId = dbUser.id;
             purchaseRow = await tx.clientPurchase.create({
               data: {
                 client_user_id: dbUser.id,
@@ -1775,6 +2029,16 @@ export class GuestCheckoutService {
                 // and pre-PR-14 rows.
                 landing_page_id: checkout.landing_page_id ?? null,
                 idempotency_key: purchaseIdemKey,
+                // GC-3 — the trial marker the app's one-trial rule reads;
+                // only kept when the claim below is won (else the tx rolls back).
+                ...(trial
+                  ? {
+                      trial_days: packageTrialDays(checkout.package) || null,
+                      trial_started_at: new Date(),
+                      trial_ends_at: trialEndsAt,
+                      card_on_file: true,
+                    }
+                  : {}),
               },
             });
           } catch (err) {
@@ -1790,6 +2054,33 @@ export class GuestCheckoutService {
               },
             });
           }
+        }
+
+        // GC-3 — one free trial per client per coach, web and app alike: the
+        // app's ledger row (unique client + coach) decides. Lost: roll back,
+        // so the buyer gets no purchase and no access (refuseSecondTrial).
+        if (trial && purchaseRow && this.trialUsage) {
+          // The app's own eligibility read (subscription-checkout decide):
+          // any other purchase with this coach whose trial started.
+          const used = await tx.clientPurchase.findFirst({
+            where: {
+              client_user_id: dbUser.id,
+              coach_user_id: checkout.package.coach_id,
+              trial_started_at: { not: null },
+              id: { not: purchaseRow.id },
+            },
+            select: { id: true },
+          });
+          if (used) throw new GuestTrialRefusedError();
+          const outcome = await this.trialUsage.markStarted(tx, {
+            purchaseId: purchaseRow.id,
+            clientUserId: dbUser.id,
+            coachUserId: checkout.package.coach_id,
+            packageId: checkout.package_id,
+            trialDays: packageTrialDays(checkout.package),
+            trialEndsAt,
+          });
+          if (outcome === 'conflict') throw new GuestTrialRefusedError();
         }
 
         // B-GUEST-126 — claim-by-write on the prior status. The webhook and
@@ -1851,6 +2142,10 @@ export class GuestCheckoutService {
         await this.holdForRefund(checkout);
         return;
       }
+      if (err instanceof GuestTrialRefusedError) {
+        await this.refuseSecondTrial(checkout);
+        return;
+      }
       // Audit #3 P1-6 — DB transaction failures (deadlocks, unique
       // races, connection drops) are transient. Flip to
       // conversion_failed_retryable; the reconciliation worker will
@@ -1879,6 +2174,15 @@ export class GuestCheckoutService {
       return;
     }
 
+    if (convertedUserId) await this.bindBuyerCustomer(convertedUserId, checkout.stripe_customer_id);
+
+    // GC-3 — the trial is this buyer's: make the saved card the default,
+    // which also lifts the create-time end, so the first charge (and its 2%
+    // fee) happens at the trial's end on this card.
+    if (trial && checkout.stripe_subscription_id) {
+      await this.attachGuestTrialCard(checkout.stripe_payment_intent_id, checkout.stripe_subscription_id);
+    }
+
     // PR-9 — outer tx COMMITTED. Fire-and-forget the drop alerts for
     // any drops materialised inline at checkout. Must be outside the
     // tx so push failures never roll back entitlement.
@@ -1893,12 +2197,9 @@ export class GuestCheckoutService {
     }
 
     // Fire-and-forget welcome email. Resend failures must never roll
-    // back the conversion.
-    this.sendWelcomeEmail(checkout, inviteLink).catch((err) => {
-      this.logger.error(
-        `Welcome email failed for ${checkout.id} (tag=${safeErrorTag(err)})`,
-      );
-    });
+    // back the conversion. FR-1199: a failed send is retried from its
+    // EmailSendLog record (guest-outcome-mail.ts).
+    void this.sendWelcomeEmail(checkout, inviteLink);
   }
 
   // P2-5 — resolve the coach's Connect account id at conversion time so
@@ -2048,12 +2349,20 @@ export class GuestCheckoutService {
         retry_count: RECONCILIATION_MAX_ATTEMPTS,
         last_error: 'buyer_has_other_coach',
         last_retry_at: new Date(),
+        // FR-1199R2B (LS-1199R2 B1): a held web trial gets TW-F1, so its
+        // checkout window closes first: no later card-save event can claim
+        // and convert it (the trial's create-time end stops any charge).
+        ...(isGuestTrialIntent(checkout.stripe_payment_intent_id) ? { expires_at: new Date() } : {}),
       },
     });
     this.logger.error(
       `GuestCheckout ${checkout.id} held for refund (last_error=buyer_has_other_coach): refund pi=${checkout.stripe_payment_intent_id} in Stripe; charge.refunded closes the row`,
     );
     if (moved.count === 0) return;
+    // FR-1199 (LS-1199 B1): a held web trial is a trial not started (TW-F1).
+    if (isGuestTrialIntent(checkout.stripe_payment_intent_id)) {
+      await this.deliverOutcomeMail(checkout, 'trial-not-started', { opening: true });
+    }
     await this.notifications
       .createNotification({
         user_id: checkout.package.coach_id,
@@ -2074,6 +2383,336 @@ export class GuestCheckoutService {
       });
   }
 
+  // GC-3 — the winner's card becomes the subscription default (idempotent:
+  // attachTrialCard's key is the subscription + card). A failure leaves the
+  // create-time end on: the trial then ends with no charge, never a wrong one.
+  private async attachGuestTrialCard(setupIntentId: string, subscriptionId: string): Promise<void> {
+    try {
+      const si = await this.stripe.retrieveSetupIntent(setupIntentId);
+      const pm = typeof si.payment_method === 'string' ? si.payment_method : null;
+      if (si.status !== 'succeeded' || !pm) throw new Error(`setup_${String(si.status)}`);
+      await attachTrialCard(this.stripe, { moved_away_at: null }, subscriptionId, pm);
+      this.logger.log(`billing.trial_card_attached subscription=${subscriptionId} via=guest_conversion`);
+    } catch (err) {
+      this.logger.error(
+        `guest trial card attach failed subscription=${subscriptionId} (tag=${safeErrorTag(err)}); the trial ends without a charge`,
+      );
+    }
+  }
+
+  // GC-3 — a second free trial with the same coach (web or app had it):
+  // nothing delivered, the subscription cancelled at once (it is trialing,
+  // so nothing is charged; if the cancel fails, its create-time end still
+  // stops any charge), and the buyer gets PF-W7. Terminal, like
+  // holdForRefund, so no reconciler retries it.
+  private async refuseSecondTrial(checkout: CheckoutWithRelations): Promise<void> {
+    const moved = await this.prisma.guestCheckout.updateMany({
+      where: { id: checkout.id, status: { in: ['paid', 'conversion_failed_retryable'] } },
+      data: {
+        status: 'conversion_failed_terminal',
+        retry_count: RECONCILIATION_MAX_ATTEMPTS,
+        last_error: 'trial_already_used',
+        last_retry_at: new Date(),
+      },
+    });
+    this.logger.warn(`GuestCheckout ${checkout.id} refused: trial already used with this coach`);
+    if (moved.count === 0) return;
+    if (checkout.stripe_subscription_id) {
+      await this.stripe.cancelSubscription(checkout.stripe_subscription_id).catch((err) => {
+        this.logger.error(
+          `refused trial: cancel of ${checkout.stripe_subscription_id} failed (tag=${safeErrorTag(err)}); its create-time end still stops any charge`,
+        );
+      });
+    }
+    await this.deliverOutcomeMail(checkout, 'trial-refused', { opening: true });
+  }
+
+  // GC-3 PF-W7 (refused) and FR-1199 TW-F1 (not started): a web trial's
+  // ending email. Subject GC3-W2 for both; TW-F1 is followed by the pay
+  // page link.
+  private trialEndMail(
+    checkout: CheckoutWithRelations,
+    outcome: 'trial-refused' | 'trial-not-started',
+  ): { subject: string; html: string } {
+    const coach = checkout.package.coach.name?.trim() || 'your coach';
+    let lines = `<p>${escapeHtml(GUEST_TRIAL_COPY.refused(coach))}</p>`;
+    if (outcome === 'trial-not-started') {
+      const token = checkout.package.share_token;
+      const url = token ? payPageUrl(this.config.get<string>('STOREFRONT_BASE_URL'), token) : null;
+      lines = `<p>${escapeHtml(GUEST_TRIAL_COPY.notStarted(coach))}</p>`;
+      if (url) {
+        // The raw link is long; let it wrap on a narrow phone.
+        lines += `\n<p><a href="${escapeAttr(url)}" style="color:#1A1A1A;text-decoration:underline;word-break:break-all;overflow-wrap:anywhere;">${escapeHtml(url)}</a></p>`;
+      }
+    }
+    return {
+      subject: GUEST_TRIAL_COPY.refusedSubject(coach),
+      html: `<!doctype html><html><body style="font-family:Inter,Arial,sans-serif;background:#F5F0E8;margin:0;padding:24px;">
+${lines}</body></html>`,
+    };
+  }
+
+  // FR-1199 (LS-1199 B2) — carry on a recorded, unfinished outcome email
+  // (the reconciliation cron) or, with
+  // `opening`, start the one an ending just wrote (the lost-webhook
+  // backstop). Derives the outcome from the stored row; never throws.
+  async sendOutcomeMail(checkoutId: string, opts: { opening?: boolean; paced?: boolean } = {}): Promise<void> {
+    try {
+      const checkout = await this.prisma.guestCheckout.findUnique({
+        where: { id: checkoutId },
+        include: { package: { include: { coach: true } } },
+      });
+      if (!checkout) return;
+      const outcome = guestOutcome({
+        status: checkout.status,
+        last_error: checkout.last_error,
+        trial: isGuestTrialIntent(checkout.stripe_payment_intent_id),
+      });
+      if (outcome) await this.deliverOutcomeMail(checkout, outcome, opts);
+    } catch (err) {
+      this.logger.error(`outcome email crashed for ${checkoutId} (tag=${safeErrorTag(err)})`);
+    }
+  }
+
+  // FR-1199 — one try of an outcome email (guest-outcome-mail.ts). The
+  // ending opens try 1; if the record cannot be read or written then, it
+  // still sends once and (FR-1199R2B) writes the try's record afterwards.
+  private async deliverOutcomeMail(
+    checkout: CheckoutWithRelations,
+    outcome: GuestOutcome,
+    opts: { opening?: boolean; paced?: boolean; inviteLink?: string | null },
+  ): Promise<void> {
+    const opening = opts.opening === true;
+    try {
+      const apiKey = this.config.get<string>('RESEND_API_KEY');
+      if (!apiKey) {
+        this.logger.warn(`RESEND_API_KEY unset — skipping ${outcome} email for ${checkout.id}`);
+        return;
+      }
+      let from: string;
+      try {
+        from = resolveEmailSender(this.config, 'resend');
+      } catch (err) {
+        if (!(err instanceof EmailSenderConfigError)) throw err;
+        this.logger.error(
+          `${outcome === 'welcome' ? 'Welcome' : outcome === 'trial-refused' ? 'Trial-refused' : 'Trial-not-started'} email not sent for ${checkout.id}: EMAIL_FROM_ADDRESS is not set to a valid sender address`,
+        );
+        return;
+      }
+      const keys = Array.from({ length: OUTCOME_MAIL_TRIES }, (_, i) => outcomeMailKey(checkout.id, outcome, i + 1));
+      let tries: (OutcomeTry & { template_key: string })[] | null = null;
+      try {
+        tries = await this.prisma.emailSendLog.findMany({
+          where: { idempotency_key: { in: keys } },
+          select: { status: true, created_at: true, template_key: true },
+        });
+      } catch (err) {
+        this.logger.warn(`${outcome} email record unreadable for ${checkout.id} (tag=${safeErrorTag(err)})`);
+      }
+      if (!Array.isArray(tries)) {
+        if (!opening) return;
+        tries = null;
+      }
+      const attempt = tries ? nextOutcomeTry(tries, Date.now(), { opening, paced: opts.paced === true }) : 1;
+      if (attempt === null) return;
+      let inviteLink = opts.inviteLink ?? null;
+      if (outcome === 'welcome' && !opening && tries?.some((t) => t.template_key === 'guest-welcome-new')) {
+        // The confirm link is never stored: a retry sends the first try's
+        // link (kept in memory, so the body is the same). Only a retry in
+        // another process mints a fresh one (Found, not fixed), and without
+        // one it waits (never the existing-account words).
+        inviteLink = this.keptWelcomeLink(checkout.id);
+        if (inviteLink === null) {
+          inviteLink = await this.generateInviteLink(checkout.guest_email, checkout.package.share_token);
+          if (inviteLink === null) return;
+        }
+      }
+      if (outcome === 'welcome' && inviteLink !== null) this.keepWelcomeLink(checkout.id, inviteLink);
+      const template =
+        outcome === 'welcome' ? (inviteLink !== null ? 'guest-welcome-new' : 'guest-welcome-existing') : `guest-${outcome}`;
+      const key = keys[attempt - 1];
+      if (outcome === 'trial-not-started') {
+        // FR-1199R2B (LO-1199R2 B1) — the buyer started again (a declined
+        // card, then another card is a new row): TW-F1 would be untrue.
+        let later: boolean | null = null;
+        try {
+          later = await this.laterTrialAttempt(checkout);
+        } catch (err) {
+          this.logger.warn(`trial-not-started email for ${checkout.id}: later attempt unreadable (tag=${safeErrorTag(err)})`);
+        }
+        if (later === true) {
+          this.logger.log(`trial-not-started email for ${checkout.id} skipped: the buyer has a later checkout for this package`);
+          return;
+        }
+        if (later === null) {
+          // Unknown: hold this try (recorded as failed, unsent) so the scan
+          // asks again after the gap; never send on a guess.
+          if (tries !== null || opening) await this.holdOutcomeTry(key, template, checkout, 'later_attempt_unread');
+          return;
+        }
+      }
+      let recorded = tries !== null;
+      if (recorded) {
+        try {
+          await this.prisma.emailSendLog.create({
+            data: {
+              idempotency_key: key,
+              template_key: template,
+              recipient_email: checkout.guest_email.toLowerCase(),
+              status: 'sending',
+            },
+          });
+        } catch (err) {
+          if (this.isUniqueViolation(err) || !opening) return; // another sender holds this try
+          recorded = false;
+          this.logger.warn(`${outcome} email record not written for ${checkout.id} (tag=${safeErrorTag(err)})`);
+        }
+      }
+      const mail = outcome === 'welcome' ? this.welcomeMail(checkout, inviteLink) : this.trialEndMail(checkout, outcome);
+      const failure = await this.postResend(
+        apiKey,
+        { from, to: checkout.guest_email, ...mail },
+        checkout.id,
+        outcomeMailRequestKey(checkout.id, outcome),
+      );
+      if (!recorded) {
+        // FR-1199R2B (LS-1199R2 B3) — the try's record could not be written
+        // before the send. Write it now with the result, so a failed send
+        // leaves a pending outcome the scan, a replay or the reconcile pass
+        // carries on (and a sent one is never sent again).
+        const held = await this.holdOutcomeTry(key, template, checkout, failure ?? '', failure === null);
+        if (!held && failure !== null) {
+          this.logger.error(`${outcome} email for ${checkout.id} not sent and not recorded (last=${failure})`);
+        }
+        return;
+      }
+      await this.prisma.emailSendLog
+        .update({
+          where: { idempotency_key: key },
+          data: failure === null ? { status: 'sent', sent_at: new Date() } : { status: 'failed', error: failure },
+        })
+        .catch((err) => {
+          this.logger.error(`${outcome} email record update failed for ${checkout.id} (tag=${safeErrorTag(err)})`);
+        });
+      if (failure !== null && attempt >= OUTCOME_MAIL_TRIES) {
+        this.logger.error(`${outcome} email for ${checkout.id} not sent after ${attempt} tries (last=${failure})`);
+      }
+    } catch (err) {
+      this.logger.error(`${outcome} email failed for ${checkout.id} (tag=${safeErrorTag(err)})`);
+    }
+  }
+
+  // FR-1199R2B (LO-1199R2 B1) — the same buyer has a later checkout for the
+  // same package that is still open, paid or converted.
+  private async laterTrialAttempt(checkout: CheckoutWithRelations): Promise<boolean> {
+    const later = await this.prisma.guestCheckout.findFirst({
+      where: {
+        guest_email: { equals: checkout.guest_email, mode: 'insensitive' },
+        package_id: checkout.package_id,
+        created_at: { gt: checkout.created_at },
+        status: { in: ['pending', 'paid', 'conversion_failed_retryable', 'converted'] },
+      },
+      select: { id: true },
+    });
+    return later !== null;
+  }
+
+  // FR-1199R2B — a try written after the fact: failed (unsent, or its send
+  // failed), so the scan, a replay or the reconcile pass carries the outcome
+  // on from it; or sent, so nothing sends it again.
+  private async holdOutcomeTry(
+    key: string,
+    template: string,
+    checkout: CheckoutWithRelations,
+    error: string,
+    sent = false,
+  ): Promise<boolean> {
+    try {
+      await this.prisma.emailSendLog.create({
+        data: {
+          idempotency_key: key,
+          template_key: template,
+          recipient_email: checkout.guest_email.toLowerCase(),
+          ...(sent ? { status: 'sent', sent_at: new Date() } : { status: 'failed', error }),
+        },
+      });
+      return true;
+    } catch (err) {
+      if (this.isUniqueViolation(err)) return true; // the try is on record
+      this.logger.error(`outcome email try not recorded for ${checkout.id} (tag=${safeErrorTag(err)})`);
+      return false;
+    }
+  }
+
+  private keptWelcomeLink(checkoutId: string): string | null {
+    const kept = this.welcomeLinks.get(checkoutId);
+    if (!kept) return null;
+    if (Date.now() - kept.at > WELCOME_LINK_KEEP_MS) {
+      this.welcomeLinks.delete(checkoutId);
+      return null;
+    }
+    return kept.link;
+  }
+
+  private keepWelcomeLink(checkoutId: string, link: string): void {
+    if (this.welcomeLinks.has(checkoutId)) return; // the first try's link stays
+    if (this.welcomeLinks.size >= WELCOME_LINK_KEEP_MAX) {
+      const oldest = this.welcomeLinks.keys().next().value;
+      if (oldest !== undefined) this.welcomeLinks.delete(oldest);
+    }
+    this.welcomeLinks.set(checkoutId, { link, at: Date.now() });
+  }
+
+  // Resend transactional email, 8 s timeout. Returns null when sent, else a
+  // short failure tag (status code or error name; never the response body,
+  // which can echo API key fragments). FR-1199R2B (LS-1199R2 B2): every try
+  // of one outcome carries the same Idempotency-Key and the same body.
+  private async postResend(
+    apiKey: string,
+    body: { from: string; to: string; subject: string; html: string },
+    checkoutId: string,
+    idempotencyKey: string,
+  ): Promise<string | null> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    try {
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey,
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      if (res.ok) return null;
+      if (res.status === 409) {
+        // Only the error name is read; the body is never logged.
+        let name: string | null = null;
+        try {
+          const parsed: unknown = await res.json();
+          if (parsed && typeof (parsed as { name?: unknown }).name === 'string') name = (parsed as { name: string }).name;
+        } catch (err) {
+          this.logger.warn(`Resend 409 answer unreadable for ${checkoutId} (tag=${safeErrorTag(err)})`);
+        }
+        if (name === 'invalid_idempotent_request') {
+          // Resend keeps a key only for a request it accepted: an earlier
+          // try of this outcome went out. Recorded as sent, never resent.
+          this.logger.warn(`Resend already accepted an earlier try for ${checkoutId}; not sent again`);
+          return null;
+        }
+      }
+      this.logger.error(`Resend send failed (status=${res.status}) for ${checkoutId}`);
+      return `status_${res.status}`;
+    } catch (err) {
+      this.logger.error(`Resend send crashed for ${checkoutId} (tag=${safeErrorTag(err)})`);
+      return `send_${safeErrorTag(err)}`.slice(0, 64);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   // Audit #3 P1-6 — flip a paid (or retryable) row to
   // conversion_failed_retryable, increment retry_count, and stamp the
   // attempt. Past RECONCILIATION_MAX_ATTEMPTS the row moves to
@@ -2091,12 +2730,16 @@ export class GuestCheckoutService {
       // is minimal.
       const row = await this.prisma.guestCheckout.findUnique({
         where: { id: checkoutId },
-        select: { retry_count: true, status: true },
+        select: { retry_count: true, status: true, stripe_payment_intent_id: true },
       });
       if (!row) return;
       const nextCount = row.retry_count + 1;
       const terminal = nextCount >= RECONCILIATION_MAX_ATTEMPTS;
-      await this.prisma.guestCheckout.updateMany({
+      // FR-1199R2B (LS-1199R2 B1): a web trial ending here gets TW-F1, so
+      // its checkout window closes in the same write: a replayed card-save
+      // event can no longer claim the row, convert it and lift the trial end.
+      const closeTrial = terminal && isGuestTrialIntent(row.stripe_payment_intent_id);
+      const moved = await this.prisma.guestCheckout.updateMany({
         where: {
           id: checkoutId,
           status: { in: ['paid', 'conversion_failed_retryable'] },
@@ -2108,12 +2751,15 @@ export class GuestCheckoutService {
           retry_count: nextCount,
           last_error: lastError.slice(0, 200),
           last_retry_at: new Date(),
+          ...(closeTrial ? { expires_at: new Date() } : {}),
         },
       });
       if (terminal) {
         this.logger.error(
           `GuestCheckout ${checkoutId} reached conversion_failed_terminal after ${nextCount} retries (last_error=${lastError.slice(0, 64)})`,
         );
+        // FR-1199 (LS-1199 B1): a web trial ending here gets TW-F1.
+        if (moved.count > 0) void this.sendOutcomeMail(checkoutId, { opening: true });
       }
     } catch (err) {
       this.logger.error(
@@ -2144,7 +2790,14 @@ export class GuestCheckoutService {
       checkout.status !== 'paid' &&
       checkout.status !== 'conversion_failed_retryable'
     ) {
-      // Already converted or terminal — nothing to do.
+      // Already converted or terminal — nothing to convert. FR-1199
+      // (LS-1199 B2): carry on its outcome email if a try failed.
+      const outcome = guestOutcome({
+        status: checkout.status,
+        last_error: checkout.last_error,
+        trial: isGuestTrialIntent(checkout.stripe_payment_intent_id),
+      });
+      if (outcome) await this.deliverOutcomeMail(checkout, outcome, {});
       return;
     }
     if (checkout.status === 'conversion_failed_retryable') {
@@ -2226,30 +2879,22 @@ export class GuestCheckoutService {
   // EMAIL_FROM_ADDRESS sender (src/email/email-sender.ts), the same one
   // every other email uses; with no valid sender nothing is sent and the
   // log line names the variable.
+  // FR-1199: the conversion opens the welcome outcome (never throws).
   private async sendWelcomeEmail(
     checkout: CheckoutWithRelations,
     inviteLink: string | null,
   ): Promise<void> {
-    const apiKey = this.config.get<string>('RESEND_API_KEY');
-    if (!apiKey) {
-      this.logger.warn(
-        `RESEND_API_KEY unset — skipping welcome email for ${checkout.id}`,
-      );
-      return;
-    }
+    await this.deliverOutcomeMail(checkout, 'welcome', { opening: true, inviteLink });
+  }
+
+  // FR-1199: the body only; deliverOutcomeMail sends and records it.
+  private welcomeMail(
+    checkout: CheckoutWithRelations,
+    inviteLink: string | null,
+  ): { subject: string; html: string } {
     // Audit #5 P2-3 — customer-facing copy uses the brand name
     // "Growth Project", never the internal abbreviation "TGP" (the body
     // line "added X to your existing ... account" and the subject line).
-    let fromAddress: string;
-    try {
-      fromAddress = resolveEmailSender(this.config, 'resend');
-    } catch (err) {
-      if (!(err instanceof EmailSenderConfigError)) throw err;
-      this.logger.error(
-        `Welcome email not sent for ${checkout.id}: EMAIL_FROM_ADDRESS is not set to a valid sender address`,
-      );
-      return;
-    }
 
     const coachName = checkout.package.coach.name?.trim() || 'Your coach';
     const packageName = checkout.package.name;
@@ -2285,9 +2930,7 @@ export class GuestCheckoutService {
           )}" style="color:#1A1A1A;text-decoration:underline;">View your receipt</a></p>`
         : '';
 
-    const body = {
-      from: fromAddress,
-      to: checkout.guest_email,
+    return {
       subject:
         inviteLink !== null
           ? `Confirm your email to start with ${coachName} on TGP Fitness`
@@ -2301,29 +2944,6 @@ ${receiptLine}
 <a href="${escapeAttr(playStoreUrl)}" style="background:#C9A84C;color:#1A1A1A;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">Download for Android</a></p>
 </body></html>`,
     };
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 8000);
-    try {
-      const res = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-      if (!res.ok) {
-        // Don't read the body — it can echo our API key fragments in
-        // verbose error responses. Log status only.
-        this.logger.error(
-          `Resend send failed (status=${res.status}) for ${checkout.id}`,
-        );
-      }
-    } finally {
-      clearTimeout(timer);
-    }
   }
 
   private isUniqueViolation(err: unknown): boolean {

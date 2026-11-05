@@ -74,6 +74,8 @@ describe('AckService', () => {
     findById: jest.Mock;
     findSenderRole: jest.Mock;
     stampAck: jest.Mock;
+    isPublicRowOfMyClient: jest.Mock;
+    isSpaceTeam: jest.Mock;
   };
   let access: { isWorkspaceCoach: jest.Mock; findCohort: jest.Mock; canAccessCohort: jest.Mock;
     findWorkspace: jest.Mock; membershipInWorkspace: jest.Mock };
@@ -88,6 +90,9 @@ describe('AckService', () => {
       // otherwise.
       findSenderRole: jest.fn(async (): Promise<Role> => 'student'),
       stampAck: jest.fn(),
+      // Default: the caller is neither the poster's own coach nor on the space's team (rule D, FR-1173).
+      isPublicRowOfMyClient: jest.fn(async () => false),
+      isSpaceTeam: jest.fn(async () => false),
     };
     // Default: the space exists and the caller may enter it (getOne's rule);
     // DMs are on by default and both people hold a membership (the DM rule).
@@ -272,6 +277,39 @@ describe('AckService', () => {
       repo.findSenderRole.mockResolvedValueOnce('coach');
       await service.applyTransition(coach, MSG_ID, 'seen').catch((e) => e);
       expect(safety.assertVisibleTo).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('rule D readers (FR-1173, LS-INBOX2 B2): whoever the inbox lists a space row to may acknowledge it', () => {
+    beforeEach(() => {
+      access.isWorkspaceCoach.mockResolvedValue(false);
+      repo.findById.mockResolvedValue(msg());
+      repo.stampAck.mockImplementation(stampAckFrom(msg()));
+    });
+
+    it('the space\'s team (an active coach or assistant membership) acks under the space\'s own read rule', async () => {
+      repo.isSpaceTeam.mockResolvedValue(true);
+      expect((await service.applyTransition(foreignCoach, MSG_ID, 'acked')).ack.state).toBe('acked');
+      expect(repo.isSpaceTeam).toHaveBeenCalledWith(FIXTURE_IDS.cohort, foreignCoach.id);
+      expect(access.canAccessCohort).toHaveBeenCalled();
+    });
+
+    it('the poster\'s own coach acks that row with no way into the space, behind the same visibility gate', async () => {
+      repo.isPublicRowOfMyClient.mockResolvedValue(true);
+      access.canAccessCohort.mockResolvedValue(false);
+      expect((await service.applyTransition(foreignCoach, MSG_ID, 'acked')).ack.state).toBe('acked');
+      expect(repo.isPublicRowOfMyClient).toHaveBeenCalledWith(FIXTURE_IDS.cohort, foreignCoach.id, FIXTURE_IDS.clientSender);
+      expect(safety.assertVisibleTo).toHaveBeenCalledWith(foreignCoach.id, FIXTURE_IDS.clientSender, expect.anything(), expect.anything());
+    });
+
+    it('neither: 404 before any stamp; a DM never asks either arm', async () => {
+      await expect(service.applyTransition(foreignCoach, MSG_ID, 'acked')).rejects.toBeInstanceOf(NotFoundException);
+      repo.findById.mockResolvedValue(msg({ scope: 'dm', cohort_id: null }));
+      repo.isPublicRowOfMyClient.mockClear();
+      repo.isSpaceTeam.mockClear();
+      await expect(service.applyTransition(foreignCoach, MSG_ID, 'acked')).rejects.toBeInstanceOf(NotFoundException);
+      expect([repo.isPublicRowOfMyClient.mock.calls.length, repo.isSpaceTeam.mock.calls.length]).toEqual([0, 0]);
+      expect(repo.stampAck).not.toHaveBeenCalled();
     });
   });
 

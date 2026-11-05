@@ -4,7 +4,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import { AddListItemDto, UpdateListItemDto } from './lists.dto';
+import { AddListItemDto, BulkListItemDto, UpdateListItemDto } from './lists.dto';
 import { ListType } from '@prisma/client';
 import { canonicalIngredientUnit } from '../common/ingredient-unit';
 
@@ -81,12 +81,22 @@ export class ListsService {
     return { deleted: result.count };
   }
 
-  // Bulk-add items (used by PrepGuide "Add to grocery list").
+  // Bulk-add items (used by PrepGuide "Add to grocery list", and by a plan meal's "Add to grocery list").
+  // PLAN-SWAPS-BE: an item keeps source_plan_slot_id only when that slot is in a plan assigned to the
+  // caller; any other id (another client's plan, a removed meal, a made-up id) is stored as null, as
+  // FOODLINK does for a food log's plan_slot_id (log.service.ts), so the add itself never fails on it.
   async bulkAddItems(
     userId: string,
     listType: ListType,
-    items: AddListItemDto[],
+    items: BulkListItemDto[],
   ) {
+    const asked = [...new Set(items.flatMap((i) => (i.source_plan_slot_id ? [i.source_plan_slot_id] : [])))];
+    const own = asked.length > 0
+      ? new Set((await this.prisma.dailyMealPlanSlot.findMany({
+          where: { id: { in: asked }, daily_meal_plan: { assignments: { some: { client_id: userId } } } },
+          select: { id: true },
+        })).map((s) => s.id))
+      : new Set<string>();
     const created = await this.prisma.$transaction(
       items.map((item) =>
         this.prisma.listItem.create({
@@ -97,6 +107,7 @@ export class ListsService {
             quantity: item.quantity ?? 1,
             unit: item.unit ?? null,
             source_recipe_id: item.source_recipe_id ?? null,
+            source_plan_slot_id: item.source_plan_slot_id && own.has(item.source_plan_slot_id) ? item.source_plan_slot_id : null,
           },
         }),
       ),

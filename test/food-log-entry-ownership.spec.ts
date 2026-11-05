@@ -59,9 +59,12 @@ function setup() {
         return withFood(found ?? insert(create));
       },
     ),
-    findUnique: jest.fn(
-      async ({ where }: { where: { id: string } }) => rows.find((r) => r.id === where.id) ?? null,
-    ),
+    // By id, or (FOOD-1-BE R6: logFood looks a key up first) by client_uuid.
+    findUnique: jest.fn(async ({ where }: { where: { id?: string; client_uuid?: string } }) => {
+      if (where.client_uuid === undefined) return rows.find((r) => r.id === where.id) ?? null;
+      const found = rows.find((r) => r.client_uuid === where.client_uuid);
+      return found ? withFood(found) : null;
+    }),
     update: jest.fn(
       async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) =>
         Object.assign(

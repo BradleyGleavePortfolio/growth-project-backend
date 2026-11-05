@@ -35,7 +35,7 @@ function setup(trialDays = 7) {
   });
   db._accounts.push({
     ...{ coach_user_id: COACH, stripe_account_id: 'acct_coach' },
-    ...{ charges_enabled: true, deauthorized_at: null },
+    ...{ charges_enabled: true, payouts_enabled: true, details_submitted: true, disabled_reason: null, deauthorized_at: null },
   });
   const packages: any = {
     getById: async (id: string) => db._packages.find((p: any) => p.id === id),

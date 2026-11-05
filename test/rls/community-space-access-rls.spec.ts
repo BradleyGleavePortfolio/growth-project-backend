@@ -7,6 +7,7 @@ import { Prisma, PrismaClient, type User } from '@prisma/client';
 import { CommunityCohortMembersRepository } from '../../src/community/cohorts/community-cohort-members.repository';
 import { CommunityCohortMembersService } from '../../src/community/cohorts/community-cohort-members.service';
 import { CommunityAccessService } from '../../src/community/community-access.service';
+import { membersNow } from '../../src/community/community-space-access';
 import { CommunityRepository } from '../../src/community/community.repository';
 import { CommunityMessagesRepository } from '../../src/community/messages/community-messages.repository';
 import type { PrismaService } from '../../src/prisma.service';
@@ -152,7 +153,7 @@ const EDIT_OWN = `UPDATE "community_messages" SET "body" = "body"`;
       expect(await access.canAccessCohort(cohort('mem'), user('M'))).toBe(false);
       expect(await access.membershipInWorkspace(ws.X, id.M)).toBeNull();
       expect(await foundation.findActiveMembershipForUser(id.M)).toBeNull(); // /me no longer lands in X's community
-      expect(await foundation.cohortMemberCount(cohort('mem'))).toBe(2); // X and I
+      expect((await membersNow(stub<PrismaService>(prisma), cohort('mem'))).length).toBe(2); // X and I (member_count)
       const push = await messages.listCohortPushRecipients({ workspaceId: ws.X, cohortId: space.mem, senderId: id.X });
       expect(push.map((r) => r.user_id)).toEqual([id.I]);
       expect(await count('I', 'community_messages', msg.mem)).toBe(1); // the client who stayed keeps everything

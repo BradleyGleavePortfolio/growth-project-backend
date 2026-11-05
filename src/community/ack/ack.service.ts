@@ -140,14 +140,16 @@ export class AckService {
       throw new NotFoundException(NOT_FOUND);
     }
     // Tenant visibility: a platform owner sees all; any other caller must coach
-    // the message's workspace. A caller who cannot read the message gets the
-    // not-found response — never a 403 that would confirm the ID exists.
-    if (user.role !== 'owner') {
-      const isCoach = await this.access.isWorkspaceCoach(
-        m.workspace_id,
-        user.id,
-      );
-      if (!isCoach) {
+    // the message's workspace, or be one the inbox lists this space row to
+    // (rule D, FR-1173 LS-INBOX2 B2): the space's team, or in a public space
+    // the poster's own coach (that row only, read and acknowledge). A caller
+    // who cannot read the message gets the not-found response — never a 403
+    // that would confirm the ID exists.
+    let ownCoach = false;
+    if (user.role !== 'owner' && !(await this.access.isWorkspaceCoach(m.workspace_id, user.id))) {
+      const space = m.scope === 'dm' ? null : m.cohort_id;
+      ownCoach = space !== null && (await this.repo.isPublicRowOfMyClient(space, user.id, m.sender_id));
+      if (!ownCoach && !(space !== null && (await this.repo.isSpaceTeam(space, user.id)))) {
         throw new NotFoundException(NOT_FOUND);
       }
     }
@@ -176,7 +178,7 @@ export class AckService {
       });
     } else {
       const cohort = m.cohort_id && m.plan_context_type === null ? await this.access.findCohort(m.cohort_id) : null;
-      if (!cohort || !(await this.access.canAccessCohort(cohort, user))) throw new NotFoundException(NOT_FOUND);
+      if (!cohort || !(ownCoach || (await this.access.canAccessCohort(cohort, user)))) throw new NotFoundException(NOT_FOUND);
     }
     // Visibility (LS-1134D): then the gate getOne calls —
     // CommunitySafetyService.assertVisibleTo with the row's place (a block

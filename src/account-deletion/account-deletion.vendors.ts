@@ -1,10 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import {
   StripeConnectApiError,
   StripeConnectApiService,
 } from '../connect/stripe-connect-api.service';
 import { describeFailure } from '../observability/log-pii';
+import { isProdLike } from '../common/env-validation';
 
 /**
  * Account deletion at our vendors. The privacy policy promises that a deleted
@@ -12,6 +13,15 @@ import { describeFailure } from '../observability/log-pii';
  * copies, so after the database deletion commits each vendor is asked once.
  * Every step is idempotent: a person the vendor no longer has counts as done
  * (`not_found`), so a retry after a partial failure is safe.
+ *
+ * A vendor in use whose erasure keys are missing records `not_configured` and
+ * stays in the pending work, like a failure, so the nightly retry erases the
+ * person once the keys are set (STORE-B3). Missing keys never prove the vendor
+ * was not used: work already pending stays pending, and production and
+ * staging always count both as in use. Only on the first attempt, in a
+ * deployment with none of the vendor's settings, does a keyless vendor count as
+ * never used (`not_applicable`, a configuration check, not a record of use);
+ * a Stripe person with no customer also completes.
  *
  *   posthog  persons/bulk_delete by distinct id (the user id), events too
  *   crisp    every conversation of the email, then the people profile
@@ -33,6 +43,42 @@ export type VendorWork = {
   stripe_customer_ids: string[];
 };
 
+export type KeyedVendor = 'posthog' | 'crisp';
+const KEYED_VENDORS: KeyedVendor[] = ['posthog', 'crisp'];
+/** Keys each vendor's erasure needs, and the settings that show it is in use. */
+const ERASURE_KEYS: Record<KeyedVendor, readonly string[]> = {
+  posthog: ['POSTHOG_PERSONAL_API_KEY', 'POSTHOG_PROJECT_ID'],
+  crisp: ['CRISP_WEBSITE_ID', 'CRISP_API_TOKEN'],
+};
+const IN_USE_KEYS: Record<KeyedVendor, readonly string[]> = {
+  posthog: ['POSTHOG_KEY', ...ERASURE_KEYS.posthog],
+  crisp: ERASURE_KEYS.crisp,
+};
+
+/** Read by literal name so env discovery sees every setting this file reads. */
+function vendorEnv(): Record<string, string | undefined> {
+  return {
+    POSTHOG_KEY: process.env.POSTHOG_KEY,
+    POSTHOG_PERSONAL_API_KEY: process.env.POSTHOG_PERSONAL_API_KEY,
+    POSTHOG_PROJECT_ID: process.env.POSTHOG_PROJECT_ID,
+    CRISP_WEBSITE_ID: process.env.CRISP_WEBSITE_ID,
+    CRISP_API_TOKEN: process.env.CRISP_API_TOKEN,
+  };
+}
+const isSet = (name: string) => !!vendorEnv()[name]?.trim();
+const inUse = (v: KeyedVendor) => isProdLike(process.env.NODE_ENV) || IN_USE_KEYS[v].some(isSet);
+
+/**
+ * Vendors that may hold people's data but cannot be asked to erase it now.
+ * The app collects into PostHog and Crisp with its own keys, which the backend
+ * cannot see; its release config requires both (mobile
+ * scripts/validate-app-config.js), so production and staging count both as in
+ * use.
+ */
+export function heldVendors(): KeyedVendor[] {
+  return KEYED_VENDORS.filter((v) => !ERASURE_KEYS[v].every(isSet) && inUse(v));
+}
+
 const TIMEOUT_MS = 10_000;
 const CRISP_MAX_PAGES = 50;
 
@@ -47,10 +93,21 @@ async function send(vendor: Vendor, url: string, init: RequestInit): Promise<Res
 }
 
 @Injectable()
-export class AccountDeletionVendorsService {
+export class AccountDeletionVendorsService implements OnModuleInit {
   private readonly logger = new Logger(AccountDeletionVendorsService.name);
 
   constructor(private readonly stripe: StripeConnectApiService) {}
+
+  /** A warning, never a failed start: deletions hold these vendors until the keys are set. */
+  onModuleInit(): void {
+    const held = heldVendors().map(
+      (v) => `${v} (${ERASURE_KEYS[v].filter((k) => !isSet(k)).join(', ')})`,
+    );
+    if (held.length === 0) return;
+    this.logger.warn(
+      `account deletion: in use without erasure keys: ${held.join('; ')}; deletions keep that vendor pending and retry nightly`,
+    );
+  }
 
   /** Inside the finalization transaction, while the rows holding the customer ids still exist. */
   async collect(tx: Prisma.TransactionClient, userId: string, email: string): Promise<VendorWork> {
@@ -81,14 +138,20 @@ export class AccountDeletionVendorsService {
     return { vendors: [...VENDORS], email, stripe_customer_ids: [...ids] };
   }
 
-  /** One attempt per listed vendor; never throws. `left` is the work still to retry, or null. */
+  /**
+   * One attempt per listed vendor; never throws. `left` is the work still to
+   * retry (failed or held), or null. `firstAttempt` is set only for work just
+   * collected at finalization; a retry of pending work never sets it.
+   */
   async erase(
     userId: string,
     work: VendorWork,
+    opts: { firstAttempt?: boolean } = {},
   ): Promise<{ outcomes: VendorOutcomes; left: VendorWork | null }> {
+    const first = opts.firstAttempt === true;
     const steps: Record<Vendor, () => Promise<VendorOutcome>> = {
-      posthog: () => this.posthog(userId),
-      crisp: () => this.crisp(work.email),
+      posthog: () => this.posthog(userId, first),
+      crisp: () => this.crisp(work.email, first),
       stripe: () => this.stripeCustomers(work.stripe_customer_ids),
       // The backend only sends transactional mail (POST /emails); it never adds
       // contacts or audiences, and Resend drops its send logs after 30 days.
@@ -108,7 +171,14 @@ export class AccountDeletionVendorsService {
         );
       }
     }
-    const vendors = work.vendors.filter((v) => outcomes[v] === 'failed');
+    // No person data in this line: the operator's signal that work is held.
+    const held = work.vendors.filter((v) => outcomes[v] === 'not_configured');
+    if (held.length) {
+      this.logger.warn(
+        `account deletion: vendor erasure held for ${held.join(', ')} (erasure keys not set); kept pending and retried nightly`,
+      );
+    }
+    const vendors = work.vendors.filter((v) => outcomes[v] === 'failed' || held.includes(v));
     if (vendors.length === 0) return { outcomes, left: null };
     return {
       outcomes,
@@ -120,10 +190,20 @@ export class AccountDeletionVendorsService {
     };
   }
 
-  private async posthog(userId: string): Promise<VendorOutcome> {
+  /**
+   * Without its keys: held, unless this is the first attempt and the vendor
+   * has no setting at all outside production and staging. Pending work was
+   * held because the vendor may have the data; keys removed later do not
+   * change that (LS-1182 B1).
+   */
+  private unready(vendor: KeyedVendor, first: boolean): VendorOutcome {
+    return first && !inUse(vendor) ? 'not_applicable' : 'not_configured';
+  }
+
+  private async posthog(userId: string, first: boolean): Promise<VendorOutcome> {
     const key = process.env.POSTHOG_PERSONAL_API_KEY;
     const project = process.env.POSTHOG_PROJECT_ID;
-    if (!key || !project) return 'not_configured';
+    if (!key || !project) return this.unready('posthog', first);
     // Events are ingested at us.i.posthog.com; the private API is us.posthog.com.
     const host = (process.env.POSTHOG_HOST ?? 'https://us.i.posthog.com').replace(
       '.i.posthog.com',
@@ -144,10 +224,10 @@ export class AccountDeletionVendorsService {
     return body.persons_found ? 'done' : 'not_found';
   }
 
-  private async crisp(email: string | null): Promise<VendorOutcome> {
+  private async crisp(email: string | null, first: boolean): Promise<VendorOutcome> {
     const site = process.env.CRISP_WEBSITE_ID;
     const token = process.env.CRISP_API_TOKEN;
-    if (!site || !token) return 'not_configured';
+    if (!site || !token) return this.unready('crisp', first);
     if (!email) return 'not_found';
     const base = `https://api.crisp.chat/v1/website/${encodeURIComponent(site)}`;
     const people = encodeURIComponent(email);
@@ -178,6 +258,7 @@ export class AccountDeletionVendorsService {
 
   private async stripeCustomers(ids: string[]): Promise<VendorOutcome> {
     if (ids.length === 0) return 'not_found';
+    // Customers on file: Stripe has this person's data, so unconfigured holds.
     if (!this.stripe.isConfigured()) return 'not_configured';
     let deleted = 0;
     for (const id of ids) {

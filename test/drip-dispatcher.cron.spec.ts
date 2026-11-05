@@ -179,6 +179,7 @@ function makePurchase(over: Partial<Row> = {}): Row {
     client_user_id: 'client-1',
     coach_user_id: 'coach-1',
     package_id: 'package-1',
+    entitlement_active: true, // PF-2-BE: a drop delivers only on an entitled purchase
     ...over,
   };
 }
@@ -1283,6 +1284,43 @@ describe('DripDispatcherCron', () => {
 
   // MEDIA-ARCHIVE-DRIP (#162-2 op 1): a refunded purchase keeps what it got; nothing more ships.
   const asPrisma = (mock: unknown) => mock as ConstructorParameters<typeof DripDispatcherCron>[0];
+  it.each(['pending', 'dispatching'])(
+    'LS-1190 B5: an ended one-time purchase cannot dispatch a %s paid drop',
+    async (status) => {
+      // Finite one-time plans normally retain paid + entitlement_active;
+      // expiry ends their coached access (see endedPlanWhere), not a webhook.
+      for (const expired of [false, true]) {
+        const state: MockPrismaState = {
+          drops: [makeDrop({
+            status,
+            locked_at: status === 'dispatching'
+              ? new Date(NOW.getTime() - __dripDispatcherConsts.STALE_CLAIM_MS - 60_000)
+              : null,
+          })],
+          purchases: [makePurchase({
+            status: 'paid', billing_type: 'one_time', entitlement_active: true,
+            access_expires_at: new Date(NOW.getTime() + (expired ? -1 : 1) * 86_400_000),
+            dunning: null,
+            client: { deleted_at: null }, coach: { deleted_at: null },
+          })],
+        };
+        const materialise = jest.fn().mockResolvedValue({ materialisedRef: 'new-paid-assignment' });
+        const notifications = makeNotifications();
+        const cron = new DripDispatcherCron(
+          asPrisma(makeMockPrisma(state)), makeRegistry(materialise), notifications,
+        );
+        await cron.runOnce(NOW);
+        if (!expired) {
+          expect(materialise).toHaveBeenCalledTimes(1);
+          continue;
+        }
+        expect(materialise).not.toHaveBeenCalled();
+        expect(notifications.sendPush).not.toHaveBeenCalled();
+        expect(state.drops[0].status).not.toBe('delivered');
+      }
+    },
+  );
+
   it.each([
     ['refunded', 'canceled:refund'],
     ['chargeback_lost', 'canceled:dispute'],
@@ -1317,5 +1355,67 @@ describe('DripDispatcherCron', () => {
     const cron = new DripDispatcherCron(asPrisma(makeMockPrisma(state)), makeRegistry(materialise), makeNotifications());
     expect((await cron.runOnce(NOW)).delivered).toBe(1);
     expect(state.drops[0].status).toBe('delivered');
+  });
+
+  it.each(['past_due', 'unpaid'])(
+    'LS-PAYFAIL B3: a %s purchase locked at Day 10 receives no new paid drop',
+    async (status) => {
+      // tryLock deliberately keeps the subscription status for Stripe retries,
+      // and revokes entitlement_active. Neither person has left or been deleted.
+      const state: MockPrismaState = {
+        drops: [makeDrop({ display_title: 'New coached week after lockout' })],
+        purchases: [makePurchase({
+          status,
+          billing_type: 'recurring',
+          entitlement_active: false,
+          current_period_end: new Date(NOW.getTime() + 20 * 86_400_000),
+          access_expires_at: new Date(NOW.getTime() + 21 * 86_400_000),
+          client: { deleted_at: null },
+          coach: { deleted_at: null },
+        })],
+      };
+      const materialise = jest.fn().mockResolvedValue({ materialisedRef: 'new-coached-plan' });
+      const notifications = makeNotifications();
+      const cron = new DripDispatcherCron(asPrisma(makeMockPrisma(state)), makeRegistry(materialise), notifications);
+
+      await cron.runOnce(NOW);
+
+      // Retaining an already-delivered plan is not the same as creating a new
+      // assignment and notifying the client after coached access was revoked.
+      expect(materialise).not.toHaveBeenCalled();
+      expect(notifications.sendPush).not.toHaveBeenCalled();
+      expect(state.drops[0].status).not.toBe('delivered');
+    },
+  );
+
+  const LOCKED = { status: 'active', locked_out_at: NOW };
+  it.each([
+    ['the lock revoked entitlement', { entitlement_active: false, dunning: LOCKED }],
+    ['a Stripe resync re-set entitlement under the lock (F6)', { entitlement_active: true, dunning: LOCKED }],
+  ])('PF-2-BE: %s: the drop is held with its attempts, then delivers once the client pays', async (_case, held) => {
+    const purchase = makePurchase({ status: 'past_due', billing_type: 'recurring', ...held });
+    const state: MockPrismaState = { drops: [makeDrop()], purchases: [purchase] };
+    const materialise = jest.fn().mockResolvedValue({ materialisedRef: 'week-3' });
+    const notifications = makeNotifications();
+    const cron = new DripDispatcherCron(asPrisma(makeMockPrisma(state)), makeRegistry(materialise), notifications);
+
+    await cron.runOnce(NOW);
+    expect(materialise).not.toHaveBeenCalled();
+    expect(notifications.sendPush).not.toHaveBeenCalled();
+    expect(state.drops[0]).toMatchObject({ status: 'pending', locked_at: null, attempt_count: 0 });
+    // invoice.paid: the cycle resolves (locked_out_at cleared) and the plan is active again.
+    Object.assign(purchase, { status: 'active', entitlement_active: true, dunning: { status: 'resolved', locked_out_at: null } });
+    expect((await cron.runOnce(NOW)).delivered).toBe(1);
+    expect(state.drops[0].status).toBe('delivered');
+  });
+
+  it('PF-2-BE: grace days (an active, unlocked cycle on a past_due plan) still deliver', async () => {
+    const state: MockPrismaState = {
+      drops: [makeDrop()],
+      purchases: [makePurchase({ status: 'past_due', dunning: { status: 'active', locked_out_at: null } })],
+    };
+    const materialise = jest.fn().mockResolvedValue({ materialisedRef: 'week-2' });
+    const cron = new DripDispatcherCron(asPrisma(makeMockPrisma(state)), makeRegistry(materialise), makeNotifications());
+    expect((await cron.runOnce(NOW)).delivered).toBe(1);
   });
 });

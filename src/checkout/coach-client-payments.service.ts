@@ -24,6 +24,7 @@ import type { CoachRefundDto } from './coach-client-payments.controller';
 import { COACH_PURCHASE_SELECT } from './coach-payments.select';
 import { movedAwayClientIds } from './moved-client-money';
 import { isBillingPauseReason } from './dunning-v2/dunning-v2.service';
+import { isHeldRenewal } from './dunning-v2/coach-account-hold';
 import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
 
 // CF-COACH-PAY-BE-128: a coach's payments view of one client, with refund,
@@ -62,7 +63,12 @@ const PLAN_SELECT = {
 } as const satisfies Prisma.ClientPurchaseSelect;
 type PlanRow = Prisma.ClientPurchaseGetPayload<{ select: typeof PLAN_SELECT }>;
 
-const LIVE_STATUSES = new Set(['active', 'trialing', 'past_due']);
+// FR-1191 (LS-1191 B3, LO-1191 B1): unpaid is a renewal whose bank tries ran
+// out while the subscription stays open (the client keeps getting reminders
+// until they renew or drop off), so it is a live plan with a failed payment,
+// never an ended one. Same set as client-billing's DELINQUENT_STATUSES.
+const FAILED_RENEWAL_STATUSES = new Set(['past_due', 'unpaid']);
+const LIVE_STATUSES = new Set(['active', 'trialing', ...FAILED_RENEWAL_STATUSES]);
 const IN_FLIGHT_REFUND = new Set(['pending', 'requires_action']);
 const PLAN_LIMIT = 50;
 
@@ -315,7 +321,9 @@ export class CoachClientPaymentsService {
         ),
       );
     }
-    if (plan.status === 'past_due' && action === 'pause') {
+    // HELD-RENEWAL-BE (LO-1202B C1): a renewal held on the coach's account is
+    // not the client's failed payment, so its Pause gets the plain answer.
+    if (FAILED_RENEWAL_STATUSES.has(plan.status) && !plan.waiting_on && action === 'pause') {
       return new ConflictException(
         coded(
           'PLAN_PAYMENT_FAILED',
@@ -388,6 +396,9 @@ function planView(row: PlanRow, actorId: string, billing: CoachPlanBilling) {
     cancel_at_period_end: row.cancel_at_period_end,
     entitlement_active: row.entitlement_active,
     billing,
+    // HELD-RENEWAL-BE: the same marker as Money's charges (m#920 reads it).
+    // `status` stays the row's: a cancel of a held renewal still ends now.
+    waiting_on: heldWaitingOn(row),
     actions: {
       refund: payments.some((p) => p.refundable_cents > 0),
       pause: billing === 'running' && row.status === 'active' && !row.cancel_at_period_end,
@@ -397,6 +408,13 @@ function planView(row: PlanRow, actorId: string, billing: CoachPlanBilling) {
     },
     payments,
   };
+}
+
+/** A renewal held on the coach's own account (PF-7): `coach_account`, else null. */
+function heldWaitingOn(row: PlanRow): 'coach_account' | null {
+  return FAILED_RENEWAL_STATUSES.has(row.status) && isHeldRenewal(row.dunning)
+    ? 'coach_account'
+    : null;
 }
 
 /** CONTRACT-1: the sale, its payments and the refund and restart actions; no access or renewal. */

@@ -17,6 +17,7 @@ import { FoodService } from '../src/food/food.service';
 import { LogService } from '../src/log/log.service';
 import type { AuthedRequest } from '../src/auth/auth-request';
 import type { PrismaService } from '../src/prisma.service';
+import { usdaNutrientsFor } from './support/food-true-numbers';
 
 function stub<T>(value: unknown): T {
   return value as T;
@@ -50,10 +51,13 @@ const food = (id: string, name: string, extra: Record<string, unknown> = {}): Ro
   ...extra,
 });
 
-/** Flat equality plus `OR` and `tags: { has }`, the filters FoodService sends. */
+/** Flat equality plus `OR`, `AND`, `NOT` and `tags: { has }`, the filters FoodService sends. */
 function matches(row: Row, where: Record<string, unknown>): boolean {
   return Object.entries(where).every(([key, want]) => {
     if (key === 'OR' && Array.isArray(want)) return want.some((w) => matches(row, w));
+    // FOOD-USDA-BE: the empty-query list leaves out the loaded USDA rows with AND + NOT.
+    if (key === 'AND' && Array.isArray(want)) return want.every((w) => matches(row, w));
+    if (key === 'NOT' && want && typeof want === 'object') return !matches(row, want as Record<string, unknown>);
     if (key === 'tags' && want && typeof want === 'object' && 'has' in want) {
       return Array.isArray(row.tags) && row.tags.includes(Reflect.get(want, 'has'));
     }
@@ -63,7 +67,7 @@ function matches(row: Row, where: Record<string, unknown>): boolean {
 
 function setup(opts: { trigram?: boolean } = {}) {
   const rows: Row[] = [
-    food('shared-lasagne', 'Lasagne', { calories: 135, nutrient_basis: 'PER_100G', serving_size_grams: 100 }),
+    food('shared-lasagne', 'Lasagne', { calories: 135, protein_g: 8, carbs_g: 12, fat_g: 6.5, nutrient_basis: 'PER_100G', serving_size_grams: 100 }),
   ];
   let created = 0;
   const sqlTexts: string[] = [];
@@ -237,7 +241,7 @@ describe('custom foods are private to their creator (UX-FOOD-PRIV-124)', () => {
         json: async () => ({
           fdcId: 168872,
           description: 'Oats',
-          foodNutrients: [{ nutrientName: 'Energy', unitName: 'KCAL', value: 379 }],
+          foodNutrients: usdaNutrientsFor(379),
         }),
       }),
     );

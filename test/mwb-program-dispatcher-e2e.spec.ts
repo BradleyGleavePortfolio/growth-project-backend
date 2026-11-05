@@ -103,7 +103,7 @@ function apply(row: Row, data: Record<string, unknown>) {
 
 function makePrisma(drops: Row[]) {
   const purchases = [
-    { id: 'purchase-1', client_user_id: 'client-1', coach_user_id: 'coach-1', package_id: 'pkg-1' },
+    { id: 'purchase-1', client_user_id: 'client-1', coach_user_id: 'coach-1', package_id: 'pkg-1', entitlement_active: true },
   ];
   return {
     scheduledDrop: {

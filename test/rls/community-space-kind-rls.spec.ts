@@ -142,14 +142,13 @@ const REPLY = 'community_challenge_comment';
     for (const s of SPACES) {
       const reads = READS[s].includes(k);
       const starts = STARTS[s].includes(k);
-      // A voice note first needs a space of that community that is not public (C6-BVIS, unchanged).
-      const circle = SPACES.some((t) => t !== 'pub' && wsOf(t) === wsOf(s) && READS[t].includes(k));
       expect([s, await count(k, s)]).toEqual([s, reads ? 1 : 0]);
       expect([s, await send(k, s), await reply(k, s)]).toEqual([s, starts ? 1 : DENIED, REPLIES[s].includes(k) ? 1 : DENIED]);
       expect([s, await outcome(chat.send(user(k), space[s], 'RLS server message'))])
         .toEqual([s, starts ? 'sent' : reads ? READ_ONLY : 'community.message.not_found']);
-      expect([s, await outcome(voice.create(user(k), wsOf(s), note(s)))]) // past the rule, the unminted key is refused
-        .toEqual([s, !circle ? 'community.voice.not_found' : starts ? 'community.voice.storage_key_rejected' : reads ? READ_ONLY : 'community.voice.not_found']);
+      // BPF-1: a voice note there answers to the same rule (past it, the unminted key is refused).
+      expect([s, await outcome(voice.create(user(k), wsOf(s), note(s)))])
+        .toEqual([s, starts ? 'community.voice.storage_key_rejected' : reads ? READ_ONLY : 'community.voice.not_found']);
     }
   });
 

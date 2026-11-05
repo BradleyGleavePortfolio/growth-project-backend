@@ -13,14 +13,19 @@ import type { CoachPackage } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { COACH_PURCHASE_SELECT } from '../checkout/coach-payments.select';
 import { movedAwayClientIds } from '../checkout/moved-client-money';
+import { CLIENT_PLAN_DUNNING, clientPlanStatus } from '../checkout/dunning-v2/coach-account-hold';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { assertValidTrial, TRIAL_DAYS_NONE } from './trials/trial-rules';
-import { SELLING_COACH, assertCoachSelling } from './coach-selling';
+import { assertCoachSelling, coachingCoachFor } from './coach-selling';
 import {
   monthlyEquivalent,
   MRR_SUBSCRIPTION_STATUSES,
   recurringCadenceOf,
 } from '../coach-money/coach-money.service';
+
+// The last_error GuestCheckoutService.refuseSecondTrial writes on a refused
+// second web trial (the return page and outcome mail read the same value).
+const GUEST_TRIAL_REFUSED = 'trial_already_used';
 
 // CoachPackage CRUD. Owns coach offers / packages.
 //
@@ -169,10 +174,30 @@ const COACH_PACKAGE_SUBSCRIBER_SELECT = {
   client: { select: { name: true, email: true } },
 } as const satisfies Prisma.ClientPurchaseSelect;
 
-/** A subscriber row as a coach may see it (no client Stripe secrets). */
+/** HELD-RENEWAL-BE: the subscriber read, plus the hold marker (never sent). */
+const SUBSCRIBER_READ_SELECT = {
+  ...COACH_PACKAGE_SUBSCRIBER_SELECT,
+  dunning: CLIENT_PLAN_DUNNING,
+} as const satisfies Prisma.ClientPurchaseSelect;
+
+/**
+ * A subscriber row as a coach may see it (no client Stripe secrets).
+ * HELD-RENEWAL-BE (LO-1202B C1): a renewal held on the coach's own account
+ * (PF-7) is not the client's missed payment: its `status` reads `active`
+ * (the client keeps access) and `waiting_on` is `coach_account`, as on
+ * Money's charges. Null otherwise.
+ */
 export type CoachSubscriberRow = Prisma.ClientPurchaseGetPayload<{
   select: typeof COACH_PACKAGE_SUBSCRIBER_SELECT;
-}>;
+}> & { waiting_on: 'coach_account' | null };
+
+function subscriberRow(
+  r: Prisma.ClientPurchaseGetPayload<{ select: typeof SUBSCRIBER_READ_SELECT }>,
+): CoachSubscriberRow {
+  const { dunning, ...row } = r;
+  const status = clientPlanStatus(row.status, dunning);
+  return { ...row, status, waiting_on: status !== row.status ? 'coach_account' : null };
+}
 
 export interface CoachPackageManagementView extends CoachPackage {
   /** Distinct clients with access, including free access and trials. */
@@ -700,6 +725,17 @@ export class PackagesService {
         created_user_id: null,
         stripe_subscription_id: { not: null },
         status: { not: 'failed' },
+        // FR-1201 (LS-1201 B2) — a refused second trial is not a subscriber:
+        // refuseSecondTrial gave no purchase or account and cancels the
+        // subscription, which cannot bill anyway (created with its trial end
+        // on; only a winning conversion lifts it). Every other terminal row
+        // keeps the gate (held for refund, retries ran out). Spelled as OR so
+        // a NULL last_error still counts.
+        OR: [
+          { status: { not: 'conversion_failed_terminal' } },
+          { last_error: null },
+          { last_error: { not: GUEST_TRIAL_REFUSED } },
+        ],
       },
     });
     if (activeCount > 0) {
@@ -811,11 +847,13 @@ export class PackagesService {
 
   // Public client-facing list: only active, non-archived, PUBLISHED
   // packages for a coach. PR-6 added the published gate so DRAFT
-  // packages never appear on the buy-side.
-  async listPublicForCoach(coachUserId: string): Promise<CoachPackage[]> {
+  // packages never appear on the buy-side. STORE-1TO1: only while that coach
+  // can coach this buyer one to one (coach-selling.ts).
+  async listPublicForCoach(coachUserId: string, buyerId: string): Promise<CoachPackage[]> {
     return this.prisma.coachPackage.findMany({
       where: {
         coach_id: coachUserId,
+        coach: coachingCoachFor(buyerId),
         is_active: true,
         archived_at: null,
         published_at: { not: null },
@@ -824,10 +862,12 @@ export class PackagesService {
     });
   }
 
-  /** The buy-side read (package detail, in-app checkout, payment and subscription intents): a
-   *  leaving or gone coach's package reads as not available. */
-  async getById(packageId: string): Promise<CoachPackage | null> {
-    return this.prisma.coachPackage.findUnique({ where: { id: packageId, coach: SELLING_COACH } });
+  /** The buy-side read (package detail, in-app checkout, payment and subscription intents): the
+   *  package of a coach who cannot coach this buyer one to one reads as not available. */
+  async getById(packageId: string, buyerId: string): Promise<CoachPackage | null> {
+    return this.prisma.coachPackage.findUnique({
+      where: { id: packageId, coach: coachingCoachFor(buyerId) },
+    });
   }
 
   // PR-6 — owner-detail read. IDOR-guarded via requireOwnedPackage;
@@ -863,10 +903,10 @@ export class PackagesService {
       take: limit + 1, // peek for next page
       // C-641-2: allow-listed fields only — never the client's Stripe
       // client_secret / ephemeral key or internal Stripe ids.
-      select: COACH_PACKAGE_SUBSCRIBER_SELECT,
+      select: SUBSCRIBER_READ_SELECT,
     });
     const hasMore = rows.length > limit;
-    const page = hasMore ? rows.slice(0, limit) : rows;
+    const page = (hasMore ? rows.slice(0, limit) : rows).map(subscriberRow);
     // CONTRACT-1: every line of a subscriber row is the client's current access,
     // so a client who moved away leaves the list; their sales stay in Money.
     const ids = page.map((r) => r.client_user_id);
@@ -936,7 +976,7 @@ export class PackagesService {
   }
 
   /** COACH-GONE-DELIVERY: create, publish and reactivate go through here; refused while the
-   *  catalog's coach is leaving or gone. */
+   *  catalog's coach is leaving or gone, or (STORE-1TO1) cannot coach one to one. */
   async resolveSellingCoachId(callerUserId: string): Promise<string> {
     const coachId = await this.resolveEffectiveCoachId(callerUserId);
     await assertCoachSelling(this.prisma, coachId);

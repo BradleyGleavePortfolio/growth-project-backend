@@ -306,28 +306,28 @@ export const ENV_RULES: EnvRule[] = [
   {
     name: 'POSTHOG_PERSONAL_API_KEY',
     tier: 'optional',
-    default: 'unset → account deletion records posthog not_configured and skips PostHog',
+    default: 'unset → account deletion holds posthog erasure pending (not_configured, retried nightly) while PostHog is in use, or records not_applicable when it is not',
     reason:
       'PostHog personal API key (phx_…, scope person:write; the project key POSTHOG_KEY cannot delete). Account deletion uses it with POSTHOG_PROJECT_ID to delete the person and their events (account-deletion.vendors.ts).',
   },
   {
     name: 'POSTHOG_PROJECT_ID',
     tier: 'optional',
-    default: 'unset → account deletion records posthog not_configured and skips PostHog',
+    default: 'unset → account deletion holds posthog erasure pending (not_configured, retried nightly) while PostHog is in use, or records not_applicable when it is not',
     reason:
       'Numeric id of the PostHog project the app and server send events to. Not secret. Used with POSTHOG_PERSONAL_API_KEY by account deletion.',
   },
   {
     name: 'CRISP_WEBSITE_ID',
     tier: 'optional',
-    default: 'unset → account deletion records crisp not_configured and skips Crisp',
+    default: 'unset → account deletion holds crisp erasure pending (not_configured, retried nightly) while Crisp is in use, or records not_applicable when it is not',
     reason:
       'Crisp website (workspace) id, the same value as the app\'s EXPO_PUBLIC_CRISP_WEBSITE_ID. Not secret. Used with CRISP_API_TOKEN by account deletion to remove the person\'s support conversations and profile.',
   },
   {
     name: 'CRISP_API_TOKEN',
     tier: 'optional',
-    default: 'unset → account deletion records crisp not_configured and skips Crisp',
+    default: 'unset → account deletion holds crisp erasure pending (not_configured, retried nightly) while Crisp is in use, or records not_applicable when it is not',
     reason:
       'Crisp website token as "<identifier>:<key>" (Crisp: Settings > Workspace Settings > Advanced configuration > API Token). Secret. Account deletion only.',
   },
@@ -1449,7 +1449,7 @@ export const ENV_RULES: EnvRule[] = [
     name: 'CONSULT_CONSENT_COPY_VERSIONS',
     tier: 'optional',
     default:
-      "consult-consent-v3,consult-consent-v4,consult-consent-v5,consult-consent-v6,consult-consent-v5-coach-free,consult-consent-v6-coach-free,consult-consent-v7,consult-consent-v8,consult-consent-v8-coach-free,consult-consent-v9-coach-free,consult-consent-v7-coach-free,consult-consent-v9,consult-consent-v10,consult-consent-v10-coach-free,consult-consent-v11-coach-free,consult-consent-v11,consult-consent-v12,consult-consent-v13,consult-consent-v14,consult-consent-v12-coach-free,consult-consent-v13-coach-free,consult-consent-v14-coach-free,consult-consent-v15-coach-free,consult-consent-v15,consult-consent-v16,consult-consent-v16-coach-free,consult-consent-v17-coach-free,consult-consent-v17,consult-consent-v18 (unset, empty, or no known name -> all twenty-nine)",
+      "consult-consent-v3,consult-consent-v4,consult-consent-v5,consult-consent-v6,consult-consent-v5-coach-free,consult-consent-v6-coach-free,consult-consent-v7,consult-consent-v8,consult-consent-v8-coach-free,consult-consent-v9-coach-free,consult-consent-v7-coach-free,consult-consent-v9,consult-consent-v10,consult-consent-v10-coach-free,consult-consent-v11-coach-free,consult-consent-v11,consult-consent-v12,consult-consent-v13,consult-consent-v14,consult-consent-v12-coach-free,consult-consent-v13-coach-free,consult-consent-v14-coach-free,consult-consent-v15-coach-free,consult-consent-v15,consult-consent-v16,consult-consent-v16-coach-free,consult-consent-v17-coach-free,consult-consent-v17,consult-consent-v18,consult-consent-v19,consult-consent-v18-coach-free (unset, empty, or no known name -> all thirty-one)",
     reason:
       "Comma-separated onboarding P0 (consent box 1) copy versions the intake accepts (#607). A P0 counts only when its copy_version is listed AND its text_sha256 equals that version's pinned full-screen digest (src/onboarding/consult-consent-copy.ts), so only versions whose exact text the server knows can be listed; unknown names are ignored (logged once as a warning by the onboarding module). Leave unset at launch.",
   },
@@ -2052,6 +2052,13 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Dunning v2 flag.',
   },
   {
+    name: 'FEATURE_COACH_ACCOUNT_HOLD',
+    tier: 'optional',
+    default: "on (unset = on; only exactly 'false' turns it off)",
+    reason:
+      "PF-7-BE (owner #PF-STRIPE op 1): with Dunning v2 on, a renewal that fails while a fresh read says the coach's Stripe account can't take payments waits instead of starting the ten failed-payment days; the coach is told and TGP retries once the account is fixed (src/checkout/dunning-v2/coach-account-hold.ts). 'false': new failures get the normal ten days and waiting renewals start theirs at the next hourly sweep.",
+  },
+  {
     name: 'FEATURE_PLAN_RENEWAL',
     tier: 'optional',
     default: 'unset → off (only "true")',
@@ -2217,6 +2224,13 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Photos in the space chat (SC-BE3).',
+  },
+  {
+    name: 'PHOTO_CHECK_OPENAI_API_KEY',
+    tier: 'optional',
+    default: 'unset or ghost-owner-todo-171-2 (the ghost value) → every space chat photo send is refused with 503 PHOTO_CHECK_UNAVAILABLE',
+    reason:
+      'OpenAI API key for the automatic photo check (PHOTO-CHECK-BE: omni-moderation-latest, before a space chat photo posts). Secret. Its own key, named outside the OpenAI SDK env family (OPENAI_*), so the SDK never reads it on its own.',
   },
   {
     name: 'FEATURE_COMMUNITY_VOICE_NOTES',
@@ -2737,6 +2751,15 @@ export interface EnvValidationResult {
   isProd: boolean;
 }
 
+/** PHOTO-CHECK-BE: the ghost value the photo check key ships with (OWNER TO-DO before v1 launch, #171-2). */
+export const PHOTO_CHECK_KEY_GHOST = 'ghost-owner-todo-171-2';
+
+/** The photo check's OpenAI key, or null when it is empty or still the ghost value (then every photo send is refused). */
+export function photoCheckKey(env: NodeJS.ProcessEnv = process.env): string | null {
+  const key = env.PHOTO_CHECK_OPENAI_API_KEY?.trim();
+  return key && key !== PHOTO_CHECK_KEY_GHOST ? key : null;
+}
+
 export function isProdLike(nodeEnv: string | undefined): boolean {
   const v = (nodeEnv || '').toLowerCase();
   return v === 'production' || v === 'staging';
@@ -3250,6 +3273,14 @@ export function assertEnv(
         `Google recent-auth disabled — neither GOOGLE_CLIENT_ID nor GOOGLE_CLIENT_IDS is set. /auth/signup-policy will omit "google" from providers and Google OAuth users cannot complete sensitive actions (e.g. account deletion). Set at least one to enable. (NODE_ENV=${env.NODE_ENV})`,
       );
     }
+  }
+
+  // PHOTO-CHECK-BE: photos on without the photo check's key refuse every photo
+  // send (fail closed). One warning; never blocks boot, /readyz or /health.
+  if (env.FEATURE_COMMUNITY_IMAGES === 'true' && !photoCheckKey(env)) {
+    logger.warn(
+      'FEATURE_COMMUNITY_IMAGES is on but PHOTO_CHECK_OPENAI_API_KEY is empty or the ghost value: every space chat photo send is refused with 503 PHOTO_CHECK_UNAVAILABLE (OWNER TO-DO before v1 launch, #171-2).',
+    );
   }
 
   if (result.missingOptional.length) {

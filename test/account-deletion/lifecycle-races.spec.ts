@@ -25,9 +25,10 @@ import type { AccountDeletionStorageService } from '../../src/account-deletion/a
 import type { AccountDeletionBillingService } from '../../src/account-deletion/account-deletion.billing';
 import {
   VENDORS,
-  type AccountDeletionVendorsService,
+  AccountDeletionVendorsService,
   type VendorWork,
 } from '../../src/account-deletion/account-deletion.vendors';
+import type { StripeConnectApiService } from '../../src/connect/stripe-connect-api.service';
 import { FakeDeletionDb } from './fake-deletion-db';
 import { JwtAuthGuard } from '../../src/auth/auth.guard';
 import type { JwksVerifierService } from '../../src/auth/jwks.service';
@@ -552,7 +553,7 @@ describe('vendor erasure', () => {
 
     expect(ctx.vendors.collect).toHaveBeenCalledWith(expect.anything(), UID, 'private@example.com');
     expect(ctx.vendors.erase).toHaveBeenCalledTimes(1);
-    expect(ctx.vendors.erase).toHaveBeenCalledWith(UID, VENDOR_WORK);
+    expect(ctx.vendors.erase).toHaveBeenCalledWith(UID, VENDOR_WORK, { firstAttempt: true });
     expect(deletedWhenAsked).toBeInstanceOf(Date);
     const outcome = ctx.db.audit.find((a) => a.event === 'vendor_erasure');
     expect(outcome?.subjectId).toMatch(UUID);
@@ -584,13 +585,171 @@ describe('vendor erasure', () => {
 
     await ctx.service.runFinalizeCron();
     expect(ctx.vendors.erase).toHaveBeenCalledTimes(2);
-    expect(ctx.vendors.erase).toHaveBeenLastCalledWith(UID, left);
+    expect(ctx.vendors.erase).toHaveBeenLastCalledWith(
+      UID,
+      left,
+      expect.not.objectContaining({ firstAttempt: true }),
+    );
     expect(ctx.vendors.collect).toHaveBeenCalledTimes(1);
     expect(ctx.storage.purge).toHaveBeenCalledTimes(1);
     expect(ctx.events().filter((e) => e === 'deletion_finalized')).toHaveLength(1);
     expect(pendingRow(ctx)).toBeUndefined();
     expect(JSON.stringify(ctx.db.audit)).not.toContain('private@example.com');
   });
+
+  it('STORE-B3: PostHog in use without its erasure key: deletion finalizes, the work stays pending with only its retry references, and the nightly retry erases that same identity once the key is set', async () => {
+    const saved = { ...process.env };
+    try {
+      for (const k of ['POSTHOG_PERSONAL_API_KEY', 'POSTHOG_PROJECT_ID', 'POSTHOG_HOST', 'CRISP_WEBSITE_ID', 'CRISP_API_TOKEN']) {
+        delete process.env[k];
+      }
+      process.env.POSTHOG_KEY = 'phc_ingest'; // collection on, erasure key absent
+      const ctx = build({ confirmedDaysAgo: GRACE + 1 });
+      const stripe = { isConfigured: () => true, deleteCustomer: jest.fn(async (id: string) => ({ id })) };
+      const real = new AccountDeletionVendorsService(stub<StripeConnectApiService>(stripe));
+      Object.assign(real, { logger: ctx.logger });
+      ctx.vendors.erase.mockImplementation((...args: Parameters<typeof real.erase>) => real.erase(...args));
+      const fetchMock = jest
+        .spyOn(global, 'fetch')
+        .mockResolvedValue(new Response(JSON.stringify({ persons_found: 1, deletion_errors: [] }), { status: 202 }));
+      try {
+        expect(await ctx.service.runFinalizeCron()).toEqual({ finalized: 1, skipped: 0, errors: 0 });
+
+        expect(ctx.user().deleted_at).toBeInstanceOf(Date);
+        expect(ctx.db.audit.find((a) => a.event === 'vendor_erasure')?.metadata).toEqual({
+          posthog: 'not_configured',
+          crisp: 'not_applicable',
+          stripe: 'done',
+          resend: 'not_applicable',
+          sentry: 'not_applicable',
+        });
+        // Only PostHog stays, and it needs nothing but the (tombstoned) user id.
+        expect(pendingRow(ctx)).toMatchObject({
+          subjectId: UID,
+          metadata: { vendors: ['posthog'], email: null, stripe_customer_ids: [] },
+        });
+        expect(fetchMock).not.toHaveBeenCalled();
+        const summary = () => String(ctx.logger.log.mock.calls[ctx.logger.log.mock.calls.length - 1]?.[0]);
+        expect(summary()).toContain('vendor_pending=1');
+        expect(JSON.stringify(ctx.logger.warn.mock.calls)).toContain('vendor erasure held for posthog');
+
+        // The key is configured; the scheduled retry erases the same person.
+        process.env.POSTHOG_PERSONAL_API_KEY = 'phx_test';
+        process.env.POSTHOG_PROJECT_ID = '42';
+        await ctx.service.runFinalizeCron();
+
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+        expect(url).toBe('https://us.posthog.com/api/projects/42/persons/bulk_delete/');
+        expect(JSON.parse(String(init.body)).distinct_ids).toEqual([UID]);
+        expect(pendingRow(ctx)).toBeUndefined();
+        expect(summary()).toContain('vendor_pending=0');
+        expect(ctx.vendors.collect).toHaveBeenCalledTimes(1);
+        expect(ctx.events().filter((e) => e === 'deletion_finalized')).toHaveLength(1);
+        expect(JSON.stringify(ctx.db.audit)).not.toContain('private@example.com');
+      } finally {
+        fetchMock.mockRestore();
+      }
+    } finally {
+      process.env = saved;
+    }
+  });
+
+  it.each(['staging', 'test'])(
+    'LS-1182-B1 (%s): a failed attempt, every backend key gone on a later run, keys back on a further run: the same identity stays pending until erased, then no retry id is left',
+    async (environment) => {
+      const saved = { ...process.env };
+      const KEYS = {
+        POSTHOG_KEY: 'phc_ingest',
+        POSTHOG_PERSONAL_API_KEY: 'phx_test',
+        POSTHOG_PROJECT_ID: '42',
+        CRISP_WEBSITE_ID: 'site-1',
+        CRISP_API_TOKEN: 'ident:secret',
+      };
+      const dropKeys = () => {
+        for (const k of [...Object.keys(KEYS), 'POSTHOG_HOST']) delete process.env[k];
+      };
+      try {
+        dropKeys();
+        Object.assign(process.env, KEYS, { NODE_ENV: environment });
+        const ctx = build({ confirmedDaysAgo: GRACE + 1 });
+        const stripe = { isConfigured: () => true, deleteCustomer: jest.fn(async (id: string) => ({ id })) };
+        const real = new AccountDeletionVendorsService(stub<StripeConnectApiService>(stripe));
+        Object.assign(real, { logger: ctx.logger });
+        ctx.vendors.erase.mockImplementation((...args: Parameters<typeof real.erase>) => real.erase(...args));
+        let vendorsUp = false;
+        const fetchMock = jest.spyOn(global, 'fetch').mockImplementation(async (input, init) => {
+          if (!vendorsUp) return new Response('{}', { status: 503 });
+          const url = String(input);
+          if (url.endsWith('/bulk_delete/')) {
+            return new Response(JSON.stringify({ persons_found: 1, deletion_errors: [] }), { status: 202 });
+          }
+          if (url.includes('/list/')) return new Response(JSON.stringify({ data: [] }), { status: 200 });
+          return new Response(JSON.stringify({ reason: init?.method ?? 'GET' }), { status: 200 });
+        });
+        const held: VendorWork = {
+          vendors: ['posthog', 'crisp'],
+          email: 'private@example.com',
+          stripe_customer_ids: [],
+        };
+        const pendingRows = () => ctx.db.audit.filter((a) => a.event === 'vendor_erasure_pending');
+        const outcomes = () =>
+          ctx.db.audit.filter((a) => a.event === 'vendor_erasure').map((a) => a.metadata);
+        const summary = () => String(ctx.logger.log.mock.calls[ctx.logger.log.mock.calls.length - 1]?.[0]);
+        try {
+          // Run 1: deletion commits; PostHog and Crisp fail, Stripe is done.
+          expect(await ctx.service.runFinalizeCron()).toEqual({ finalized: 1, skipped: 0, errors: 0 });
+          expect(ctx.user().deleted_at).toBeInstanceOf(Date);
+          expect(outcomes()[0]).toMatchObject({ posthog: 'failed', crisp: 'failed', stripe: 'done' });
+          expect(pendingRows()).toHaveLength(1);
+          expect(pendingRows()[0]).toMatchObject({ subjectId: UID, metadata: held });
+
+          // Run 2: every backend key is gone. The work is held, never dropped.
+          dropKeys();
+          fetchMock.mockClear();
+          await ctx.service.runFinalizeCron();
+          expect(fetchMock).not.toHaveBeenCalled();
+          expect(outcomes()[1]).toEqual({ posthog: 'not_configured', crisp: 'not_configured' });
+          expect(pendingRows()).toHaveLength(1);
+          expect(pendingRows()[0]).toMatchObject({ subjectId: UID, metadata: held });
+          expect(summary()).toContain('vendor_pending=1');
+          expect(JSON.stringify(ctx.logger.warn.mock.calls)).toContain(
+            'vendor erasure held for posthog, crisp',
+          );
+
+          // Run 3: keys are back; the same person is erased at both vendors.
+          Object.assign(process.env, KEYS);
+          vendorsUp = true;
+          await ctx.service.runFinalizeCron();
+          const calls = fetchMock.mock.calls.map(([u, i]) => ({ url: String(u), init: i as RequestInit }));
+          const bulk = calls.find((c) => c.url.endsWith('/bulk_delete/'));
+          expect(bulk?.url).toBe('https://us.posthog.com/api/projects/42/persons/bulk_delete/');
+          expect(JSON.parse(String(bulk?.init.body)).distinct_ids).toEqual([UID]);
+          expect(calls).toContainEqual(
+            expect.objectContaining({
+              url: `https://api.crisp.chat/v1/website/site-1/people/profile/${encodeURIComponent('private@example.com')}`,
+              init: expect.objectContaining({ method: 'DELETE' }),
+            }),
+          );
+          expect(outcomes()[2]).toEqual({ posthog: 'done', crisp: 'done' });
+
+          // The work row is deleted with every retry id; nothing is asked again.
+          expect(pendingRows()).toHaveLength(0);
+          expect(summary()).toContain('vendor_pending=0');
+          await ctx.service.runFinalizeCron();
+          expect(ctx.vendors.erase).toHaveBeenCalledTimes(3);
+          expect(ctx.vendors.collect).toHaveBeenCalledTimes(1);
+          expect(ctx.events().filter((e) => e === 'deletion_finalized')).toHaveLength(1);
+          expect(JSON.stringify(ctx.db.audit)).not.toContain('private@example.com');
+          expect(JSON.stringify(ctx.db.audit)).not.toContain('cus_1');
+        } finally {
+          fetchMock.mockRestore();
+        }
+      } finally {
+        process.env = saved;
+      }
+    },
+  );
 
   it('a vendor step that throws never undoes the committed deletion', async () => {
     const ctx = build({ confirmedDaysAgo: GRACE + 1 });

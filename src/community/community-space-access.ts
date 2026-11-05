@@ -81,6 +81,25 @@ export async function readersNow(
   return rows.map((r) => r.id);
 }
 
+/** FR-1168 (LO-1168 B1, owner R7) and FR-1168R2 B1: the people of a space now, the one rule for every list of them
+ *  (member_count, the member list GET .../members): the access rule (readersNow; `listed` also counts a pending
+ *  invitation) without those who left it. They still read the space ("Spaces you left") but are not its members:
+ *  the count drops by one when someone leaves and comes back when they join again. */
+export async function membersNow(
+  prisma: PrismaService,
+  cohort: { id: string; workspace_id: string },
+  listed = false,
+): Promise<string[]> {
+  const ids = await readersNow(prisma, cohort.workspace_id, cohort.id, listed);
+  if (ids.length === 0) return ids;
+  const left = await prisma.communitySpaceRead.findMany({
+    where: { cohort_id: cohort.id, user_id: { in: ids }, left_at: { not: null } },
+    select: { user_id: true },
+  });
+  const gone = new Set(left.map((r) => r.user_id));
+  return ids.filter((id) => !gone.has(id));
+}
+
 /** C6-WINS-MOVE: where a row was written, for app.community_author_stays: its workspace and its space
  * (null: the Hall, a DM). */
 export type RowPlace = readonly [workspaceId: string, spaceId: string | null];

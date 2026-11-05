@@ -76,7 +76,9 @@ export class CommunityModerationController {
   /**
    * GET /community/moderation/flagged — open reports across the coach's
    * workspaces, enriched for the mobile review queue. Coach/owner only (the
-   * service rejects students with 403 not_moderator).
+   * service rejects students with 403 not_moderator). Only reports the coach
+   * can act on, unless `read_only=1` also asks for the rule D reports the coach
+   * may only read (FR-1173R2).
    */
   @Get('moderation/flagged')
   @UseGuards(JwtAuthGuard, RolesGuard, CommunityFeatureFlagGuard)
@@ -84,8 +86,12 @@ export class CommunityModerationController {
   // wins are live (wins do not depend on FEATURE_COMMUNITY_API).
   @CommunityAlwaysReachable()
   @Roles('coach', 'owner')
-  async flagged(@Request() req: AuthedRequest, @Query('limit') limit?: string) {
-    return this.moderation.listFlagged(req.user, { limit });
+  async flagged(
+    @Request() req: AuthedRequest,
+    @Query('limit') limit?: string,
+    @Query('read_only') readOnly?: string,
+  ) {
+    return this.moderation.listFlagged(req.user, { limit, read_only: readOnly });
   }
 
   @Patch('moderation/items/:itemId')

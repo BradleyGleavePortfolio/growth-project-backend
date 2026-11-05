@@ -4,9 +4,12 @@ import { PrismaService } from '../prisma.service';
 import { CommunityRepository } from './community.repository';
 import { CommunitySafetyService } from './safety/community-safety.service';
 import { memberName } from './member-display-name';
-import { fullNamesFor } from './community-space-access';
+import { fullNamesFor, membersNow, placeOf } from './community-space-access';
 import { isBannedFromWorkspace } from './community-ban';
 import { communityTabUnread, spaceUnreadCounts } from './space-reads/community-space-reads.service';
+// FR-1168 (LO-1168 B1, owner R7): member_count leaves out the people who left the space (membersNow).
+import { leftSpaces } from './leave-mute/community-leave-mute.service';
+import { CommunityCohortListWithLeftSchema, type CommunityCohortListWithLeft } from './leave-mute/community-leave-mute.dto';
 import {
   WIN_NOT_FOUND,
   WIN_POSTING_REMOVED,
@@ -25,10 +28,9 @@ import {
   CommunityWorkspaceResponseSchema,
 } from './dto/community-workspace.dto';
 import {
-  CommunityCohortListResponse,
-  CommunityCohortListResponseSchema,
   CommunityCohortResponse,
   CommunityCohortResponseSchema,
+  spacePurpose,
 } from './dto/community-cohort.dto';
 
 const FORBIDDEN_WORKSPACE = {
@@ -233,17 +235,26 @@ export class CommunityService {
 
     const {
       event: eventRow,
-      pinnedPost: pinnedRow,
+      pinnedPosts: pinnedRows,
       challenge: challengeRow,
     } = await this.repo.findTodayContent(workspace.id, user.id, new Date());
-    // Two-way block: Today never surfaces a pinned post, event or challenge
-    // authored by someone in a block relation with the caller (the Hall,
-    // events and challenges lists hide them too). One block lookup.
-    const hidden =
-      pinnedRow || eventRow || challengeRow ? await this.safety.hiddenFromViewer(user.id) : null;
+    // LS-1197 B2: the pinned post is the newest pin the Hall and the space
+    // feeds would show the caller: the posts' author rule (filterBlocked with
+    // the row's place: a block either way, an author banned from this
+    // community, an author who left it), so a pin by a hidden author gives way
+    // to the next pin, and unban or coming back restores it.
+    const [pinnedPost = null] = await this.safety.filterBlocked(
+      user.id,
+      pinnedRows,
+      (p) => p.author_id,
+      placeOf,
+    );
+    // Two-way block: Today never surfaces an event or challenge created by
+    // someone in a block relation with the caller (the events and challenges
+    // lists hide them too). One block lookup.
+    const hidden = eventRow || challengeRow ? await this.safety.hiddenFromViewer(user.id) : null;
     const visibleTo = (authorId: string | null | undefined) =>
       !hidden || !authorId || !hidden.has(authorId);
-    const pinnedPost = pinnedRow && visibleTo(pinnedRow.author_id) ? pinnedRow : null;
     const event = eventRow && visibleTo(eventRow.created_by_id) ? eventRow : null;
     const challenge = challengeRow && visibleTo(challengeRow.created_by_id) ? challengeRow : null;
 
@@ -251,7 +262,7 @@ export class CommunityService {
       ? {
           id: cohort.id,
           name: cohort.name,
-          member_count: await this.repo.cohortMemberCount(cohort),
+          member_count: (await membersNow(this.prisma, cohort)).length,
         }
       : null;
 
@@ -321,12 +332,16 @@ export class CommunityService {
 
   // ── GET /community/cohorts ────────────────────────────────────────────────
 
-  async getCohorts(user: User): Promise<CommunityCohortListResponse> {
+  /** LEAVE-MUTE-BE (owner D2): a space the caller left drops out; with includeLeft every row carries left_at
+   *  (null = in it), for "Spaces you left". */
+  async getCohorts(user: User, includeLeft = false): Promise<CommunityCohortListWithLeft> {
     const role = this.effectiveRole(user);
-    const cohorts = await this.repo.findCohortsForUser({
+    const readable = await this.repo.findCohortsForUser({
       userId: user.id,
       role: this.scopingRole(user),
     });
+    const left = await leftSpaces(this.prisma, user.id, readable.map((c) => c.id));
+    const cohorts = includeLeft ? readable : readable.filter((c) => !left.has(c.id));
     // SC-BE2: each space's unread badge (one round trip for the list).
     const unread = await spaceUnreadCounts(this.prisma, user.id, cohorts.map((c) => c.id));
 
@@ -339,13 +354,15 @@ export class CommunityService {
         kind: c.kind,
         posting_policy: c.posting_policy,
         visibility: c.visibility,
-        member_count: await this.repo.cohortMemberCount(c),
+        description: spacePurpose(c.description),
+        member_count: (await membersNow(this.prisma, c)).length,
         my_role: role,
         unread_count: unread.get(c.id) ?? 0,
+        ...(includeLeft ? { left_at: left.get(c.id)?.toISOString() ?? null } : {}),
       })),
     );
 
-    return CommunityCohortListResponseSchema.parse({
+    return CommunityCohortListWithLeftSchema.parse({
       feature_flag_state: 'enabled',
       cohorts: summaries,
     });
@@ -378,8 +395,9 @@ export class CommunityService {
       kind: cohort.kind,
       posting_policy: cohort.posting_policy,
       visibility: cohort.visibility,
+      description: spacePurpose(cohort.description),
       package_ids: coachView ? cohort.packages.map((l) => l.package_id) : null, // C6-ACCESS: coach only
-      member_count: await this.repo.cohortMemberCount(cohort),
+      member_count: (await membersNow(this.prisma, cohort)).length,
       created_at: cohort.created_at.toISOString(),
       my_membership:
         membership && membership.status === 'active'

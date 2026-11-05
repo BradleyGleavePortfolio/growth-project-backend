@@ -69,6 +69,7 @@ echo "[release] ─────────────────────�
 # a green light from a half-finished release. Echoes the failing line + the
 # captured command output, then re-exits with the original status.
 # shellcheck disable=SC2317  # body runs only via the ERR/EXIT traps below — shellcheck cannot see the indirect invocation.
+# shellcheck disable=SC2329  # same reason; shellcheck 0.11 (ubuntu-latest) reports the trap-only function as SC2329.
 on_error() {
   local exit_code=$?
   # Guard 1 (clean exit): the EXIT trap fires on ALL exits, including successful
@@ -301,6 +302,56 @@ if [[ "${VERIFIER_COUNT}" -ne "${DISCOVERED_COUNT}" || "${VERIFIER_COUNT}" -lt "
   exit 1
 fi
 echo "[release]   verifiers_passed = ${VERIFIER_COUNT} (discovered=${DISCOVERED_COUNT}, required=${REQUIRED_COUNT})"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 5 — Built-in foods (FOOD-SEED-BE). Adds each food in
+# prisma/data/seed-foods.json that the shared catalog (FoodItem rows with
+# created_by_user_id NULL) lacks, keyed on name + brand, as the same row
+# `npm run seed:foods` makes. It never updates or deletes a row and never
+# reads a member's own food. It then checks every seed food is in the shared
+# catalog: any still missing, or an insert the database refuses, fails this
+# release like a failed verifier, so Fly keeps the previous image. A compiled
+# copy (tsconfig.food-seed.json, built in the Dockerfile) runs on DIRECT_URL;
+# the runtime image has no ts-node.
+# ─────────────────────────────────────────────────────────────────────────────
+echo "[release] step 5: built-in foods (prisma/data/seed-foods.json)..."
+FOOD_SEED_SCRIPT="dist/food-seed/scripts/seed-built-in-foods.js"
+FOOD_SEED_FILE="prisma/data/seed-foods.json"
+if [[ ! -f "${FOOD_SEED_SCRIPT}" || ! -f "${FOOD_SEED_FILE}" ]]; then
+  echo "[release] built-in foods FAILED: ${FOOD_SEED_SCRIPT} or ${FOOD_SEED_FILE} is not in this image"
+  echo "[release] Refusing to mark this release green."
+  exit 1
+fi
+if ! DIRECT_URL="${DIRECT_URL}" node "${FOOD_SEED_SCRIPT}" "${FOOD_SEED_FILE}"; then
+  echo "[release] built-in foods step FAILED (reason on the line above)."
+  echo "[release] Refusing to mark this release green."
+  echo "[release] NOTE: migrate deploy already ran; the database may now be ahead of the running code."
+  exit 1
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 6 — USDA foods (FOOD-USDA-BE). Adds each food in
+# prisma/data/usda-foods.jsonl.gz (USDA SR Legacy and Foundation, built from
+# USDA's own CSV files by scripts/usda-foods/build.py) that the shared catalog
+# lacks, keyed on its usda:<fdcId> tag, as the same row the live USDA import
+# stores. Like step 5 it never updates or deletes a row and never reads a
+# member's own food; any food still missing afterwards, or an insert the
+# database refuses, fails this release, so Fly keeps the previous image.
+# ─────────────────────────────────────────────────────────────────────────────
+echo "[release] step 6: USDA foods (prisma/data/usda-foods.jsonl.gz)..."
+USDA_FOODS_SCRIPT="dist/food-seed/scripts/load-usda-foods.js"
+USDA_FOODS_FILE="prisma/data/usda-foods.jsonl.gz"
+if [[ ! -f "${USDA_FOODS_SCRIPT}" || ! -f "${USDA_FOODS_FILE}" ]]; then
+  echo "[release] USDA foods FAILED: ${USDA_FOODS_SCRIPT} or ${USDA_FOODS_FILE} is not in this image"
+  echo "[release] Refusing to mark this release green."
+  exit 1
+fi
+if ! DIRECT_URL="${DIRECT_URL}" node "${USDA_FOODS_SCRIPT}" "${USDA_FOODS_FILE}"; then
+  echo "[release] USDA foods step FAILED (reason on the line above)."
+  echo "[release] Refusing to mark this release green."
+  echo "[release] NOTE: migrate deploy already ran; the database may now be ahead of the running code."
+  exit 1
+fi
 
 # Count successfully applied (rolled_back_at IS NULL) rows in _prisma_migrations
 # so the log emits a single grep-able line for monitoring/observability.

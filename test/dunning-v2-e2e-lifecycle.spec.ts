@@ -1,8 +1,9 @@
-import { readFileSync } from 'fs';
+import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { ForbiddenException, HttpException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
+import { CheckoutService } from '../src/checkout/checkout.service';
 import { DunningService } from '../src/checkout/dunning.service';
 import { DunningV2Service } from '../src/checkout/dunning-v2/dunning-v2.service';
 import { DunningV2Dispatcher } from '../src/checkout/dunning-v2/dunning-v2.dispatcher';
@@ -14,6 +15,8 @@ import { LOCKED_DUNNING_CODE } from '../src/checkout/dunning-v2/dunning-v2.caden
 import { ClientEntitlementGuard } from '../src/common/guards/client-entitlement.guard';
 import { NotificationKind } from '../src/notifications/notification-kind';
 import { FakePrisma } from './support/dunning-v2-fake-prisma';
+import { CommunityCohortMembersRepository } from '../src/community/cohorts/community-cohort-members.repository';
+import { PurchaseFanoutService } from '../src/packages/purchase-fanout.service';
 
 /**
  * S-DUNNING — deterministic end-to-end lifecycle of Smart Dunning v2, driven
@@ -296,6 +299,275 @@ describe('Smart Dunning v2 end-to-end lifecycle (Stripe fixtures, fake clock)', 
   afterAll(() => {
     if (prevFlag === undefined) delete process.env['FEATURE_DUNNING_V2'];
     else process.env['FEATURE_DUNNING_V2'] = prevFlag;
+  });
+
+  it('LS-PAYFAIL B2: a weekly renewal keeps phone access for the full ten-day grace', async () => {
+    // Weekly plans are offered by the real package and subscription contracts.
+    // Resync normally, so this case needs no missing or delayed webhook.
+    await w.fake.client().coachPackage.update({
+      where: { id: 'pkg-1' },
+      data: { interval: 'week' },
+    });
+    const weekly = fixture('customer.subscription.updated.past_due', {
+      current_period_start: sec(at(0)),
+      current_period_end: sec(at(7 * DAY)),
+    });
+    w.stripe.retrieveSubscription.mockResolvedValue(weekly.data.object);
+    await w.handler.handle(weekly);
+    await failAttempt(w, 1);
+    expect(purchaseRow(w)).toMatchObject({ status: 'past_due', entitlement_active: true });
+    // Production expiry computation adds one day to the new weekly period.
+    expect(purchaseRow(w)?.access_expires_at).toEqual(at(8 * DAY));
+    jest.setSystemTime(at(8 * DAY + HOUR));
+    await w.v2.runSweep();
+    expect(stateRow(w)?.locked_out_at).toBeNull();
+    expect((await w.v2.getClientStatus('client-1')).state).toBe('past_due');
+    expect(await entitlementVerdict(w)).toBe('allowed');
+    expect(await lockVerdict(w, '/api/v1/workouts')).toBe('allowed');
+
+    const checkout = new CheckoutService(
+      w.fake.client(),
+      stub({}), stub({}), stub({}), stub({}), stub({}),
+    );
+    // GET /v1/checkout/entitlement drives the real phone's paid-screen gate.
+    // Day 8 is still grace, even after access_expires_at was reached.
+    expect(await checkout.hasActiveEntitlement('client-1', {})).toBe(true);
+  });
+
+  it.each(['meal_plan', 'workout_plan', 'auto_message', 'pdf', 'video'])(
+    'LS-1190 B4: an unpaid F6 resync cannot inline-deliver held %s content',
+    async (assetType) => {
+      Object.assign(w.fake.find('user', { id: 'client-1' })!, { coach_id: 'coach-1' });
+      await failAttempt(w, 1);
+      jest.setSystemTime(at(10 * DAY + HOUR));
+      await w.v2.runSweep();
+      expect(purchaseRow(w)?.entitlement_active).toBe(false);
+      const held = {
+        id: 'held-drop', client_purchase_id: 'purchase-1', content_id: 'held-content',
+        asset_type: assetType, asset_id: 'coached-asset', asset_revision_id: null,
+        cadence_kind: 'relative_to_purchase', cadence_payload: { offset_days: 10 },
+        display_title: null, display_caption: null, status: 'pending',
+        materialised_ref: null, fire_at: at(10 * DAY), attempt_count: 0,
+      };
+      const db = stub(Reflect.get(w.handler, 'prisma'));
+      // This content was seeded at the original paid checkout; the existing
+      // unique seed makes the later createMany a no-op, not a new purchase.
+      db.scheduledDrop = {
+        createMany: jest.fn(async () => ({ count: 0 })),
+        findMany: jest.fn(async () => [{ ...held }]),
+        update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+          Object.assign(held, data);
+          return held;
+        }),
+      };
+      db.coachPackageContent = { findMany: jest.fn(async () => [{
+        id: 'held-content', package_id: 'pkg-1', asset_type: assetType,
+        asset_id: 'coached-asset', cadence_kind: 'relative_to_purchase',
+        cadence_payload: { offset_days: 10 }, removed_at: null,
+      }]) };
+      db.purchaseFanout = {
+        upsert: jest.fn(async () => ({ state: 'succeeded' })),
+        update: jest.fn(async () => ({ state: 'succeeded' })),
+      };
+      const materialise = jest.fn(async () => ({ materialisedRef: 'new-assignment-after-lock' }));
+      const fanout = new PurchaseFanoutService(stub({
+        materialise, shouldDeferInline: jest.fn(async () => false),
+      }));
+      const invoked = jest.spyOn(fanout, 'onPurchaseEntitled');
+      Reflect.set(w.handler, 'fanout', fanout);
+      await w.handler.handle(fixture('customer.subscription.updated.past_due', {
+        current_period_start: sec(at(0)), current_period_end: sec(at(30 * DAY)),
+      }), db);
+      expect(purchaseRow(w)?.entitlement_active).toBe(true);
+      expect(await lockVerdict(w, '/api/v1/scheduling/my-coaches')).toBe('LOCKED_DUNNING');
+      expect(invoked).toHaveBeenCalledTimes(1);
+      await expect(invoked.mock.results[0].value).resolves.toBeUndefined();
+      expect(materialise).not.toHaveBeenCalled();
+      expect(held.status).toBe('pending');
+    },
+  );
+
+  it.each(['past_due', 'unpaid'])(
+    'LS-1190 B3: another %s plan in live grace waives the older plan lock',
+    async (status) => {
+      await failAttempt(w, 1);
+      jest.setSystemTime(at(10 * DAY + HOUR));
+      await w.v2.runSweep();
+      expect(await lockVerdict(w, '/api/v1/scheduling/my-coaches')).toBe('LOCKED_DUNNING');
+      w.fake.seed('coachPackage', { id: 'pkg-2', coach_user_id: 'coach-1', billing_type: 'recurring', interval: 'week' });
+      w.fake.seed('clientPurchase', {
+        id: 'second-plan', package_id: 'pkg-2', client_user_id: 'client-1',
+        coach_user_id: 'coach-1', billing_type: 'recurring', amount_cents: 15000, currency: 'usd',
+        status, entitlement_active: true, access_expires_at: at(13 * DAY),
+      });
+      w.fake.seed('dunningState', {
+        id: 'second-cycle', purchase_id: 'second-plan', status: 'active',
+        entered_at: at(5 * DAY), locked_out_at: null, step: 0,
+      });
+      const db = w.fake.client();
+      const checkout = new CheckoutService(db, stub({}), stub({}), stub({}), stub({}), stub({}));
+      expect(await checkout.hasActiveEntitlement('client-1', { packageId: 'pkg-2' })).toBe(true);
+      expect(await entitlementVerdict(w)).toBe('allowed');
+      expect(await lockVerdict(w, '/api/v1/scheduling/my-coaches')).toBe('allowed');
+    },
+  );
+
+  it.each(['past_due', 'unpaid'])(
+    'LS-1190 B1: weekly %s grace keeps linked package community access',
+    async (status) => {
+      const db = w.fake.client();
+      await db.coachPackage.update({ where: { id: 'pkg-1' }, data: { interval: 'week' } });
+      const weekly = fixture('customer.subscription.updated.past_due', {
+        current_period_start: sec(at(0)),
+        current_period_end: sec(at(7 * DAY)),
+      });
+      w.stripe.retrieveSubscription.mockResolvedValue(weekly.data.object);
+      await w.handler.handle(weekly);
+      await failAttempt(w, 1);
+      await db.clientPurchase.update({ where: { id: 'purchase-1' }, data: { status } });
+
+      // The existing store models purchase/dunning relations, not package/space
+      // joins. Pin this fixture's linked-package join, then delegate all
+      // entitlement, tenant and dunning predicates to the normal evaluator.
+      const findMany = db.clientPurchase.findMany;
+      db.clientPurchase.findMany = jest.fn(async (args: { where: Record<string, unknown>; select?: unknown }) => {
+        const { package: linkedPackage, ...where } = args.where;
+        expect(linkedPackage).toEqual({
+          community_spaces: { some: { cohort_id: 'space-paid' } },
+        });
+        return findMany({ ...args, where });
+      });
+      const repo = new CommunityCohortMembersRepository(db);
+      const access = async () => (await repo.packageAccess(
+        'space-paid', 'coach-1', ['client-1', 'client-2'],
+      )).get('client-1')?.package_id;
+      const checkout = new CheckoutService(db, stub({}), stub({}), stub({}), stub({}), stub({}));
+
+      jest.setSystemTime(at(7 * DAY));
+      expect(await access()).toBe('pkg-1');
+      jest.setSystemTime(at(8 * DAY + HOUR));
+      await w.v2.runSweep();
+      expect(stateRow(w)?.locked_out_at).toBeNull();
+      expect(await checkout.hasActiveEntitlement('client-1', {})).toBe(true);
+      expect(await access()).toBe('pkg-1');
+    },
+  );
+  // LO-1190 B1: a package community space follows the same live-grace rule. A weekly plan's
+  // access_expires_at is Day 8 while the grace runs to the Day-10 lock, so on Day 8 the client
+  // keeps the app (guard, shared read) and must keep the paid space too: the SQL rule
+  // app.community_can_access (latest definition) and its TS mirror packageAccess.
+  it('LO-1190 B1: a weekly-plan client keeps the paid community space on Day 8 of the grace', async () => {
+    await w.fake.client().coachPackage.update({ where: { id: 'pkg-1' }, data: { interval: 'week' } });
+    const weekly = fixture('customer.subscription.updated.past_due', {
+      current_period_start: sec(at(0)),
+      current_period_end: sec(at(7 * DAY)),
+    });
+    w.stripe.retrieveSubscription.mockResolvedValue(weekly.data.object);
+    await w.handler.handle(weekly);
+    await failAttempt(w, 1);
+    expect(purchaseRow(w)?.access_expires_at).toEqual(at(8 * DAY));
+    jest.setSystemTime(at(8 * DAY + HOUR));
+    await w.v2.runSweep();
+    expect(stateRow(w)?.locked_out_at).toBeNull();
+    expect(await entitlementVerdict(w)).toBe('allowed');
+
+    // packageAccess: the package link filter is left to the database (the fake has no `some`);
+    // the purchase rule is what is checked here.
+    const db = w.fake.client();
+    const prisma = {
+      clientPurchase: {
+        findMany: (args: { where: Record<string, unknown>; select: unknown }) => {
+          const { package: _link, ...where } = args.where;
+          return db.clientPurchase.findMany(stub({ ...args, where }));
+        },
+      },
+    };
+    const repo = new CommunityCohortMembersRepository(stub(prisma));
+    const access = await repo.packageAccess('space-1', 'coach-1', ['client-1']);
+
+    // app.community_can_access: the latest migration that defines it must count a failed
+    // renewal in its live grace (past_due / unpaid with an active, unlocked dunning cycle).
+    const dir = join(__dirname, '..', 'prisma', 'migrations');
+    const latest = readdirSync(dir)
+      .filter((m) => {
+        try {
+          return /CREATE (OR REPLACE )?FUNCTION app\.community_can_access/.test(readFileSync(join(dir, m, 'migration.sql'), 'utf8'));
+        } catch {
+          return false;
+        }
+      })
+      .sort()
+      .pop()!;
+    const sql = readFileSync(join(dir, latest, 'migration.sql'), 'utf8');
+    const fn = sql.slice(sql.search(/CREATE (OR REPLACE )?FUNCTION app\.community_can_access/));
+    const end = fn.search(/\$[A-Za-z_]*\$;/);
+    expect(end).toBeGreaterThan(0);
+    const body = fn.slice(0, end);
+
+    expect({
+      packageAccess: access.has('client-1'),
+      sqlGrace: /past_due/.test(body) && /"DunningState"/.test(body) && /locked_out_at/.test(body),
+    }).toEqual({ packageAccess: true, sqlGrace: true });
+  });
+
+  // PF-2-BE: the shared read (GET /v1/checkout/entitlement) and the route guards agree on the one
+  // live-grace rule: weekly and monthly, past_due and unpaid, Day 8 grace, the Day 10 lock (also
+  // after a Stripe resync re-sets entitlement_active), a paused or ended plan, another live plan.
+  it.each([
+    ['week', 7, 'past_due'],
+    ['week', 7, 'unpaid'],
+    ['month', 30, 'past_due'],
+    ['month', 30, 'unpaid'],
+  ])('PF-2-BE: a %s plan, %s-day period, %s: Day 8 entitled, Day 10 locked, everywhere', async (interval, days, status) => {
+    const db = w.fake.client();
+    const checkout = new CheckoutService(db, stub({}), stub({}), stub({}), stub({}), stub({}));
+    const shared = () => checkout.hasActiveEntitlement('client-1', {});
+    await db.coachPackage.update({ where: { id: 'pkg-1' }, data: { interval } });
+    const sub = fixture('customer.subscription.updated.past_due', {
+      current_period_start: sec(at(0)),
+      current_period_end: sec(at(Number(days) * DAY)),
+    });
+    w.stripe.retrieveSubscription.mockResolvedValue(sub.data.object);
+    await w.handler.handle(sub);
+    await failAttempt(w, 1);
+    await db.clientPurchase.update({ where: { id: 'purchase-1' }, data: { status } });
+
+    jest.setSystemTime(at(8 * DAY + HOUR));
+    await w.v2.runSweep();
+    expect([await shared(), await entitlementVerdict(w), await lockVerdict(w, '/api/v1/workouts')])
+      .toEqual([true, 'allowed', 'allowed']);
+
+    jest.setSystemTime(at(10 * DAY + HOUR));
+    await w.v2.runSweep();
+    expect(stateRow(w)?.locked_out_at).toBeInstanceOf(Date);
+    expect([await shared(), await entitlementVerdict(w), await lockVerdict(w, '/api/v1/workouts')])
+      .toEqual([false, 402, 'LOCKED_DUNNING']);
+    // F6: a Stripe resync re-sets entitlement_active on the locked plan; the lock still holds.
+    await db.clientPurchase.update({ where: { id: 'purchase-1' }, data: { entitlement_active: true } });
+    expect([await shared(), await entitlementVerdict(w)]).toEqual([false, 402]);
+
+    // Another live plan keeps the app, as built (B-628-7).
+    w.fake.seed('clientPurchase', {
+      id: 'purchase-live-2', client_user_id: 'client-1', coach_user_id: 'coach-1', package_id: 'pkg-1',
+      status: 'paid', entitlement_active: true, billing_type: 'one_time', amount_cents: 0, currency: 'usd',
+      stripe_subscription_id: null, access_expires_at: null,
+    });
+    expect([await shared(), await entitlementVerdict(w), await lockVerdict(w, '/api/v1/workouts')])
+      .toEqual([true, 'allowed', 'allowed']);
+  });
+
+  it.each([
+    ['paused (dispute or refund pause)', { entitlement_active: false }, { status: 'active', locked_out_at: at(8 * DAY) }],
+    ['ended (subscription deleted)', { status: 'canceled', entitlement_active: false }, { status: 'canceled' }],
+  ])('PF-2-BE: a %s plan is not entitled on Day 8, in the shared read or the guard', async (_case, purchase, cycle) => {
+    const db = w.fake.client();
+    const checkout = new CheckoutService(db, stub({}), stub({}), stub({}), stub({}), stub({}));
+    await pastDueResync(w);
+    await failAttempt(w, 1);
+    jest.setSystemTime(at(8 * DAY + HOUR));
+    await db.clientPurchase.update({ where: { id: 'purchase-1' }, data: purchase });
+    await db.dunningState.update({ where: { purchase_id: 'purchase-1' }, data: cycle });
+    expect([await checkout.hasActiveEntitlement('client-1', {}), await entitlementVerdict(w)]).toEqual([false, 402]);
   });
 
   it('A. fail Day 0 -> Stripe retry Day 1 fails -> pays on the Day 3 retry -> recovered, never locked', async () => {

@@ -3,6 +3,7 @@ import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common'
 import type { CoachAlert, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { CoachAlertEmitter } from '../notifications/emitters/coach-alert.emitter';
+import { spaceAlertCopies, spaceCopyOf, withSpaceCopies } from '../community/space-safety-alerts';
 
 // Phase 6B — Proactive Red Flag Alerts.
 //
@@ -50,12 +51,19 @@ export type CoachAlertType =
   // except on the crisis alert, which points at nothing they wrote.
   | 'roman_urgent_reply'
   | 'roman_eating_disorder_reply'
-  | 'roman_crisis_reply';
+  | 'roman_crisis_reply'
+  // FR-1152 (#172-5 op 2): a space chat photo or caption the photo check
+  // refused for self-harm intent or instructions; the same alert a crisis
+  // message raises. The row holds no photo, caption or category; a public
+  // space's copy holds only its space id (payload space_id, FR-1152R3 B1).
+  | 'community_photo_safety';
 
+/** Every safety alert type (the name is historic: not all come from Roman). */
 export const ROMAN_SAFETY_ALERT_TYPES: readonly string[] = [
   'roman_urgent_reply',
   'roman_eating_disorder_reply',
   'roman_crisis_reply',
+  'community_photo_safety',
 ];
 
 /**
@@ -63,7 +71,9 @@ export const ROMAN_SAFETY_ALERT_TYPES: readonly string[] = [
  * the client moves, the coach they left loses every one at once, of every
  * type: no list, read or dismiss. The one current-coach rule, used by the
  * routes here and by the Command Center; the inbox row follows it too
- * (NotificationsService.inboxWhere).
+ * (NotificationsService.inboxWhere). FR-1152R3 B1 (owner rule D): the one
+ * other way in is a public space's copy of a photo safety alert, read by its
+ * owner and team while they lead that space (spaceAlertCopies).
  */
 export function currentCoachAlerts(coachId: string): Prisma.CoachAlertWhereInput {
   return { client: { coach_id: coachId } };
@@ -160,10 +170,10 @@ export class CoachAlertsService {
 
   async listForCoach(opts: ListAlertsOptions): Promise<CoachAlert[]> {
     const limit = clamp(opts.limit ?? DEFAULT_BATCH_LIMIT, 1, MAX_BATCH_LIMIT);
-    const where: Prisma.CoachAlertWhereInput = {
-      coach_id: opts.coachId,
-      ...currentCoachAlerts(opts.coachId),
-    };
+    const where: Prisma.CoachAlertWhereInput = withSpaceCopies(
+      { coach_id: opts.coachId, ...currentCoachAlerts(opts.coachId) },
+      await spaceAlertCopies(this.prisma, opts.coachId),
+    );
     if (typeof opts.acknowledged === 'boolean') {
       where.acknowledged_at = opts.acknowledged ? { not: null } : null;
     }
@@ -189,7 +199,10 @@ export class CoachAlertsService {
    * acknowledged; we re-read to disambiguate.
    */
   async acknowledge(alertId: string, coachId: string): Promise<CoachAlert> {
-    return this.acknowledgeWhere(alertId, { coach_id: coachId, ...currentCoachAlerts(coachId) });
+    return this.acknowledgeWhere(
+      alertId,
+      withSpaceCopies({ coach_id: coachId, ...currentCoachAlerts(coachId) }, await spaceAlertCopies(this.prisma, coachId)),
+    );
   }
 
   /**
@@ -213,12 +226,13 @@ export class CoachAlertsService {
     allowedClientIds: string[],
     // B-R1F: a further caller rule (Roman safety alerts: current coach only).
     extra: Prisma.CoachAlertWhereInput = {},
+    // FR-1152R3 B1: the caller's public-space copies (spaceAlertCopies), also allowed.
+    spaceCopies: Prisma.CoachAlertWhereInput[] = [],
   ): Promise<CoachAlert> {
-    return this.acknowledgeWhere(alertId, {
-      coach_id: ownerCoachId,
-      client_id: { in: allowedClientIds },
-      ...extra,
-    });
+    return this.acknowledgeWhere(
+      alertId,
+      withSpaceCopies({ coach_id: ownerCoachId, client_id: { in: allowedClientIds }, ...extra }, spaceCopies),
+    );
   }
 
   // Shared idempotent + race-safe ack core. `ownership` is the WHERE
@@ -286,6 +300,7 @@ export class CoachAlertsService {
         message: alert.message,
         severity: alert.severity,
         clientUserId: alert.client_id,
+        spaceId: spaceCopyOf(alert),
       });
       if (delivery.push !== 'sent') {
         // C-611-17: alert.message names the client; log the alert id.

@@ -10,6 +10,7 @@ import {
 import type { ClientPurchase, CoachPackage, ConnectAccount, ConnectCustomer } from '@prisma/client';
 import { ConnectModuleState } from '../connect/connect.module-state';
 import { ConnectService } from '../connect/connect.service';
+import { isConnectAccountReadyForSale, readinessRow } from '../connect/connect-readiness';
 import { FeePolicyService } from '../connect/fees/fee-policy.service';
 import {
   StripeConnectApiError,
@@ -41,6 +42,7 @@ import {
   resumeWindowStart,
 } from './subscription-plan';
 import { parseCheckoutTerms, termsStillOffered } from './subscription-terms';
+import { dunningGraceWhere, NOT_DUNNING_LOCKED } from './dunning-v2/dunning-grace';
 
 // CheckoutService — Stripe Checkout session minting + ClientPurchase row
 // lifecycle. This is the entry point clients hit to actually buy a package.
@@ -347,11 +349,13 @@ export class CheckoutService {
     @Optional() private readonly connect?: ConnectService,
   ) {}
 
-  // B-CONNECT-126: payout gate row. Charges already on -> untouched, no
-  // Stripe call. Not ready -> re-read from Stripe (cooldown) before refusing.
+  // B-CONNECT-126: payout gate row. Ready by the one readiness rule
+  // (HOLD-FU-BE, LS-1195 C1: payouts, details and the disabled reason, not
+  // charges alone) -> untouched, no Stripe call. Not ready -> re-read from
+  // Stripe (cooldown) before refusing.
   async payoutGateRow(row: ConnectAccount): Promise<ConnectAccount> {
-    if (row.charges_enabled || row.deauthorized_at || !this.connect) return row;
-    return this.connect.refreshNotReady(row);
+    if (row.deauthorized_at) return row;
+    return readinessRow(row, this.connect);
   }
 
   /**
@@ -393,7 +397,7 @@ export class CheckoutService {
       });
     }
 
-    const pkg = await this.packages.getById(input.package_id);
+    const pkg = await this.packages.getById(input.package_id, clientUserId);
     if (!pkg || !pkg.is_active || pkg.archived_at || !pkg.published_at) {
       // PR-6 — DRAFT packages (published_at IS NULL) are not purchasable.
       throw new NotFoundException({
@@ -458,7 +462,7 @@ export class CheckoutService {
       });
     }
     const connectAccount = await this.payoutGateRow(savedAccount);
-    if (!connectAccount.charges_enabled || connectAccount.deauthorized_at) {
+    if (!isConnectAccountReadyForSale(connectAccount)) {
       throw new ConflictException({
         error: 'COACH_NOT_PAYOUT_READY',
         message:
@@ -676,7 +680,7 @@ export class CheckoutService {
       });
     }
 
-    const pkg = await this.packages.getById(input.package_id);
+    const pkg = await this.packages.getById(input.package_id, clientUserId);
     if (!pkg || !pkg.is_active || pkg.archived_at || !pkg.published_at) {
       // PR-6 — DRAFT packages (published_at IS NULL) are not purchasable.
       throw new NotFoundException({
@@ -782,7 +786,7 @@ export class CheckoutService {
       });
     }
     const connectAccount = await this.payoutGateRow(savedAccount);
-    if (!connectAccount.charges_enabled || connectAccount.deauthorized_at) {
+    if (!isConnectAccountReadyForSale(connectAccount)) {
       throw new ConflictException({
         error: 'COACH_NOT_PAYOUT_READY',
         message:
@@ -1266,22 +1270,24 @@ export class CheckoutService {
   }
 
   // Entitlement check: does this client currently have an active purchase
-  // for this package (or any package from this coach)?
+  // for this package (or any package from this coach)? PF-2-BE (LS-PAYFAIL
+  // B2): a failed renewal still in its live grace counts, as in the guard;
+  // a plan under its own Day-10 lock never does.
   async hasActiveEntitlement(
     clientUserId: string,
     opts: { packageId?: string; coachUserId?: string },
   ): Promise<boolean> {
     const now = new Date();
+    const unexpired = [{ access_expires_at: null }, { access_expires_at: { gt: now } }];
+    const grace = dunningGraceWhere();
     const row = await this.prisma.clientPurchase.findFirst({
       where: {
         client_user_id: clientUserId,
         entitlement_active: true,
         ...(opts.packageId ? { package_id: opts.packageId } : {}),
         ...(opts.coachUserId ? { coach_user_id: opts.coachUserId } : {}),
-        OR: [
-          { access_expires_at: null },
-          { access_expires_at: { gt: now } },
-        ],
+        AND: [NOT_DUNNING_LOCKED],
+        OR: grace ? [...unexpired, grace] : unexpired,
       },
       select: { id: true },
     });

@@ -55,9 +55,10 @@ function service(): CommunityService {
     }),
     canEnterCohort: jest.fn(async (_c: string, userId: string) => userId === MEMBER),
     isDefaultCohort: jest.fn(async () => false),
-    cohortMemberCount: jest.fn(async () => 2),
   };
-  return new CommunityService(stub<PrismaService>({}), stub<CommunityRepository>(repo), safetyWithBlocks());
+  // FR-1168 (LO-1168 B1): member_count asks who reads the space now (readersNow); nobody here.
+  const prisma = { $queryRaw: jest.fn(async () => []) };
+  return new CommunityService(stub<PrismaService>(prisma), stub<CommunityRepository>(repo), safetyWithBlocks());
 }
 
 async function denial(p: Promise<unknown>): Promise<{ status: number; body: unknown }> {

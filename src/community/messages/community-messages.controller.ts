@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   Param,
   Patch,
   Post,
@@ -20,6 +21,7 @@ import { THROTTLER_ROUTE_LIMITS } from '../../throttler/throttler.config';
 import { CommunityFeatureFlagGuard } from '../community-feature-flag.guard';
 import { CommunityMessagesEnabledGuard } from '../community-write-flag.guard';
 import { CommunityMessagesService } from './community-messages.service';
+import { messageKey } from './message-idempotency';
 import {
   CreateMessageDto,
   EditMessageDto,
@@ -56,13 +58,16 @@ export class CommunityMessagesController {
     @Request() req: AuthedRequest,
     @Param('cohortId') cohortId: string,
     @Body() body: CreateMessageDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
+    const key = messageKey(idempotencyKey);
     // SC-BE3: a photo message carries its key and size; the caption is optional.
     const image =
       body.kind === 'image'
         ? { key: body.image_key ?? '', width: body.width ?? 0, height: body.height ?? 0 }
         : undefined;
-    return this.messages.send(req.user, cohortId, body.body ?? '', body.plan_context, body.parent_message_id, image, body.high_alert);
+    return this.messages.send(
+      req.user, cohortId, body.body ?? '', body.plan_context, body.parent_message_id, image, body.high_alert, key);
   }
 
   @Get('cohorts/:cohortId/messages')
