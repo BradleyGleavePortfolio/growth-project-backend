@@ -383,7 +383,7 @@ export class ReconciliationService {
     // (renewals append SplitLedgerEntry rows in the same composite-unique
     // slot for `application_fee` + `destination`, so the most recent
     // Stripe charge is the right comparison).
-    const chargeId = await this.resolveChargeId(purchase, intentId);
+    const chargeId = await this.resolveChargeId(intentId, ledger);
     let stripeAmount: number | null = null;
     let stripeRefunded: number | null = null;
     let stripeAppFee: number | null = null;
@@ -583,18 +583,20 @@ export class ReconciliationService {
   }
 
   private async resolveChargeId(
-    purchase: ClientPurchase,
     intentId: string | null,
+    ledger: SplitLedgerEntry[],
   ): Promise<string | null> {
     if (!intentId) {
       // For recurring purchases, the per-renewal charge id lives on the
       // SplitLedgerEntry.stripe_charge_id of the most recent destination
       // slice. Use that as a cheap fallback so we don't have to walk
       // invoices. A web trial's SetupIntent (FIX-1225R3) lands here too.
-      const entry = await this.prisma.splitLedgerEntry.findFirst({
-        where: { purchase_id: purchase.id, kind: 'destination' },
-        orderBy: { posted_at: 'desc' },
-      });
+      // FIX-1225R3: picked from the rows already read, in the order the
+      // query used (posted_at desc; Postgres puts a null first).
+      const at = (e: SplitLedgerEntry) => (e.posted_at ? e.posted_at.getTime() : Infinity);
+      const entry = ledger
+        .filter((e) => e.kind === 'destination')
+        .reduce<SplitLedgerEntry | null>((best, e) => (!best || at(e) > at(best) ? e : best), null);
       return entry?.stripe_charge_id ?? null;
     }
     return (await this.intentCharge(intentId)).chargeId;
