@@ -1,8 +1,9 @@
 # Notifications Module
 
 The notifications module holds the in-app notification inbox, push delivery, the email digests and per-user channel preferences. Most senders go through it: an emitter in `emitters/`, `NotificationsService.createNotification` or `NotificationsService.sendPush`, so the per-kind switches, Mute all and push quiet hours are applied there. A few senders write `Notification` rows with Prisma themselves (`checkout/plan-renewal/switch-tell.ts`, `onboarding/onboarding.service.ts`, `onboarding/flagged-join-alert.ts`, `community/safety/community-moderation-notices.ts`, `ai/gateway/materialisers/send-notification.materialiser.ts`), so the `createNotification` gate does not run for those rows.
-Pushes sent with `NotificationsService.pushToUser` skip the core gate too: it reads no preference and goes straight to Expo, not
-through the `sendPush` outbox. Its callers read the settings themselves or not at all: the trial notice
+Pushes sent with `NotificationsService.pushToUser` skip the `createNotification` gate too: it reads no preference itself and
+puts the push, with the sender's whole words, on the `PushDeliveryService` outbox with the route its caller names (Mute all alone
+when it names none); the outbox worker applies that route and quiet hours when it sends. Its callers read the settings themselves or not at all: the trial notice
 (`packages/trials/trial-notice.service.ts`), the nudges (`notifications/nudges/nudge-engine.service.ts`), the coach brief
 (`coach/brief/coach-brief.scheduler.ts`), the churn intervention message (`coach/command-center/churn-intervention.service.ts`),
 the workout reminder (`engagement/workout-reminder.service.ts`), Scout (`scout/scout.service.ts`), the payout notice
@@ -168,7 +169,7 @@ endpoints take the user from the signed token instead.
 | `NotificationDigestLog`   | `id, user_id, digest_kind, window_date, status, sent_at, error, created_at` | Idempotency guard. Unique on `(user_id, digest_kind, window_date)`. Status is `sending`, then `sent` or `failed`. |
 | `NotificationPreferences` | `user_id, muted, milestone_push, …`                                         | Per-user settings: `_inapp`, `_push` and `_email` flags for most setting families (`workout_reminder` has only `_inapp` and `_push`, `plan_renewal` only `_push`), `muted` (Mute all), the older `*_enabled` reminder switches, `new_client_alerts`, `quiet_hours_start` / `quiet_hours_end` and the time zone. |
 
-`Notification.body` is capped to 160 chars by `NotificationsService.createNotification`. The emitters set `Notification.deep_link` with the `tgp://` scheme so the mobile app routes to the right screen.
+`Notification.body` is capped to 160 chars by `NotificationsService.createNotification`, except when the sender passes `sender_words: true` (only the daily money check, `checkout/reconciliation-daily.cron.ts`, so the inbox row holds the same whole words as its push; the option is not stored). The emitters set `Notification.deep_link` with the `tgp://` scheme so the mobile app routes to the right screen.
 
 ---
 
@@ -230,7 +231,7 @@ tracked in an in-process Map (`recentPushes`, one per replica); inside a transac
 `sendPush` go through `PushDeliveryService` (`push/push-delivery.service.ts`), which never drops a distinct event: repeats in one
 conversation collapse within `COLLAPSE_WINDOW_MS` (60 s), and a per-user cap (`USER_WINDOW_MAX` = 8 per `USER_WINDOW_MS` = 10 min)
 defers the other pushes until the window has room. Exempt from the cap: an urgent push, a push that bypasses quiet hours as
-urgent, and every `booking_*` kind. `pushToUser` pushes do not go through this outbox, so neither the collapse nor the cap applies.
+urgent, and every `booking_*` kind. `pushToUser` pushes go through this outbox too; each one's collapse key is its dedupe key (a fresh one unless the caller names it), and the per-user cap applies to them as to any other push that is not exempt.
 
 ---
 

@@ -292,6 +292,10 @@ describe('ReconciliationService', () => {
       }
     }
     const charge49 = (fee: number) => ({
+      // FIX-1225R3: the purchase's payment intent (pi_49) is its own charge,
+      // ch_49. The settled path now reads the payment intent too, and a
+      // charge it names that no settlement covers is not 'ok'.
+      retrievePaymentIntent: jest.fn(async () => ({ id: 'pi_49', latest_charge: 'ch_49' })),
       retrieveCharge: jest.fn(async () => ({
         id: 'ch_49',
         amount: 4_900,

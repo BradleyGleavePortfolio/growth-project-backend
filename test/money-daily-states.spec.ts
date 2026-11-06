@@ -11,6 +11,9 @@ import {
   ReconciliationService,
   UNCHARGED_PURCHASE_STATUSES,
 } from '../src/connect/fees/reconciliation.service';
+import { AdminPaymentOpsController } from '../src/checkout/payment-ops.controller';
+import { ReconciliationDailyCron } from '../src/checkout/reconciliation-daily.cron';
+import { Table, asPrisma } from './utils/settlement-fakes';
 
 interface Case {
   name: string;
@@ -148,7 +151,7 @@ const CASES: Case[] = [
       expect: { status: 'unknown', notes: 'settlement_not_settled charge=ch_s1 status=awaiting_fee' } },
     { name: `${status}, no payment intent, a legacy destination settlement`, status, pi: null,
       settlements: [{ status: 'legacy_destination', mechanism: 'legacy_destination' }],
-      expect: { status: 'unknown', notes: 'settlement_not_settled charge=ch_s1 status=legacy_destination' } },
+      expect: { status: 'unknown', notes: 'charge_not_checked charge=ch_s1 status=legacy_destination' } },
     { name: `${status}, no payment intent, no settlement of any status`, status, pi: null,
       settlements: [], expect: { status: 'ok', notes: 'never_charged' } },
   ]),
@@ -203,8 +206,10 @@ describe('FIX-1225 (b): the money check reads every money state', () => {
       // :2584 where: the version seen; data: failure = { status: 'payment_failed' } (:2443-2447).
       'checkout/checkout-webhook-handler.service.ts seen.status': [],
       'checkout/checkout-webhook-handler.service.ts data:failure': ['payment_failed'],
-      // :1143 a delinquent plan takes Stripe's subscription status.
-      'checkout/client-billing.service.ts subStatus': STRIPE_SUBSCRIPTION_STATUSES,
+      // :1142-1146 a delinquent plan takes Stripe's status only when it is paid
+      // again: subPaid (:1129) = PAID_SUB_STATUSES (:105), active or trialing
+      // (FIX-1225R3, LS-1225R3 N1).
+      'checkout/client-billing.service.ts subStatus': ['active', 'trialing'],
       // :1736-1750 keepPaidPeriod: 'active', or Stripe's status when active or trialing.
       'checkout/client-billing.service.ts status': ['active', 'trialing'],
       // :1660-1700 restart: 'active'.
@@ -290,6 +295,193 @@ describe('FIX-1225 (b): the money check reads every money state', () => {
     expect(prisma.chargeDispute.findMany).toHaveBeenCalledWith({
       where: { purchase_id: 'p1', stripe_charge_id: 'ch_pi_1', status: 'lost' },
       select: { amount_cents: true },
+    });
+  });
+});
+
+// FIX-1225R3 (c), LS-1225R3 B1 + C1, LO-1225R3 B1: before any 'ok' every
+// known charge on the purchase is read and matched (each ChargeSettlement row
+// of any status, the payment intent's charge, every ledger slice and
+// transfer); an older matched charge never speaks for a newer one; a drift
+// already found stays drift; a web trial's SetupIntent is not a payment
+// intent. One table, every money-bearing state, run through the three
+// readers: the daily run, the per-purchase admin route
+// (payment-ops.controller.ts getReconciliation) and the admin sweeper
+// (runReconciliationSweeper). All three must agree.
+type History = 'none' | 'settled' | 'settled_drift' | 'legacy';
+interface KnownChargeRow {
+  name: string;
+  status: string;
+  intent: 'none' | 'pi_matched' | 'pi_unsettled' | 'seti';
+  history: History;
+  renewal?: 'awaiting_fee' | 'error';
+  expect: 'ok' | 'drift' | 'unknown';
+  notes?: string;
+}
+
+const OLD_CHARGE = 'ch_r3_old';
+const NEW_CHARGE = 'ch_r3_renewal';
+
+function knownChargeWorld(r: KnownChargeRow) {
+  const purchase = {
+    id: 'p-r3',
+    status: r.status,
+    source: null,
+    billing_type: 'recurring',
+    amount_cents: 4_900,
+    stripe_payment_intent_id:
+      r.intent === 'none' ? null : r.intent === 'seti' ? 'seti_r3_trial' : 'pi_r3',
+    updated_at: new Date('2026-01-01T00:00:00Z'),
+  };
+  const settled = r.history === 'settled' || r.history === 'settled_drift';
+  const settlements: any[] = [];
+  if (settled) {
+    settlements.push({
+      id: 'cs-r3-old', purchase_id: purchase.id, stripe_charge_id: OLD_CHARGE,
+      mechanism: 'separate_charge_transfer', status: 'settled',
+      coach_user_id: 'coach-r3', head_coach_user_id: null,
+      gross_cents: 4_900, stripe_fee_cents: 172, platform_fee_cents: 98, head_coach_split_cents: 0,
+      coach_net_cents: 4_630, refunded_cents: 0, dispute_withdrawn_cents: 0, dispute_fee_cents: 0,
+      target_platform_fee_cents: 98, target_head_coach_cents: 0, target_coach_net_cents: 4_630,
+      currency: 'usd', created_at: new Date('2026-01-01T00:00:00Z'),
+    });
+  }
+  if (r.renewal) {
+    settlements.push({
+      id: 'cs-r3-new', purchase_id: purchase.id, stripe_charge_id: NEW_CHARGE,
+      mechanism: 'separate_charge_transfer', status: r.renewal, coach_user_id: 'coach-r3',
+      gross_cents: 4_900, refunded_cents: 0, dispute_withdrawn_cents: 0, dispute_fee_cents: 0,
+      currency: 'usd', created_at: new Date('2026-02-01T00:00:00Z'),
+    });
+  }
+  const slice = (kind: string, amount_cents: number) => ({
+    purchase_id: purchase.id, stripe_charge_id: OLD_CHARGE, kind, amount_cents,
+    payee_user_id: kind === 'destination' ? 'coach-r3' : null,
+    reversed_cents: 0, status: 'posted', posted_at: new Date('2026-01-01T00:00:00Z'),
+  });
+  const ledger = settled
+    ? [slice('application_fee', 98), slice('stripe_fee', 172), slice('destination', 4_630)]
+    : r.history === 'legacy'
+      ? [slice('application_fee', 98), slice('destination', 4_802)]
+      : [];
+  const transfers = settled
+    ? [{
+        id: 'tr-r3-old', purchase_id: purchase.id, settlement_id: 'cs-r3-old',
+        destination_user_id: 'coach-r3', source_stripe_charge_id: OLD_CHARGE, amount_cents: 4_630,
+        netted_recovery_cents: 0, reversed_amount_cents: 0, status: 'succeeded',
+      }]
+    : [];
+  const prisma = asPrisma({
+    clientPurchase: new Table([purchase], { prefix: 'purchase' }),
+    chargeSettlement: new Table(settlements, { prefix: 'settlement' }),
+    splitLedgerEntry: new Table(ledger, { prefix: 'ledger' }),
+    connectTransfer: new Table(transfers, { prefix: 'transfer' }),
+    payeeRecovery: new Table([], { prefix: 'recovery' }),
+    chargeDispute: new Table([], { prefix: 'dispute' }),
+    reconciliationSnapshot: new Table([], { prefix: 'snapshot', unique: ['purchase_id'] }),
+  });
+  const stripe = {
+    retrievePaymentIntent: jest.fn(async (id: string) => {
+      // Stripe has no payment intent for a SetupIntent id.
+      if (id.startsWith('seti_')) throw new Error('resource_missing: No such payment_intent');
+      return { id, latest_charge: r.intent === 'pi_unsettled' ? 'ch_r3_intent_unsettled' : OLD_CHARGE };
+    }),
+    retrieveCharge: jest.fn(async (id: string) => {
+      // The renewal (and any charge not seeded) cannot be read; the old charge matches.
+      if (id !== OLD_CHARGE) throw new Error('charge read unavailable');
+      const fee = r.history === 'settled_drift' ? 200 : 172;
+      return {
+        id, amount: 4_900, amount_refunded: 0, application_fee_amount: 98,
+        balance_transaction: { id: 'txn_r3_old', amount: 4_900, fee, net: 4_900 - fee, currency: 'usd' },
+      };
+    }),
+  };
+  const service = new ReconciliationService(prisma, stripe as any);
+  const admin = Object.create(AdminPaymentOpsController.prototype) as AdminPaymentOpsController;
+  Object.assign(admin, { reconciliation: service });
+  const cron = new ReconciliationDailyCron(
+    { tryAcquire: jest.fn(async () => ({ acquired: true })) } as any,
+    service,
+    {
+      createNotification: jest.fn(async (input: unknown) => input),
+      pushToUser: jest.fn(async () => ({ delivered: true })),
+    } as any,
+    { user: { findFirst: jest.fn(async () => ({ id: 'owner-r3' })) } } as any,
+  );
+  return { service, admin, cron };
+}
+
+/** The plan states that do not claim a payment (reconciliation.service.ts NEVER_CHARGED_OK_STATUSES). */
+const NEVER_CHARGED_STATES = new Set(['trialing', 'past_due', 'unpaid', 'paused', 'canceled']);
+const CLAIMS_PAYMENT = new Set(['paid', 'active', 'refunded', 'disputed', 'chargeback_lost']);
+const KNOWN_CHARGE_ROWS: KnownChargeRow[] = RECONCILED_PURCHASE_STATUSES.flatMap((status): KnownChargeRow[] => [
+  // settled-only history
+  { name: 'settled history only', status, intent: 'none', history: 'settled', expect: 'ok' },
+  { name: 'settled history, payment intent on the settled charge', status, intent: 'pi_matched', history: 'settled', expect: 'ok' },
+  // mixed history: an older matched charge never speaks for a newer one
+  { name: 'settled history + unreadable awaiting_fee renewal', status, intent: 'none', history: 'settled',
+    renewal: 'awaiting_fee', expect: 'unknown', notes: `settlement_not_settled charge=${NEW_CHARGE} status=awaiting_fee` },
+  { name: 'settled history + error renewal', status, intent: 'none', history: 'settled',
+    renewal: 'error', expect: 'unknown', notes: `settlement_not_settled charge=${NEW_CHARGE} status=error` },
+  { name: 'settled history + payment intent on a charge with no settlement', status, intent: 'pi_unsettled',
+    history: 'settled', expect: 'unknown', notes: 'charge_not_checked charge=ch_r3_intent_unsettled' },
+  { name: 'settled history drifting + awaiting_fee renewal: drift stays drift', status, intent: 'none',
+    history: 'settled_drift', renewal: 'awaiting_fee', expect: 'drift' },
+  // legacy (ledger-only) history
+  { name: 'legacy ledger history only', status, intent: 'none', history: 'legacy', expect: 'ok' },
+  { name: 'legacy ledger history + unreadable awaiting_fee renewal', status, intent: 'none', history: 'legacy',
+    renewal: 'awaiting_fee', expect: 'unknown', notes: `settlement_not_settled charge=${NEW_CHARGE} status=awaiting_fee` },
+  // a web trial's SetupIntent, with and without real money
+  NEVER_CHARGED_STATES.has(status)
+    ? { name: 'SetupIntent only, nothing else', status, intent: 'seti', history: 'none', expect: 'ok', notes: 'never_charged' }
+    : { name: 'SetupIntent only, nothing else (a paid state)', status, intent: 'seti', history: 'none',
+        expect: 'unknown', notes: 'no_charge_id_yet' },
+  { name: 'SetupIntent + awaiting_fee charge', status, intent: 'seti', history: 'none', renewal: 'awaiting_fee',
+    expect: 'unknown', notes: `settlement_not_settled charge=${NEW_CHARGE} status=awaiting_fee` },
+  { name: 'SetupIntent + settled history', status, intent: 'seti', history: 'settled', expect: 'ok' },
+  { name: 'SetupIntent + settled history + awaiting_fee renewal', status, intent: 'seti', history: 'settled',
+    renewal: 'awaiting_fee', expect: 'unknown', notes: `settlement_not_settled charge=${NEW_CHARGE} status=awaiting_fee` },
+  { name: 'SetupIntent + legacy ledger history', status, intent: 'seti', history: 'legacy', expect: 'ok' },
+  { name: 'SetupIntent + legacy ledger history + awaiting_fee renewal', status, intent: 'seti', history: 'legacy',
+    renewal: 'awaiting_fee', expect: 'unknown', notes: `settlement_not_settled charge=${NEW_CHARGE} status=awaiting_fee` },
+]);
+
+describe('FIX-1225R3 (c): every known charge is read before ok; the daily run, the admin route and the sweeper agree', () => {
+  beforeAll(() => {
+    for (const level of ['log', 'error', 'debug'] as const)
+      jest.spyOn(Logger.prototype, level).mockImplementation(() => undefined);
+  });
+  beforeEach(() => delete process.env.RECONCILIATION_DAILY_ENABLED);
+
+  it('covers every money-bearing state, and each state both ways for a SetupIntent', () => {
+    expect(new Set(KNOWN_CHARGE_ROWS.map((r) => r.status))).toEqual(new Set(RECONCILED_PURCHASE_STATUSES));
+    for (const s of RECONCILED_PURCHASE_STATUSES) expect(NEVER_CHARGED_STATES.has(s) || CLAIMS_PAYMENT.has(s)).toBe(true);
+  });
+
+  it.each(KNOWN_CHARGE_ROWS)('$status: $name -> $expect', async (r) => {
+    // The per-purchase admin route.
+    const one = await knownChargeWorld(r).admin.getReconciliation('p-r3');
+    expect(one.status).toBe(r.expect);
+    if (r.notes !== undefined) expect(one.notes ?? '').toContain(r.notes);
+    if (r.expect === 'drift') expect(one.notes ?? '').toContain(`settlement_not_settled charge=${NEW_CHARGE}`);
+    // The admin sweeper.
+    await expect(knownChargeWorld(r).admin.runReconciliationSweeper('50')).resolves.toEqual({
+      scanned: 1,
+      drifted: r.expect === 'drift' ? 1 : 0,
+      unknown: r.expect === 'unknown' ? 1 : 0,
+    });
+    // The daily run.
+    await expect(
+      knownChargeWorld(r).cron.runOnce(new Date(Date.now() - 1_000), 'machine-r3', async () => undefined),
+    ).resolves.toMatchObject({
+      ran: true,
+      verdict: r.expect === 'ok' ? 'clean' : 'needs_review',
+      tally: {
+        checked: 1,
+        ok: r.expect === 'ok' ? 1 : 0,
+        drift: r.expect === 'drift' ? 1 : 0,
+        unknown: r.expect === 'unknown' ? 1 : 0,
+      },
     });
   });
 });
