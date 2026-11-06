@@ -13,8 +13,8 @@ import { RomanMessageReportService } from '../../src/roman/roman-message-report.
 const ROOT = path.resolve(__dirname, '../..');
 const NAME = '20270502011200_roman_message_report';
 const DB = 'ls1223_review_probe';
-// Ephemeral CI fixture credentials, never an application connection.
-const URL = `postgresql://ls1223:ls1223_local_fixture@localhost:5432/${DB}`;
+// Disposable trust-auth container, with the same table owner as the CI gate.
+const URL = `postgresql://postgres@localhost:5432/${DB}`;
 const env = { ...process.env, DATABASE_URL: URL, DIRECT_URL: URL };
 const run = (cmd: string, args: string[], extraEnv = env) =>
   execFileSync(cmd, args, { cwd: ROOT, env: extraEnv, encoding: 'utf8', timeout: 240_000, maxBuffer: 16 * 1024 * 1024 });
@@ -49,9 +49,7 @@ describe('LS-1223 main-first deploy and real isolation proof', () => {
       } catch { /* Check readiness again, without an arbitrary delay. */ }
     }
     expect(ready).toBe(true);
-    run('docker', ['exec', 'ls1223-review-probe', 'psql', '-U', 'postgres', '-X', '-v', 'ON_ERROR_STOP=1', '-c',
-      "CREATE ROLE ls1223 LOGIN SUPERUSER PASSWORD 'ls1223_local_fixture'"]);
-    run('docker', ['exec', 'ls1223-review-probe', 'createdb', '-U', 'postgres', '-O', 'ls1223', DB]);
+    run('docker', ['exec', 'ls1223-review-probe', 'createdb', '-U', 'postgres', '-O', 'postgres', DB]);
     temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ls1223-main-first-'));
     const target = path.join(temp, 'migrations');
     fs.cpSync(path.join(ROOT, 'prisma/migrations'), target, { recursive: true });
