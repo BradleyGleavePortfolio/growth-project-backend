@@ -10,7 +10,8 @@
  *
  * Each read below is a call the phone makes when the screen opens, the
  * screen's own reads and those of the parts it draws (growth-project-mobile
- * main 53d4354b; the file is named next to each screen). Each read is called
+ * main c26d4dab; the file is named next to each screen), with nothing cached
+ * yet, so it holds the reads a warm open skips too. Each read is called
  * once to warm up, then 15 times timed. The test fails if any timed call is
  * not 200, if any timed call answers without the seeded data (so it cannot
  * pass by being empty; a read the seed leaves empty must answer its own empty
@@ -206,10 +207,12 @@ function reads(now: Date): Read[] {
   const mcFrom = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const mcTo = new Date(Math.min(mcFrom.getTime() + Math.max(now.getTime() - mFrom.getTime(), 1), mFrom.getTime()));
   const month = q({ from: mFrom.toISOString(), to, compare_from: mcFrom.toISOString(), compare_to: mcTo.toISOString() });
-  // Every read each screen and the parts it draws fire when it opens, from growth-project-mobile main 53d4354b (the
-  // round-2 lens read c26961a3; since then the client file draws the nudge gate, client-detail/useNudgeGate.ts, which
-  // reads the unread counts and the blocks on open, and the app shell's AI-consent read is gone). The one extra row,
-  // not an opening read, is the client file's 90-day timeline (its Timeline and Weekly tabs), the heaviest read.
+  // Every read each screen and the parts it draws fire when it opens with nothing cached yet, from growth-project-mobile
+  // main c26d4dab (no read on these six screens changed since 53d4354b). A warm open fires a subset: a cached query or
+  // a loaded roster is not read again. Since the round-2 lens read c26961a3 the client file draws the nudge gate,
+  // client-detail/useNudgeGate.ts, which reads the unread counts and the blocks on open, and the app shell's AI-consent
+  // read is gone. The one extra row, not an opening read on the default tab, is the client file's 90-day timeline (its
+  // Timeline and Weekly tabs), the heaviest read.
   return [
     // Needs you, the coach Home (home-v11/useCoachHomeV11.ts: the overview, the roster and unread counts, the blocks,
     // command-center/coachHomeSources.ts month so far, payouts, ltv and at-risk, hooks/usePendingAiDrafts.ts,
@@ -235,7 +238,9 @@ function reads(now: Date): Read[] {
     { screen: 'Needs you', path: '/coach/team/members', check: seededTeam },
     { screen: 'Needs you', path: '/coach/ai/budget', check: budgetUnused },
     // Client list (lookup/ClientLookupScreen.tsx): the active and archived pages, the unread counts, the blocks
-    // (useCoachBlockList) and the plan-ended rows (readPlanEnded).
+    // (useCoachBlockList) and the plan-ended rows (readPlanEnded); and the bell's count the Clients tab's own stack draws
+    // in its header (navigation/CoachNavigator.tsx ClientsStackNavigator, hooks/useCoachNotificationUnreadCount.ts).
+    { screen: 'Client list', path: '/notifications/unread-count', check: field('count', CLIENTS) },
     { screen: 'Client list', path: '/coach/clients?status=active&take=50', check: allClients },
     { screen: 'Client list', path: '/coach/clients?status=archived&take=50', check: none(null) },
     { screen: 'Client list', path: '/coach/messages/unread-count', check: allClients },
@@ -251,7 +256,12 @@ function reads(now: Date): Read[] {
     { screen: 'Inbox', path: '/community/moderation/flagged', check: none('items') },
     // One client's file (ClientDetailScreen.tsx, client-detail/useThisWeek.ts, useClientDetailData.ts,
     // client-detail/useNudgeGate.ts, and components/coach/DisputePausedPlansCard.tsx through
-    // entitlements/dunning/coachDisputeRestart.ts).
+    // entitlements/dunning/coachDisputeRestart.ts). Opened cold from a link (navigation/incomingLinks.ts
+    // coach/clients/<id>), with this client not yet in the loaded roster, the file loads the whole roster's first page
+    // to learn whether the client is archived (useClientDetailData.ts loadArchiveStatus, loadClients(coachId, 'all')),
+    // and its stack, the Clients tab's, draws the bell.
+    { screen: 'Client file', path: '/coach/clients?status=all&take=50', check: allClients },
+    { screen: 'Client file', path: '/notifications/unread-count', check: field('count', CLIENTS) },
     { screen: 'Client file', path: `/coach/clients/${C}/summary?date=${today}`, check: contains(FOOD_NAME) },
     { screen: 'Client file', path: `/coach/clients/${C}/week`, check: seededWeek(now) },
     { screen: 'Client file', path: `/coach/clients/${C}/timeline?days=8`, check: contains(FOOD_NAME) },
