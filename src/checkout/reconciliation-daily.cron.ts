@@ -230,8 +230,10 @@ export class ReconciliationDailyCron {
       const { title, body } = dailyAlertCopy(tally);
       const day = now.toISOString().slice(0, 10);
       const verdict = dailyVerdict(tally);
+      // payload.title: the phone's inbox shows it as the row title (without it a coach_alert row reads "Update").
       const payload = {
         type: 'money_check',
+        title,
         verdict,
         checked: tally.checked,
         drift: tally.drift,
@@ -242,7 +244,7 @@ export class ReconciliationDailyCron {
       await this.notifications.createNotification({
         user_id: owner.id,
         kind: NotificationKind.COACH_ALERT,
-        body: `${title}. ${body}`,
+        body,
         payload,
         channel: 'inapp',
       });

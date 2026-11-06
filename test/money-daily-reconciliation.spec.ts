@@ -248,8 +248,8 @@ describe('ReconciliationDailyCron: every purchase, every day', () => {
       user_id: 'owner-1',
       kind: NotificationKind.COACH_ALERT,
       channel: 'inapp',
-      body: 'Money check: clean. Checked 120 purchases against Stripe. Every one matches.',
-      payload: { type: 'money_check', verdict: 'clean', checked: 120, drift: 0, unknown: 0, failed: 0 },
+      body: 'Checked 120 purchases against Stripe. Every one matches.',
+      payload: { type: 'money_check', title: 'Money check: clean', verdict: 'clean', checked: 120, drift: 0, unknown: 0, failed: 0 },
     });
   });
 
@@ -471,7 +471,8 @@ describe('ReconciliationDailyCron through the real push path (Mute all on, quiet
     // The inbox row: the owner's, counts only.
     expect(inbox).toHaveLength(1);
     expect(inbox[0]).toMatchObject({ user_id: owner, kind: NotificationKind.COACH_ALERT });
-    expect(String(inbox[0].body)).toBe("Money check: needs review. Checked 4 purchases against Stripe. 1 doesn't match.");
+    expect(String(inbox[0].body)).toBe("Checked 4 purchases against Stripe. 1 doesn't match.");
+    expect(inbox[0].payload).toMatchObject({ title: 'Money check: needs review', verdict: 'needs_review', checked: 4, drift: 1 });
     // The push: queued for the owner only, held to 08:00 PDT (15:00Z), carrying the Mute all pass.
     expect(world.rows).toHaveLength(1);
     expect(world.rows[0]).toMatchObject({
