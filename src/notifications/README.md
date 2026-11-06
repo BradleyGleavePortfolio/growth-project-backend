@@ -22,7 +22,7 @@ only `muted`. `NotificationsService.pushToCoach` has no caller outside its spec.
 | `weight_trend_alert` | on | on | off | `weight_trend_*` | row kept, push muted | No sender on main (`weight-trend-alert.emitter.ts` has no caller; it would tell the client) |
 | `checkin_submitted` | on | off | off | `checkin_submitted_*` | row kept, push muted | No sender on main (`checkin-submitted.emitter.ts` has no caller; it would tell the coach) |
 | `build_week_day_unlocked` | on | on | on | `build_week_*` | row kept, push muted | No sender on main (`build-week-day-unlocked.emitter.ts` has no caller; it would tell the client) |
-| `coach_alert` | on | on | off | `coach_alert_*` | row kept, push muted except safety and money alerts (note 1) | Coach |
+| `coach_alert` | on | on | off | `coach_alert_*` | row kept, push muted except safety and money alerts (note 1) | Coach; the owner for the daily money check |
 | `coach_client_moved` | on | n/a | n/a | none | row kept | Coach (the coach a client left for TGP's house coach; SWITCH-TELL-BE; one in-app row written with Prisma, no push) |
 | `client_digest` | off | off | on | `digest_*` | email muted | Client |
 | `coach_digest` | off | off | on | `digest_*` | email muted | Coach (after the email goes out, one inbox row on the `email` channel says the summary was sent) |
@@ -75,6 +75,8 @@ and drives every safety key and every money sender with Mute all on.
   (`checkout/payout-notice.service.ts`) and the Day 7 payment alert (`checkout/dunning-v2/dunning-v2.dispatcher.ts`) carry
   `MUTE_ALL_PASS`, so their pushes pass too. Refund and dispute alerts are in-app rows only. Every other coach alert push is muted.
   The payout notice also sends its email through `EmailService` without reading `coach_alert_email`.
+  The daily money check (`checkout/reconciliation-daily.cron.ts`) sends the owner account one inbox row and one push a day,
+  counts only, with `passesMuteAll`; `test/money-daily-reconciliation.spec.ts` drives it with Mute all on.
 - Note 2: these senders read the settings themselves, and since FR-1154 Mute all never stops their in-app row: `engagement/workout-reminder.service.ts`
   (the push obeys Mute all), `notifications/nudges/nudge-engine.service.ts` (push and email obey Mute all; a muted user with no
   in-app channel on is `suppressed_muted`) and `community/notifications/community-notifications.service.ts` (the push obeys Mute all; it writes its

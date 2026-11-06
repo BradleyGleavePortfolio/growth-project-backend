@@ -1256,6 +1256,16 @@ export const ENV_RULES: EnvRule[] = [
       "Partner C05 item 6 kill switch for the coach welcome-message cron (src/engagement/engagement.flags.ts, read by coach-welcome.service.ts every minute). Ships on; it sends nothing until the owner enables a coach's welcome setting at C04 (CoachWelcomeMessageSetting.enabled, default false). Emergency kill: set 'false' (unsetting turns it back on); scheduling and sending stop without a deploy, the erasure sweep keeps running.",
   },
   {
+    name: 'RECONCILIATION_DAILY_ENABLED',
+    values: ['true', 'false'],
+    unsetIs: 'on',
+    tier: 'optional',
+    launch: 'switch',
+    default: "on (unset = on; only the exact string 'false' turns the daily run off)",
+    reason:
+      "MONEY-DAILY (owner, agent 199) kill switch for the daily money check (src/checkout/reconciliation-daily.cron.ts, 11:00 UTC). Ships on: every purchase is checked against Stripe once a day and the owner account gets one push, clean or needs review, counts only. Emergency kill: set 'false' (unsetting turns it back on); the admin run-sweeper endpoint keeps working by hand.",
+  },
+  {
     name: 'WORKOUT_REMINDERS_ENABLED',
     values: ['true', 'false'],
     unsetIs: 'on',

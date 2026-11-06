@@ -122,6 +122,7 @@ describe('emergency kill per flag (B-637-2): defaults-on switches are killed by 
   const DEFAULTS_ON = [
     'COACH_WELCOME_SCHEDULER_ENABLED',
     'FEATURE_COMMUNITY_SCHEMA',
+    'RECONCILIATION_DAILY_ENABLED',
     'SIGNUP_ROLE_CHOICE_ENABLED',
     'WORKOUT_REMINDERS_ENABLED',
   ];
@@ -159,9 +160,14 @@ describe('emergency kill per flag (B-637-2): defaults-on switches are killed by 
         isCoachWelcomeSchedulerEnabled: () => boolean;
         isWorkoutRemindersEnabled: () => boolean;
       };
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { reconciliationDailyEnabled } = require('../../src/checkout/reconciliation-daily.cron') as {
+      reconciliationDailyEnabled: () => boolean;
+    };
     const readers: Record<string, () => boolean> = {
       COACH_WELCOME_SCHEDULER_ENABLED: isCoachWelcomeSchedulerEnabled,
       FEATURE_COMMUNITY_SCHEMA: isCommunitySchemaEnabled,
+      RECONCILIATION_DAILY_ENABLED: reconciliationDailyEnabled,
       SIGNUP_ROLE_CHOICE_ENABLED: signupRoleChoiceEnabled,
       WORKOUT_REMINDERS_ENABLED: isWorkoutRemindersEnabled,
     };
@@ -281,7 +287,7 @@ describe('emergency kill per flag (B-637-2): defaults-on switches are killed by 
       kills,
     );
     expect(plan.join('\n')).toContain(
-      'defaults-on switches are killed by SETTING their off value, never by unsetting: FEATURE_COMMUNITY_SCHEMA=false SIGNUP_ROLE_CHOICE_ENABLED=false COACH_WELCOME_SCHEDULER_ENABLED=false WORKOUT_REMINDERS_ENABLED=false.',
+      'defaults-on switches are killed by SETTING their off value, never by unsetting: FEATURE_COMMUNITY_SCHEMA=false SIGNUP_ROLE_CHOICE_ENABLED=false COACH_WELCOME_SCHEDULER_ENABLED=false WORKOUT_REMINDERS_ENABLED=false RECONCILIATION_DAILY_ENABLED=false.',
     );
   });
 });

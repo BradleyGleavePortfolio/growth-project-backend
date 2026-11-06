@@ -35,6 +35,7 @@ import { AdminRefundReversalController } from './refund-reversal-admin.controlle
 import { RefundTransferReversalScheduler } from './refund-transfer-reversal.scheduler';
 import { CronLeaseService } from './cron-lease.service';
 import { SettlementSweepCron } from './settlement-sweep.cron';
+import { ReconciliationDailyCron } from './reconciliation-daily.cron';
 import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
 import { PayoutNoticeService } from './payout-notice.service';
 import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
@@ -120,6 +121,8 @@ import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
     // S-FEE — scheduled payout / settlement sweep (single runner via CronLease).
     CronLeaseService,
     SettlementSweepCron,
+    // MONEY-DAILY: the daily money check (reconciliation-daily lease).
+    ReconciliationDailyCron,
     // S-FEE round 5 (OR-111-1) — payout notice delivery + Money read side.
     PayoutNoticeService,
     CoachClientPaymentsService,

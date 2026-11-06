@@ -161,6 +161,7 @@ GOOGLE_MEET_ENABLED | off | fly secrets unset -a backend-spring-lake-3890 GOOGLE
 ZOOM_ENABLED | off | fly secrets unset -a backend-spring-lake-3890 ZOOM_ENABLED | "ZOOM_ENABLED": "unset"
 FEATURE_SCOUT_INGEST | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_SCOUT_INGEST | "FEATURE_SCOUT_INGEST": "unset"
 FEATURE_EXTENSION_PAIRING | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_EXTENSION_PAIRING | "FEATURE_EXTENSION_PAIRING": "unset"
+RECONCILIATION_DAILY_ENABLED | on | fly secrets set -a backend-spring-lake-3890 RECONCILIATION_DAILY_ENABLED=false (never unset: that turns it on) | "RECONCILIATION_DAILY_ENABLED": "false"
 ```
 
 ## Deploy-window sequences

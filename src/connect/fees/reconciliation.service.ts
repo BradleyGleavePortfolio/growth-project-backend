@@ -151,6 +151,21 @@ export interface ReconciliationResult {
   notes: string | null;
 }
 
+/** MONEY-DAILY: what one purchase's check came to; `failed` = the check threw and wrote no snapshot. */
+export interface ReconciliationSweepOutcome {
+  purchase_id: string;
+  status: 'ok' | 'drift' | 'unknown' | 'failed';
+}
+
+/** One runSweep batch. The admin route returns only scanned / drifted / unknown. */
+export interface ReconciliationSweepResult {
+  scanned: number;
+  drifted: number;
+  unknown: number;
+  failed: number;
+  outcomes: ReconciliationSweepOutcome[];
+}
+
 @Injectable()
 export class ReconciliationService {
   private readonly logger = new Logger(ReconciliationService.name);
@@ -174,9 +189,16 @@ export class ReconciliationService {
 
   // Bulk reconciler — re-checks N purchases (oldest snapshots first).
   // Used by the nightly sweeper.
-  async runSweep(limit = 50): Promise<{ scanned: number; drifted: number; unknown: number }> {
+  async runSweep(
+    limit = 50,
+    opts: { staleBefore?: Date } = {},
+  ): Promise<ReconciliationSweepResult> {
     // Reconcile purchases that have either no snapshot yet, or whose
     // snapshot is older than 24h, and which are in a money-moved state.
+    // MONEY-DAILY: the daily check passes staleBefore = its own start time,
+    // so one run reaches every purchase once (a snapshot written during the
+    // run is newer than that time and drops out of the next batch).
+    const staleBefore = opts.staleBefore ?? new Date(Date.now() - 24 * 60 * 60 * 1000);
     const purchases = await this.prisma.clientPurchase.findMany({
       where: {
         status: { in: ['paid', 'active', 'past_due', 'canceled'] },
@@ -187,7 +209,7 @@ export class ReconciliationService {
           { reconciliation: null },
           {
             reconciliation: {
-              last_checked_at: { lt: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+              last_checked_at: { lt: staleBefore },
             },
           },
         ],
@@ -197,16 +219,21 @@ export class ReconciliationService {
     });
     let drifted = 0;
     let unknown = 0;
+    let failed = 0;
+    const outcomes: ReconciliationSweepOutcome[] = [];
     for (const row of purchases) {
       try {
         const result = await this.reconcileFromRow(row);
         if (result.status === 'drift') drifted += 1;
         else if (result.status === 'unknown') unknown += 1;
+        outcomes.push({ purchase_id: row.id, status: result.status });
       } catch (err) {
+        failed += 1;
+        outcomes.push({ purchase_id: row.id, status: 'failed' });
         this.logger.warn(`reconcile failed purchase=${row.id}: ${(err as Error).message}`);
       }
     }
-    return { scanned: purchases.length, drifted, unknown };
+    return { scanned: purchases.length, drifted, unknown, failed, outcomes };
   }
 
   private async reconcileFromRow(purchase: ClientPurchase): Promise<ReconciliationResult> {

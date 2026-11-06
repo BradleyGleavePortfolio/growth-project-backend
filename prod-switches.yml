@@ -1034,6 +1034,12 @@ switches:
     auto_flip_on_in_prod: false
     owner: platform
     description: "Phase 10 — master kill switch for all rate limiting. Set to 'off' only for load-test runs against staging. Any value other than 'off' leaves"
+  - name: RECONCILIATION_DAILY_ENABLED
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: payments
+    description: "Launch switch (MONEY-DAILY): the daily money check cron. Code default is on (only 'false' disables); the admin run-sweeper endpoint is not affected."
   - name: RECEIPT_FS_DIR
     tier: optional
     prod_default: STUB_ALLOWED

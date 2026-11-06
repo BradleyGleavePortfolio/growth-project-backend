@@ -512,7 +512,10 @@ export class AdminPaymentOpsController {
   @ApiOperation({ summary: 'Manually run the reconciliation sweeper' })
   async runReconciliationSweeper(@Query('limit') limitRaw?: string) {
     const limit = Math.min(parseInt(limitRaw ?? '50', 10) || 50, 200);
-    return this.reconciliation.runSweep(limit);
+    // MONEY-DAILY: runSweep now also returns per-purchase outcomes for the
+    // daily check; this route keeps its three-number shape.
+    const { scanned, drifted, unknown } = await this.reconciliation.runSweep(limit);
+    return { scanned, drifted, unknown };
   }
 
   // --- Phase 6 — Refunds / Disputes ---
