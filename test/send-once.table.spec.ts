@@ -47,6 +47,8 @@ import { IngestionService } from '../src/wearables/ingestion/ingestion.service';
 import { PreferencesService } from '../src/users/preferences.service';
 import { NotificationsService } from '../src/notifications/notifications.service';
 import { ProfileService } from '../src/profile/profile.service';
+import { CoachCodeRedemptionService } from '../src/coachless/coach-code-redemption.service';
+import { BroadcastsService } from '../src/broadcasts/broadcasts.service';
 import { WorkoutBuilderAutosaveService } from '../src/workout-builder/workout-builder-autosave.service';
 import { FEATURE_MWB_AUTOSAVE_UNDO_ENV } from '../src/workout-builder/workout-builder-autosave.feature';
 import { computeLockToken } from '../src/workout-builder/lock-token.helper';
@@ -501,8 +503,7 @@ export const SEND_ONCE_TABLE: SendOnceRow[] = [
       server: [{ file: 'src/notifications/notifications.service.ts', holds: /const row = await this\.prisma\.notificationPreferences\.upsert\(/ }],
       proof: async () => {
         const f = fakeDb({ notificationPreferences: { unique: [['user_id']] } });
-        const svc = Object.create(NotificationsService.prototype) as NotificationsService & Record<string, unknown>;
-        svc.prisma = f.db;
+        const svc = new NotificationsService(f.db);
         await svc.setTimeZone(USER, 'America/Los_Angeles', 'device');
         const again = await svc.setTimeZone(USER, 'America/Los_Angeles', 'device');
         expect(again.timezone).toBe('America/Los_Angeles');
@@ -520,14 +521,73 @@ export const SEND_ONCE_TABLE: SendOnceRow[] = [
       server: [{ file: 'src/profile/profile.service.ts', holds: /const existing = await tx\.userProfile\.findUnique\(\{ where: \{ user_id: userId \} \}\);/ }],
       proof: async () => {
         const f = fakeDb({ userProfile: { unique: [['user_id']] } });
-        const svc = Object.create(ProfileService.prototype) as ProfileService & Record<string, unknown>;
-        svc.prisma = f.db;
+        const svc = new ProfileService(f.db);
         const now = new Date('2026-11-05T12:00:00.000Z');
         const body = { date_of_birth: '1990-04-02' } as never;
         await svc.updateProfile(USER, body, now);
         await svc.updateProfile(USER, body, now);
         expect(f.rows('userProfile')).toHaveLength(1);
         expect(f.rows('userProfile')[0].date_of_birth).toEqual(new Date('1990-04-02'));
+      },
+    },
+  },
+  {
+    write: 'POST /coachless/coach-code/redeem',
+    phone: [
+      'src/screens/client/settings/AddCoachCodeScreen.tsx:64-68 (one Idempotency-Key per code; Try again reuses it)',
+      'src/components/coachless/CoachCodeSheet.tsx:106 (the same keyRef rule in the sheet)',
+    ],
+    rule: {
+      kind: 'key',
+      says: 'Idempotency-Key -> (user_id, idempotency_key) ledger row; a completed key replays its stored answer, the redemption runs once',
+      server: [
+        { file: 'src/coachless/coachless.controller.ts', holds: /if \(!idempotencyKey\) throw new CoachlessError\(COACHLESS_ERROR\.IDEMPOTENCY_KEY_REQUIRED\)/ },
+        { file: 'src/coachless/coach-code-redemption.service.ts', holds: /where: \{ user_id_idempotency_key: \{ user_id: userId, idempotency_key: key \} \}/ },
+      ],
+      proof: async () => {
+        const f = fakeDb({ coachCodeRedemption: { unique: [['user_id', 'idempotency_key']], onCreate: (r) => (r.updated_at = new Date()) } });
+        const audit = { write: jest.fn().mockResolvedValue(undefined) };
+        const svc = new CoachCodeRedemptionService(f.db, {} as never, {} as never, {} as never, audit as never);
+        const answer = { status: 'attached', already_attached: false, coach: { id: COACH, name: 'Coach Dana' }, next: { screen: 'home' }, grant: null };
+        const execute = jest.spyOn(svc as never as { execute: () => Promise<unknown> }, 'execute').mockResolvedValue(answer);
+        const args = { userId: USER, rawCode: 'DANA-2026', idempotencyKey: uuid() };
+        const first = await svc.redeem(args);
+        const again = await svc.redeem(args);
+        expect(first.replayed).toBeUndefined();
+        expect(again.replayed).toBe(true);
+        expect(again.coach.id).toBe(COACH);
+        expect(execute).toHaveBeenCalledTimes(1);
+        expect(f.rows('coachCodeRedemption')).toHaveLength(1);
+      },
+    },
+  },
+  {
+    write: 'POST /coach/broadcasts',
+    phone: ['src/screens/coach/broadcasts/BroadcastComposerScreen.tsx:86-120 (one Idempotency-Key per broadcast; a retried tap reuses it)'],
+    rule: {
+      kind: 'key',
+      says: 'Idempotency-Key -> (coach, author, key); a resend with the same text returns the first broadcast',
+      server: [
+        { file: 'src/broadcasts/broadcasts.controller.ts', holds: /return this\.broadcasts\.create\(req\.user\.id, dto, idempotencyKey\)/ },
+        { file: 'src/broadcasts/broadcasts.service.ts', holds: /const existing = await this\.findOwnKey\(scope, key\);\s*if \(existing\) return this\.replay\(scope, existing, input\);/ },
+      ],
+      proof: async () => {
+        const f = fakeDb();
+        const scopes = { resolve: jest.fn().mockResolvedValue({ tenantId: COACH, actorId: COACH }) };
+        const svc = new BroadcastsService(f.db, scopes as never, {} as never, {} as never, { write: jest.fn() } as never);
+        const s = svc as never as Record<string, unknown>;
+        jest.spyOn(s as never as { validate: () => Promise<unknown> }, 'validate').mockResolvedValue({
+          status: 'draft', body: 'Deload week starts Monday', card: null, segment: { kind: 'all' },
+          timezone: 'America/Los_Angeles', sendAt: null, recurrence: null, urgent: false,
+        });
+        jest.spyOn(s as never as { segmentJson: () => unknown }, 'segmentJson').mockReturnValue({ kind: 'all' });
+        jest.spyOn(s as never as { answer: (scope: unknown, row: Row) => unknown }, 'answer').mockImplementation(async (_scope, row) => row);
+        const key = `bc-${uuid()}`;
+        const input = { body: 'Deload week starts Monday' } as never;
+        const first = (await svc.create(COACH, input, key)) as Row;
+        const again = (await svc.create(COACH, input, key)) as Row;
+        expect(again.id).toBe(first.id);
+        expect(f.rows('coachBroadcast')).toHaveLength(1);
       },
     },
   },
@@ -543,7 +603,9 @@ export const SEND_ONCE_TABLE: SendOnceRow[] = [
       ],
       proof: async () => {
         const prev = process.env[FEATURE_MWB_AUTOSAVE_UNDO_ENV];
+        const prevSecret = process.env.MWB_AUTOSAVE_LOCK_TOKEN_SECRET;
         process.env[FEATURE_MWB_AUTOSAVE_UNDO_ENV] = 'true';
+        process.env.MWB_AUTOSAVE_LOCK_TOKEN_SECRET = 'a0'.repeat(32);
         try {
           const f = fakeDb();
           const svc = new WorkoutBuilderAutosaveService(f.db, {} as never, { capture: jest.fn() } as never);
@@ -564,6 +626,8 @@ export const SEND_ONCE_TABLE: SendOnceRow[] = [
         } finally {
           if (prev === undefined) delete process.env[FEATURE_MWB_AUTOSAVE_UNDO_ENV];
           else process.env[FEATURE_MWB_AUTOSAVE_UNDO_ENV] = prev;
+          if (prevSecret === undefined) delete process.env.MWB_AUTOSAVE_LOCK_TOKEN_SECRET;
+          else process.env.MWB_AUTOSAVE_LOCK_TOKEN_SECRET = prevSecret;
         }
       },
     },
