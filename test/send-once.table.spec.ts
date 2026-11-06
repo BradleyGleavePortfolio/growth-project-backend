@@ -60,6 +60,8 @@ import { CommunityDmsRepository } from '../src/community/dms/community-dms.repos
 import { CommunityPostsService } from '../src/community/posts/community-posts.service';
 import { CommunityPostsRepository } from '../src/community/posts/community-posts.repository';
 import { CommunityMessagesRepository } from '../src/community/messages/community-messages.repository';
+import { CommunityChallengesService } from '../src/community/challenges/community-challenges.service';
+import { CommunityChallengesRepository } from '../src/community/challenges/community-challenges.repository';
 
 // ─── A Prisma double that keeps unique indexes ───────────────────────────────
 
@@ -846,6 +848,41 @@ export const SEND_ONCE_TABLE: SendOnceRow[] = [
         await expect(add(author, POST, 'other words', key)).rejects.toBeInstanceOf(ConflictException);
         await add(author, POST, 'nice one coach', null);
         await add(author, POST, 'nice one coach', uuid());
+        expect(f.rows('communityMessage')).toHaveLength(3);
+      },
+    },
+  },
+  {
+    write: 'POST /community/challenges/:challengeId/comments',
+    phone: [
+      'src/api/communityChallengesApi.ts:339-349 and :210 (an Idempotency-Key on every call, a new one each call: SEND-ONCE-PHONE keeps one per draft)',
+    ],
+    rule: {
+      kind: 'key',
+      says: 'Idempotency-Key -> the comment id itself (keyedSendId: author + challenge + key) under the keyed-write lock; a replay answers the first comment; another body under the key: 409',
+      server: [
+        { file: 'src/community/challenges/community-challenges.controller.ts', holds: /const key = messageKey\(idempotencyKey\);\s*return this\.challenges\.addComment\(req\.user, challengeId, body\.body, key\)/ },
+        { file: 'src/community/challenges/community-challenges.service.ts', holds: /keyedSendId\('challenge-comment', user\.id, challengeId, idempotencyKey\)/ },
+        { file: 'src/community/challenges/community-challenges.repository.ts', holds: /keyedWrite\(tx, id, \(\) => tx\.communityMessage\.findFirst\(\{ where: \{ id \} \}\)/ },
+      ],
+      proof: async () => {
+        const f = fakeDb({ communityMessage: { onCreate: stamped } });
+        const CHALLENGE = '55555555-5555-4555-8555-555555555555';
+        const svc = Object.create(CommunityChallengesService.prototype) as Record<string, unknown>;
+        Object.assign(svc, {
+          repo: new CommunityChallengesRepository(f.db), safety: { assertAllowed: () => undefined },
+          readableChallenge: async () => ({ id: CHALLENGE, workspace_id: '11111111-1111-4111-8111-111111111111', cohort_id: null }),
+        });
+        const add = (svc.addComment as (...a: unknown[]) => Promise<{ comment: { id: string } }>).bind(svc);
+        const author = makeUser({ id: USER, role: 'student' });
+        const key = uuid();
+        const first = await add(author, CHALLENGE, 'day 12 done', key);
+        const again = await add(author, CHALLENGE, 'day 12 done', key);
+        expect(again).toEqual(first);
+        expect(f.rows('communityMessage')).toHaveLength(1);
+        await expect(add(author, CHALLENGE, 'other words', key)).rejects.toBeInstanceOf(ConflictException);
+        await add(author, CHALLENGE, 'day 12 done', null);
+        await add(author, CHALLENGE, 'day 12 done', uuid());
         expect(f.rows('communityMessage')).toHaveLength(3);
       },
     },

@@ -12,6 +12,7 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { messageKey } from '../messages/message-idempotency';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../../auth/auth-request';
@@ -246,8 +247,11 @@ export class CommunityChallengesController {
     @Param('challengeId', new ParseUUIDPipe({ version: '4' }))
     challengeId: string,
     @Body() body: CreateChallengeCommentDto,
+    // SEND-ONCE-SERVER: optional; a UUID makes a resend land once (the space chat's rule), blank keeps today's send.
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
-    return this.challenges.addComment(req.user, challengeId, body.body);
+    const key = messageKey(idempotencyKey);
+    return this.challenges.addComment(req.user, challengeId, body.body, key);
   }
 
   @Post('challenges/:challengeId/comments/:commentId/report')
