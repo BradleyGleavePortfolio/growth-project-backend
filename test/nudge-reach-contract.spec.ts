@@ -58,7 +58,8 @@ function matches(row: Row, where: Row | undefined): boolean {
 
 let queuedSend: jest.Mock<Promise<ExpoPushTicket[]>, [ExpoPushMessage[]]>;
 
-function world(opts: { muted?: boolean; prefsUnreadable?: boolean } = {}) {
+function world(opts: { muted?: boolean; prefsUnreadable?: boolean; at?: string; zone?: string } = {}) {
+  const clock = { at: opts.at ? new Date(opts.at) : new Date() };
   const inbox: Row[] = [];
   const nudges: Row[] = [];
   const blocks: Row[] = [];
@@ -83,7 +84,12 @@ function world(opts: { muted?: boolean; prefsUnreadable?: boolean } = {}) {
       }),
     },
   };
-  const outbox = pushOutboxWorld({ now: () => new Date() });
+  // The client's NotificationPreferences row: Mute all and the zone quiet hours read.
+  const pref: Row = {
+    ...(opts.muted ? { muted: true } : {}),
+    ...(opts.zone ? { timezone: opts.zone, timezone_updated_at: new Date('2026-01-01T00:00:00Z') } : {}),
+  };
+  const outbox = pushOutboxWorld({ now: () => clock.at, prefs: Object.keys(pref).length ? { [CLIENT]: pref } : {} });
   outbox.tokens[CLIENT] = TOKEN;
   const db = {
     ...outbox.db,
@@ -96,9 +102,9 @@ function world(opts: { muted?: boolean; prefsUnreadable?: boolean } = {}) {
       findFirst: jest.fn(async (a: { where: Row }) => inbox.find((r) => matches(r, a.where)) ?? null),
     },
     notificationPreferences: {
-      findUnique: jest.fn(async () => {
+      findUnique: jest.fn(async (a: { where: { user_id: string } }) => {
         if (opts.prefsUnreadable) throw new Error('db down');
-        return opts.muted ? { muted: true } : null;
+        return outbox.db.notificationPreferences.findUnique(a);
       }),
     },
     userBlock: {
@@ -126,7 +132,12 @@ function world(opts: { muted?: boolean; prefsUnreadable?: boolean } = {}) {
     }),
   };
   const transport = stub<ExpoPushClient>({ send: queuedSend, getReceipts: jest.fn(async () => ({})) });
-  const delivery = new PushDeliveryService(stub<ConstructorParameters<typeof PushDeliveryService>[0]>(db), transport);
+  class Clocked extends PushDeliveryService {
+    protected now(): Date {
+      return new Date(clock.at.getTime());
+    }
+  }
+  const delivery = new Clocked(stub<ConstructorParameters<typeof PushDeliveryService>[0]>(db), transport);
   delivery.autoDrain = false;
   const notifications = new NotificationsService(
     stub<ConstructorParameters<typeof NotificationsService>[0]>(db), undefined, undefined, delivery,
@@ -136,6 +147,9 @@ function world(opts: { muted?: boolean; prefsUnreadable?: boolean } = {}) {
   // As NudgesModule wires it (positional: PrismaService, NotificationsService).
   const svc = new (NudgesService as unknown as new (p: unknown, n: unknown) => NudgesService)(db, notifications);
   return {
+    clock,
+    outboxRows: outbox.rows,
+    delivery,
     inbox,
     nudges,
     blocks,
@@ -309,6 +323,36 @@ describe('NUDGE-REACH-BE contract: coach nudge -> client inbox row (coach title,
     expect(sent).toHaveLength(2);
     expect(sent.map((m) => (m.data as Row).nudge_id).sort()).toEqual([a.id, b.id].sort());
     expect((await w.notifications.listNotifications(CLIENT, {})).items).toHaveLength(2);
+  });
+
+  it('(failed before) inside quiet hours: the inbox row at once, the push held to 08:00 in the client zone', async () => {
+    // 23:00 PDT on 10-05; the next 08:00 PDT is 15:00Z on 10-06.
+    const w = world({ at: '2026-10-06T06:00:00Z', zone: 'America/Los_Angeles' });
+    const nudge = await w.send(TITLE, BODY);
+    const { results, sent } = await w.delivered();
+    expect(results).toEqual([expect.objectContaining({ delivered: true, detail: 'deferred' })]);
+    expect(sent).toEqual([]);
+    expect(w.outboxRows).toEqual([
+      expect.objectContaining({ status: 'pending', deferred_reason: 'quiet_hours', not_before: new Date('2026-10-06T15:00:00Z') }),
+    ]);
+    expect((await w.notifications.listNotifications(CLIENT, {})).items).toHaveLength(1);
+    w.clock.at = new Date('2026-10-06T15:00:00Z');
+    await w.delivery.drain();
+    const morning = queuedSend.mock.calls.flatMap(([chunk]) => chunk);
+    expect(morning).toHaveLength(1);
+    expect((morning[0].data as Row).nudge_id).toBe(nudge.id);
+  });
+
+  it('(failed before) the longest message (500 characters) shows whole in the inbox row, never on the lock screen', async () => {
+    const w = world();
+    const long = 'Your plan for the week, step by step. '.repeat(14).slice(0, 500);
+    expect(long).toHaveLength(500);
+    await w.send('A'.repeat(80), long);
+    const { sent } = await w.delivered();
+    const [row] = (await w.notifications.listNotifications(CLIENT, {})).items;
+    expect(row.body).toBe(long);
+    expect((row.payload as Row).title).toBe('A'.repeat(80));
+    expect(`${sent[0].title} ${sent[0].body}`).not.toContain('step by step');
   });
 
   it('the 10-a-minute throttle on POST /coach/clients/:id/nudges is unchanged', () => {
