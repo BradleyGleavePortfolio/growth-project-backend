@@ -862,50 +862,56 @@ describe('GC-3 — pay page and return page words', () => {
 
   it('the return page checks the SetupIntent and shows the trial started with PF-W5', async () => {
     const created = new Date('2026-10-30T17:00:00.000Z');
-    const deps: any = {
-      storefrontBase: 'https://app.example.com',
-      db: {
-        guestCheckout: {
-          findUnique: jest.fn(async () => ({
-            guest_email: 'jane@example.com',
-            created_at: created,
-            status: 'converted',
-            expires_at: new Date(Date.now() + DAY),
-            idempotency_key: 'idem-key-trial-1',
-            package_snapshot: { price_cents: 14900, trial_days: 7 },
-            package: { share_token: 'tok_trial_page_012345', name: 'Monthly Coaching', coach: { name: 'Alex' } },
+    // This scenario is inside the fixed seven-day trial, not after it ends.
+    const now = jest.spyOn(Date, 'now').mockReturnValue(created.getTime() + DAY);
+    try {
+      const deps: any = {
+        storefrontBase: 'https://app.example.com',
+        db: {
+          guestCheckout: {
+            findUnique: jest.fn(async () => ({
+              guest_email: 'jane@example.com',
+              created_at: created,
+              status: 'converted',
+              expires_at: new Date(Date.now() + DAY),
+              idempotency_key: 'idem-key-trial-1',
+              package_snapshot: { price_cents: 14900, trial_days: 7 },
+              package: { share_token: 'tok_trial_page_012345', name: 'Monthly Coaching', coach: { name: 'Alex' } },
+            })),
+          },
+          user: { findFirst: jest.fn(async () => null) },
+        },
+        stripe: {
+          retrievePaymentIntent: jest.fn(),
+          retrieveCharge: jest.fn(),
+          retrieveSetupIntent: jest.fn(async () => ({
+            id: 'seti_webtrial01',
+            status: 'succeeded',
+            client_secret: 'seti_webtrial01_secret_z',
           })),
         },
-        user: { findFirst: jest.fn(async () => null) },
-      },
-      stripe: {
-        retrievePaymentIntent: jest.fn(),
-        retrieveCharge: jest.fn(),
-        retrieveSetupIntent: jest.fn(async () => ({
-          id: 'seti_webtrial01',
-          status: 'succeeded',
-          client_secret: 'seti_webtrial01_secret_z',
-        })),
-      },
-    };
-    const res = await readPayDone(deps, 'tok_trial_page_012345', {
-      setup_intent: 'seti_webtrial01',
-      setup_intent_client_secret: 'seti_webtrial01_secret_z',
-    });
-    expect(res.view).toMatchObject({
-      kind: 'paid',
-      trial: { firstChargeCents: 14900, firstChargeAt: '2026-11-06T17:00:00.000Z' },
-    });
-    expect(deps.stripe.retrievePaymentIntent).not.toHaveBeenCalled();
-    const html = renderPayDonePage(cast(res.view), 'nonce-gc3', 'https://apps.example.com/tgp');
-    expect(html).toContain('Your free trial has started');
-    expect(html).toContain('Nothing is charged today. Your first charge of $149.00 is on Nov 6.');
+      };
+      const res = await readPayDone(deps, 'tok_trial_page_012345', {
+        setup_intent: 'seti_webtrial01',
+        setup_intent_client_secret: 'seti_webtrial01_secret_z',
+      });
+      expect(res.view).toMatchObject({
+        kind: 'paid',
+        trial: { firstChargeCents: 14900, firstChargeAt: '2026-11-06T17:00:00.000Z' },
+      });
+      expect(deps.stripe.retrievePaymentIntent).not.toHaveBeenCalled();
+      const html = renderPayDonePage(cast(res.view), 'nonce-gc3', 'https://apps.example.com/tgp');
+      expect(html).toContain('Your free trial has started');
+      expect(html).toContain('Nothing is charged today. Your first charge of $149.00 is on Nov 6.');
 
-    const wrong = await readPayDone(deps, 'tok_trial_page_012345', {
-      setup_intent: 'seti_webtrial01',
-      setup_intent_client_secret: 'seti_other00001_secret_z',
-    });
-    expect(wrong.view.kind).toBe('unknown');
+      const wrong = await readPayDone(deps, 'tok_trial_page_012345', {
+        setup_intent: 'seti_webtrial01',
+        setup_intent_client_secret: 'seti_other00001_secret_z',
+      });
+      expect(wrong.view.kind).toBe('unknown');
+    } finally {
+      now.mockRestore();
+    }
   });
   // FR-1193 (LO-1193 B1, LS-1193 B1) — the saved card alone never says the
   // trial started: the row's conversion result decides the view.
