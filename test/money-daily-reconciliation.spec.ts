@@ -16,6 +16,7 @@ import {
   ReconciliationDailyCron,
   dailyAlertCopy,
   dailyVerdict,
+  dayLeaseUntil,
   reconciliationDailyEnabled,
   type DailyTally,
 } from '../src/checkout/reconciliation-daily.cron';
@@ -399,16 +400,40 @@ describe('ReconciliationDailyCron: one machine, the off switch, the owner', () =
     expect(a.notes.pushToUser.mock.calls.length + b.notes.pushToUser.mock.calls.length).toBe(1);
   });
 
-  it('releases the lease when done, so tomorrow runs', async () => {
+  it('FIX-1225 (a): the lease is held to the next UTC midnight, so later today nothing runs and tomorrow runs', async () => {
     const { lease, rows } = leaseFor();
-    const { cron } = cronFor(many(2, 'ok'), { lease });
-    const now = NOW();
-    await cron.runOnce(now, 'm1', noPause);
+    const a = cronFor(many(2, 'ok'), { lease });
+    const b = new ReconciliationDailyCron(lease, a.world.svc, a.notes as any, a.users as any);
+    const now = new Date('2026-10-01T11:00:00.000Z');
+    expect((await a.cron.runOnce(now, 'm1', noPause)).ran).toBe(true);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ name: 'reconciliation-daily' });
-    expect(new Date(rows[0].lease_until as Date).getTime()).toBe(now.getTime());
-    const again = await cron.runOnce(new Date(now.getTime() + 24 * 3600_000), 'm2', noPause);
-    expect(again.ran).toBe(true);
+    expect(new Date(rows[0].lease_until as Date).toISOString()).toBe('2026-10-02T00:00:00.000Z');
+    // A retry or a late machine any time later the same UTC day: nothing runs, nothing is sent.
+    for (const at of ['2026-10-01T11:00:00.001Z', '2026-10-01T12:30:00.000Z', '2026-10-01T23:59:59.999Z']) {
+      await expect(b.runOnce(new Date(at), 'm2', noPause)).resolves.toEqual({ ran: false, reason: 'lock_held' });
+    }
+    expect(a.notes.createNotification).toHaveBeenCalledTimes(1);
+    expect(a.notes.pushToUser).toHaveBeenCalledTimes(1);
+    // The next UTC day runs again.
+    expect((await b.runOnce(new Date('2026-10-02T11:00:00.000Z'), 'm2', noPause)).ran).toBe(true);
+    expect(a.notes.createNotification).toHaveBeenCalledTimes(2);
+  });
+
+  it('FIX-1225 (a): dayLeaseUntil is the next UTC midnight, never shorter than LEASE_TTL_MS', () => {
+    expect(dayLeaseUntil(new Date('2026-10-01T11:00:00Z')).toISOString()).toBe('2026-10-02T00:00:00.000Z');
+    expect(dayLeaseUntil(new Date('2026-10-01T00:00:00Z')).toISOString()).toBe('2026-10-02T00:00:00.000Z');
+    // A run started at 23:30 UTC keeps its lease for the whole budget.
+    expect(dayLeaseUntil(new Date('2026-10-01T23:30:00Z')).toISOString()).toBe('2026-10-02T00:30:00.000Z');
+    expect(dayLeaseUntil(new Date('2026-12-31T11:00:00Z')).toISOString()).toBe('2027-01-01T00:00:00.000Z');
+  });
+
+  it('FIX-1225 (c): the inbox row is written with sender_words, so it keeps the whole body', async () => {
+    const { cron, notes } = cronFor([...many(60, 'throws'), ...many(30, 'ok')]);
+    await cron.runOnce(NOW(), 'm1', noPause);
+    const input = notes.createNotification.mock.calls[0][0];
+    const pushBody = (notes.pushToUser.mock.calls[0] as unknown as any[])[2];
+    expect(input).toMatchObject({ sender_words: true, body: pushBody });
   });
 
   it('a lease read error skips the day without sending anything', async () => {
@@ -482,6 +507,28 @@ describe('ReconciliationDailyCron through the real push path (Mute all on, quiet
     expect(inbox).toHaveLength(1);
     expect(inbox[0].body).toBe(dailyAlertCopy(result.tally).body);
     expect(inbox[0].body).toContain('The check stopped early before it reached every purchase.');
+  });
+
+  it('FIX-1225 (c): only a sender that says sender_words keeps a body over 160; every other inbox row is still cut', async () => {
+    const world = pushOutboxWorld({ now: NOW });
+    const inbox: Array<Record<string, unknown>> = [];
+    const db = {
+      ...world.db,
+      notification: {
+        create: jest.fn(async (input: { data: Record<string, unknown> }) => {
+          inbox.push(input.data);
+          return { id: `n-${inbox.length}`, ...input.data };
+        }),
+      },
+    };
+    const notifications = new NotificationsService(stub<ConstructorParameters<typeof NotificationsService>[0]>(db));
+    const long = 'x'.repeat(200);
+    await notifications.createNotification({ user_id: 'u1', kind: NotificationKind.COACH_ALERT, body: long, channel: 'inapp' });
+    await notifications.createNotification({
+      user_id: 'u1', kind: NotificationKind.COACH_ALERT, body: long, channel: 'inapp', sender_words: true,
+    });
+    expect(inbox.map((r) => String(r.body).length)).toEqual([160, 200]);
+    expect(inbox[1]).not.toHaveProperty('sender_words');
   });
 
   it('Mute all on: the owner still gets it; inside quiet hours it waits for 08:00 Pacific; nobody else gets anything', async () => {

@@ -3,8 +3,10 @@
  * purchase and tells the owner "clean" or "needs review".
  *
  * Once a day (11:00 UTC: 03:00 PST / 04:00 PDT, so the push lands before
- * 06:00 Pacific) one machine takes the "reconciliation-daily" CronLease row and
- * calls ReconciliationService.runSweep in batches of BATCH with
+ * 06:00 Pacific) one machine takes the "reconciliation-daily" CronLease row
+ * until the next UTC midnight (dayLeaseUntil) and never hands it back early:
+ * one run, one inbox row and one push per UTC day, however many machines tick
+ * or how late a second one starts (LS-1225 B1, LO-1225 C3). It then calls ReconciliationService.runSweep in batches of BATCH with
  * staleBefore = the run's start. Every purchase checked in the run gets a
  * snapshot newer than that time, so the next batch holds only purchases not
  * yet reached. The run stops on:
@@ -40,8 +42,18 @@ export const DAILY_JOB_NAME = 'reconciliation-daily';
 export const DAILY_CRON = '0 11 * * *';
 export const BATCH = 50;
 export const RUN_BUDGET_MS = 45 * 60_000;
-/** Longer than the budget, so a slow run never loses its lease mid-run. */
+/** The shortest lease: longer than the budget, so a slow run never loses its lease mid-run. */
 export const LEASE_TTL_MS = 60 * 60_000;
+
+/**
+ * The day's lease runs to the next UTC midnight (never shorter than
+ * LEASE_TTL_MS). It is not released when the run ends: a second machine, or
+ * a retry, later the same UTC day finds it held and does nothing.
+ */
+export function dayLeaseUntil(now: Date): Date {
+  const nextMidnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
+  return new Date(Math.max(nextMidnight, now.getTime() + LEASE_TTL_MS));
+}
 export const PACE_MS = 1_000;
 
 export const DAILY_LOG_CODES = {
@@ -138,7 +150,8 @@ export class ReconciliationDailyCron {
     }
     let acquired = false;
     try {
-      acquired = (await this.lease.tryAcquire(DAILY_JOB_NAME, holder, LEASE_TTL_MS, now)).acquired;
+      const ttlMs = dayLeaseUntil(now).getTime() - now.getTime();
+      acquired = (await this.lease.tryAcquire(DAILY_JOB_NAME, holder, ttlMs, now)).acquired;
     } catch (err) {
       this.logger.error(
         `${DAILY_LOG_CODES.lockError} alert=true could not read the money-check lease; today's run is skipped: ${(err as Error)?.name ?? 'error'}`,
@@ -146,27 +159,20 @@ export class ReconciliationDailyCron {
       return { ran: false, reason: 'lock_error' };
     }
     if (!acquired) {
-      this.logger.debug(`${DAILY_LOG_CODES.lockHeld} another machine is running the money check`);
+      this.logger.debug(`${DAILY_LOG_CODES.lockHeld} the money check already ran or is running today (UTC)`);
       return { ran: false, reason: 'lock_held' };
     }
-    try {
-      const { tally, batches } = await this.sweepAll(now, pause, clock);
-      const verdict = dailyVerdict(tally);
-      if (tally.stopped) {
-        this.logger.warn(`${DAILY_LOG_CODES.stoppedEarly} reason=${tally.stopped} checked=${tally.checked}`);
-      }
-      this.logger.log(
-        `${DAILY_LOG_CODES.done} verdict=${verdict} checked=${tally.checked} ok=${tally.ok} drift=${tally.drift} unknown=${tally.unknown} failed=${tally.failed} batches=${batches}`,
-      );
-      const alerted = await this.alertOwner(tally, now);
-      return { ran: true, verdict, tally, batches, alerted };
-    } finally {
-      await this.lease.release(DAILY_JOB_NAME, holder, now).catch(() => {
-        this.logger.warn(
-          `${DAILY_LOG_CODES.lockError} could not release the money-check lease; it expires on its own in ${LEASE_TTL_MS / 60_000} minutes`,
-        );
-      });
+    // No release: the lease is the day's one-run record and ends at the next UTC midnight.
+    const { tally, batches } = await this.sweepAll(now, pause, clock);
+    const verdict = dailyVerdict(tally);
+    if (tally.stopped) {
+      this.logger.warn(`${DAILY_LOG_CODES.stoppedEarly} reason=${tally.stopped} checked=${tally.checked}`);
     }
+    this.logger.log(
+      `${DAILY_LOG_CODES.done} verdict=${verdict} checked=${tally.checked} ok=${tally.ok} drift=${tally.drift} unknown=${tally.unknown} failed=${tally.failed} batches=${batches}`,
+    );
+    const alerted = await this.alertOwner(tally, now);
+    return { ran: true, verdict, tally, batches, alerted };
   }
 
   /** Batches of BATCH until a short batch, a batch with no new id, the time budget, or an error. */
@@ -247,6 +253,8 @@ export class ReconciliationDailyCron {
         body,
         payload,
         channel: 'inapp',
+        // LS-1225 B3 / LO-1225 C2: the inbox keeps the whole body, the same words as the push.
+        sender_words: true,
       });
       await this.notifications.pushToUser(
         owner.id,

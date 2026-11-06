@@ -109,6 +109,13 @@ export interface CreateNotificationInput {
    * switched off keeps its push row visible.
    */
   push_twin?: boolean;
+  /**
+   * LS-1225 B3 / LO-1225 C2 (MONEY-DAILY): the sender's own body is kept
+   * whole instead of cut at 160 characters, so the inbox row reads the same
+   * words as the push (the push's senderWords, PF-3-BE). Only for a sender
+   * whose body is short composed text; unset keeps the 160 cut.
+   */
+  sender_words?: true;
 }
 
 /** Whether a user receives a kind on a channel (createNotification's gate). */
@@ -588,7 +595,7 @@ export class NotificationsService implements OnModuleInit {
       recentPushes.set(key, now);
     }
 
-    const body = input.body.slice(0, 160);
+    const body = input.sender_words === true ? input.body : input.body.slice(0, 160);
     // B-648-7: a writer that stores a `push` twin next to the `inapp` row of
     // the same event says so, and the twin stays out of the inbox and the
     // unread counts once that `inapp` row is found. Nothing is hidden by kind.

@@ -201,7 +201,7 @@ export class ReconciliationService {
     const staleBefore = opts.staleBefore ?? new Date(Date.now() - 24 * 60 * 60 * 1000);
     const purchases = await this.prisma.clientPurchase.findMany({
       where: {
-        status: { in: ['paid', 'active', 'past_due', 'canceled'] },
+        status: { in: [...RECONCILED_PURCHASE_STATUSES] },
         // C01 — $0 grants have no Stripe charge; they are not reconcilable
         // and must not consume the sweep budget.
         source: null,
@@ -255,6 +255,25 @@ export class ReconciliationService {
     }
 
     const ledgerSums = summarizeLedger(ledger);
+
+    // LO-1225 B1: a purchase that never charged (a free trial canceled before
+    // its first charge, or whose first charge failed) has nothing to match:
+    // no payment intent, no ledger row, no transfer, no settlement, and a
+    // status that does not claim a payment. It is 'ok' (never_charged), not
+    // "could not be confirmed yet" every day forever. A paid or active
+    // purchase with nothing recorded stays 'unknown'.
+    if (
+      !purchase.stripe_payment_intent_id &&
+      ledger.length === 0 &&
+      transfers.length === 0 &&
+      NEVER_CHARGED_OK_STATUSES.has(purchase.status)
+    ) {
+      return this.persistSnapshot(purchase.id, 'ok', 0, {
+        stripe: { amount_cents: null, refunded_cents: null, application_fee_cents: null, transfers_cents: null },
+        ledger: ledgerSums,
+        notes: 'never_charged',
+      });
+    }
 
     // Stripe side: we need the Charge id. The shortest path is
     // PI -> latest_charge -> Charge. For recurring purchases each renewal
@@ -323,12 +342,30 @@ export class ReconciliationService {
     //
     // (left side = real money that left the platform Charge net of refunds;
     //  right side = what our ledger says we accounted for, net of reversals.)
-    const stripeNet = (stripeAmount ?? 0) - (stripeRefunded ?? 0);
+    let stripeNet = (stripeAmount ?? 0) - (stripeRefunded ?? 0);
     const ledgerNet =
       ledgerSums.destination_cents +
       ledgerSums.application_fee_cents +
       ledgerSums.head_coach_cents -
       ledgerSums.reversed_cents;
+    // LS-1225 B2: a lost dispute takes money back through Stripe's dispute,
+    // not a refund (amount_refunded stays 0), and the dispute handler reverses
+    // the ledger by the dispute amount. Count Stripe's lost-dispute amount (the
+    // ChargeDispute rows the dispute webhook wrote) for this charge on the
+    // Stripe side: a lost chargeback reads 'ok' only when the ledger reversal
+    // matches it, and 'drift' when the ledger was never reversed. Read for a
+    // chargeback_lost purchase, or when the ledger shows a reversal the
+    // refunds do not explain (a purchase restarted after a lost dispute).
+    if (
+      purchase.status === 'chargeback_lost' ||
+      (stripeNet !== ledgerNet && ledgerSums.reversed_cents > 0)
+    ) {
+      const lost = await this.prisma.chargeDispute.findMany({
+        where: { purchase_id: purchase.id, stripe_charge_id: chargeId, status: 'lost' },
+        select: { amount_cents: true },
+      });
+      stripeNet -= lost.reduce((sum, d) => sum + d.amount_cents, 0);
+    }
     const drift = stripeNet - ledgerNet;
 
     const status: 'ok' | 'drift' = drift === 0 ? 'ok' : 'drift';
@@ -559,6 +596,25 @@ export class ReconciliationService {
     });
   }
 }
+
+/**
+ * Purchase states the money check reads: every state a charge can leave a
+ * purchase in, including the ones the refund and dispute handlers write
+ * (refunded, disputed, chargeback_lost; LS-1225 B2). Shared by the admin
+ * button and the daily run.
+ */
+export const RECONCILED_PURCHASE_STATUSES = [
+  'paid',
+  'active',
+  'past_due',
+  'canceled',
+  'refunded',
+  'disputed',
+  'chargeback_lost',
+] as const;
+
+/** States in which a purchase with nothing recorded simply never charged (LO-1225 B1). */
+const NEVER_CHARGED_OK_STATUSES: ReadonlySet<string> = new Set(['canceled', 'past_due']);
 
 function summarizeLedger(rows: SplitLedgerEntry[]): {
   destination_cents: number;
