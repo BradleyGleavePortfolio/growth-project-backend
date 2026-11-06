@@ -16,7 +16,7 @@ import { COMMUNITY_REPORT_REASONS } from '../community/safety/community-safety.s
  * reportFiled() resolves in every case: a failure is logged and counted in
  * report_alert_email_total{outcome="failed"}, the report itself stands.
  */
-export type ReportAlertKind = 'message' | 'community';
+export type ReportAlertKind = 'message' | 'community' | 'roman';
 
 export interface ReportFiledInput {
   kind: ReportAlertKind;
@@ -24,10 +24,10 @@ export interface ReportFiledInput {
   /** Stored reason code. */
   reason: string;
   createdAt: Date;
-  /** 'message' for a DM, the moderation target type for community. */
+  /** 'message' for a DM, the moderation target type for community, 'roman_message' for Roman. */
   targetType: string;
   targetId: string;
-  /** DM only. Read ONLY for the category label the app puts first; never emailed. */
+  /** DM only (Roman sends ids only). Read ONLY for the category label the app puts first; never emailed. */
   details?: string | null;
 }
 
@@ -44,11 +44,20 @@ const DM_FOLDED_CATEGORIES = ['Hate speech', 'Violence or threats', 'Misinformat
 
 const UNLISTED_REASON = 'Something else (unlisted reason code)';
 
-const KIND_LABEL: Record<ReportAlertKind, string> = { message: 'Direct message report', community: 'Community report' };
+// ROMAN-HOLD fix round 1 (B1-1223): the roman words are 137-2 rows marked "needs owner" on b#1223.
+const KIND_LABEL: Record<ReportAlertKind, string> = {
+  message: 'Direct message report',
+  community: 'Community report',
+  roman: 'Roman reply report',
+};
+
+/** The short name in the subject's reference, e.g. "DM report a1b2c3d4". */
+const SUBJECT_REF: Record<ReportAlertKind, string> = { message: 'DM', community: 'community', roman: 'Roman' };
 
 const REVIEW_HINT: Record<ReportAlertKind, string> = {
   message: 'Look it up by the report id in the MessageReport table.',
   community: 'Open it in the coach app under Messages, then Reports, or by the report id in CommunityModerationAction.',
+  roman: 'Look it up by the report id in the RomanMessageReport table.',
 };
 
 const PT_OPTIONS = { timeZone: 'America/Los_Angeles', dateStyle: 'medium', timeStyle: 'short' } as const;
@@ -68,7 +77,7 @@ export function isSelfHarmReport(input: Pick<ReportFiledInput, 'reason'>): boole
 
 /** Subject: a self-harm report says so first; ids only, no names. */
 export function reportAlertSubject(input: ReportFiledInput): string {
-  const ref = `${input.kind === 'message' ? 'DM' : 'community'} report ${input.reportId.slice(0, 8)}`;
+  const ref = `${SUBJECT_REF[input.kind]} report ${input.reportId.slice(0, 8)}`;
   if (isSelfHarmReport(input)) return `Self-harm or suicide report: review now (${ref})`;
   return `New ${ref}: ${reportReasonLabel(input)}`;
 }

@@ -18,6 +18,7 @@ import { RomanController } from './roman.controller';
 import { RomanChatsController } from './roman-chats.controller';
 import { RomanMessageReportController } from './roman-message-report.controller';
 import { RomanMessageReportService } from './roman-message-report.service';
+import { ReportAlertService } from '../report-alerts/report-alert.service';
 import { RomanUsageController } from './roman-usage.controller';
 import { RomanService } from './roman.service';
 import { RomanFeatureGuard } from './roman-feature.guard';
@@ -73,6 +74,8 @@ import { CopilotTurnService } from '../copilot/copilot-turn';
   providers: [
     RomanService,
     RomanMessageReportService,
+    // B-REPORTALERT-125 (B1-1223): a Roman report emails the support inbox, as the DM and community ones do.
+    ReportAlertService,
     RomanFeatureGuard,
     romanAnthropicClientProvider,
     // R11-P4: the coach-method block (null unless FEATURE_ROMAN_PLAYBOOK is on).
