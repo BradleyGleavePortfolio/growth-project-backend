@@ -183,6 +183,21 @@ describe('NUDGE-REACH-BE contract: coach nudge -> client inbox row (coach title,
   });
   afterAll(() => jest.restoreAllMocks());
 
+  it('LS-1226 B1: retry after a lost reply creates one nudge, one inbox row and one push', async () => {
+    const w = world();
+    // The server commits, but the coach's phone never receives the reply.
+    // Its composer retains title/body and Send becomes available again.
+    await w.send(TITLE, BODY);
+    // The coach retries that same send, as the current phone callers do.
+    await w.send(TITLE, BODY);
+    const { sent } = await w.delivered();
+    expect({
+      nudges: w.nudges.length,
+      inboxRows: w.inbox.length,
+      deliveredPushes: sent.length,
+    }).toEqual({ nudges: 1, inboxRows: 1, deliveredPushes: 1 });
+  });
+
   it('(failed before) open pair: one inbox row with the coach title and whole message, and one push that opens it', async () => {
     const w = world();
     const nudge = await w.send(TITLE, BODY);
