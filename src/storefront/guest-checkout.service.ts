@@ -34,7 +34,7 @@ import { CheckoutIdempotencyService } from './checkout-idempotency.service';
 import { ConnectPreflightService } from './connect-preflight.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationKind } from '../notifications/notification-kind';
-import { CheckoutService } from '../checkout/checkout.service';
+import { CheckoutService, chargeQuote } from '../checkout/checkout.service';
 import { FeePolicyService } from '../connect/fees/fee-policy.service';
 import { PurchaseFanoutService } from '../packages/purchase-fanout.service';
 import { alertCoachOfFlaggedJoinTx } from '../onboarding/flagged-join-alert';
@@ -62,6 +62,7 @@ import {
 import { packageTrialDays } from '../checkout/subscription-plan';
 import { attachTrialCard } from '../checkout/trial-card';
 import { TrialUsageService } from '../packages/trials/trial-usage.service';
+import { CoachFirstPaymentService } from '../notifications/coach-first-payment.service';
 
 // S-FEE — guest storefront charges are separate charges and transfers, like
 // every other checkout path. The PaymentIntent / Subscription carries NO
@@ -290,6 +291,11 @@ export class GuestCheckoutService {
     // conversion. Always injected in the app (PackagesModule exports it).
     @Optional()
     private readonly trialUsage?: TrialUsageService,
+    // FIRST-PAY-WEB: the coach's once-ever first-payment notice, claimed in
+    // the conversion transaction (StorefrontModule imports
+    // NotificationsModule, which exports it); @Optional() for hand-built tests.
+    @Optional()
+    private readonly coachFirstPayment?: CoachFirstPaymentService,
   ) {}
 
   // POST /v1/packages/public/join/:token/checkout
@@ -1704,6 +1710,32 @@ export class GuestCheckoutService {
   // re-entry for a row already in 'converted' state is a no-op; any
   // unrecoverable error flips the row to 'failed' and surfaces in logs.
 
+  /**
+   * FR-1181 (LO-1181 B1): what the buyer paid today, the amount the first-
+   * payment notice reports. Stripe's paid PaymentIntent amount_received is
+   * the source, as the in-app invoice path reports amount_paid: for a combo
+   * that is the one-time part plus the first period (the first invoice
+   * carries both). If Stripe cannot be read, the checkout's own charge rule
+   * stands in (chargeQuote; a web trial never gets here), then the package price.
+   * Never throws.
+   */
+  private async collectedCents(checkout: CheckoutWithRelations): Promise<number> {
+    try {
+      const pi = await this.stripe.retrievePaymentIntent(checkout.stripe_payment_intent_id);
+      const got = (pi as { amount_received?: unknown }).amount_received;
+      if (typeof got === 'number' && Number.isInteger(got) && got > 0) return got;
+    } catch (err) {
+      this.logger.warn(
+        `convertGuestToUser: collected amount read failed for ${checkout.id} (tag=${safeErrorTag(err)}) — using the charge rule`,
+      );
+    }
+    try {
+      return chargeQuote(checkout.package, 0).due_today_cents;
+    } catch {
+      return checkout.package.amount_cents;
+    }
+  }
+
   private async convertGuestToUser(
     checkout: CheckoutWithRelations,
   ): Promise<void> {
@@ -1814,6 +1846,15 @@ export class GuestCheckoutService {
         );
       }
     }
+
+    // FR-1181 (LO-1181 B1): the first-payment amount is read here, before
+    // the transaction (no Stripe HTTP in-tx), only when the notice is on.
+    // FIX-1181 (owner #198-E9 op 1): a web trial's card save charged nothing,
+    // so it never claims the notice (and reads no PaymentIntent); the first
+    // paid invoice after the trial does (maybeEmitInvoicePayment).
+    const firstPaymentOn =
+      !trial && process.env.FEATURE_ROMAN_FIRST_PAYMENT === 'true' && !!this.coachFirstPayment;
+    const firstPaymentCents = firstPaymentOn ? await this.collectedCents(checkout) : 0;
 
     // PR-9 — hoisted so the post-tx alert flush / discard sees the
     // ClientPurchase id even though the row is created inside the
@@ -2057,6 +2098,23 @@ export class GuestCheckoutService {
         if (won.count !== 1) {
           lostConversionClaim = true;
           return;
+        }
+
+        // FIRST-PAY-WEB: a web sale is the coach's first payment under the
+        // in-app rule: same flag, the money Stripe collected (collectedCents,
+        // as the in-app invoice path reports amount_paid), the row's currency,
+        // the paying client. Only the copy that won the claim gets here, and
+        // the once-ever ledger row dedupes across paths. Behind b#1169's
+        // savepoint: a failed notice rolls back alone and never undoes this
+        // payment.
+        if (firstPaymentOn && this.coachFirstPayment && purchaseRow) {
+          await this.coachFirstPayment.tryEmitFirstPayment(tx, {
+            coachId: purchaseRow.coach_user_id,
+            amount: firstPaymentCents,
+            currency: purchaseRow.currency,
+            clientId: purchaseRow.client_user_id,
+            correlationId: checkout.id,
+          });
         }
 
         // PR-9 — fan-out is now non-empty (drop seed + immediate-cadence

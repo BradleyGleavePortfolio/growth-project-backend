@@ -2118,8 +2118,12 @@ export class CheckoutWebhookHandlerService {
   ): Promise<void> {
     if (process.env.FEATURE_ROMAN_FIRST_PAYMENT !== 'true') return;
     if (!this.coachFirstPaymentService || !tx) return;
-    // Hosted checkouts send theirs from checkout.session.completed.
-    if (purchase.stripe_checkout_session_id !== purchase.stripe_subscription_id) return;
+    // Hosted checkouts send theirs from checkout.session.completed, web pay
+    // page sales from the guest conversion. FIX-1181 (owner #198-E9 op 1): a
+    // web trial's conversion (its row keys on the SetupIntent) claims
+    // nothing, so its first paid invoice sends it, as in the app.
+    const webTrial = purchase.stripe_checkout_session_id.startsWith('guest_pi_seti_');
+    if (purchase.stripe_checkout_session_id !== purchase.stripe_subscription_id && !webTrial) return;
     const amount = inv.amount_paid;
     if (typeof amount !== 'number' || !Number.isInteger(amount) || amount <= 0) return;
     const sent = await tx.coachFirstPaymentNotification.findUnique({
