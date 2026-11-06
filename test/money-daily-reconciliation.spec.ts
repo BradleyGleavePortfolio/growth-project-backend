@@ -426,6 +426,35 @@ describe('ReconciliationDailyCron: one machine, the off switch, the owner', () =
 // KT-4: the real send path (NotificationsService.pushToUser -> outbox -> worker), the owner with Mute all on,
 // in Pacific time, at the run's 04:00 PDT: the push waits for 08:00 and then goes; one row, to the owner only.
 describe('ReconciliationDailyCron through the real push path (Mute all on, quiet hours, recipient exact)', () => {
+  it('LS-1225 B3: the real inbox keeps the complete counts and stopped-early warning', async () => {
+    const world = pushOutboxWorld({ now: NOW });
+    const inbox: Array<Record<string, unknown>> = [];
+    const db = {
+      ...world.db,
+      notification: {
+        create: jest.fn(async (input: { data: Record<string, unknown> }) => {
+          inbox.push(input.data);
+          return { id: 'daily-inbox', ...input.data };
+        }),
+      },
+    };
+    const notifications = new NotificationsService(
+      stub<ConstructorParameters<typeof NotificationsService>[0]>(db),
+    );
+    const money = moneyWorld([...many(10, 'drift'), ...many(10, 'unknown'), ...many(30, 'throws')]);
+    const realSweep = money.svc.runSweep.bind(money.svc);
+    jest.spyOn(money.svc, 'runSweep')
+      .mockImplementationOnce((...args) => realSweep(...args))
+      .mockRejectedValueOnce(new Error('next batch unavailable'));
+    const cron = new ReconciliationDailyCron(leaseFor().lease, money.svc, notifications, userTable() as any);
+    const result = await cron.runOnce(NOW(), 'machine-a', noPause);
+    if (!result.ran) throw new Error('daily run did not start');
+    expect(result.tally).toMatchObject({ checked: 50, drift: 10, unknown: 10, failed: 30, stopped: 'error' });
+    expect(inbox).toHaveLength(1);
+    expect(inbox[0].body).toBe(dailyAlertCopy(result.tally).body);
+    expect(inbox[0].body).toContain('The check stopped early before it reached every purchase.');
+  });
+
   it('Mute all on: the owner still gets it; inside quiet hours it waits for 08:00 Pacific; nobody else gets anything', async () => {
     const LA = 'America/Los_Angeles';
     const clock = { at: new Date('2026-10-06T11:00:00Z') }; // 04:00 PDT, the cron's hour
