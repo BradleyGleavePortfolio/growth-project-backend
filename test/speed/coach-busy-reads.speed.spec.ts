@@ -107,10 +107,17 @@ function reads(now: Date): Read[] {
     { screen: 'Needs you', path: '/coach/clients?status=active&take=50', check: allClients },
     { screen: 'Needs you', path: '/coach/messages/unread-count', check: ok },
     { screen: 'Needs you', path: '/users/blocks', check: ok },
+    // LO-1224 probe: the Home (Needs you) on-open reads the PR leaves out (mobile c26961a3 useCoachHomeV11.ts:99-106, :34-35, planEndedData.ts:62)
+    { screen: 'Needs you', path: '/coach/command-center/ltv-metrics', check: ok },
+    { screen: 'Needs you', path: '/coach/command-center/at-risk', check: ok },
+    { screen: 'Needs you', path: '/ai/gateway/drafts?status=pending', check: ok },
+    { screen: 'Needs you', path: '/notifications/unread-count', check: ok },
+    { screen: 'Needs you', path: '/v1/coach/churned-clients?take=50', check: ok },
     // Client list (lookup/ClientLookupScreen.tsx): the active and archived pages and the unread counts.
     { screen: 'Client list', path: '/coach/clients?status=active&take=50', check: allClients },
     { screen: 'Client list', path: '/coach/clients?status=archived&take=50', check: ok },
     { screen: 'Client list', path: '/coach/messages/unread-count', check: ok },
+    { screen: 'Client list', path: '/v1/coach/churned-clients?take=50', check: ok }, // LO-1224 probe: ClientLookupScreen.tsx:107 at 45 clients
     // Inbox (MessagesScreen.tsx, CoachInboxV2.tsx): the first page of threads and the unread counts.
     { screen: 'Inbox', path: '/coach/messages/inbox?limit=50', check: allClients },
     { screen: 'Inbox', path: '/coach/messages/unread-count', check: ok },
@@ -125,6 +132,8 @@ function reads(now: Date): Read[] {
     { screen: 'Money', path: '/v1/coach/money/attention', check: ok },
     { screen: 'Money', path: '/v1/coach/money/charges?filter=all&limit=5', check: ok },
     { screen: 'Money', path: '/coach/connect/metrics', check: field('active_clients', CLIENTS) },
+    { screen: 'Money', path: '/coach/connect/status', check: ok }, // LO-1224 probe: MoneyScreen.tsx:222, no Stripe call for a ready account
+    { screen: 'Money', path: '/coach/ai/budget', check: ok }, // LO-1224 probe: MoneyScreen.tsx:229
     // Calendar week (CoachBookingInboxScreen.tsx via hooks/useCalendar.ts).
     { screen: 'Calendar', path: '/scheduling/sessions?limit=50&status=requested', check: someClient },
     { screen: 'Calendar', path: '/scheduling/sessions?limit=50&status=scheduled%2Cpending_provider', check: someClient },
