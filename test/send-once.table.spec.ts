@@ -62,6 +62,10 @@ import { CommunityPostsRepository } from '../src/community/posts/community-posts
 import { CommunityMessagesRepository } from '../src/community/messages/community-messages.repository';
 import { CommunityChallengesService } from '../src/community/challenges/community-challenges.service';
 import { CommunityChallengesRepository } from '../src/community/challenges/community-challenges.repository';
+import { RomanController } from '../src/roman/roman.controller';
+import { RomanService } from '../src/roman/roman.service';
+import { ROMAN_SSE_FALLBACK_ERROR } from '../src/roman/roman-sse-error';
+import { keyedSendId } from '../src/community/messages/message-idempotency';
 
 // ─── A Prisma double that keeps unique indexes ───────────────────────────────
 
@@ -722,12 +726,75 @@ export const SEND_ONCE_TABLE: SendOnceRow[] = [
     write: 'POST /roman/sessions/:id/messages',
     phone: [
       'src/screens/roman/useRomanChat.ts:259 (sendMessage; on no answer the composer keeps the text for Retry)',
-      'src/api/romanApi.ts:529 (POST body { content } only, no key)',
+      'src/api/romanApi.ts:529 (POST body { content }, no Idempotency-Key today: SEND-ONCE-PHONE sends one per turn and keeps it across Retry)',
     ],
-    knownGap: {
-      why: 'no key on the phone or the server: a send that reached the server but lost its answer, then Retry, stores the turn (and runs the model) twice',
-      next: 'a client_message_id on SendMessageDto, kept by the composer across Retry, unique per (session, key)',
-      stillOpen: [{ file: 'src/roman/roman.dto.ts', holds: /export class SendMessageDto \{\s*@IsString\(\)\s*@MinLength\(1\)[\s\S]*?content!: string;\s*\}/ }],
+    rule: {
+      kind: 'key',
+      says: 'Idempotency-Key -> the turn id and the reply id (romanTurnIds: caller + session + key) under the keyed-write lock; a resend is answered from what is stored before any check: no model call, no counted message, no spend; the stored reply as its done frame, or ROMAN_UNAVAILABLE while there is none; other words under the key: 409; a racing first send gives back what it counted',
+      server: [
+        { file: 'src/roman/roman.controller.ts', holds: /const sentBefore = keyed \? await this\.roman\.findKeyedTurn\(caller, session\.id, keyed\) : null;\s*if \(sentBefore\) return this\.replayTurn\(/ },
+        { file: 'src/roman/roman.controller.ts', holds: /if \(keyed && keyedTurn\?\.replayed\) \{[\s\S]*?await this\.roman\.giveBackTurn\(usageDebit\);/ },
+        { file: 'src/roman/roman.service.ts', holds: /keyedWrite\(tx, id, \(\) => this\.ownTurn\(tx, caller, sessionId, id\)/ },
+        { file: 'src/roman/roman.service.ts', holds: /interrupted,\s*id: opts\.replyId,/ },
+      ],
+      proof: async () => {
+        const SESSION = 'cm3romansession0000000001';
+        const f = fakeDb();
+        f.seed('romanSession', { id: SESSION, user_id: USER, surface: 'client', deleted_at: null, message_count: 0 });
+        const svc = Object.create(RomanService.prototype) as Record<string, unknown>;
+        const debit = { clientId: USER, kind: 'messages', day: '2026-11-06' };
+        const counted = jest.fn(async () => debit);
+        const model = jest.fn(async function* (caller: unknown, session: { id: string }, opts: { replyId?: string }) {
+          const said = await (svc.appendMessage as (...a: unknown[]) => Promise<Row>).call(svc, caller, session.id, {
+            role: 'roman', content: 'Rest today, legs tomorrow.', interrupted: false, id: opts.replyId,
+          });
+          yield { type: 'delta', text: said.content };
+          yield { type: 'done', text: said.content, messageId: said.id, interrupted: false };
+        });
+        Object.assign(svc, {
+          prisma: f.db, isSafetyShortCircuit: async () => false, isEatingDisorderRisk: () => false,
+          getOwnedSession: async () => ({ id: SESSION, user_id: USER, surface: 'client' }),
+          assertMayUseAi: async () => undefined, assertDailyCapacity: async () => undefined,
+          assertCoachPoolOpen: async () => undefined, assertWithinRateLimit: counted, streamAssistantTurn: model,
+        });
+        const gaveBack = jest.spyOn(svc as never as { giveBackTurn: () => Promise<void> }, 'giveBackTurn');
+        const ctl = Object.create(RomanController.prototype) as Record<string, unknown>;
+        Object.assign(ctl, { roman: svc, prisma: f.db, copilot: null });
+        const send = async (key: string, content: string) => {
+          const frames: string[] = [];
+          const req = { user: { id: USER, role: 'student', coach_id: COACH }, headers: { 'idempotency-key': key }, on: () => undefined, off: () => undefined };
+          const res = { writeHead: jest.fn(), setHeader: jest.fn(), write: (s: string) => frames.push(s), end: jest.fn() };
+          await (ctl.sendMessage as (...a: unknown[]) => Promise<void>).call(ctl, req, res, SESSION, { content });
+          return frames;
+        };
+        const key = uuid();
+        const first = await send(key, 'What should I train today?');
+        const again = await send(key, 'What should I train today?');
+        expect(again).toEqual(first);
+        expect(first.join('')).toContain('Rest today, legs tomorrow.');
+        expect(f.rows('romanMessage')).toHaveLength(2);
+        expect(model).toHaveBeenCalledTimes(1);
+        expect(counted).toHaveBeenCalledTimes(1);
+        await expect(send(key, 'Something else')).rejects.toBeInstanceOf(ConflictException);
+
+        // Two first sends raced: the one that lost the keyed lock counted, gives it back and answers the stored turn.
+        const raced = uuid();
+        const won = await send(raced, 'Is a rest day fine?');
+        jest.spyOn(svc as never as { findKeyedTurn: () => Promise<unknown> }, 'findKeyedTurn').mockResolvedValueOnce(null);
+        const lost = await send(raced, 'Is a rest day fine?');
+        expect(lost).toEqual(won);
+        expect(gaveBack).toHaveBeenLastCalledWith(debit);
+        expect(model).toHaveBeenCalledTimes(2);
+        expect(f.rows('romanMessage')).toHaveLength(4);
+
+        // The first send stored the turn but no reply yet: the resend gets the coded frame, no model call.
+        const open = uuid();
+        f.seed('romanMessage', { id: keyedSendId('roman', USER, SESSION, open), session_id: SESSION, user_id: USER, role: 'user', content: 'Still there?' });
+        const waiting = await send(open, 'Still there?');
+        expect(waiting).toEqual([`event: error\ndata: ${JSON.stringify(ROMAN_SSE_FALLBACK_ERROR)}\n\n`]);
+        expect(model).toHaveBeenCalledTimes(2);
+        expect(f.rows('romanMessage')).toHaveLength(5);
+      },
     },
   },
   {
@@ -927,7 +994,10 @@ describe('SEND-ONCE: every phone write that can resend has a send-once rule', ()
     },
   );
 
-  it.each(SEND_ONCE_TABLE.filter((r) => r.knownGap).map((r) => [r.write, r] as const))(
+  const gaps = SEND_ONCE_TABLE.filter((r) => r.knownGap);
+  // SEND-ONCE-SERVER closed the last gap; a gap row added later is checked below.
+  if (gaps.length === 0) it('no row is a KNOWN GAP today', () => expect(gaps).toEqual([]));
+  else it.each(gaps.map((r) => [r.write, r] as const))(
     '%s: KNOWN GAP still open (turn this row into a rule when it closes)',
     (write, row) => {
       for (const c of row.knownGap!.stillOpen) {

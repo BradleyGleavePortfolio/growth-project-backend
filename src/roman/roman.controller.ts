@@ -29,6 +29,7 @@
 
 import {
   Body,
+  ConflictException,
   Controller,
   Get,
   Header,
@@ -44,6 +45,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import type { RomanMessage } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import type { AuthedRequest } from '../auth/auth-request';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -51,7 +53,8 @@ import { RolesGuard } from '../auth/roles.guard';
 import { PrismaService } from '../prisma.service';
 import { RomanFeatureGuard } from './roman-feature.guard';
 import { romanSafetyActions, type RomanSafetyAction } from './guardrails/safety-router';
-import { toRomanSseErrorFrame } from './roman-sse-error';
+import { ROMAN_SSE_FALLBACK_ERROR, toRomanSseErrorFrame } from './roman-sse-error';
+import { IDEMPOTENCY_KEY_REUSED, messageKey } from '../community/messages/message-idempotency';
 import type { RomanUsageDebit } from './roman-usage';
 import {
   assertRomanHasCoach,
@@ -61,6 +64,7 @@ import {
 import {
   RomanCaller,
   RomanService,
+  romanTurnIds,
 } from './roman.service';
 import {
   ListMessagesQueryDto,
@@ -142,6 +146,9 @@ export class RomanController {
     @Param('id') id: string,
     @Body() dto: SendMessageDto,
   ): Promise<void> {
+    // SEND-ONCE-SERVER: an optional Idempotency-Key (a UUID; blank keeps today's send; anything else 400) names
+    // this turn and its reply (romanTurnIds), so a resend of a turn that reached the server lands once.
+    const key = messageKey(req.headers?.['idempotency-key']);
     const caller = await this.callerOf(req);
     // An emergency / self-harm / urgent-symptoms message is answered by a
     // deterministic SafetyRouter template: no model call, no spend, and none of
@@ -167,6 +174,11 @@ export class RomanController {
     }
 
     const session = await this.roman.getOwnedSession(caller, id);
+    // SEND-ONCE-SERVER: a resend of a stored turn is answered from what is stored, before every check below:
+    // no model call, no counted message, no spend, no second alert.
+    const keyed = key ? romanTurnIds(caller.id, session.id, key) : null;
+    const sentBefore = keyed ? await this.roman.findKeyedTurn(caller, session.id, keyed) : null;
+    if (sentBefore) return this.replayTurn(req, res, caller, dto.content, sentBefore);
     // R2b — a client without a live box-2 grant gets a plain 403
     // ai_consent_required (Settings > Privacy) before the turn is stored or
     // the stream opens.
@@ -193,10 +205,19 @@ export class RomanController {
       edFallback = true;
     }
     // The stored turn's id: a safety alert points at this one message.
-    const stored = await this.roman.appendMessage(caller, session.id, {
-      role: 'user',
-      content: dto.content,
-    });
+    const keyedTurn = keyed ? await this.roman.appendKeyedTurn(caller, session.id, keyed.turn, dto.content) : null;
+    if (keyed && keyedTurn?.replayed) {
+      // Two first sends raced and the other one stored the turn: this one gives back what it counted.
+      await this.roman.giveBackTurn(usageDebit);
+      const first = await this.roman.findKeyedTurn(caller, session.id, keyed);
+      return this.replayTurn(req, res, caller, dto.content, first ?? { turn: keyedTurn.row, reply: null });
+    }
+    const stored = keyedTurn
+      ? keyedTurn.row
+      : await this.roman.appendMessage(caller, session.id, {
+          role: 'user',
+          content: dto.content,
+        });
 
     // Manual SSE: we own the response stream so we can persist the partial on
     // client-disconnect. (NestJS @Sse maps an Observable but does not give us a
@@ -205,17 +226,7 @@ export class RomanController {
     // X-Request-ID header (RequestIdMiddleware already set it; repeating it
     // here keeps it on the SSE response whatever writeHead merges). It is
     // never added to the strict `{ code, message }` error frame.
-    const requestId = (req as { requestId?: string }).requestId;
-    res.writeHead(HttpStatus.OK, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache, no-transform',
-      Connection: 'keep-alive',
-      'X-Accel-Buffering': 'no',
-      ...(requestId ? { 'X-Request-ID': requestId } : {}),
-    });
-    if (typeof (res as { flushHeaders?: () => void }).flushHeaders === 'function') {
-      (res as { flushHeaders: () => void }).flushHeaders();
-    }
+    this.openStream(req, res);
 
     const marker = this.safetyMarker(req);
     const abort = new AbortController();
@@ -223,13 +234,14 @@ export class RomanController {
     req.on('close', onClose);
 
     const turn = edFallback
-      ? this.roman.streamEatingDisorderFallback(caller, session, stored?.id)
+      ? this.roman.streamEatingDisorderFallback(caller, session, stored?.id, keyed?.reply)
       : this.roman.streamAssistantTurn(caller, session, {
           signal: abort.signal,
           userMessage: dto.content,
           userMessageId: stored?.id,
           usageDebit,
           copilot: this.copilotAsked(req, caller) && session.surface === 'client',
+          replyId: keyed?.reply,
         });
     try {
       for await (const chunk of turn) {
@@ -252,6 +264,61 @@ export class RomanController {
   }
 
   // ─── helpers ───────────────────────────────────────────────────────────────
+
+  /** The SSE head every turn answer opens with (a new turn and a SEND-ONCE-SERVER replay alike). */
+  private openStream(req: AuthedRequest, res: Response): void {
+    const requestId = (req as { requestId?: string }).requestId;
+    res.writeHead(HttpStatus.OK, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+      ...(requestId ? { 'X-Request-ID': requestId } : {}),
+    });
+    if (typeof (res as { flushHeaders?: () => void }).flushHeaders === 'function') {
+      (res as { flushHeaders: () => void }).flushHeaders();
+    }
+  }
+
+  /**
+   * SEND-ONCE-SERVER: the answer to a resend of a keyed turn, from what is stored; nothing is counted, spent,
+   * alerted or written. Other words under the key: 409 (before the stream opens). Reply stored: its delta and
+   * `done` frame, as the first send gave them (the Copilot facts as the history read builds them). No reply yet
+   * (the first send is still answering, or it ended before Roman stored one): the coded ROMAN_UNAVAILABLE frame,
+   * which the phone already reads as "turn stored, no reply" (it keeps the turn and reloads the chat).
+   */
+  private async replayTurn(
+    req: Request & AuthedRequest,
+    res: Response,
+    caller: RomanCaller,
+    content: string,
+    first: { turn: { content: string }; reply: RomanMessage | null },
+  ): Promise<void> {
+    if (first.turn.content !== content) throw new ConflictException(IDEMPOTENCY_KEY_REUSED);
+    this.openStream(req, res);
+    const { reply } = first;
+    if (!reply) {
+      res.write(`event: error\ndata: ${JSON.stringify({ ...ROMAN_SSE_FALLBACK_ERROR })}\n\n`);
+      res.end();
+      return;
+    }
+    const views = reply.copilot && this.copilotAsked(req, caller) && this.copilot
+      ? await this.copilot.views(caller.id, [reply])
+      : null;
+    const facts = views?.get(reply.id);
+    const text = !facts && reply.copilot ? withoutCites(reply.content) : reply.content;
+    const done = {
+      type: 'done',
+      text,
+      messageId: reply.id,
+      interrupted: reply.interrupted,
+      ...(facts ? { copilot: facts } : {}),
+      ...this.safetyMarker(req)({ role: 'roman', content: text }),
+    };
+    if (text.length > 0) res.write(`data: ${JSON.stringify({ type: 'delta', text })}\n\n`);
+    res.write(`data: ${JSON.stringify(done)}\n\n`);
+    res.end();
+  }
 
   /** COPILOT-BE2: a client with a coach (as on every Copilot route) asked for Copilot (header '1') while FEATURE_CLIENT_PATH_COPILOT is on. */
   private copilotAsked(req: AuthedRequest, caller: RomanCaller): boolean {
