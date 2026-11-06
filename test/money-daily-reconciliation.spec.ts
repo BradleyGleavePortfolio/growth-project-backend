@@ -214,7 +214,7 @@ describe('ReconciliationDailyCron: every purchase, every day', () => {
     expect(LEASE_TTL_MS).toBeGreaterThan(RUN_BUDGET_MS);
   });
 
-  it('checks all 120 purchases in batches of 50 and pushes "clean" to the owner', async () => {
+  it('120 purchases are checked in 3 batches of 50 and the owner gets "clean"', async () => {
     const { cron, world, notes, users } = cronFor(many(120, 'ok'));
     const now = NOW();
     const r = await cron.runOnce(now, 'm1', noPause);
@@ -288,7 +288,7 @@ describe('ReconciliationDailyCron: every purchase, every day', () => {
     expect(body).not.toMatch(/\$|cents|drift-|boom|pi_|ch_/);
   });
 
-  it('one purchase that keeps failing is counted once and does not stop the run (121 purchases)', async () => {
+  it('one failing purchase among 120 is counted once; the short third batch ends the run', async () => {
     const { cron, world } = cronFor([{ id: 'boom', kind: 'throws' }, ...many(120, 'ok')]);
     const r = await cron.runOnce(NOW(), 'm1', noPause);
     if (!r.ran) throw new Error('did not run');
@@ -298,7 +298,7 @@ describe('ReconciliationDailyCron: every purchase, every day', () => {
     expect(world.snapshots.size).toBe(120);
   });
 
-  it('a full batch that adds no new purchase ends the run and the alert says it stopped early', async () => {
+  it('a purchase that keeps failing ends the run: a full batch with no new id stops it, and the alert says so', async () => {
     const { cron, notes } = cronFor([...many(60, 'throws'), ...many(30, 'ok')]);
     const r = await cron.runOnce(NOW(), 'm1', noPause);
     if (!r.ran) throw new Error('did not run');
@@ -354,7 +354,7 @@ describe('ReconciliationDailyCron: every purchase, every day', () => {
 });
 
 describe('ReconciliationDailyCron: one machine, the off switch, the owner', () => {
-  it('two machines at the same tick: one runs, the other skips (one push)', async () => {
+  it('a held lease runs nothing: two machines at the same tick, one runs, the other skips (one push)', async () => {
     const { lease } = leaseFor();
     const a = cronFor(many(5, 'ok'), { lease });
     const b = cronFor(many(5, 'ok'), { lease });
