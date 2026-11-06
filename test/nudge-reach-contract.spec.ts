@@ -52,6 +52,7 @@ function matches(row: Row, where: Row | undefined): boolean {
     if ('in' in c && !(c.in as unknown[]).includes(v)) return false;
     if ('notIn' in c && (c.notIn as unknown[]).includes(v)) return false;
     if ('startsWith' in c && !(typeof v === 'string' && v.startsWith(c.startsWith as string))) return false;
+    if ('gte' in c && !(v instanceof Date && v >= (c.gte as Date))) return false;
     return true;
   });
 }
@@ -69,11 +70,18 @@ function world(opts: { muted?: boolean; prefsUnreadable?: boolean; at?: string; 
   ];
   let seq = 0;
   const tx = {
+    // FIX-1226: the resend lock (pg_advisory_xact_lock) the send takes first.
+    $executeRaw: jest.fn(async () => 0),
     coachNudge: {
       create: jest.fn(async (a: { data: Row }) => {
         const row = { id: `nudge-${++seq}`, created_at: new Date(), read_at: null, ...a.data };
         nudges.push(row);
         return { ...row };
+      }),
+      // FIX-1226: the newest row matching the where (the resend lookup).
+      findFirst: jest.fn(async (a: { where: Row }) => {
+        const hit = [...nudges].reverse().find((r) => matches(r, a.where));
+        return hit ? { ...hit } : null;
       }),
     },
     notification: {
@@ -155,6 +163,7 @@ function world(opts: { muted?: boolean; prefsUnreadable?: boolean; at?: string; 
     blocks,
     direct,
     notifications,
+    lockCalls: () => tx.$executeRaw.mock.calls,
     send: (title: string, body: string, coachId = COACH, clientId = CLIENT) =>
       svc.createForClient(coachId, clientId, title, body),
     /** What reached the Expo transport, after the fire-and-forget push settles. */
@@ -197,6 +206,36 @@ describe('NUDGE-REACH-BE contract: coach nudge -> client inbox row (coach title,
       deliveredPushes: sent.length,
     }).toEqual({ nudges: 1, inboxRows: 1, deliveredPushes: 1 });
   });
+
+  // FIX-1226 (class: one send, one of each client-visible effect). Each row:
+  // a first send, then a second; what the client ends with, and whether the
+  // second send answered with the first send's row (the phone's lost reply).
+  it.each([
+    ['the same words again at once (a resend)', TITLE, BODY, 0, 1, true],
+    ['the same words again 9 minutes later (a resend)', TITLE, BODY, 9, 1, true],
+    ['the same words again 11 minutes later (a new nudge)', TITLE, BODY, 11, 2, false],
+    ['a different message (a new nudge)', TITLE, 'A second, different message', 0, 2, false],
+    ['a different title (a new nudge)', 'Another title', BODY, 0, 2, false],
+  ] as Array<[string, string, string, number, number, boolean]>)(
+    'FIX-1226 resend class: %s',
+    async (_label, title2, body2, minutesLater, each, sameRow) => {
+      const w = world();
+      const first = await w.send(TITLE, BODY);
+      const earlierRow = w.nudges[0];
+      earlierRow.created_at = new Date((earlierRow.created_at as Date).getTime() - minutesLater * 60_000);
+      const second = await w.send(title2, body2);
+      const { sent } = await w.delivered();
+      expect({ nudges: w.nudges.length, inboxRows: w.inbox.length, deliveredPushes: sent.length }).toEqual({
+        nudges: each,
+        inboxRows: each,
+        deliveredPushes: each,
+      });
+      expect(second.id === first.id).toBe(sameRow);
+      // Every send takes the one lock for this coach and client first.
+      const lock = (w.lockCalls() as unknown[][]).map((c) => c.slice(1));
+      expect(lock).toEqual([[`coach_nudge_send:${COACH}:${CLIENT}`], [`coach_nudge_send:${COACH}:${CLIENT}`]]);
+    },
+  );
 
   it('(failed before) open pair: one inbox row with the coach title and whole message, and one push that opens it', async () => {
     const w = world();

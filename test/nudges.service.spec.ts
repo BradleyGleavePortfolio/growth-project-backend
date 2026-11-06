@@ -72,6 +72,8 @@ function makePrisma() {
       }),
     },
     $transaction: jest.fn(async (fn: (tx: any) => Promise<unknown>) => fn(self)),
+    // FIX-1226: the resend lock the nudge send takes first.
+    $executeRaw: jest.fn(async () => 0),
     userBlock: {
       findMany: jest.fn(async ({ where }: any) =>
         blocks

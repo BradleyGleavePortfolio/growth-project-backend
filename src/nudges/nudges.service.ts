@@ -3,6 +3,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import type { CoachNudge } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { assertPairOpen, everyoneInBlockWith } from '../messaging/block-pair';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -11,7 +12,20 @@ import { sendCoachNudge } from './coach-nudge-send';
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
 
+// FIX-1226 (LS-1226 B1): how long a second send of the same words to the same
+// client counts as the phone sending it again after its reply was lost. The
+// phone sends no key of its own (mobile api.ts sendNudge posts title and body
+// only, and X-Request-Id is new on every tap), and its form keeps the words
+// and offers Send again (ClientDetailScreen, useLookupNudge, ClientRiskDetail).
+// Different words, or the same words later, are a new nudge.
+export const NUDGE_RESEND_WINDOW_MS = 10 * 60 * 1000;
+
 type ListOpts = { since?: string; limit?: number };
+
+/** Thrown inside the write transaction (nothing written) when a send is a resend. */
+class NudgeResent {
+  constructor(readonly nudge: CoachNudge) {}
+}
 
 @Injectable()
 export class NudgesService {
@@ -59,12 +73,37 @@ export class NudgesService {
     // does: the CoachNudge row and the client's inbox row (the coach's own
     // title and full text) in one transaction, then a push after it commits.
     // The push never fails the send. Returns the CoachNudge row, as before.
-    return sendCoachNudge(this.prisma, this.notifications, this.logger, {
-      coachId,
-      clientId,
-      title,
-      body,
-    });
+    //
+    // FIX-1226 (LS-1226 B1): one send is one nudge, one inbox row and one
+    // push, however often the phone resends it. Inside the write transaction,
+    // under a lock on this coach and client, the same title and body to this
+    // client in the last NUDGE_RESEND_WINDOW_MS is that send again: return it,
+    // write and push nothing (the CoachNudge (client_id, created_at) index).
+    try {
+      return await sendCoachNudge(
+        this.prisma,
+        this.notifications,
+        this.logger,
+        { coachId, clientId, title, body },
+        async (tx) => {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`coach_nudge_send:${coachId}:${clientId}`}))`;
+          const earlier = await tx.coachNudge.findFirst({
+            where: {
+              client_id: clientId,
+              coach_id: coachId,
+              title,
+              body,
+              created_at: { gte: new Date(Date.now() - NUDGE_RESEND_WINDOW_MS) },
+            },
+            orderBy: { created_at: 'desc' },
+          });
+          if (earlier) throw new NudgeResent(earlier);
+        },
+      );
+    } catch (err) {
+      if (err instanceof NudgeResent) return err.nudge;
+      throw err;
+    }
   }
 
   // ---- client reads ----
