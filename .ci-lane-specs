@@ -1,0 +1,4 @@
+test/speed
+test/ci/dependency-audit.spec.ts
+test/ci/branch-protection-checks.spec.ts
+test/ci/r75-enforcement.spec.ts
