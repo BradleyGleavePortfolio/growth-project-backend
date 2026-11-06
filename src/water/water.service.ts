@@ -1,6 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import { saveOnce } from '../common/save-once';
 import { LogWaterDto } from './water.dto';
 
 @Injectable()
@@ -22,12 +21,9 @@ export class WaterService {
     // a 404 (src/common/save-once.ts).
     const key = data.client_uuid;
     if (!key) return this.prisma.waterLog.create({ data: row, omit: { client_uuid: true } });
-    return saveOnce(
-      userId,
-      () => this.prisma.waterLog.findUnique({ where: { client_uuid: key } }),
-      () => this.prisma.waterLog.create({ data: { ...row, client_uuid: key } }),
-      onResend,
-    );
+    // B-TEST (never merge): the send-once rule taken out; the key is ignored.
+    void onResend;
+    return this.prisma.waterLog.create({ data: row, omit: { client_uuid: true } });
   }
 
   async getDaily(userId: string, date: string) {
