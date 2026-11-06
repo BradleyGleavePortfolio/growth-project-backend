@@ -57,6 +57,9 @@ import { safetyWithBlocks } from './community/safety/safety-test-helpers';
 import { stub } from './utils/trial-fakes';
 import { CommunityDmsService } from '../src/community/dms/community-dms.service';
 import { CommunityDmsRepository } from '../src/community/dms/community-dms.repository';
+import { CommunityPostsService } from '../src/community/posts/community-posts.service';
+import { CommunityPostsRepository } from '../src/community/posts/community-posts.repository';
+import { CommunityMessagesRepository } from '../src/community/messages/community-messages.repository';
 
 // ─── A Prisma double that keeps unique indexes ───────────────────────────────
 
@@ -195,6 +198,23 @@ const stamped = (row: Row) => {
   row.created_at ??= new Date();
   row.deleted_at ??= null;
 };
+/** The posts service over the double: real repositories, the views reduced to the stored row (the rule under test is
+ *  the write, not the view), pings and pushes counted. */
+function postsService(f: ReturnType<typeof fakeDb>, ping: jest.Mock, push: jest.Mock = jest.fn()) {
+  const svc = Object.create(CommunityPostsService.prototype) as Record<string, unknown>;
+  const view = (r: Row) => ({ id: r.id, title: r.title ?? null, body: r.body, at: (r.created_at as Date).toISOString() });
+  Object.assign(svc, {
+    posts: new CommunityPostsRepository(f.db), messages: new CommunityMessagesRepository(f.db),
+    safety: { assertAllowed: () => undefined }, realtime: { broadcastCommunityEvent: ping },
+    communityPush: { sendCommunityPush: push },
+    postResponse: async (_u: unknown, r: Row) => ({ post: view(r) }),
+    commentViews: async (_u: unknown, rows: Row[]) => rows.map((r) => ({
+      id: r.id, post_id: r.plan_context_id, author_user_id: r.sender_id, author_name: 'Olive', body: r.body,
+      created_at: (r.created_at as Date).toISOString(), reactions: [],
+    })),
+  });
+  return svc;
+}
 
 export const SEND_ONCE_TABLE: SendOnceRow[] = [
   {
@@ -754,12 +774,40 @@ export const SEND_ONCE_TABLE: SendOnceRow[] = [
     write: 'POST /community/workspaces/:workspaceId/posts',
     phone: [
       'src/screens/community/CommunityComposerScreen.tsx:112-120 (on an error the form stays filled; Publish again is a new request)',
-      'src/api/communityApi.ts:407 (a new Idempotency-Key on every call)',
+      'src/api/communityApi.ts:408-418 and :339 (an Idempotency-Key on every call, a new one each call: SEND-ONCE-PHONE keeps one per draft)',
     ],
-    knownGap: {
-      why: 'the phone makes a new key per publish and the server reads none: a post that landed but lost its answer, published again, is a second post',
-      next: 'keep one key per draft on the phone and honour Idempotency-Key on post create',
-      stillOpen: [{ file: 'src/community/posts/community-posts.controller.ts', holds: /@Post\('workspaces\/:workspaceId\/posts'\)/, lacks: /idempotency/i }],
+    rule: {
+      kind: 'key',
+      says: 'Idempotency-Key -> the post id itself (keyedSendId: author + workspace + key) under the keyed-write lock; a replay answers the first post, no second Hall ping; another title or body under the key: 409',
+      server: [
+        { file: 'src/community/posts/community-posts.controller.ts', holds: /const key = messageKey\(idempotencyKey\);\s*return this\.posts\.create\(req\.user, workspaceId, body, key\)/ },
+        { file: 'src/community/posts/community-posts.service.ts', holds: /keyedSendId\('post', user\.id, workspaceId, idempotencyKey\)/ },
+        { file: 'src/community/posts/community-posts.repository.ts', holds: /keyedWrite\(tx, id, \(\) => tx\.communityPost\.findUnique\(\{ where: \{ id \} \}\)/ },
+      ],
+      proof: async () => {
+        const f = fakeDb({ communityPost: { onCreate: stamped } });
+        const WS = '11111111-1111-4111-8111-111111111111';
+        const ping = jest.fn().mockResolvedValue(undefined);
+        const svc = postsService(f, ping);
+        Object.assign(svc, {
+          access: { findWorkspace: async () => ({ id: WS }), canAccessWorkspace: async () => true },
+          canCreatePost: async () => true,
+        });
+        const create = (svc.create as (...a: unknown[]) => Promise<{ post: { id: string } }>).bind(svc);
+        const author = makeUser({ id: USER, role: 'student' });
+        const key = uuid();
+        const draft = { title: 'Week 3', body: 'new squat PR' };
+        const first = await create(author, WS, draft, key);
+        const again = await create(author, WS, { ...draft }, key);
+        expect(again).toEqual(first);
+        expect(f.rows('communityPost')).toHaveLength(1);
+        expect(ping).toHaveBeenCalledTimes(1);
+        await expect(create(author, WS, { ...draft, body: 'other words' }, key)).rejects.toBeInstanceOf(ConflictException);
+        // No key, or a fresh key per call (what the phone sends today): a new post each time, as before.
+        await create(author, WS, draft, null);
+        await create(author, WS, draft, uuid());
+        expect(f.rows('communityPost')).toHaveLength(3);
+      },
     },
   },
 ];

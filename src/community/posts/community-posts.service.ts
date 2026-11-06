@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { CommunityMessage, CommunityPost, CommunityResponse, User } from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
 import { memberName } from '../member-display-name';
@@ -8,6 +8,7 @@ import { COMMUNITY_BROADCAST_EVENTS } from '../community-events';
 import { NotificationKind } from '../../notifications/notification-kind';
 import { CommunityPostsRepository } from './community-posts.repository';
 import { CommunityMessagesRepository } from '../messages/community-messages.repository';
+import { IDEMPOTENCY_KEY_REUSED, keyedSendId } from '../messages/message-idempotency';
 import { CommunityReactionsRepository } from '../reactions/community-reactions.repository';
 import { CommunityReactionSummary, summariseReactions } from '../dto/community-reaction.dto';
 import {
@@ -236,6 +237,7 @@ export class CommunityPostsService {
     user: User,
     workspaceId: string,
     input: { title: string; body: string },
+    idempotencyKey?: string | null,
   ): Promise<CommunityPostResponse> {
     const workspace = await this.access.findWorkspace(workspaceId);
     // Non-members can't see the workspace exists (404); members who aren't
@@ -251,12 +253,16 @@ export class CommunityPostsService {
     }
     // Apple 1.2: objectionable-content filter before publication.
     this.safety.assertAllowed(input.title, input.body);
-    const created = await this.posts.create({
-      workspaceId,
-      authorId: user.id,
-      title: input.title,
-      body: input.body,
-    });
+    // SEND-ONCE-SERVER: a resend with the same Idempotency-Key (same author, same workspace) answers with the first
+    // post and repeats no Hall ping; the same key on another title or body is refused (409).
+    const keyedId = idempotencyKey ? keyedSendId('post', user.id, workspaceId, idempotencyKey) : null;
+    const sentBefore = keyedId ? await this.posts.findById(keyedId) : null;
+    if (sentBefore) return this.replayPost(sentBefore, user, workspaceId, input);
+    const params = { workspaceId, authorId: user.id, title: input.title, body: input.body };
+    const { row: created, replayed } = keyedId
+      ? await this.posts.createKeyed(keyedId, params)
+      : { row: await this.posts.create(params), replayed: false };
+    if (replayed) return this.replayPost(created, user, workspaceId, input);
     // v1-4 post-write tail — best-effort realtime ping (IDs only, #24/#36) to
     // everyone who may read the Hall now (readablePost: canAccessWorkspace).
     void this.realtime.broadcastCommunityEvent(
@@ -271,6 +277,19 @@ export class CommunityPostsService {
       { distinctId: created.author_id, channelKind: 'workspace' },
     );
     return this.postResponse(user, created);
+  }
+
+  /** SEND-ONCE-SERVER: the first post under a key, answered again only for the same author, workspace and words. */
+  private async replayPost(
+    row: CommunityPost,
+    user: User,
+    workspaceId: string,
+    input: { title: string; body: string },
+  ): Promise<CommunityPostResponse> {
+    const same = row.author_id === user.id && row.workspace_id === workspaceId && row.title === input.title
+      && row.body === input.body;
+    if (!same) throw new ConflictException(IDEMPOTENCY_KEY_REUSED);
+    return this.postResponse(user, row);
   }
 
   async list(
