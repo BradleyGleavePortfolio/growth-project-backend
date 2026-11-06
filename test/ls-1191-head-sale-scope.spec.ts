@@ -21,6 +21,13 @@ function matches(value: unknown, filter: unknown): boolean {
 }
 
 describe('LS-1191 B4: a moved client does not transfer the former seller money records', () => {
+  let clock: jest.SpyInstance;
+  beforeEach(() => {
+    // Keep the fixed settlement inside the rolling 30-day revenue window.
+    clock = jest.spyOn(Date, 'now').mockReturnValue(new Date('2026-10-30T12:00:00Z').getTime());
+  });
+  afterEach(() => clock.mockRestore());
+
   it.each([false, true])(
     'LS-1191 B4: head revenue excludes another coach sale (delegated client: %s)',
     async (delegated) => {
