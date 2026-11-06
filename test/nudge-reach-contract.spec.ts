@@ -11,6 +11,13 @@ import { PushDeliveryService } from '../src/notifications/push/push-delivery.ser
 import { pushOutboxWorld } from './utils/push-outbox-fake';
 import { stub } from './utils/trial-fakes';
 
+// Independent red-baseline proof: this exact contract against main's sender
+// and Nest wiring. The fixtures retain main's source, relocating imports only.
+jest.mock('../src/nudges/nudges.service', () =>
+  jest.requireActual('./fixtures/ls1226-main/nudges.service'));
+jest.mock('../src/nudges/nudges.module', () =>
+  jest.requireActual('./fixtures/ls1226-main/nudges.module'));
+
 // NUDGE-REACH-BE (agent 199; owner #199-E6 "199-D11 - Nudge - depends on
 // exactly what that entails/looks like for the client") — contract: a coach's
 // nudge from the client file (POST /coach/clients/:id/nudges; the editor
