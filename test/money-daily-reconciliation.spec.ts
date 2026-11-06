@@ -359,6 +359,22 @@ describe('ReconciliationDailyCron: every purchase, every day', () => {
 });
 
 describe('ReconciliationDailyCron: one machine, the off switch, the owner', () => {
+  it.each([1, 1_000, 60_000])(
+    'LS-1225 B1: a second machine starting %i ms later cannot repeat the same UTC day',
+    async (offsetMs) => {
+      const { lease } = leaseFor();
+      const a = cronFor(many(2, 'ok'), { lease });
+      const second = new ReconciliationDailyCron(lease, a.world.svc, a.notes as any, a.users as any);
+      const now = NOW();
+      const first = await a.cron.runOnce(now, 'machine-a', noPause);
+      const again = await second.runOnce(new Date(now.getTime() + offsetMs), 'machine-b', noPause);
+      expect({
+        runs: Number(first.ran) + Number(again.ran),
+        inboxRows: a.notes.createNotification.mock.calls.length,
+      }).toEqual({ runs: 1, inboxRows: 1 });
+    },
+  );
+
   it('a held lease runs nothing: two machines at the same tick, one runs, the other skips (one push)', async () => {
     const { lease } = leaseFor();
     const a = cronFor(many(5, 'ok'), { lease });
