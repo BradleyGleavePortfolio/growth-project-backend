@@ -115,7 +115,7 @@ function reads(now: Date): Read[] {
     { screen: 'Inbox', path: '/coach/messages/inbox?limit=50', check: allClients },
     { screen: 'Inbox', path: '/coach/messages/unread-count', check: ok },
     // One client's file (ClientDetailScreen.tsx, client-detail/useThisWeek.ts, useClientDetailData.ts).
-    { screen: 'Client file', path: `/coach/clients/${C}/summary?date=${today}`, check: ok },
+    { screen: 'Client file', path: `/coach/clients/${client(999)}/summary?date=${today}`, check: ok },
     { screen: 'Client file', path: `/coach/clients/${C}/week`, check: listed('assignments') },
     { screen: 'Client file', path: `/coach/clients/${C}/timeline?days=8`, check: contains(FOOD_NAME) },
     { screen: 'Client file', path: `/coach/clients/${C}/macros/current`, check: contains('calories_kcal') },
