@@ -151,7 +151,7 @@ function reads(now: Date): Read[] {
     { screen: 'Needs you', path: '/coach/command-center/overview?include=home', check: field('roster_size', CLIENTS) },
     { screen: 'Needs you', path: '/coach/clients?status=active&take=50', check: allClients },
     { screen: 'Needs you', path: '/coach/messages/unread-count', check: allClients },
-    { screen: 'Needs you', path: '/users/blocks', check: none('blocks') },
+    { screen: 'Needs you', path: '/users/blocks', check: none(null) },
     { screen: 'Needs you', path: `/v1/coach/money/summary?${month}`, check: usd },
     { screen: 'Needs you', path: '/coach/connect/payouts?limit=10', check: contains(PAYOUT_ID) },
     { screen: 'Needs you', path: '/coach/command-center/ltv-metrics', check: field('active_client_count', CLIENTS) },
@@ -164,7 +164,7 @@ function reads(now: Date): Read[] {
     { screen: 'Client list', path: '/coach/clients?status=active&take=50', check: allClients },
     { screen: 'Client list', path: '/coach/clients?status=archived&take=50', check: none(null) },
     { screen: 'Client list', path: '/coach/messages/unread-count', check: allClients },
-    { screen: 'Client list', path: '/users/blocks', check: none('blocks') },
+    { screen: 'Client list', path: '/users/blocks', check: none(null) },
     { screen: 'Client list', path: '/v1/coach/churned-clients?take=50', check: both(none('items'), field('total', 0)) },
     // Inbox (MessagesScreen.tsx, CoachInboxV2.tsx): the first page of threads, the roster and the unread counts.
     { screen: 'Inbox', path: '/coach/messages/inbox?limit=50', check: allClients },
@@ -301,6 +301,9 @@ const median = (xs: number[]) => {
     process.env.RATELIMIT_AUTHED_PER_MIN = '10000';
     process.env.COACH_CMD_CENTER_PER_MIN = '1000';
     const switches = turnEverySwitchOn();
+    // The plan-ended rows (Home and the client list) need FEATURE_PLAN_RENEWAL, which the desired-state file does not
+    // name yet; on in this test's own process only.
+    process.env.FEATURE_PLAN_RENEWAL = 'true';
       console.log(`FEATURE_* switches on: ${switches.length}`);
 
     const { ValidationPipe } = require('@nestjs/common');
