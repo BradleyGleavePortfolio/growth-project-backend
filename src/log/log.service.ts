@@ -68,15 +68,8 @@ export class LogService {
     // D2 (AUTHB-03): no key means a plain create. client_uuid is unique across
     // all users, so a shared fallback key (or another person's key) used to
     // return their entry and save nothing; such an entry is never returned.
-    const write = () =>
-      data.client_uuid
-        ? this.prisma.loggedFoodEntry.upsert({
-            where: { client_uuid: data.client_uuid },
-            create: { ...entryData, client_uuid: data.client_uuid },
-            update: {}, // no-op if already exists — idempotent on retry
-            include: { food_item: true },
-          })
-        : this.prisma.loggedFoodEntry.create({ data: entryData, include: { food_item: true } });
+    // LO-1227 rule-out (never merge): the client_uuid send-once rule is taken out.
+    const write = () => this.prisma.loggedFoodEntry.create({ data: entryData, include: { food_item: true } });
     let created: Awaited<ReturnType<typeof write>>;
     try {
       created = await write();
