@@ -1,0 +1,5 @@
+test/(b-guest|guest|gc1|gc2|gc3|lost-webhook|pr14-guest|storefront|web-buyer|first-pay|fix-1181|checkout-webhook|b-recur|dunning|billing|purchase|trial|b-trial)
+src/notifications
+src/checkout
+src/storefront
+src/billing
