@@ -210,6 +210,19 @@ describe('ReconciliationService.runSweep (MONEY-DAILY additions)', () => {
 });
 
 describe('ReconciliationDailyCron: every purchase, every day', () => {
+  it.each(['refunded', 'disputed'])(
+    'LS-1225 B2: a money-bearing %s purchase must not disappear from the daily check',
+    async (status) => {
+      const { cron } = cronFor([{ id: 'money-bearing-purchase', kind: 'drift', status }]);
+      const result = await cron.runOnce(NOW(), 'machine-a', noPause);
+      expect(result).toMatchObject({
+        ran: true,
+        verdict: 'needs_review',
+        tally: { checked: 1, drift: 1 },
+      });
+    },
+  );
+
   it('is scheduled once a day at 11:00 UTC (before 06:00 Pacific in summer and winter)', () => {
     expect(DAILY_CRON).toBe('0 11 * * *');
     expect(DAILY_JOB_NAME).toBe('reconciliation-daily');
