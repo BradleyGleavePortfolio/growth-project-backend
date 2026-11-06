@@ -412,6 +412,8 @@ const median = (xs: number[]) => {
     // helmet response headers (headers only; no read depends on them).
     app = ref.createNestApplication({ rawBody: true, logger: ['error'] });
     app.use(featureFlagNotFoundMiddleware);
+    // LO-1224R3 slow-read control only, never merge: hold the Home's team read 600 ms before its handler.
+    app.use('/api/coach/team/members', (_req: unknown, _res: unknown, next: () => void) => void setTimeout(next, 600));
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
     app.useGlobalFilters(new HttpExceptionFilter(), new ThrottlerExceptionFilter(app.get(MetricsService, { strict: false })));
     app.useGlobalInterceptors(new CacheControlInterceptor());
