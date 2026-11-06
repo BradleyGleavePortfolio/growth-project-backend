@@ -15,9 +15,8 @@ import { describeFailure } from '../observability/log-pii';
 // that only the old Notifications screen read, and nothing opens that screen.
 
 // The nudge's kind: the client's inbox row (Notification), its push data type
-// and its Mute all rule. The same kind the approved-AI-draft path writes
-// (send-notification materialiser), so the phone's inbox shows it as a plain
-// row, and inbox-block-rule.ts hides it while the two are in a block.
+// and its Mute all rule. inbox-block-rule.ts hides rows of this kind that name
+// the coach (payload.coach_id) while the two are in a block.
 export const COACH_NUDGE_KIND = 'coach_nudge';
 // B-LSNOTIFY-2: where a nudge push opens. The phone routes actionScreen
 // 'NotificationCenter' to the client's Home > NotificationCenter (mobile
