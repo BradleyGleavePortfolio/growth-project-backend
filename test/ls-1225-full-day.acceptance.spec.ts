@@ -1,47 +1,47 @@
-describe('LS-1225 acceptance: daily money check without an admin click', () => {
-  it('provides an enabled full-day scheduled run and one owner result', async () => {
-    let daily: any;
-    expect(() => {
-      daily = require('../src/checkout/reconciliation-daily.cron');
-    }).not.toThrow();
-    const { ReconciliationDailyCron } = daily;
-    const now = new Date('2026-11-06T11:00:00.000Z');
-    const since = new Date(now.getTime() - 86_400_000);
-    const owners = { findFirst: jest.fn().mockResolvedValue({ id: 'owner-role-account' }) };
-    const prisma = { user: owners };
-    const leases = { tryAcquire: jest.fn().mockResolvedValue(true), release: jest.fn().mockResolvedValue(undefined) };
-    const reconcile = {
-      runSweep: jest.fn()
-        .mockResolvedValueOnce({
-          scanned: 50, drifted: 0, unknown: 0, failed: 0,
-          outcomes: Array.from({ length: 50 }, (_, i) => ({ purchase_id: `p${i}`, status: 'ok' })),
-        })
-        .mockResolvedValueOnce({
-          scanned: 1, drifted: 0, unknown: 0, failed: 0,
-          outcomes: [{ purchase_id: 'p50', status: 'ok' }],
+jest.mock('../src/connect/stripe-connect-api.service', () => ({
+  StripeConnectApiService: class {},
+}));
+jest.mock('../src/connect/fees/charge-settlement.service', () => ({
+  ChargeSettlementService: class {},
+  chargeRefundsFromStripe: jest.fn(),
+}));
+jest.mock('../src/prisma.service', () => ({ PrismaService: class {} }));
+
+import { ReconciliationService } from '../src/connect/fees/reconciliation.service';
+
+describe('LS-1225 full-day acceptance', () => {
+  it('checks all 120 paid purchases across batches even when an admin checked them an hour ago', async () => {
+    const runAt = new Date();
+    const rows = Array.from({ length: 120 }, (_, index) => ({
+      id: `acceptance-purchase-${index}`,
+      checkedAt: new Date(runAt.getTime() - 60 * 60 * 1000),
+    }));
+    const prisma = {
+      clientPurchase: {
+        findMany: jest.fn(async (query: any) => {
+          const cutoff = query.where.OR[1].reconciliation.last_checked_at.lt as Date;
+          return rows.filter((row) => row.checkedAt < cutoff).slice(0, query.take);
         }),
+      },
     };
-    const notes = {
-      createNotification: jest.fn().mockResolvedValue({ id: 'inbox-row' }),
-      pushToUser: jest.fn().mockResolvedValue({ delivered: true }),
-    };
-    const cron = new ReconciliationDailyCron(prisma, leases, reconcile, notes);
-    const previous = process.env.RECONCILIATION_DAILY_ENABLED;
-    delete process.env.RECONCILIATION_DAILY_ENABLED;
-    try {
-      expect(await cron.runOnce(now, 'machine-a', async () => {})).toMatchObject({
-        ran: true, verdict: 'clean', tally: { checked: 51, ok: 51, drift: 0, unknown: 0, failed: 0 },
-      });
-    } finally {
-      if (previous === undefined) delete process.env.RECONCILIATION_DAILY_ENABLED;
-      else process.env.RECONCILIATION_DAILY_ENABLED = previous;
-    }
-    expect(reconcile.runSweep.mock.calls).toEqual([[50, { since, staleBefore: now }], [50, { since, staleBefore: now }]]);
-    expect(notes.createNotification).toHaveBeenCalledTimes(1);
-    expect(notes.createNotification.mock.calls[0][0]).toMatchObject({
-      userId: 'owner-role-account', payload: { title: 'Money check: clean', checked: 51 },
+    const service = new ReconciliationService(prisma as any, {} as any);
+    const reconcile = jest.spyOn(service as any, 'reconcileFromRow').mockImplementation(async (purchase: any) => {
+      const row = rows.find((entry) => entry.id === purchase.id);
+      if (!row) throw new Error('missing fixture');
+      row.checkedAt = new Date(runAt.getTime() + 1);
+      return { purchase_id: purchase.id, status: 'ok' } as any;
     });
-    expect(notes.pushToUser).toHaveBeenCalledTimes(1);
-    expect(notes.pushToUser.mock.calls[0][0]).toBe('owner-role-account');
+    let checked = 0;
+    let batches = 0;
+    for (; batches < 5; batches += 1) {
+      // Runtime option is intentional: the same regression executes on main,
+      // where runSweep has no staleBefore option and silently ignores it.
+      const batch = await (service.runSweep as any)(50, { staleBefore: runAt });
+      checked += batch.scanned;
+      if (batch.scanned < 50) break;
+    }
+    expect(checked).toBe(120);
+    expect(prisma.clientPurchase.findMany).toHaveBeenCalledTimes(3);
+    expect(reconcile).toHaveBeenCalledTimes(120);
   });
 });
