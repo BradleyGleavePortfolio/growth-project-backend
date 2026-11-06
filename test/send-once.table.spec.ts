@@ -49,6 +49,7 @@ import { NotificationsService } from '../src/notifications/notifications.service
 import { ProfileService } from '../src/profile/profile.service';
 import { CoachCodeRedemptionService } from '../src/coachless/coach-code-redemption.service';
 import { BroadcastsService } from '../src/broadcasts/broadcasts.service';
+import { PackagesService } from '../src/packages/packages.service';
 import { WorkoutBuilderAutosaveService } from '../src/workout-builder/workout-builder-autosave.service';
 import { FEATURE_MWB_AUTOSAVE_UNDO_ENV } from '../src/workout-builder/workout-builder-autosave.feature';
 import { computeLockToken } from '../src/workout-builder/lock-token.helper';
@@ -172,11 +173,13 @@ function fakeDb(specs: Record<string, ModelSpec> = {}) {
 // ─── The table ───────────────────────────────────────────────────────────────
 
 type Claim = { file: string; holds: RegExp };
+/** A gap is still open while `holds` is found and `lacks` is not. */
+type GapClaim = { file: string; holds?: RegExp; lacks?: RegExp };
 type SendOnceRow = {
   write: string;
   phone: string[];
   rule?: { kind: 'key' | 'natural' | 'revision'; says: string; server: Claim[]; proof: () => Promise<void> };
-  knownGap?: { why: string; next: string; stillOpen: Claim[] };
+  knownGap?: { why: string; next: string; stillOpen: GapClaim[] };
 };
 
 const USER = '0d4a2c1e-8b1f-4c55-9a0e-1f2e3d4c5b6a';
@@ -358,6 +361,7 @@ export const SEND_ONCE_TABLE: SendOnceRow[] = [
     phone: [
       'src/services/messageOutbox.ts:204 (outbox replay: the same client_message_id on every send)',
       'src/hooks/useMessageOutbox.ts (drains the outbox on reconnect)',
+      'src/screens/client/MessagesScreen.tsx:427 (outbox off: the pending row keeps the same key for Retry)',
     ],
     rule: {
       kind: 'key',
@@ -377,6 +381,31 @@ export const SEND_ONCE_TABLE: SendOnceRow[] = [
         const first = await send.call(svc, thread, USER, { body: 'on my way' }, { client_message_id: effective });
         const again = await send.call(svc, thread, USER, { body: 'on my way' }, { client_message_id: effective });
         expect(first.replayed).toBe(false);
+        expect(again.replayed).toBe(true);
+        expect(again.row.id).toBe(first.row.id);
+        expect(f.rows('coachMessage')).toHaveLength(1);
+      },
+    },
+  },
+  {
+    write: 'POST /coach/messaging thread message (coach send)',
+    phone: ['src/screens/coach/ClientMessagesScreen.tsx:246-248 (a failed send keeps its key with its text; Send again reuses it)'],
+    rule: {
+      kind: 'key',
+      says: 'the same rule as the client send: (sender_id, client_message_id) unique, a replay returns the first row',
+      server: [
+        { file: 'src/messaging/coach-messaging.controller.ts', holds: /resolveIdempotencyKey\(idemHeader, body\.client_message_id\)/ },
+        { file: 'src/messaging/messaging.service.ts', holds: /where: \{ sender_id: senderId, client_message_id: key \}/ },
+      ],
+      proof: async () => {
+        const f = fakeDb({ coachMessage: { unique: [['sender_id', 'client_message_id']] } });
+        const svc = Object.create(MessagingService.prototype) as Record<string, unknown>;
+        svc.prisma = f.db;
+        const key = resolveIdempotencyKey(undefined, uuid());
+        const send = svc.insertThreadMessage as (...a: unknown[]) => Promise<{ row: Row; replayed: boolean }>;
+        const thread = { coachId: COACH, clientId: USER };
+        const first = await send.call(svc, thread, COACH, { body: 'Good work today' }, { client_message_id: key });
+        const again = await send.call(svc, thread, COACH, { body: 'Good work today' }, { client_message_id: key });
         expect(again.replayed).toBe(true);
         expect(again.row.id).toBe(first.row.id);
         expect(f.rows('coachMessage')).toHaveLength(1);
@@ -592,6 +621,33 @@ export const SEND_ONCE_TABLE: SendOnceRow[] = [
     },
   },
   {
+    write: 'POST /packages (create)',
+    phone: [
+      'src/screens/coach/payments/CoachPackageEditScreen.tsx:344 (one create attempt = one Idempotency-Key, on disk before the request)',
+      'src/components/coach/setup/FirstPackageForm.tsx:151 (the same rule in the setup wizard)',
+    ],
+    rule: {
+      kind: 'key',
+      says: 'Idempotency-Key -> (user_id, route_key, key) claim row in the same transaction as the package; a resend returns the first package',
+      server: [
+        { file: 'src/packages/packages.controller.ts', holds: /@Headers\('idempotency-key'\) idempotencyKey: string \| undefined/ },
+        { file: 'src/packages/packages.service.ts', holds: /const claim = await tx\.workoutBuilderIdempotencyKey\.create\(/ },
+      ],
+      proof: async () => {
+        const f = fakeDb({ workoutBuilderIdempotencyKey: { unique: [['user_id', 'route_key', 'idempotency_key']] } });
+        const svc = new PackagesService(f.db, {} as never);
+        const input = { name: '12-week build', amount_cents: 19900 } as never;
+        const key = `pkg-${uuid()}`;
+        const first = await svc.createIdempotent(COACH, input, key);
+        const again = await svc.createIdempotent(COACH, input, key);
+        expect(first.replayed).toBe(false);
+        expect(again.replayed).toBe(true);
+        expect(again.pkg.id).toBe(first.pkg.id);
+        expect(f.rows('coachPackage')).toHaveLength(1);
+      },
+    },
+  },
+  {
     write: 'PATCH /workout-plans/:planId/autosave',
     phone: ['src/hooks/useAutosave.ts:693 (the mirror replays the pending batch; on 409 it re-diffs against the server head)'],
     rule: {
@@ -644,6 +700,30 @@ export const SEND_ONCE_TABLE: SendOnceRow[] = [
       stillOpen: [{ file: 'src/roman/roman.dto.ts', holds: /export class SendMessageDto \{\s*@IsString\(\)\s*@MinLength\(1\)[\s\S]*?content!: string;\s*\}/ }],
     },
   },
+  {
+    write: 'POST /community/workspaces/:workspaceId/dms/:recipientId/messages',
+    phone: [
+      'src/screens/community/CommunityDmThreadScreen.tsx:84-95 (a failed send keeps the draft; Send again is a new request)',
+      'src/api/communityApi.ts:329-331 and :495 (a new Idempotency-Key on every call)',
+    ],
+    knownGap: {
+      why: 'the phone makes a new key per send and the server reads none: a send that landed but lost its answer, sent again, is a second DM',
+      next: 'keep one key per draft on the phone and honour Idempotency-Key on the DM send (the space-chat keyedMessageId rule)',
+      stillOpen: [{ file: 'src/community/dms/community-dms.controller.ts', holds: /@Post\('workspaces\/:workspaceId\/dms\/:recipientId\/messages'\)/, lacks: /idempotency/i }],
+    },
+  },
+  {
+    write: 'POST /community/workspaces/:workspaceId/posts',
+    phone: [
+      'src/screens/community/CommunityComposerScreen.tsx:112-120 (on an error the form stays filled; Publish again is a new request)',
+      'src/api/communityApi.ts:407 (a new Idempotency-Key on every call)',
+    ],
+    knownGap: {
+      why: 'the phone makes a new key per publish and the server reads none: a post that landed but lost its answer, published again, is a second post',
+      next: 'keep one key per draft on the phone and honour Idempotency-Key on post create',
+      stillOpen: [{ file: 'src/community/posts/community-posts.controller.ts', holds: /@Post\('workspaces\/:workspaceId\/posts'\)/, lacks: /idempotency/i }],
+    },
+  },
 ];
 
 // ─── Checks ──────────────────────────────────────────────────────────────────
@@ -688,9 +768,9 @@ describe('SEND-ONCE: every phone write that can resend has a send-once rule', ()
     '%s: KNOWN GAP still open (turn this row into a rule when it closes)',
     (write, row) => {
       for (const c of row.knownGap!.stillOpen) {
-        if (!lineOf(source(c.file), c.holds)) {
-          throw new Error(`${write}: the gap looks closed (${c.file} changed); name the new rule in this row`);
-        }
+        const text = source(c.file);
+        const open = (!c.holds || lineOf(text, c.holds) > 0) && (!c.lacks || !c.lacks.test(text));
+        if (!open) throw new Error(`${write}: the gap looks closed (${c.file} changed); name the new rule in this row`);
       }
     },
   );
