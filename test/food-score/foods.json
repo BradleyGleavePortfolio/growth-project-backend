@@ -1,0 +1,3037 @@
+{
+ "about": "FOOD-SCORE-BE (agent 192): the foods clients log most, each with the words typed, a rule for the right first result, a portion and the right calories for it. kcal is for the portion: source kcal per 100 g x grams / 100, or the brand's stated kcal for one item. A row scores when FoodService.search's first result meets name_rule (every 'all' pattern and no 'none' pattern, case-insensitive, on name + brand) and its kcal for the portion is within 10% of kcal.",
+ "chosen_how": "Hand-picked on 2026-11-02, no client log data was read. 7 foods the owner named first (eggs, bacon, ham, white rice, sausage, steak, chicken breast; 4 of them are built-in foods); then the rest of the 65 built-in foods (prisma/data/seed-foods.json), each with the plain words a client types for it; then 24 more plain everyday foods the built-in list lacks (cuts, deli meat, cooked eggs, fish, breads, sides, fruit, juice, pizza and fries); then 8 chain-restaurant items, marked v11 (v1.1, printed but never failing).",
+ "recorded_note": "recorded=false: no saved USDA/Open Food Facts answer yet (USDA DEMO_KEY limit, ruling from /root 11-02). Such a row is printed as 'not recorded' and left out of the score and the floor.",
+ "rows": [
+  {
+   "typed": "eggs",
+   "v11": false,
+   "group": "owner",
+   "built_in": "Egg, whole, raw",
+   "name_rule": {
+    "all": [
+     "\\begg"
+    ],
+    "none": [
+     "candy",
+     "chocolate",
+     "noodle",
+     "roll",
+     "nog",
+     "substitute",
+     "white"
+    ]
+   },
+   "portion": {
+    "grams": 50.0,
+    "text": "1 large"
+   },
+   "kcal": 71.5,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 171287,
+    "url": "https://fdc.nal.usda.gov/food-details/171287/nutrients",
+    "description": "Egg, whole, raw, fresh",
+    "kcal_per_100g": 143.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "bacon",
+   "v11": false,
+   "group": "owner",
+   "built_in": "Bacon, pan-fried",
+   "name_rule": {
+    "all": [
+     "bacon"
+    ],
+    "none": [
+     "bits",
+     "turkey",
+     "canadian",
+     "bacon-flavored"
+    ]
+   },
+   "portion": {
+    "grams": 23.0,
+    "text": "2 slices"
+   },
+   "kcal": 107.6,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 168322,
+    "url": "https://fdc.nal.usda.gov/food-details/168322/nutrients",
+    "description": "Pork, cured, bacon, pre-sliced, cooked, pan-fried",
+    "kcal_per_100g": 468.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "ham",
+   "v11": false,
+   "group": "owner",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "\\bham\\b"
+    ],
+    "none": [
+     "hamburger",
+     "turkey"
+    ]
+   },
+   "portion": {
+    "grams": 56.0,
+    "text": "2 slices"
+   },
+   "kcal": 91.8,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 173864,
+    "url": "https://fdc.nal.usda.gov/food-details/173864/nutrients",
+    "description": "Ham, sliced, regular (approximately 11% fat)",
+    "kcal_per_100g": 164.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "white rice",
+   "v11": false,
+   "group": "owner",
+   "built_in": "Rice, white, long-grain, cooked",
+   "name_rule": {
+    "all": [
+     "\\brice\\b",
+     "white"
+    ],
+    "none": [
+     "brown",
+     "cake",
+     "krispies",
+     "crisp"
+    ]
+   },
+   "portion": {
+    "grams": 158.0,
+    "text": "1 cup cooked"
+   },
+   "kcal": 205.4,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 168878,
+    "url": "https://fdc.nal.usda.gov/food-details/168878/nutrients",
+    "description": "Rice, white, long-grain, regular, enriched, cooked",
+    "kcal_per_100g": 130.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "sausage",
+   "v11": false,
+   "group": "owner",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "sausage"
+    ],
+    "none": [
+     "gravy",
+     "biscuit",
+     "pizza"
+    ]
+   },
+   "portion": {
+    "grams": 48.0,
+    "text": "2 links"
+   },
+   "kcal": 156.0,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 174578,
+    "url": "https://fdc.nal.usda.gov/food-details/174578/nutrients",
+    "description": "Pork sausage, link/patty, cooked, pan-fried",
+    "kcal_per_100g": 325.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "steak",
+   "v11": false,
+   "group": "owner",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "steak"
+    ],
+    "none": [
+     "sauce",
+     "seasoning",
+     "salmon",
+     "tuna",
+     "sandwich"
+    ]
+   },
+   "portion": {
+    "grams": 85.0,
+    "text": "3 oz cooked"
+   },
+   "kcal": 206.6,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 168727,
+    "url": "https://fdc.nal.usda.gov/food-details/168727/nutrients",
+    "description": "Beef, top sirloin, steak, separable lean and fat, trimmed to 1/8\" fat, all grades, cooked, broiled",
+    "kcal_per_100g": 243.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "chicken breast",
+   "v11": false,
+   "group": "owner",
+   "built_in": "Chicken breast, cooked, roasted",
+   "name_rule": {
+    "all": [
+     "chicken",
+     "breast"
+    ],
+    "none": [
+     "nugget",
+     "tender",
+     "breaded",
+     "patty"
+    ]
+   },
+   "portion": {
+    "grams": 113.0,
+    "text": "4 oz cooked"
+   },
+   "kcal": 186.4,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 171477,
+    "url": "https://fdc.nal.usda.gov/food-details/171477/nutrients",
+    "description": "Chicken, broilers or fryers, breast, meat only, cooked, roasted",
+    "kcal_per_100g": 165.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "raw chicken breast",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Chicken breast, raw, skinless",
+   "name_rule": {
+    "all": [
+     "chicken",
+     "breast"
+    ],
+    "none": [
+     "nugget",
+     "breaded"
+    ]
+   },
+   "portion": {
+    "grams": 113.0,
+    "text": "4 oz raw"
+   },
+   "kcal": 135.6,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 171077,
+    "url": "https://fdc.nal.usda.gov/food-details/171077/nutrients",
+    "description": "Chicken, broiler or fryers, breast, skinless, boneless, meat only, raw",
+    "kcal_per_100g": 120.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "chicken thigh",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Chicken thigh, cooked, roasted",
+   "name_rule": {
+    "all": [
+     "chicken",
+     "thigh"
+    ],
+    "none": [
+     "breaded"
+    ]
+   },
+   "portion": {
+    "grams": 100.0,
+    "text": "100 g cooked"
+   },
+   "kcal": 179.0,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 172388,
+    "url": "https://fdc.nal.usda.gov/food-details/172388/nutrients",
+    "description": "Chicken, broilers or fryers, thigh, meat only, cooked, roasted",
+    "kcal_per_100g": 179.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "ground beef 80/20",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Ground beef, 80/20, raw",
+   "name_rule": {
+    "all": [
+     "beef"
+    ],
+    "none": [
+     "jerky",
+     "broth"
+    ]
+   },
+   "portion": {
+    "grams": 113.0,
+    "text": "4 oz raw"
+   },
+   "kcal": 287.0,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 174036,
+    "url": "https://fdc.nal.usda.gov/food-details/174036/nutrients",
+    "description": "Beef, ground, 80% lean meat / 20% fat, raw",
+    "kcal_per_100g": 254.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "ground beef 90/10",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Ground beef, 90/10, raw",
+   "name_rule": {
+    "all": [
+     "beef"
+    ],
+    "none": [
+     "jerky",
+     "broth"
+    ]
+   },
+   "portion": {
+    "grams": 113.0,
+    "text": "4 oz raw"
+   },
+   "kcal": 198.9,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 174030,
+    "url": "https://fdc.nal.usda.gov/food-details/174030/nutrients",
+    "description": "Beef, ground, 90% lean meat / 10% fat, raw",
+    "kcal_per_100g": 176.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "salmon",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Salmon, Atlantic, cooked",
+   "name_rule": {
+    "all": [
+     "salmon"
+    ],
+    "none": [
+     "smoked",
+     "jerky",
+     "burger",
+     "roe"
+    ]
+   },
+   "portion": {
+    "grams": 113.0,
+    "text": "4 oz cooked"
+   },
+   "kcal": 232.8,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 175168,
+    "url": "https://fdc.nal.usda.gov/food-details/175168/nutrients",
+    "description": "Fish, salmon, Atlantic, farmed, cooked, dry heat",
+    "kcal_per_100g": 206.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "tuna",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Tuna, canned in water, drained",
+   "name_rule": {
+    "all": [
+     "tuna"
+    ],
+    "none": [
+     "salad",
+     "sandwich",
+     "helper",
+     "steak"
+    ]
+   },
+   "portion": {
+    "grams": 100.0,
+    "text": "1 can drained"
+   },
+   "kcal": 86.0,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 173709,
+    "url": "https://fdc.nal.usda.gov/food-details/173709/nutrients",
+    "description": "Fish, tuna, light, canned in water, drained solids (Includes foods for USDA's Food Distribution Program)",
+    "kcal_per_100g": 86.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "egg white",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Egg white, raw",
+   "name_rule": {
+    "all": [
+     "egg",
+     "white"
+    ],
+    "none": []
+   },
+   "portion": {
+    "grams": 33.0,
+    "text": "1 large white"
+   },
+   "kcal": 17.2,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 172183,
+    "url": "https://fdc.nal.usda.gov/food-details/172183/nutrients",
+    "description": "Egg, white, raw, fresh",
+    "kcal_per_100g": 52.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "nonfat greek yogurt",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Greek yogurt, plain, nonfat",
+   "name_rule": {
+    "all": [
+     "greek",
+     "yogurt"
+    ],
+    "none": [
+     "bar",
+     "covered",
+     "dip"
+    ]
+   },
+   "portion": {
+    "grams": 170.0,
+    "text": "1 container"
+   },
+   "kcal": 100.3,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 170894,
+    "url": "https://fdc.nal.usda.gov/food-details/170894/nutrients",
+    "description": "Yogurt, Greek, plain, nonfat (Includes foods for USDA's Food Distribution Program)",
+    "kcal_per_100g": 59.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "whole milk greek yogurt",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Greek yogurt, plain, whole milk",
+   "name_rule": {
+    "all": [
+     "greek",
+     "yogurt"
+    ],
+    "none": [
+     "bar",
+     "covered",
+     "dip",
+     "nonfat"
+    ]
+   },
+   "portion": {
+    "grams": 170.0,
+    "text": "1 container"
+   },
+   "kcal": 164.9,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 171304,
+    "url": "https://fdc.nal.usda.gov/food-details/171304/nutrients",
+    "description": "Yogurt, Greek, plain, whole milk",
+    "kcal_per_100g": 97.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "plain yogurt",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Yogurt, plain, whole milk",
+   "name_rule": {
+    "all": [
+     "yogurt"
+    ],
+    "none": [
+     "greek",
+     "bar",
+     "covered",
+     "frozen"
+    ]
+   },
+   "portion": {
+    "grams": 245.0,
+    "text": "1 cup"
+   },
+   "kcal": 149.4,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 171284,
+    "url": "https://fdc.nal.usda.gov/food-details/171284/nutrients",
+    "description": "Yogurt, plain, whole milk",
+    "kcal_per_100g": 61.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "whole milk",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Milk, whole, 3.25% fat",
+   "name_rule": {
+    "all": [
+     "milk"
+    ],
+    "none": [
+     "chocolate",
+     "powder",
+     "dry",
+     "evaporated",
+     "condensed",
+     "greek"
+    ]
+   },
+   "portion": {
+    "grams": 244.0,
+    "text": "1 cup"
+   },
+   "kcal": 148.8,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 171265,
+    "url": "https://fdc.nal.usda.gov/food-details/171265/nutrients",
+    "description": "Milk, whole, 3.25% milkfat, with added vitamin D",
+    "kcal_per_100g": 61.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "2% milk",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Milk, 2% fat",
+   "name_rule": {
+    "all": [
+     "milk"
+    ],
+    "none": [
+     "chocolate",
+     "powder",
+     "dry",
+     "evaporated",
+     "condensed"
+    ]
+   },
+   "portion": {
+    "grams": 244.0,
+    "text": "1 cup"
+   },
+   "kcal": 122.0,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 171267,
+    "url": "https://fdc.nal.usda.gov/food-details/171267/nutrients",
+    "description": "Milk, reduced fat, fluid, 2% milkfat, with added vitamin A and vitamin D",
+    "kcal_per_100g": 50.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "skim milk",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Milk, skim, nonfat",
+   "name_rule": {
+    "all": [
+     "milk"
+    ],
+    "none": [
+     "chocolate",
+     "powder",
+     "dry",
+     "evaporated",
+     "condensed"
+    ]
+   },
+   "portion": {
+    "grams": 245.0,
+    "text": "1 cup"
+   },
+   "kcal": 83.3,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 171269,
+    "url": "https://fdc.nal.usda.gov/food-details/171269/nutrients",
+    "description": "Milk, nonfat, fluid, with added vitamin A and vitamin D (fat free or skim)",
+    "kcal_per_100g": 34.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "almond milk",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Almond milk, unsweetened",
+   "name_rule": {
+    "all": [
+     "almond",
+     "milk"
+    ],
+    "none": [
+     "chocolate"
+    ]
+   },
+   "portion": {
+    "grams": 240.0,
+    "text": "1 cup"
+   },
+   "kcal": 36.0,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 174832,
+    "url": "https://fdc.nal.usda.gov/food-details/174832/nutrients",
+    "description": "Beverages, almond milk, unsweetened, shelf stable",
+    "kcal_per_100g": 15.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "cheddar cheese",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Cheddar cheese",
+   "name_rule": {
+    "all": [
+     "cheddar"
+    ],
+    "none": [
+     "cracker",
+     "soup",
+     "sauce",
+     "popcorn",
+     "chip"
+    ]
+   },
+   "portion": {
+    "grams": 28.0,
+    "text": "1 oz"
+   },
+   "kcal": 112.8,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 173414,
+    "url": "https://fdc.nal.usda.gov/food-details/173414/nutrients",
+    "description": "Cheese, cheddar (Includes foods for USDA's Food Distribution Program)",
+    "kcal_per_100g": 403.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "mozzarella",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Mozzarella cheese, part-skim",
+   "name_rule": {
+    "all": [
+     "mozzarella"
+    ],
+    "none": [
+     "stick",
+     "breaded",
+     "pizza"
+    ]
+   },
+   "portion": {
+    "grams": 28.0,
+    "text": "1 oz"
+   },
+   "kcal": 71.1,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 170847,
+    "url": "https://fdc.nal.usda.gov/food-details/170847/nutrients",
+    "description": "Cheese, mozzarella, part skim milk",
+    "kcal_per_100g": 254.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "cottage cheese",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Cottage cheese, lowfat 2%",
+   "name_rule": {
+    "all": [
+     "cottage"
+    ],
+    "none": []
+   },
+   "portion": {
+    "grams": 113.0,
+    "text": "1/2 cup"
+   },
+   "kcal": 91.5,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 172182,
+    "url": "https://fdc.nal.usda.gov/food-details/172182/nutrients",
+    "description": "Cheese, cottage, lowfat, 2% milkfat",
+    "kcal_per_100g": 81.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "butter",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Butter, salted",
+   "name_rule": {
+    "all": [
+     "butter"
+    ],
+    "none": [
+     "peanut",
+     "almond",
+     "cookie",
+     "popcorn",
+     "cracker",
+     "apple",
+     "shea",
+     "cashew"
+    ]
+   },
+   "portion": {
+    "grams": 14.0,
+    "text": "1 tbsp"
+   },
+   "kcal": 100.4,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 173410,
+    "url": "https://fdc.nal.usda.gov/food-details/173410/nutrients",
+    "description": "Butter, salted",
+    "kcal_per_100g": 717.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "olive oil",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Olive oil, extra virgin",
+   "name_rule": {
+    "all": [
+     "olive",
+     "oil"
+    ],
+    "none": [
+     "spray"
+    ]
+   },
+   "portion": {
+    "grams": 14.0,
+    "text": "1 tbsp"
+   },
+   "kcal": 123.8,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 171413,
+    "url": "https://fdc.nal.usda.gov/food-details/171413/nutrients",
+    "description": "Oil, olive, salad or cooking",
+    "kcal_per_100g": 884.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "coconut oil",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Coconut oil",
+   "name_rule": {
+    "all": [
+     "coconut",
+     "oil"
+    ],
+    "none": []
+   },
+   "portion": {
+    "grams": 14.0,
+    "text": "1 tbsp"
+   },
+   "kcal": 124.9,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 171412,
+    "url": "https://fdc.nal.usda.gov/food-details/171412/nutrients",
+    "description": "Oil, coconut",
+    "kcal_per_100g": 892.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "avocado",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Avocado, raw",
+   "name_rule": {
+    "all": [
+     "avocado"
+    ],
+    "none": [
+     "oil",
+     "dressing",
+     "mayo",
+     "chip"
+    ]
+   },
+   "portion": {
+    "grams": 150.0,
+    "text": "1 medium"
+   },
+   "kcal": 240.0,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 171705,
+    "url": "https://fdc.nal.usda.gov/food-details/171705/nutrients",
+    "description": "Avocados, raw, all commercial varieties",
+    "kcal_per_100g": 160.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "banana",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Banana, raw",
+   "name_rule": {
+    "all": [
+     "banana"
+    ],
+    "none": [
+     "chip",
+     "bread",
+     "muffin",
+     "pudding",
+     "cream"
+    ]
+   },
+   "portion": {
+    "grams": 118.0,
+    "text": "1 medium"
+   },
+   "kcal": 105.0,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 173944,
+    "url": "https://fdc.nal.usda.gov/food-details/173944/nutrients",
+    "description": "Bananas, raw",
+    "kcal_per_100g": 89.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "apple",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Apple, raw, with skin",
+   "name_rule": {
+    "all": [
+     "apple"
+    ],
+    "none": [
+     "juice",
+     "sauce",
+     "pie",
+     "chip",
+     "cider",
+     "vinegar",
+     "butter",
+     "fritter"
+    ]
+   },
+   "portion": {
+    "grams": 182.0,
+    "text": "1 medium"
+   },
+   "kcal": 94.6,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 171688,
+    "url": "https://fdc.nal.usda.gov/food-details/171688/nutrients",
+    "description": "Apples, raw, with skin (Includes foods for USDA's Food Distribution Program)",
+    "kcal_per_100g": 52.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "strawberries",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Strawberries, raw",
+   "name_rule": {
+    "all": [
+     "strawberr"
+    ],
+    "none": [
+     "jam",
+     "jelly",
+     "preserve",
+     "yogurt",
+     "shortcake",
+     "syrup",
+     "milk"
+    ]
+   },
+   "portion": {
+    "grams": 152.0,
+    "text": "1 cup"
+   },
+   "kcal": 48.6,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 167762,
+    "url": "https://fdc.nal.usda.gov/food-details/167762/nutrients",
+    "description": "Strawberries, raw",
+    "kcal_per_100g": 32.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "blueberries",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Blueberries, raw",
+   "name_rule": {
+    "all": [
+     "blueberr"
+    ],
+    "none": [
+     "muffin",
+     "jam",
+     "pie",
+     "pancake",
+     "waffle",
+     "yogurt"
+    ]
+   },
+   "portion": {
+    "grams": 148.0,
+    "text": "1 cup"
+   },
+   "kcal": 84.4,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 171711,
+    "url": "https://fdc.nal.usda.gov/food-details/171711/nutrients",
+    "description": "Blueberries, raw",
+    "kcal_per_100g": 57.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "orange",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Orange, raw",
+   "name_rule": {
+    "all": [
+     "orange"
+    ],
+    "none": [
+     "juice",
+     "chicken",
+     "soda",
+     "marmalade",
+     "drink"
+    ]
+   },
+   "portion": {
+    "grams": 131.0,
+    "text": "1 medium"
+   },
+   "kcal": 61.6,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 169097,
+    "url": "https://fdc.nal.usda.gov/food-details/169097/nutrients",
+    "description": "Oranges, raw, all commercial varieties",
+    "kcal_per_100g": 47.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "grapes",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Grapes, raw",
+   "name_rule": {
+    "all": [
+     "grape"
+    ],
+    "none": [
+     "juice",
+     "jelly",
+     "jam",
+     "soda",
+     "fruit",
+     "nuts"
+    ]
+   },
+   "portion": {
+    "grams": 151.0,
+    "text": "1 cup"
+   },
+   "kcal": 104.2,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 174683,
+    "url": "https://fdc.nal.usda.gov/food-details/174683/nutrients",
+    "description": "Grapes, red or green (European type, such as Thompson seedless), raw",
+    "kcal_per_100g": 69.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "broccoli",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Broccoli, raw",
+   "name_rule": {
+    "all": [
+     "broccoli"
+    ],
+    "none": [
+     "cheese",
+     "soup",
+     "casserole"
+    ]
+   },
+   "portion": {
+    "grams": 91.0,
+    "text": "1 cup chopped"
+   },
+   "kcal": 30.9,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 170379,
+    "url": "https://fdc.nal.usda.gov/food-details/170379/nutrients",
+    "description": "Broccoli, raw",
+    "kcal_per_100g": 34.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "spinach",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Spinach, raw",
+   "name_rule": {
+    "all": [
+     "spinach"
+    ],
+    "none": [
+     "dip",
+     "pasta",
+     "souffle",
+     "artichoke"
+    ]
+   },
+   "portion": {
+    "grams": 30.0,
+    "text": "1 cup"
+   },
+   "kcal": 6.9,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 168462,
+    "url": "https://fdc.nal.usda.gov/food-details/168462/nutrients",
+    "description": "Spinach, raw",
+    "kcal_per_100g": 23.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "carrots",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Carrots, raw",
+   "name_rule": {
+    "all": [
+     "carrot"
+    ],
+    "none": [
+     "cake",
+     "juice"
+    ]
+   },
+   "portion": {
+    "grams": 128.0,
+    "text": "1 cup chopped"
+   },
+   "kcal": 52.5,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 170393,
+    "url": "https://fdc.nal.usda.gov/food-details/170393/nutrients",
+    "description": "Carrots, raw",
+    "kcal_per_100g": 41.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "sweet potato",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Sweet potato, raw",
+   "name_rule": {
+    "all": [
+     "sweet",
+     "potato"
+    ],
+    "none": [
+     "fries",
+     "chip",
+     "pie",
+     "casserole"
+    ]
+   },
+   "portion": {
+    "grams": 130.0,
+    "text": "1 medium"
+   },
+   "kcal": 111.8,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 168482,
+    "url": "https://fdc.nal.usda.gov/food-details/168482/nutrients",
+    "description": "Sweet potato, raw, unprepared (Includes foods for USDA's Food Distribution Program)",
+    "kcal_per_100g": 86.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "potato",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Potato, white, raw",
+   "name_rule": {
+    "all": [
+     "potato"
+    ],
+    "none": [
+     "chip",
+     "sweet",
+     "salad",
+     "soup",
+     "fries",
+     "crisps"
+    ]
+   },
+   "portion": {
+    "grams": 173.0,
+    "text": "1 medium"
+   },
+   "kcal": 133.2,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 170026,
+    "url": "https://fdc.nal.usda.gov/food-details/170026/nutrients",
+    "description": "Potatoes, flesh and skin, raw",
+    "kcal_per_100g": 77.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "tomato",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Tomato, raw",
+   "name_rule": {
+    "all": [
+     "tomato"
+    ],
+    "none": [
+     "sauce",
+     "soup",
+     "paste",
+     "juice",
+     "ketchup",
+     "dried"
+    ]
+   },
+   "portion": {
+    "grams": 123.0,
+    "text": "1 medium"
+   },
+   "kcal": 22.1,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 170457,
+    "url": "https://fdc.nal.usda.gov/food-details/170457/nutrients",
+    "description": "Tomatoes, red, ripe, raw, year round average",
+    "kcal_per_100g": 18.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "onion",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Onion, raw",
+   "name_rule": {
+    "all": [
+     "onion"
+    ],
+    "none": [
+     "ring",
+     "soup",
+     "dip",
+     "powder"
+    ]
+   },
+   "portion": {
+    "grams": 110.0,
+    "text": "1 medium"
+   },
+   "kcal": 44.0,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 170000,
+    "url": "https://fdc.nal.usda.gov/food-details/170000/nutrients",
+    "description": "Onions, raw",
+    "kcal_per_100g": 40.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "red bell pepper",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Bell pepper, red, raw",
+   "name_rule": {
+    "all": [
+     "pepper"
+    ],
+    "none": [
+     "chip",
+     "flake"
+    ]
+   },
+   "portion": {
+    "grams": 119.0,
+    "text": "1 medium"
+   },
+   "kcal": 30.9,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 170108,
+    "url": "https://fdc.nal.usda.gov/food-details/170108/nutrients",
+    "description": "Peppers, sweet, red, raw",
+    "kcal_per_100g": 26.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "oats",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Oats, rolled, dry",
+   "name_rule": {
+    "all": [
+     "oat"
+    ],
+    "none": [
+     "bar",
+     "cookie",
+     "milk",
+     "cereal bar"
+    ]
+   },
+   "portion": {
+    "grams": 40.0,
+    "text": "1/2 cup dry"
+   },
+   "kcal": 151.6,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 173904,
+    "url": "https://fdc.nal.usda.gov/food-details/173904/nutrients",
+    "description": "Cereals, oats, regular and quick, not fortified, dry",
+    "kcal_per_100g": 379.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "brown rice",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Rice, brown, long-grain, cooked",
+   "name_rule": {
+    "all": [
+     "rice",
+     "brown"
+    ],
+    "none": [
+     "cake",
+     "crisp"
+    ]
+   },
+   "portion": {
+    "grams": 195.0,
+    "text": "1 cup cooked"
+   },
+   "kcal": 239.8,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 169704,
+    "url": "https://fdc.nal.usda.gov/food-details/169704/nutrients",
+    "description": "Rice, brown, long-grain, cooked (Includes foods for USDA's Food Distribution Program)",
+    "kcal_per_100g": 123.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "quinoa",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Quinoa, cooked",
+   "name_rule": {
+    "all": [
+     "quinoa"
+    ],
+    "none": [
+     "chip",
+     "bar"
+    ]
+   },
+   "portion": {
+    "grams": 185.0,
+    "text": "1 cup cooked"
+   },
+   "kcal": 222.0,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 168917,
+    "url": "https://fdc.nal.usda.gov/food-details/168917/nutrients",
+    "description": "Quinoa, cooked",
+    "kcal_per_100g": 120.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "pasta",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Pasta, cooked, plain",
+   "name_rule": {
+    "all": [
+     "pasta"
+    ],
+    "none": [
+     "sauce",
+     "salad"
+    ]
+   },
+   "portion": {
+    "grams": 140.0,
+    "text": "1 cup cooked"
+   },
+   "kcal": 221.2,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 169737,
+    "url": "https://fdc.nal.usda.gov/food-details/169737/nutrients",
+    "description": "Pasta, cooked, enriched, without added salt",
+    "kcal_per_100g": 158.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "dry pasta",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Pasta, dry",
+   "name_rule": {
+    "all": [
+     "pasta"
+    ],
+    "none": [
+     "sauce",
+     "salad"
+    ]
+   },
+   "portion": {
+    "grams": 56.0,
+    "text": "2 oz dry"
+   },
+   "kcal": 207.8,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 169736,
+    "url": "https://fdc.nal.usda.gov/food-details/169736/nutrients",
+    "description": "Pasta, dry, enriched",
+    "kcal_per_100g": 371.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "white bread",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Bread, white",
+   "name_rule": {
+    "all": [
+     "bread"
+    ],
+    "none": [
+     "crumb",
+     "pudding"
+    ]
+   },
+   "portion": {
+    "grams": 28.0,
+    "text": "1 slice"
+   },
+   "kcal": 74.5,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 174924,
+    "url": "https://fdc.nal.usda.gov/food-details/174924/nutrients",
+    "description": "Bread, white, commercially prepared (includes soft bread crumbs)",
+    "kcal_per_100g": 266.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "whole wheat bread",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Bread, whole wheat",
+   "name_rule": {
+    "all": [
+     "bread",
+     "wheat"
+    ],
+    "none": [
+     "crumb"
+    ]
+   },
+   "portion": {
+    "grams": 28.0,
+    "text": "1 slice"
+   },
+   "kcal": 70.6,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 172688,
+    "url": "https://fdc.nal.usda.gov/food-details/172688/nutrients",
+    "description": "Bread, whole-wheat, commercially prepared",
+    "kcal_per_100g": 252.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "almonds",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Almonds, raw",
+   "name_rule": {
+    "all": [
+     "almond"
+    ],
+    "none": [
+     "milk",
+     "butter",
+     "flour",
+     "chocolate",
+     "bar"
+    ]
+   },
+   "portion": {
+    "grams": 28.0,
+    "text": "1 oz"
+   },
+   "kcal": 162.1,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 170567,
+    "url": "https://fdc.nal.usda.gov/food-details/170567/nutrients",
+    "description": "Nuts, almonds",
+    "kcal_per_100g": 579.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "peanut butter",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Peanut butter, smooth",
+   "name_rule": {
+    "all": [
+     "peanut",
+     "butter"
+    ],
+    "none": [
+     "cup",
+     "cookie",
+     "cracker",
+     "bar",
+     "candy"
+    ]
+   },
+   "portion": {
+    "grams": 32.0,
+    "text": "2 tbsp"
+   },
+   "kcal": 191.4,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 172470,
+    "url": "https://fdc.nal.usda.gov/food-details/172470/nutrients",
+    "description": "Peanut butter, smooth style, without salt",
+    "kcal_per_100g": 598.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "walnuts",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Walnuts, raw",
+   "name_rule": {
+    "all": [
+     "walnut"
+    ],
+    "none": [
+     "oil",
+     "brownie"
+    ]
+   },
+   "portion": {
+    "grams": 28.0,
+    "text": "1 oz"
+   },
+   "kcal": 183.1,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 170187,
+    "url": "https://fdc.nal.usda.gov/food-details/170187/nutrients",
+    "description": "Nuts, walnuts, english",
+    "kcal_per_100g": 654.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "black beans",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Black beans, cooked",
+   "name_rule": {
+    "all": [
+     "black",
+     "bean"
+    ],
+    "none": [
+     "soup",
+     "dip",
+     "burger",
+     "chip"
+    ]
+   },
+   "portion": {
+    "grams": 172.0,
+    "text": "1 cup cooked"
+   },
+   "kcal": 227.0,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 173735,
+    "url": "https://fdc.nal.usda.gov/food-details/173735/nutrients",
+    "description": "Beans, black, mature seeds, cooked, boiled, without salt",
+    "kcal_per_100g": 132.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "lentils",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Lentils, cooked",
+   "name_rule": {
+    "all": [
+     "lentil"
+    ],
+    "none": [
+     "soup",
+     "chip"
+    ]
+   },
+   "portion": {
+    "grams": 198.0,
+    "text": "1 cup cooked"
+   },
+   "kcal": 229.7,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 172421,
+    "url": "https://fdc.nal.usda.gov/food-details/172421/nutrients",
+    "description": "Lentils, mature seeds, cooked, boiled, without salt",
+    "kcal_per_100g": 116.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "chickpeas",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Chickpeas, cooked",
+   "name_rule": {
+    "all": [
+     "chickpea"
+    ],
+    "none": [
+     "snack",
+     "puff",
+     "pasta"
+    ]
+   },
+   "portion": {
+    "grams": 164.0,
+    "text": "1 cup cooked"
+   },
+   "kcal": 269.0,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 173757,
+    "url": "https://fdc.nal.usda.gov/food-details/173757/nutrients",
+    "description": "Chickpeas (garbanzo beans, bengal gram), mature seeds, cooked, boiled, without salt",
+    "kcal_per_100g": 164.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "tofu",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Tofu, firm",
+   "name_rule": {
+    "all": [
+     "tofu"
+    ],
+    "none": []
+   },
+   "portion": {
+    "grams": 126.0,
+    "text": "1/2 cup"
+   },
+   "kcal": 181.4,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 172475,
+    "url": "https://fdc.nal.usda.gov/food-details/172475/nutrients",
+    "description": "Tofu, raw, firm, prepared with calcium sulfate",
+    "kcal_per_100g": 144.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "sugar",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Sugar, granulated, white",
+   "name_rule": {
+    "all": [
+     "sugar"
+    ],
+    "none": [
+     "cookie",
+     "free",
+     "cane juice",
+     "snap",
+     "cereal"
+    ]
+   },
+   "portion": {
+    "grams": 4.0,
+    "text": "1 tsp"
+   },
+   "kcal": 15.5,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 169655,
+    "url": "https://fdc.nal.usda.gov/food-details/169655/nutrients",
+    "description": "Sugars, granulated",
+    "kcal_per_100g": 387.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "honey",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Honey",
+   "name_rule": {
+    "all": [
+     "honey"
+    ],
+    "none": [
+     "mustard",
+     "ham",
+     "bun",
+     "roasted",
+     "grahams",
+     "cereal"
+    ]
+   },
+   "portion": {
+    "grams": 21.0,
+    "text": "1 tbsp"
+   },
+   "kcal": 63.8,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 169640,
+    "url": "https://fdc.nal.usda.gov/food-details/169640/nutrients",
+    "description": "Honey",
+    "kcal_per_100g": 304.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "maple syrup",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Maple syrup, pure",
+   "name_rule": {
+    "all": [
+     "maple",
+     "syrup"
+    ],
+    "none": []
+   },
+   "portion": {
+    "grams": 20.0,
+    "text": "1 tbsp"
+   },
+   "kcal": 52.0,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 169661,
+    "url": "https://fdc.nal.usda.gov/food-details/169661/nutrients",
+    "description": "Syrups, maple",
+    "kcal_per_100g": 260.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "flour",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "All-purpose flour, white",
+   "name_rule": {
+    "all": [
+     "flour"
+    ],
+    "none": [
+     "tortilla"
+    ]
+   },
+   "portion": {
+    "grams": 125.0,
+    "text": "1 cup"
+   },
+   "kcal": 455.0,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 168894,
+    "url": "https://fdc.nal.usda.gov/food-details/168894/nutrients",
+    "description": "Wheat flour, white, all-purpose, enriched, bleached",
+    "kcal_per_100g": 364.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "whey protein",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Whey protein powder",
+   "name_rule": {
+    "all": [
+     "whey"
+    ],
+    "none": [
+     "bar"
+    ]
+   },
+   "portion": {
+    "grams": 30.0,
+    "text": "1 scoop"
+   },
+   "kcal": 105.6,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 173180,
+    "url": "https://fdc.nal.usda.gov/food-details/173180/nutrients",
+    "description": "Beverages, Protein powder whey based",
+    "kcal_per_100g": 352.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "pork tenderloin",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Pork tenderloin, cooked",
+   "name_rule": {
+    "all": [
+     "pork",
+     "tenderloin"
+    ],
+    "none": []
+   },
+   "portion": {
+    "grams": 113.0,
+    "text": "4 oz cooked"
+   },
+   "kcal": 161.6,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 168250,
+    "url": "https://fdc.nal.usda.gov/food-details/168250/nutrients",
+    "description": "Pork, fresh, loin, tenderloin, separable lean only, cooked, roasted",
+    "kcal_per_100g": 143.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "shrimp",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Shrimp, cooked",
+   "name_rule": {
+    "all": [
+     "shrimp"
+    ],
+    "none": [
+     "chip",
+     "cracker",
+     "breaded",
+     "tempura"
+    ]
+   },
+   "portion": {
+    "grams": 85.0,
+    "text": "3 oz cooked"
+   },
+   "kcal": 84.2,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 175180,
+    "url": "https://fdc.nal.usda.gov/food-details/175180/nutrients",
+    "description": "Crustaceans, shrimp, cooked",
+    "kcal_per_100g": 99.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "cucumber",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Cucumber, raw",
+   "name_rule": {
+    "all": [
+     "cucumber"
+    ],
+    "none": [
+     "pickle",
+     "dressing"
+    ]
+   },
+   "portion": {
+    "grams": 104.0,
+    "text": "1 cup sliced"
+   },
+   "kcal": 15.6,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 168409,
+    "url": "https://fdc.nal.usda.gov/food-details/168409/nutrients",
+    "description": "Cucumber, with peel, raw",
+    "kcal_per_100g": 15.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "romaine lettuce",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Lettuce, romaine, raw",
+   "name_rule": {
+    "all": [
+     "romaine"
+    ],
+    "none": [
+     "salad kit",
+     "caesar"
+    ]
+   },
+   "portion": {
+    "grams": 47.0,
+    "text": "1 cup shredded"
+   },
+   "kcal": 8.0,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 169247,
+    "url": "https://fdc.nal.usda.gov/food-details/169247/nutrients",
+    "description": "Lettuce, cos or romaine, raw",
+    "kcal_per_100g": 17.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "mushrooms",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Mushrooms, white, raw",
+   "name_rule": {
+    "all": [
+     "mushroom"
+    ],
+    "none": [
+     "soup",
+     "sauce",
+     "gravy"
+    ]
+   },
+   "portion": {
+    "grams": 70.0,
+    "text": "1 cup sliced"
+   },
+   "kcal": 15.4,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 169251,
+    "url": "https://fdc.nal.usda.gov/food-details/169251/nutrients",
+    "description": "Mushrooms, white, raw",
+    "kcal_per_100g": 22.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "hummus",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Hummus, plain",
+   "name_rule": {
+    "all": [
+     "hummus"
+    ],
+    "none": [
+     "chip",
+     "cracker",
+     "pretzel"
+    ]
+   },
+   "portion": {
+    "grams": 30.0,
+    "text": "2 tbsp"
+   },
+   "kcal": 71.1,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 174289,
+    "url": "https://fdc.nal.usda.gov/food-details/174289/nutrients",
+    "description": "Hummus, commercial",
+    "kcal_per_100g": 237.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "dark chocolate",
+   "v11": false,
+   "group": "built-in",
+   "built_in": "Dark chocolate, 70-85% cacao",
+   "name_rule": {
+    "all": [
+     "dark",
+     "chocolate"
+    ],
+    "none": [
+     "almond",
+     "covered",
+     "milk"
+    ]
+   },
+   "portion": {
+    "grams": 28.0,
+    "text": "1 oz"
+   },
+   "kcal": 167.4,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 170273,
+    "url": "https://fdc.nal.usda.gov/food-details/170273/nutrients",
+    "description": "Chocolate, dark, 70-85% cacao solids",
+    "kcal_per_100g": 598.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "ground turkey",
+   "v11": false,
+   "group": "everyday",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "turkey"
+    ],
+    "none": [
+     "bacon",
+     "sausage",
+     "jerky",
+     "breast"
+    ]
+   },
+   "portion": {
+    "grams": 85.0,
+    "text": "3 oz cooked"
+   },
+   "kcal": 172.6,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 171506,
+    "url": "https://fdc.nal.usda.gov/food-details/171506/nutrients",
+    "description": "Turkey, Ground, cooked",
+    "kcal_per_100g": 203.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "turkey breast",
+   "v11": false,
+   "group": "everyday",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "turkey",
+     "breast"
+    ],
+    "none": [
+     "bacon",
+     "sausage"
+    ]
+   },
+   "portion": {
+    "grams": 56.0,
+    "text": "4 slices"
+   },
+   "kcal": 59.4,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 172941,
+    "url": "https://fdc.nal.usda.gov/food-details/172941/nutrients",
+    "description": "Turkey breast, sliced, prepackaged",
+    "kcal_per_100g": 106.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "pork chop",
+   "v11": false,
+   "group": "everyday",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "pork"
+    ],
+    "none": [
+     "rind",
+     "sausage"
+    ]
+   },
+   "portion": {
+    "grams": 85.0,
+    "text": "3 oz cooked"
+   },
+   "kcal": 177.7,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 167827,
+    "url": "https://fdc.nal.usda.gov/food-details/167827/nutrients",
+    "description": "Pork, fresh, loin, center loin (chops), bone-in, separable lean and fat, cooked, broiled",
+    "kcal_per_100g": 209.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "hard boiled egg",
+   "v11": false,
+   "group": "everyday",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "egg"
+    ],
+    "none": [
+     "candy",
+     "chocolate",
+     "salad",
+     "sandwich"
+    ]
+   },
+   "portion": {
+    "grams": 50.0,
+    "text": "1 large"
+   },
+   "kcal": 77.5,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 173424,
+    "url": "https://fdc.nal.usda.gov/food-details/173424/nutrients",
+    "description": "Egg, whole, cooked, hard-boiled",
+    "kcal_per_100g": 155.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "scrambled eggs",
+   "v11": false,
+   "group": "everyday",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "egg"
+    ],
+    "none": [
+     "candy",
+     "chocolate",
+     "substitute"
+    ]
+   },
+   "portion": {
+    "grams": 61.0,
+    "text": "1 large egg"
+   },
+   "kcal": 90.9,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 172187,
+    "url": "https://fdc.nal.usda.gov/food-details/172187/nutrients",
+    "description": "Egg, whole, cooked, scrambled",
+    "kcal_per_100g": 149.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "cod",
+   "v11": false,
+   "group": "everyday",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "\\bcod\\b"
+    ],
+    "none": [
+     "liver",
+     "oil"
+    ]
+   },
+   "portion": {
+    "grams": 85.0,
+    "text": "3 oz cooked"
+   },
+   "kcal": 89.2,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 171956,
+    "url": "https://fdc.nal.usda.gov/food-details/171956/nutrients",
+    "description": "Fish, cod, Atlantic, cooked, dry heat",
+    "kcal_per_100g": 105.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "tilapia",
+   "v11": false,
+   "group": "everyday",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "tilapia"
+    ],
+    "none": [
+     "breaded"
+    ]
+   },
+   "portion": {
+    "grams": 87.0,
+    "text": "1 fillet"
+   },
+   "kcal": 111.4,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 175177,
+    "url": "https://fdc.nal.usda.gov/food-details/175177/nutrients",
+    "description": "Fish, tilapia, cooked, dry heat",
+    "kcal_per_100g": 128.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "bagel",
+   "v11": false,
+   "group": "everyday",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "bagel"
+    ],
+    "none": [
+     "chip",
+     "bite"
+    ]
+   },
+   "portion": {
+    "grams": 105.0,
+    "text": "1 medium"
+   },
+   "kcal": 277.2,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 174899,
+    "url": "https://fdc.nal.usda.gov/food-details/174899/nutrients",
+    "description": "Bagels, plain, enriched, with calcium propionate (includes onion, poppy, sesame)",
+    "kcal_per_100g": 264.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "flour tortilla",
+   "v11": false,
+   "group": "everyday",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "tortilla"
+    ],
+    "none": [
+     "chip"
+    ]
+   },
+   "portion": {
+    "grams": 48.0,
+    "text": "1 tortilla"
+   },
+   "kcal": 146.9,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 175037,
+    "url": "https://fdc.nal.usda.gov/food-details/175037/nutrients",
+    "description": "Tortillas, ready-to-bake or -fry, flour, refrigerated",
+    "kcal_per_100g": 306.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "corn tortilla",
+   "v11": false,
+   "group": "everyday",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "tortilla",
+     "corn"
+    ],
+    "none": [
+     "chip"
+    ]
+   },
+   "portion": {
+    "grams": 24.0,
+    "text": "1 tortilla"
+   },
+   "kcal": 52.3,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 175036,
+    "url": "https://fdc.nal.usda.gov/food-details/175036/nutrients",
+    "description": "Tortillas, ready-to-bake or -fry, corn",
+    "kcal_per_100g": 218.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "sweet corn",
+   "v11": false,
+   "group": "everyday",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "corn"
+    ],
+    "none": [
+     "chip",
+     "starch",
+     "syrup",
+     "bread",
+     "flake",
+     "dog"
+    ]
+   },
+   "portion": {
+    "grams": 145.0,
+    "text": "1 cup"
+   },
+   "kcal": 124.7,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 169998,
+    "url": "https://fdc.nal.usda.gov/food-details/169998/nutrients",
+    "description": "Corn, sweet, yellow, raw",
+    "kcal_per_100g": 86.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "green beans",
+   "v11": false,
+   "group": "everyday",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "bean"
+    ],
+    "none": [
+     "coffee",
+     "jelly",
+     "baked",
+     "black",
+     "casserole"
+    ]
+   },
+   "portion": {
+    "grams": 100.0,
+    "text": "1 cup"
+   },
+   "kcal": 31.0,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 169961,
+    "url": "https://fdc.nal.usda.gov/food-details/169961/nutrients",
+    "description": "Beans, snap, green, raw",
+    "kcal_per_100g": 31.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "peas",
+   "v11": false,
+   "group": "everyday",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "pea"
+    ],
+    "none": [
+     "peanut",
+     "soup",
+     "pod",
+     "snack"
+    ]
+   },
+   "portion": {
+    "grams": 80.0,
+    "text": "1/2 cup"
+   },
+   "kcal": 62.4,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 170017,
+    "url": "https://fdc.nal.usda.gov/food-details/170017/nutrients",
+    "description": "Peas, green, frozen, cooked, boiled, drained, without salt",
+    "kcal_per_100g": 78.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "peanuts",
+   "v11": false,
+   "group": "everyday",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "peanut"
+    ],
+    "none": [
+     "butter",
+     "cup",
+     "brittle",
+     "candy",
+     "bar"
+    ]
+   },
+   "portion": {
+    "grams": 28.0,
+    "text": "1 oz"
+   },
+   "kcal": 158.8,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 172430,
+    "url": "https://fdc.nal.usda.gov/food-details/172430/nutrients",
+    "description": "Peanuts, all types, raw",
+    "kcal_per_100g": 567.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "parmesan",
+   "v11": false,
+   "group": "everyday",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "parmesan"
+    ],
+    "none": [
+     "chicken",
+     "crisp",
+     "dressing",
+     "bread",
+     "garlic"
+    ]
+   },
+   "portion": {
+    "grams": 5.0,
+    "text": "1 tbsp"
+   },
+   "kcal": 21.0,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 171247,
+    "url": "https://fdc.nal.usda.gov/food-details/171247/nutrients",
+    "description": "Cheese, parmesan, grated",
+    "kcal_per_100g": 420.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "cream cheese",
+   "v11": false,
+   "group": "everyday",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "cream",
+     "cheese"
+    ],
+    "none": [
+     "frosting",
+     "bagel",
+     "danish"
+    ]
+   },
+   "portion": {
+    "grams": 14.5,
+    "text": "1 tbsp"
+   },
+   "kcal": 50.8,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 173418,
+    "url": "https://fdc.nal.usda.gov/food-details/173418/nutrients",
+    "description": "Cheese, cream",
+    "kcal_per_100g": 350.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "cheese pizza",
+   "v11": false,
+   "group": "everyday",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "pizza"
+    ],
+    "none": [
+     "roll",
+     "bite",
+     "sauce",
+     "crust only"
+    ]
+   },
+   "portion": {
+    "grams": 146.0,
+    "text": "1 serving"
+   },
+   "kcal": 391.3,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 170317,
+    "url": "https://fdc.nal.usda.gov/food-details/170317/nutrients",
+    "description": "Pizza, cheese topping, regular crust, frozen, cooked",
+    "kcal_per_100g": 268.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "french fries",
+   "v11": false,
+   "group": "everyday",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "frie"
+    ],
+    "none": [
+     "onion",
+     "chicken"
+    ]
+   },
+   "portion": {
+    "grams": 117.0,
+    "text": "1 medium serving"
+   },
+   "kcal": 365.0,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 170698,
+    "url": "https://fdc.nal.usda.gov/food-details/170698/nutrients",
+    "description": "Fast foods, potato, french fried in vegetable oil",
+    "kcal_per_100g": 312.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "orange juice",
+   "v11": false,
+   "group": "everyday",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "orange",
+     "juice"
+    ],
+    "none": [
+     "soda",
+     "drink"
+    ]
+   },
+   "portion": {
+    "grams": 248.0,
+    "text": "1 cup"
+   },
+   "kcal": 111.6,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 169098,
+    "url": "https://fdc.nal.usda.gov/food-details/169098/nutrients",
+    "description": "Orange juice, raw (Includes foods for USDA's Food Distribution Program)",
+    "kcal_per_100g": 45.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "granola",
+   "v11": false,
+   "group": "everyday",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "granola"
+    ],
+    "none": [
+     "bar",
+     "bite",
+     "yogurt"
+    ]
+   },
+   "portion": {
+    "grams": 61.0,
+    "text": "1/2 cup"
+   },
+   "kcal": 298.3,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 171646,
+    "url": "https://fdc.nal.usda.gov/food-details/171646/nutrients",
+    "description": "Cereals ready-to-eat, granola, homemade",
+    "kcal_per_100g": 489.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "watermelon",
+   "v11": false,
+   "group": "everyday",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "watermelon"
+    ],
+    "none": [
+     "candy",
+     "gum",
+     "juice",
+     "drink"
+    ]
+   },
+   "portion": {
+    "grams": 152.0,
+    "text": "1 cup diced"
+   },
+   "kcal": 45.6,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 167765,
+    "url": "https://fdc.nal.usda.gov/food-details/167765/nutrients",
+    "description": "Watermelon, raw",
+    "kcal_per_100g": 30.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "pineapple",
+   "v11": false,
+   "group": "everyday",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "pineapple"
+    ],
+    "none": [
+     "juice",
+     "candy",
+     "upside",
+     "drink"
+    ]
+   },
+   "portion": {
+    "grams": 165.0,
+    "text": "1 cup chunks"
+   },
+   "kcal": 82.5,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 169124,
+    "url": "https://fdc.nal.usda.gov/food-details/169124/nutrients",
+    "description": "Pineapple, raw, all varieties",
+    "kcal_per_100g": 50.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "mango",
+   "v11": false,
+   "group": "everyday",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "mango"
+    ],
+    "none": [
+     "juice",
+     "dried",
+     "chutney",
+     "drink",
+     "salsa"
+    ]
+   },
+   "portion": {
+    "grams": 165.0,
+    "text": "1 cup pieces"
+   },
+   "kcal": 99.0,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 169910,
+    "url": "https://fdc.nal.usda.gov/food-details/169910/nutrients",
+    "description": "Mangos, raw",
+    "kcal_per_100g": 60.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "cauliflower",
+   "v11": false,
+   "group": "everyday",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "cauliflower"
+    ],
+    "none": [
+     "rice",
+     "pizza",
+     "crust",
+     "cheese"
+    ]
+   },
+   "portion": {
+    "grams": 107.0,
+    "text": "1 cup chopped"
+   },
+   "kcal": 26.8,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 169986,
+    "url": "https://fdc.nal.usda.gov/food-details/169986/nutrients",
+    "description": "Cauliflower, raw",
+    "kcal_per_100g": 25.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "big mac",
+   "v11": true,
+   "group": "restaurant",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "big mac"
+    ],
+    "none": []
+   },
+   "portion": {
+    "grams": 219.0,
+    "text": "1 sandwich"
+   },
+   "kcal": 580.0,
+   "source": {
+    "kind": "brand",
+    "url": "https://www.mcdonalds.com/us/en-us/product/big-mac.html",
+    "kcal_stated": 580.0,
+    "read_on": "2026-11-02",
+    "portion_grams_from": {
+     "fdc_id": 170720,
+     "url": "https://fdc.nal.usda.gov/food-details/170720/nutrients",
+     "description": "McDONALD'S, BIG MAC"
+    }
+   },
+   "recorded": true
+  },
+  {
+   "typed": "mcdonalds fries",
+   "v11": true,
+   "group": "restaurant",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "frie"
+    ],
+    "none": []
+   },
+   "portion": {
+    "grams": 117.0,
+    "text": "1 medium"
+   },
+   "kcal": 320.0,
+   "source": {
+    "kind": "brand",
+    "url": "https://www.mcdonalds.com/us/en-us/product/medium-french-fries.html",
+    "kcal_stated": 320.0,
+    "read_on": "2026-11-02",
+    "portion_grams_from": {
+     "fdc_id": 170721,
+     "url": "https://fdc.nal.usda.gov/food-details/170721/nutrients",
+     "description": "McDONALD'S, french fries"
+    }
+   },
+   "recorded": true
+  },
+  {
+   "typed": "chick fil a sandwich",
+   "v11": true,
+   "group": "restaurant",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "chick",
+     "sandwich"
+    ],
+    "none": []
+   },
+   "portion": {
+    "grams": 187.0,
+    "text": "1 sandwich"
+   },
+   "kcal": 420.0,
+   "source": {
+    "kind": "brand",
+    "url": "https://www.chick-fil-a.com/menu/chick-fil-a-chicken-sandwich",
+    "kcal_stated": 420.0,
+    "read_on": "2026-11-02",
+    "portion_grams_from": {
+     "fdc_id": 170790,
+     "url": "https://fdc.nal.usda.gov/food-details/170790/nutrients",
+     "description": "CHICK-FIL-A, chicken sandwich"
+    }
+   },
+   "recorded": true
+  },
+  {
+   "typed": "taco bell taco",
+   "v11": true,
+   "group": "restaurant",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "taco"
+    ],
+    "none": [
+     "seasoning",
+     "shell",
+     "sauce"
+    ]
+   },
+   "portion": {
+    "grams": 69.0,
+    "text": "1 taco"
+   },
+   "kcal": 158.0,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 170332,
+    "url": "https://fdc.nal.usda.gov/food-details/170332/nutrients",
+    "description": "TACO BELL, Original Taco with beef, cheese and lettuce",
+    "kcal_per_100g": 229.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "wendys daves single",
+   "v11": true,
+   "group": "restaurant",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "dave"
+    ],
+    "none": []
+   },
+   "portion": {
+    "grams": 215.0,
+    "text": "1 sandwich"
+   },
+   "kcal": 576.2,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 170772,
+    "url": "https://fdc.nal.usda.gov/food-details/170772/nutrients",
+    "description": "WENDY'S, DAVE'S Hot 'N Juicy 1/4 LB, single",
+    "kcal_per_100g": 268.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "subway turkey sub",
+   "v11": true,
+   "group": "restaurant",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "turkey"
+    ],
+    "none": [
+     "bacon"
+    ]
+   },
+   "portion": {
+    "grams": 184.0,
+    "text": "1 6-inch sub"
+   },
+   "kcal": 270.5,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 170711,
+    "url": "https://fdc.nal.usda.gov/food-details/170711/nutrients",
+    "description": "SUBWAY, turkey breast sub on white bread with lettuce and tomato",
+    "kcal_per_100g": 147.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "pizza hut cheese pizza",
+   "v11": true,
+   "group": "restaurant",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "pizza",
+     "cheese"
+    ],
+    "none": []
+   },
+   "portion": {
+    "grams": 96.0,
+    "text": "1 slice"
+   },
+   "kcal": 260.2,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 172040,
+    "url": "https://fdc.nal.usda.gov/food-details/172040/nutrients",
+    "description": "PIZZA HUT 12\" Cheese Pizza, Hand-Tossed Crust",
+    "kcal_per_100g": 271.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  },
+  {
+   "typed": "kfc chicken strips",
+   "v11": true,
+   "group": "restaurant",
+   "built_in": null,
+   "name_rule": {
+    "all": [
+     "chicken"
+    ],
+    "none": []
+   },
+   "portion": {
+    "grams": 47.0,
+    "text": "1 strip"
+   },
+   "kcal": 128.8,
+   "source": {
+    "kind": "usda_fdc",
+    "fdc_id": 170341,
+    "url": "https://fdc.nal.usda.gov/food-details/170341/nutrients",
+    "description": "KFC, Crispy Chicken Strips",
+    "kcal_per_100g": 274.0,
+    "dataset": "FoodData Central SR Legacy (April 2018 release), bulk CSV https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_csv_2018-04.zip"
+   },
+   "recorded": true
+  }
+ ]
+}

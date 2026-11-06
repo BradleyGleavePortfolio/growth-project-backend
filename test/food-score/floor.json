@@ -1,0 +1,5 @@
+{
+ "v1_floor": 73,
+ "note": "The v1 score (rows with v11 false and recorded true) the food-score test must not fall below. Raise it when search gets better; never lower it.",
+ "set_from": "FIX-1207 first reading at c54c1aae (rls-live-tests job 127443200950, 2026-11-05): 73 of 92 v1 rows, 4 of 8 v1.1 rows, main's search 1016add4 with the USDA catalog loaded; the worse search scored 12."
+}
