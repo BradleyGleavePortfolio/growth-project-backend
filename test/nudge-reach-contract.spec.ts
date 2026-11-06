@@ -154,6 +154,12 @@ function world(opts: { muted?: boolean; prefsUnreadable?: boolean; at?: string; 
   const direct = jest.spyOn(notifications, 'pushToUser');
   // As NudgesModule wires it (positional: PrismaService, NotificationsService).
   const svc = new (NudgesService as unknown as new (p: unknown, n: unknown) => NudgesService)(db, notifications);
+  // Prospective send-intent seam: the current implementation ignores this
+  // extra argument. A class fix can consume it without making fresh-send
+  // expectations contradict the existing legacy retry tests.
+  const sendWithIntent = svc.createForClient.bind(svc) as (
+    coachId: string, clientId: string, title: string, body: string, sendIntentId?: string,
+  ) => ReturnType<NudgesService['createForClient']>;
   return {
     clock,
     outboxRows: outbox.rows,
@@ -164,8 +170,8 @@ function world(opts: { muted?: boolean; prefsUnreadable?: boolean; at?: string; 
     direct,
     notifications,
     lockCalls: () => tx.$executeRaw.mock.calls,
-    send: (title: string, body: string, coachId = COACH, clientId = CLIENT) =>
-      svc.createForClient(coachId, clientId, title, body),
+    send: (title: string, body: string, coachId = COACH, clientId = CLIENT, sendIntentId?: string) =>
+      sendWithIntent(coachId, clientId, title, body, sendIntentId),
     /** What reached the Expo transport, after the fire-and-forget push settles. */
     delivered: async () => {
       const results = await Promise.all(direct.mock.results.map((r) => Promise.resolve(r.value).catch((e) => e)));
@@ -206,6 +212,51 @@ describe('NUDGE-REACH-BE contract: coach nudge -> client inbox row (coach title,
       deliveredPushes: sent.length,
     }).toEqual({ nudges: 1, inboxRows: 1, deliveredPushes: 1 });
   });
+
+  it.each([
+    ['two acknowledged sends from separate composers', TITLE, BODY, 1, true, 2],
+    [
+      'two acknowledged fixed-template sends after reopening risk detail',
+      'Quick check-in',
+      'Just checking in \u2014 how are things this week?',
+      1,
+      true,
+      2,
+    ],
+    ['one lost-reply send retried after reconnecting 11 minutes later', TITLE, BODY, 11, false, 1],
+  ] as Array<[string, string, string, number, boolean, number]>)(
+    'LS-1226R2 B1 send intent: %s',
+    async (_label, title, body, minutesLater, acknowledged, expected) => {
+      const w = world();
+      const firstIntent = '877ec123-cc6a-47b2-bf42-092e835b4001';
+      const freshIntent = '877ec123-cc6a-47b2-bf42-092e835b4002';
+      const first = await w.send(title, body, COACH, CLIENT, firstIntent);
+      // Settle the real push/outbox path before any second user action.
+      const deliveredFirst = await w.delivered();
+      expect(first.id).toBeTruthy();
+      expect(deliveredFirst.sent).toHaveLength(1);
+      expect(first).toMatchObject({ title, body, client_id: CLIENT, coach_id: COACH });
+      // A resolved send clears/closes today's composer. A later fresh compose
+      // or risk-screen mount is a new intent; an ambiguous retry keeps its id.
+      // Today's phone supplies neither id (see source trace in the AUDIT);
+      // this prospective seam makes the required identity contract explicit.
+      const earlier = w.nudges[0];
+      earlier.created_at = new Date((earlier.created_at as Date).getTime() - minutesLater * 60_000);
+      const second = await w.send(title, body, COACH, CLIENT, acknowledged ? freshIntent : firstIntent);
+      const { sent } = await w.delivered();
+      expect({
+        nudges: w.nudges.length,
+        inboxRows: w.inbox.length,
+        deliveredPushes: sent.length,
+        sameResult: first.id === second.id,
+      }).toEqual({
+        nudges: expected,
+        inboxRows: expected,
+        deliveredPushes: expected,
+        sameResult: !acknowledged,
+      });
+    },
+  );
 
   // FIX-1226 (class: one send, one of each client-visible effect). Each row:
   // a first send, then a second; what the client ends with, and whether the
