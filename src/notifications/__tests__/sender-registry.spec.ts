@@ -50,8 +50,9 @@
  * passes (LO-1186R2 C1); a renewal offer runs with and without the person's yes (LO-1186R2 B2). Block and ban,
  * thread and space mute run only in the broadcast, churn, spacePush and heldMessage drivers; for every
  * other row, and for every recipient rule, the registry's text is a claim the scan keeps in place, not a driven
- * case, and no driver checks an exact recipient list. Out of the scan: the CoachNudge list
- * (src/nudges/nudges.service.ts NudgesService.createForClient) and CoachAlert rows (src/coach/coach-alerts.service.ts).
+ * case, and no driver checks an exact recipient list. Out of the scan: CoachAlert rows (src/coach/coach-alerts.service.ts).
+ * NUDGE-REACH-BE: a coach nudge (churn send or NudgesService.createForClient) sends through sendCoachNudge
+ * (src/nudges/coach-nudge-send.ts), registered; the CoachNudge row it also writes is not a send.
  * Never skip a case, loosen a check or add to FUNNEL_SITES to make this green; that is the trap KT-4 names.
  */
 import { randomUUID } from 'crypto';
