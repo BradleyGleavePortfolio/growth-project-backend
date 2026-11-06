@@ -58,7 +58,7 @@ describe('LS-1223R2 main-first deploy, isolation and alert proof', () => {
     fs.rmSync(path.join(migrations, NAME), { recursive: true });
     fs.copyFileSync(path.join(ROOT, 'prisma/schema.prisma'), path.join(temp, 'schema.prisma'));
     const mainNames = fs.readdirSync(migrations).filter((n) => /^\d{14}_/.test(n)).sort();
-    expect(mainNames.at(-1)).toBe('20270502011100_plan_swaps_revisions');
+    expect(mainNames[mainNames.length - 1]).toBe('20270502011100_plan_swaps_revisions');
     mainCount = mainNames.length;
     file(path.join(ROOT, 'scripts/ci/supabase-shim.sql'));
     run(process.execPath, ['node_modules/prisma/build/index.js', 'migrate', 'deploy', '--schema', path.join(temp, 'schema.prisma')]);
