@@ -329,6 +329,11 @@ const median = (xs: number[]) => {
     // The request pipeline main.ts builds, minus Sentry, metrics export, Swagger and the
     // helmet response headers (headers only; no read depends on them).
     app = ref.createNestApplication({ rawBody: true, logger: ['error'] });
+    // Reviewer control only: make a real opening read take longer than the unchanged 500 ms budget.
+    app.use((req: { path: string }, _res: unknown, next: () => void) => {
+      if (req.path === '/api/users/blocks') setTimeout(next, 550);
+      else next();
+    });
     app.use(featureFlagNotFoundMiddleware);
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
     app.useGlobalFilters(new HttpExceptionFilter(), new ThrottlerExceptionFilter(app.get(MetricsService, { strict: false })));
