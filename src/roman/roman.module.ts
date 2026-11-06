@@ -16,6 +16,9 @@
 import { Module } from '@nestjs/common';
 import { RomanController } from './roman.controller';
 import { RomanChatsController } from './roman-chats.controller';
+import { RomanMessageReportController } from './roman-message-report.controller';
+import { RomanMessageReportService } from './roman-message-report.service';
+import { ReportAlertService } from '../report-alerts/report-alert.service';
 import { RomanUsageController } from './roman-usage.controller';
 import { RomanService } from './roman.service';
 import { RomanFeatureGuard } from './roman-feature.guard';
@@ -55,13 +58,24 @@ import { CopilotTurnService } from '../copilot/copilot-turn';
   // RomanContextController: GET /roman/context/me, the client's own view of
   // exactly what Roman is grounded in (behind the chat flag, students only).
   // RomanUsageController: GET /me/roman/usage, the client's daily Roman counts.
-  controllers: [RomanController, RomanChatsController, RomanContextController, RomanUsageController],
+  // RomanMessageReportController: POST /roman/messages/:id/report (ROMAN-HOLD-BE), also not behind
+  // the chat flag: a client who can see a Roman reply can always report it.
+  controllers: [
+    RomanController,
+    RomanChatsController,
+    RomanMessageReportController,
+    RomanContextController,
+    RomanUsageController,
+  ],
   // RomanErasureSweep runs regardless of FEATURE_ROMAN_CHAT_ENABLED: finishing
   // the erasure of chats a client deleted is a privacy duty, not a chat feature.
   // Grounding (OR-113-2): the context builder and its REQUIRED consultation
   // source (B-R3-1: the real #607 intake reader, never a silent default).
   providers: [
     RomanService,
+    RomanMessageReportService,
+    // B-REPORTALERT-125 (B1-1223): a Roman report emails the support inbox, as the DM and community ones do.
+    ReportAlertService,
     RomanFeatureGuard,
     romanAnthropicClientProvider,
     // R11-P4: the coach-method block (null unless FEATURE_ROMAN_PLAYBOOK is on).

@@ -311,6 +311,9 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'RomanClientSummary', field: 'client_id', action: del },
   { model: 'RomanMemoryState', field: 'client_id', action: del },
   { model: 'RomanUsageDaily', field: 'client_id', action: del },
+  // ROMAN-HOLD-BE: the client's reports on Roman's replies go with them, before the messages they
+  // name (the row also cascades with its message).
+  { model: 'RomanMessageReport', field: 'reporter_id', action: del },
   { model: 'RomanMessage', field: 'user_id', action: del },
   { model: 'RomanSession', field: 'user_id', action: del },
   { model: 'UserAIQuota', field: 'user_id', action: del },
