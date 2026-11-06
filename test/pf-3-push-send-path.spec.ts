@@ -103,6 +103,14 @@ const SENDERS: Sender[] = [
     passesMuteAll: true,
   },
   {
+    id: 'MONEY-DAILY (the owner\'s daily money check)',
+    file: 'src/checkout/reconciliation-daily.cron.ts',
+    to: COACH,
+    route: { kind: NotificationKind.COACH_ALERT, passesMuteAll: true, dedupeKey: 'money_daily:2026-10-06' },
+    data: { type: 'money_check', verdict: 'clean' },
+    passesMuteAll: true,
+  },
+  {
     id: 'KG-QH-CHURN',
     file: 'src/coach/command-center/churn-intervention.service.ts',
     to: CLIENT,

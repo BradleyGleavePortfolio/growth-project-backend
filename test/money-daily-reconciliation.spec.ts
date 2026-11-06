@@ -23,7 +23,12 @@ import { AdminPaymentOpsController } from '../src/checkout/payment-ops.controlle
 import { ReconciliationService } from '../src/connect/fees/reconciliation.service';
 import { NotificationKind } from '../src/notifications/notification-kind';
 import { pushAllowedByPreferences } from '../src/notifications/push/push-preferences';
+import { NotificationsService } from '../src/notifications/notifications.service';
+import type { ExpoPushClient } from '../src/notifications/push/expo-push-client';
+import { PushDeliveryService } from '../src/notifications/push/push-delivery.service';
+import { pushOutboxWorld } from './utils/push-outbox-fake';
 import { Table, asPrisma, type Row } from './utils/settlement-fakes';
+import { stub } from './utils/trial-fakes';
 
 type Kind = 'ok' | 'drift' | 'unknown' | 'throws';
 interface P {
@@ -415,6 +420,79 @@ describe('ReconciliationDailyCron: one machine, the off switch, the owner', () =
     const mutedAllOn = { muted: true };
     expect(pushAllowedByPreferences(mutedAllOn, route.kind, { passesMuteAll: route.passesMuteAll })).toBe(true);
     expect(pushAllowedByPreferences(mutedAllOn, NotificationKind.COACH_ALERT)).toBe(false);
+  });
+});
+
+// KT-4: the real send path (NotificationsService.pushToUser -> outbox -> worker), the owner with Mute all on,
+// in Pacific time, at the run's 04:00 PDT: the push waits for 08:00 and then goes; one row, to the owner only.
+describe('ReconciliationDailyCron through the real push path (Mute all on, quiet hours, recipient exact)', () => {
+  it('Mute all on: the owner still gets it; inside quiet hours it waits for 08:00 Pacific; nobody else gets anything', async () => {
+    const LA = 'America/Los_Angeles';
+    const clock = { at: new Date('2026-10-06T11:00:00Z') }; // 04:00 PDT, the cron's hour
+    const owner = 'owner-qh';
+    const world = pushOutboxWorld({
+      now: () => clock.at,
+      prefs: { [owner]: { muted: true, coach_alert_inapp: true, coach_alert_push: true, timezone: LA, timezone_updated_at: new Date('2026-01-01T00:00:00Z') } },
+    });
+    world.tokens[owner] = 'ExponentPushToken[moneydailyowner0000]';
+    world.tokens['coach-x'] = 'ExponentPushToken[moneydailycoach0000]';
+    const inbox: Array<Record<string, unknown>> = [];
+    const db = {
+      ...world.db,
+      notification: {
+        findFirst: jest.fn(async () => null),
+        create: jest.fn(async (a: { data: Record<string, unknown> }) => {
+          inbox.push(a.data);
+          return { id: `n-${inbox.length}`, ...a.data };
+        }),
+      },
+    };
+    const sent = jest.fn(async (m: unknown[]) => m.map((_x, i) => ({ status: 'ok', id: `t-${i}` })));
+    class Clocked extends PushDeliveryService {
+      protected now(): Date {
+        return new Date(clock.at.getTime());
+      }
+    }
+    const delivery = new Clocked(
+      stub<ConstructorParameters<typeof PushDeliveryService>[0]>(db),
+      stub<ExpoPushClient>({ send: sent, getReceipts: jest.fn(async () => ({})) }),
+    );
+    delivery.autoDrain = false;
+    const svc = new NotificationsService(
+      stub<ConstructorParameters<typeof NotificationsService>[0]>(db),
+      undefined,
+      undefined,
+      delivery,
+    );
+    const money = moneyWorld([...many(3, 'ok'), ...many(1, 'drift')]);
+    const cron = new ReconciliationDailyCron(leaseFor().lease, money.svc, svc, userTable({ id: owner }) as any);
+    const r = await cron.runOnce(new Date(Date.now() - 1_000), 'm1', noPause);
+    expect(r).toMatchObject({ ran: true, verdict: 'needs_review', alerted: true });
+    // The inbox row: the owner's, counts only.
+    expect(inbox).toHaveLength(1);
+    expect(inbox[0]).toMatchObject({ user_id: owner, kind: NotificationKind.COACH_ALERT });
+    expect(String(inbox[0].body)).toBe("Money check: needs review. Checked 4 purchases against Stripe. 1 doesn't match.");
+    // The push: queued for the owner only, held to 08:00 PDT (15:00Z), carrying the Mute all pass.
+    expect(world.rows).toHaveLength(1);
+    expect(world.rows[0]).toMatchObject({
+      user_id: owner,
+      kind: NotificationKind.COACH_ALERT,
+      deferred_reason: 'quiet_hours',
+      not_before: new Date('2026-10-06T15:00:00Z'),
+      context: { passesMuteAll: true },
+    });
+    await delivery.drain();
+    expect(sent).not.toHaveBeenCalled();
+    clock.at = new Date('2026-10-06T15:00:00Z');
+    await delivery.drain();
+    expect(sent).toHaveBeenCalledTimes(1);
+    expect(world.rows[0].status).toBe('sent');
+    const [msg] = (sent.mock.calls[0] as unknown as [Array<Record<string, unknown>>])[0];
+    expect(msg).toMatchObject({
+      to: 'ExponentPushToken[moneydailyowner0000]',
+      title: 'Money check: needs review',
+      body: "Checked 4 purchases against Stripe. 1 doesn't match.",
+    });
   });
 });
 
