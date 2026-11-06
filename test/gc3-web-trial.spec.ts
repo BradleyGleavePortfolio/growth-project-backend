@@ -892,7 +892,10 @@ describe('GC-3 — pay page and return page words', () => {
       setup_intent: 'seti_webtrial01',
       setup_intent_client_secret: 'seti_webtrial01_secret_z',
     });
-    expect(res.view).toMatchObject({ kind: 'paid', trial: { firstChargeCents: 14900 } });
+    expect(res.view).toMatchObject({
+      kind: 'paid',
+      trial: { firstChargeCents: 14900, firstChargeAt: '2026-11-06T17:00:00.000Z' },
+    });
     expect(deps.stripe.retrievePaymentIntent).not.toHaveBeenCalled();
     const html = renderPayDonePage(cast(res.view), 'nonce-gc3', 'https://apps.example.com/tgp');
     expect(html).toContain('Your free trial has started');
