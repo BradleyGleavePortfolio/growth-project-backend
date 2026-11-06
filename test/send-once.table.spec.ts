@@ -286,7 +286,7 @@ export const SEND_ONCE_TABLE: SendOnceRow[] = [
   {
     write: 'POST /log/food',
     phone: [
-      'src/services/foodLogQueue.ts (offline queue, client_uuid kept per entry)',
+      'src/services/foodLogQueue.ts:364-375 (offline queue; each entry is sent with its id as client_uuid)',
       'src/store/clientStore.ts:320 (withSaveKey: a resend after a lost answer keeps the key)',
     ],
     rule: {
@@ -360,7 +360,7 @@ export const SEND_ONCE_TABLE: SendOnceRow[] = [
     write: 'POST /client/messaging thread message (client send)',
     phone: [
       'src/services/messageOutbox.ts:204 (outbox replay: the same client_message_id on every send)',
-      'src/hooks/useMessageOutbox.ts (drains the outbox on reconnect)',
+      'src/hooks/useMessageOutbox.ts:31-36 (drains the outbox on reconnect and on foreground)',
       'src/screens/client/MessagesScreen.tsx:427 (outbox off: the pending row keeps the same key for Retry)',
     ],
     rule: {
@@ -692,7 +692,7 @@ export const SEND_ONCE_TABLE: SendOnceRow[] = [
     write: 'POST /roman/sessions/:id/messages',
     phone: [
       'src/screens/roman/useRomanChat.ts:259 (sendMessage; on no answer the composer keeps the text for Retry)',
-      'src/api/romanApi.ts (POST with { content } only, no key)',
+      'src/api/romanApi.ts:529 (POST body { content } only, no key)',
     ],
     knownGap: {
       why: 'no key on the phone or the server: a send that reached the server but lost its answer, then Retry, stores the turn (and runs the model) twice',
