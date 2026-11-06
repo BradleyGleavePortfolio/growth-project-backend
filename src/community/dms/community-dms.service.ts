@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import type {
   CommunityMembership,
   CommunityMessage,
@@ -11,6 +11,7 @@ import { CommunityNotificationsService } from '../notifications/community-notifi
 import { COMMUNITY_BROADCAST_EVENTS } from '../community-events';
 import { NotificationKind } from '../../notifications/notification-kind';
 import { CommunityDmsRepository } from './community-dms.repository';
+import { IDEMPOTENCY_KEY_REUSED, keyedSendId } from '../messages/message-idempotency';
 import {
   CommunityDmMessageListResponse,
   CommunityDmMessageListResponseSchema,
@@ -181,16 +182,20 @@ export class CommunityDmsService {
     workspaceId: string,
     recipientId: string,
     body: string,
+    idempotencyKey?: string | null,
   ): Promise<CommunityDmMessageResponse> {
     const dmKey = await this.authoriseDm(workspaceId, user, recipientId);
     this.safety.assertAllowed(body);
-    const created = await this.dms.createDm({
-      workspaceId,
-      dmKey,
-      senderId: user.id,
-      recipientId,
-      body,
-    });
+    // SEND-ONCE-SERVER: a resend with the same Idempotency-Key (same author, same thread) answers with the first
+    // message and repeats neither the realtime ping nor the push; the same key on other words is refused (409).
+    const keyedId = idempotencyKey ? keyedSendId('dm', user.id, dmKey, idempotencyKey) : null;
+    const sentBefore = keyedId ? await this.dms.findById(keyedId) : null;
+    if (sentBefore) return this.replay(sentBefore, user, dmKey, body);
+    const params = { workspaceId, dmKey, senderId: user.id, recipientId, body };
+    const { row: created, replayed } = keyedId
+      ? await this.dms.createKeyedDm(keyedId, params)
+      : { row: await this.dms.createDm(params), replayed: false };
+    if (replayed) return this.replay(created, user, dmKey, body);
     // v1-4 post-write tail (after gateDmRead, inside authoriseDm). Best-effort
     // realtime refetch ping to the RECIPIENT's private topic only — IDs only,
     // never the DM body (#24/#36). DMs have no dedicated broadcast event in the
@@ -222,6 +227,13 @@ export class CommunityDmsService {
     return CommunityDmMessageResponseSchema.parse({
       message: this.messageView(created),
     });
+  }
+
+  /** SEND-ONCE-SERVER: the first DM under a key, answered again only for the same author, thread and words. */
+  private replay(row: CommunityMessage, user: User, dmKey: string, body: string): CommunityDmMessageResponse {
+    const same = row.sender_id === user.id && row.scope === 'dm' && row.dm_key === dmKey && row.body === body;
+    if (!same) throw new ConflictException(IDEMPOTENCY_KEY_REUSED);
+    return CommunityDmMessageResponseSchema.parse({ message: this.messageView(row) });
   }
 
   async listThread(

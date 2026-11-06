@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { createHash } from 'crypto';
 
 /**
@@ -41,7 +42,37 @@ export function messageKey(raw: string | string[] | undefined): string | null {
  * parent_message_id, the voice reply link, the ack routes): a keyed message must be repliable like any other.
  */
 export function keyedMessageId(senderId: string, cohortId: string, key: string): string {
-  const h = createHash('sha256').update(`community.message.key\0${senderId}\0${cohortId}\0${key}`).digest();
+  return keyedRowId(`community.message.key\0${senderId}\0${cohortId}\0${key}`);
+}
+
+/**
+ * SEND-ONCE-SERVER: the same rule for every other keyed send, one place per kind so one key never names two rows:
+ * a one-to-one message (`dm`, its dm_key), a post (`post`, its workspace), a post's or a challenge's comment
+ * (`comment` / `challenge-comment`, the post or challenge), a Roman turn and its reply (`roman` / `roman-reply`,
+ * the session). The space chat keeps keyedMessageId's derivation unchanged (its keyed rows already exist).
+ */
+export type KeyedPlace = 'dm' | 'post' | 'comment' | 'challenge-comment' | 'roman' | 'roman-reply';
+export function keyedSendId(place: KeyedPlace, senderId: string, placeId: string, key: string): string {
+  return keyedRowId(`send-once.key\0${place}\0${senderId}\0${placeId}\0${key}`);
+}
+
+/**
+ * One transaction lock per keyed id, then the first row with it (a replay, `replayed: true`) or `write`'s new row.
+ * Every keyed send takes this lock (FX-IDEM's), so two racing first sends land on one row, whatever its table.
+ */
+export async function keyedWrite<T>(
+  tx: Pick<Prisma.TransactionClient, '$executeRaw'>,
+  id: string,
+  find: () => Promise<T | null>,
+  write: () => Promise<T>,
+): Promise<{ row: T; replayed: boolean }> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(${LOCK_NS_COMMUNITY_MESSAGE_KEY}::int4, hashtext(${id}))`;
+  const first = await find();
+  return first ? { row: first, replayed: true } : { row: await write(), replayed: false };
+}
+
+function keyedRowId(name: string): string {
+  const h = createHash('sha256').update(name).digest();
   h[6] = (h[6] & 0x0f) | 0x40;
   h[8] = (h[8] & 0x3f) | 0x80;
   const x = h.subarray(0, 16).toString('hex');

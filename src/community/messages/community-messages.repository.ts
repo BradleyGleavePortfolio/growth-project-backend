@@ -17,7 +17,7 @@ import {
   type VoiceErasureRow,
   type VoiceErasureStorage,
 } from '../voice/voice-erasure';
-import { LOCK_NS_COMMUNITY_MESSAGE_KEY } from './message-idempotency';
+import { keyedWrite } from './message-idempotency';
 
 /** A new text message in a space. */
 export interface NewCohortMessage {
@@ -162,9 +162,7 @@ export class CommunityMessagesRepository {
     id: string,
     write: () => Promise<CommunityMessage>,
   ): Promise<{ row: CommunityMessage; replayed: boolean }> {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${LOCK_NS_COMMUNITY_MESSAGE_KEY}::int4, hashtext(${id}))`;
-    const first = await tx.communityMessage.findFirst({ where: { id } });
-    return first ? { row: first, replayed: true } : { row: await write(), replayed: false };
+    return keyedWrite(tx, id, () => tx.communityMessage.findFirst({ where: { id } }), write);
   }
 
   /**

@@ -55,6 +55,8 @@ import { FEATURE_MWB_AUTOSAVE_UNDO_ENV } from '../src/workout-builder/workout-bu
 import { computeLockToken } from '../src/workout-builder/lock-token.helper';
 import { safetyWithBlocks } from './community/safety/safety-test-helpers';
 import { stub } from './utils/trial-fakes';
+import { CommunityDmsService } from '../src/community/dms/community-dms.service';
+import { CommunityDmsRepository } from '../src/community/dms/community-dms.repository';
 
 // ─── A Prisma double that keeps unique indexes ───────────────────────────────
 
@@ -187,6 +189,12 @@ const COACH = '5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b';
 const uuid = () => randomUUID();
 const emitted = () => ({ emit: jest.fn() });
 const busted = () => ({ invalidateForUser: jest.fn() });
+/** A community row as the database returns it: a uuid id (when the write named none), created_at, deleted_at. */
+const stamped = (row: Row) => {
+  if (!/^[0-9a-f]{8}-/.test(String(row.id))) row.id = randomUUID();
+  row.created_at ??= new Date();
+  row.deleted_at ??= null;
+};
 
 export const SEND_ONCE_TABLE: SendOnceRow[] = [
   {
@@ -704,12 +712,42 @@ export const SEND_ONCE_TABLE: SendOnceRow[] = [
     write: 'POST /community/workspaces/:workspaceId/dms/:recipientId/messages',
     phone: [
       'src/screens/community/CommunityDmThreadScreen.tsx:84-95 (a failed send keeps the draft; Send again is a new request)',
-      'src/api/communityApi.ts:329-331 and :495 (a new Idempotency-Key on every call)',
+      'src/api/communityApi.ts:497-505 and :339 (an Idempotency-Key on every call, a new one each call: SEND-ONCE-PHONE keeps one per draft)',
     ],
-    knownGap: {
-      why: 'the phone makes a new key per send and the server reads none: a send that landed but lost its answer, sent again, is a second DM',
-      next: 'keep one key per draft on the phone and honour Idempotency-Key on the DM send (the space-chat keyedMessageId rule)',
-      stillOpen: [{ file: 'src/community/dms/community-dms.controller.ts', holds: /@Post\('workspaces\/:workspaceId\/dms\/:recipientId\/messages'\)/, lacks: /idempotency/i }],
+    rule: {
+      kind: 'key',
+      says: 'Idempotency-Key -> the DM id itself (keyedSendId: author + dm_key + key) under the keyed-write lock; a replay answers the first message, no second ping or push; other words under the key: 409',
+      server: [
+        { file: 'src/community/dms/community-dms.controller.ts', holds: /const key = messageKey\(idempotencyKey\);\s*return this\.dms\.send\(req\.user, workspaceId, recipientId, body\.body, key\)/ },
+        { file: 'src/community/dms/community-dms.service.ts', holds: /keyedSendId\('dm', user\.id, dmKey, idempotencyKey\)/ },
+        { file: 'src/community/dms/community-dms.repository.ts', holds: /keyedWrite\(tx, id, \(\) => tx\.communityMessage\.findFirst\(\{ where: \{ id \} \}\)/ },
+      ],
+      proof: async () => {
+        const f = fakeDb({ communityMessage: { onCreate: stamped } });
+        const svc = Object.create(CommunityDmsService.prototype) as Record<string, unknown>;
+        const WS = '11111111-1111-4111-8111-111111111111';
+        const dmKey = CommunityDmsRepository.dmKey(WS, USER, COACH);
+        const push = jest.fn().mockResolvedValue(undefined);
+        const ping = jest.fn().mockResolvedValue(undefined);
+        Object.assign(svc, {
+          dms: new CommunityDmsRepository(f.db), authoriseDm: async () => dmKey, safety: { assertAllowed: () => undefined },
+          realtime: { broadcastCommunityEvent: ping }, communityPush: { sendCommunityPush: push },
+        });
+        const send = (svc.send as (...a: unknown[]) => Promise<{ message: { id: string; body: string | null } }>).bind(svc);
+        const sender = makeUser({ id: USER, role: 'student' });
+        const key = uuid();
+        const first = await send(sender, WS, COACH, 'see you at 6', key);
+        const again = await send(sender, WS, COACH, 'see you at 6', key);
+        expect(again).toEqual(first);
+        expect(f.rows('communityMessage')).toHaveLength(1);
+        expect(push).toHaveBeenCalledTimes(1);
+        expect(ping).toHaveBeenCalledTimes(1);
+        await expect(send(sender, WS, COACH, 'other words', key)).rejects.toBeInstanceOf(ConflictException);
+        // No key, or a fresh key per call (what the phone sends today): a new DM each time, as before.
+        await send(sender, WS, COACH, 'see you at 6', null);
+        await send(sender, WS, COACH, 'see you at 6', uuid());
+        expect(f.rows('communityMessage')).toHaveLength(3);
+      },
     },
   },
   {
