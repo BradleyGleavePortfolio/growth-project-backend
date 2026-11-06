@@ -1716,7 +1716,7 @@ export class GuestCheckoutService {
    * the source, as the in-app invoice path reports amount_paid: for a combo
    * that is the one-time part plus the first period (the first invoice
    * carries both). If Stripe cannot be read, the checkout's own charge rule
-   * stands in (chargeQuote; the web has no trial), then the package price.
+   * stands in (chargeQuote; a web trial never gets here), then the package price.
    * Never throws.
    */
   private async collectedCents(checkout: CheckoutWithRelations): Promise<number> {
@@ -1849,8 +1849,11 @@ export class GuestCheckoutService {
 
     // FR-1181 (LO-1181 B1): the first-payment amount is read here, before
     // the transaction (no Stripe HTTP in-tx), only when the notice is on.
+    // FIX-1181 (owner #198-E9 op 1): a web trial's card save charged nothing,
+    // so it never claims the notice (and reads no PaymentIntent); the first
+    // paid invoice after the trial does (maybeEmitInvoicePayment).
     const firstPaymentOn =
-      process.env.FEATURE_ROMAN_FIRST_PAYMENT === 'true' && !!this.coachFirstPayment;
+      !trial && process.env.FEATURE_ROMAN_FIRST_PAYMENT === 'true' && !!this.coachFirstPayment;
     const firstPaymentCents = firstPaymentOn ? await this.collectedCents(checkout) : 0;
 
     // PR-9 — hoisted so the post-tx alert flush / discard sees the
