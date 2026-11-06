@@ -8,14 +8,15 @@
  * the auth guard still loads the coach row from the database on every call.
  * Every FEATURE_* switch is on, as v1 ships.
  *
- * Each read below is a call the phone makes when the screen opens (growth-
- * project-mobile main c26961a3; the file is named next to each screen). Each
- * read is called once to warm up, then 15 times timed. The test fails if any
- * timed call is not 200, if a read answers without the seeded data (so it
- * cannot pass by being empty; a read the seed leaves empty must answer its
- * own empty list, never an error), or if a read's median or worst timed call
- * passes half a second. It prints one table: screen, read, status, bytes,
- * median, worst.
+ * Each read below is a call the phone makes when the screen opens, the
+ * screen's own reads and those of the parts it draws (growth-project-mobile
+ * main 53d4354b; the file is named next to each screen). Each read is called
+ * once to warm up, then 15 times timed. The test fails if any timed call is
+ * not 200, if any timed call answers without the seeded data (so it cannot
+ * pass by being empty; a read the seed leaves empty must answer its own empty
+ * list, never an error), or if a read's median or worst timed call passes
+ * half a second. It prints one table: screen, read, status, bytes, median,
+ * worst.
  *
  * Runs only when SPEED_TEST_DATABASE_URL is set (the speed-test CI job, a
  * scratch Postgres with every migration applied) and refuses any host other
@@ -73,6 +74,12 @@ const clientId = (i: number) => `5bee0000-0000-4000-8000-${pad(i + 1, 12)}`;
 const CLIENT_IDS = Array.from({ length: CLIENTS }, (_, i) => clientId(i));
 const FOOD_NAME = 'Speed test oats';
 const DAY_MS = 86_400_000;
+// Each client's one monthly plan (the seed's purchases), and the package it buys.
+const purchaseId = (i: number) => `5bee0001-0000-4000-8000-${pad(i + 1, 12)}`;
+const PURCHASE_IDS = Array.from({ length: CLIENTS }, (_, i) => purchaseId(i));
+const PACKAGE_NAME = 'Monthly coaching';
+const PRICE_CENTS = 20000;
+const MACROS = { calories_kcal: 2200, protein_g: 160, carbs_g: 230, fats_g: 70 };
 
 type Check = (body: string) => string | null; // null = the answer holds the seeded data
 interface Read {
@@ -107,12 +114,6 @@ const field = (name: string, want: unknown): Check => holds((b) => {
   return got === want ? null : `${name} is ${JSON.stringify(got)}, want ${JSON.stringify(want)}`;
 });
 const contains = (s: string): Check => holds((b) => (b.includes(s) ? null : `does not mention ${s}`));
-const listed = (name: string, want?: number): Check => holds((b) => {
-  const got = obj(parse(b))?.[name];
-  if (!Array.isArray(got)) return `${name} is ${JSON.stringify(got)}, want a list`;
-  if (want === undefined ? got.length > 0 : got.length === want) return null;
-  return `${name} has ${got.length} rows, want ${want ?? 'some'}`;
-});
 // A legitimately empty answer, said out loud: the seed holds none of these, so the list must be there and empty
 // (`null` = the answer itself is the list).
 const none = (name: string | null): Check => holds((b) => {
@@ -130,6 +131,68 @@ const grossed: Check = holds((b) => {
   return typeof g === 'number' && g > 0 ? null : `totals.gross_cents is ${JSON.stringify(g)}, want the seeded charges`;
 });
 const PAYOUT_ID = 'po_speedtest0000';
+// Populated answers are read for the seeded values themselves, never a key or a row count alone.
+const list = (v: unknown, name: string | null): unknown[] | string => {
+  const got = name === null ? v : obj(v)?.[name];
+  return Array.isArray(got) ? got : `${name ?? 'the answer'} is ${JSON.stringify(got)?.slice(0, 80)}, want a list`;
+};
+// The client's macro target: the seeded 2200 kcal, 160 g protein, 230 g carbs, 70 g fat.
+const seededMacros = (client: string): Check => holds((b) => {
+  const o = obj(parse(b));
+  if (o?.client_id !== client) return `client_id is ${JSON.stringify(o?.client_id)}, want ${client}`;
+  for (const [k, want] of Object.entries(MACROS)) if (o[k] !== want) return `${k} is ${JSON.stringify(o[k])}, want the seeded ${want}`;
+  return null;
+});
+// This week's workouts: the seed schedules one each training day exactly d days before now, done an hour after it
+// for every day before today. Every row must be one of those.
+const seededWeek = (now: Date): Check => holds((b) => {
+  const rows = list(parse(b), 'assignments');
+  if (typeof rows === 'string') return rows;
+  if (rows.length === 0) return 'assignments is empty, want the seeded workouts of this week';
+  for (const r of rows) {
+    const o = obj(r);
+    const at = typeof o?.scheduled_for === 'string' ? Date.parse(o.scheduled_for) : NaN;
+    const d = (now.getTime() - at) / DAY_MS;
+    const done = typeof o?.completed_at === 'string' ? Date.parse(o.completed_at) : o?.completed_at;
+    if (typeof o?.id !== 'string' || !Number.isInteger(d)) return `assignment ${JSON.stringify(r)?.slice(0, 80)} is not a seeded one`;
+    if (d > 0 ? done !== at + 3_600_000 : done !== null) return `assignment ${o.id} completed_at is ${JSON.stringify(o.completed_at)}, not the seeded one`;
+  }
+  return null;
+});
+// The coach's charges: exactly n, each a seeded purchase, of a seeded client, for the seeded package and price, paid.
+const seededCharges = (n: number): Check => holds((b) => {
+  const rows = list(parse(b), 'charges');
+  if (typeof rows === 'string') return rows;
+  if (rows.length !== n) return `charges has ${rows.length} rows, want ${n}`;
+  for (const r of rows) {
+    const o = obj(r);
+    const client = obj(o?.client)?.id;
+    const seeded = typeof o?.id === 'string' && PURCHASE_IDS.includes(o.id) && typeof client === 'string' && CLIENT_IDS.includes(client) &&
+      obj(o.package)?.name === PACKAGE_NAME && o.amount_cents === PRICE_CENTS && o.state === 'paid';
+    if (!seeded) return `charge ${JSON.stringify(r)?.slice(0, 120)} is not a seeded paid charge`;
+  }
+  return null;
+});
+// The coach's package list holds the seeded package, with its price and its 45 subscribed clients.
+const seededPackage: Check = holds((b) => {
+  const rows = list(parse(b), 'packages');
+  if (typeof rows === 'string') return rows;
+  const p = rows.map(obj).find((o) => o?.name === PACKAGE_NAME);
+  if (!p) return `packages does not hold ${PACKAGE_NAME}`;
+  return p.coach_id === COACH_ID && p.amount_cents === PRICE_CENTS && p.subscriber_count === CLIENTS ? null
+    : `${PACKAGE_NAME} is ${JSON.stringify(p).slice(0, 120)}, want the seeded coach, price and ${CLIENTS} subscribers`;
+});
+// The team list: the seeded coach as head coach, with the 45 seeded clients assigned (no sub-coach is seeded).
+const seededTeam: Check = holds((b) => {
+  const rows = list(parse(b), null);
+  if (typeof rows === 'string') return rows;
+  const head = obj(rows[0]);
+  return rows.length === 1 && head?.id === COACH_ID && head.role === 'head_coach' && head.assigned_clients === CLIENTS ? null
+    : `the team is ${b.slice(0, 120)}, want the seeded head coach alone with ${CLIENTS} clients`;
+});
+const connectReady: Check = both(field('charges_enabled', true), contains('acct_speedtest0000'));
+// No AI use is seeded: this month's budget, nothing used yet.
+const budgetUnused: Check = both(contains('period_start'), field('used_displayed_cents', 0));
 
 function reads(now: Date): Read[] {
   const C = clientId(0);
@@ -143,7 +206,10 @@ function reads(now: Date): Read[] {
   const mcFrom = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const mcTo = new Date(Math.min(mcFrom.getTime() + Math.max(now.getTime() - mFrom.getTime(), 1), mFrom.getTime()));
   const month = q({ from: mFrom.toISOString(), to, compare_from: mcFrom.toISOString(), compare_to: mcTo.toISOString() });
-  // Every read each screen fires when it opens, from growth-project-mobile main c26961a3.
+  // Every read each screen and the parts it draws fire when it opens, from growth-project-mobile main 53d4354b (the
+  // round-2 lens read c26961a3; since then the client file draws the nudge gate, client-detail/useNudgeGate.ts, which
+  // reads the unread counts and the blocks on open, and the app shell's AI-consent read is gone). The one extra row,
+  // not an opening read, is the client file's 90-day timeline (its Timeline and Weekly tabs), the heaviest read.
   return [
     // Needs you, the coach Home (home-v11/useCoachHomeV11.ts: the overview, the roster and unread counts, the blocks,
     // command-center/coachHomeSources.ts month so far, payouts, ltv and at-risk, hooks/usePendingAiDrafts.ts,
@@ -159,6 +225,15 @@ function reads(now: Date): Read[] {
     { screen: 'Needs you', path: '/ai/gateway/drafts?status=pending', check: none(null) },
     { screen: 'Needs you', path: '/notifications/unread-count', check: field('count', CLIENTS) },
     { screen: 'Needs you', path: '/v1/coach/churned-clients?take=50', check: both(none('items'), field('total', 0)) },
+    // The Home's setup checklist (CoachHomeCards.tsx -> CoachSetupChecklist.tsx -> setupStatus.ts; it reads before a done
+    // checklist hides) and its credits host (CreditMomentsHost.tsx -> useCoachCredits.ts: hooks/useCoachRoleType.ts and
+    // hooks/useAIBudget.ts).
+    { screen: 'Needs you', path: '/v1/coach/packages?include_archived=true', check: seededPackage },
+    { screen: 'Needs you', path: '/coach/clients?status=all&take=1', check: someClient },
+    { screen: 'Needs you', path: '/v1/coach/money/charges?status=paid&limit=1', check: seededCharges(1) },
+    { screen: 'Needs you', path: '/coach/connect/status', check: connectReady },
+    { screen: 'Needs you', path: '/coach/team/members', check: seededTeam },
+    { screen: 'Needs you', path: '/coach/ai/budget', check: budgetUnused },
     // Client list (lookup/ClientLookupScreen.tsx): the active and archived pages, the unread counts, the blocks
     // (useCoachBlockList) and the plan-ended rows (readPlanEnded).
     { screen: 'Client list', path: '/coach/clients?status=active&take=50', check: allClients },
@@ -170,12 +245,19 @@ function reads(now: Date): Read[] {
     { screen: 'Inbox', path: '/coach/messages/inbox?limit=50', check: allClients },
     { screen: 'Inbox', path: '/coach/clients?status=active&take=50', check: allClients },
     { screen: 'Inbox', path: '/coach/messages/unread-count', check: allClients },
-    // One client's file (ClientDetailScreen.tsx, client-detail/useThisWeek.ts, useClientDetailData.ts, and
-    // components/coach/DisputePausedPlansCard.tsx through entitlements/dunning/coachDisputeRestart.ts).
+    // The two entries CoachInboxV2.tsx draws, each of which reads on mount before it decides to show
+    // (BroadcastsEntry.tsx, CommunityReportsEntry.tsx via hooks/useCoachCommunity.ts). The seed holds neither.
+    { screen: 'Inbox', path: '/coach/broadcasts?limit=1', check: none('items') },
+    { screen: 'Inbox', path: '/community/moderation/flagged', check: none('items') },
+    // One client's file (ClientDetailScreen.tsx, client-detail/useThisWeek.ts, useClientDetailData.ts,
+    // client-detail/useNudgeGate.ts, and components/coach/DisputePausedPlansCard.tsx through
+    // entitlements/dunning/coachDisputeRestart.ts).
     { screen: 'Client file', path: `/coach/clients/${C}/summary?date=${today}`, check: contains(FOOD_NAME) },
-    { screen: 'Client file', path: `/coach/clients/${C}/week`, check: listed('assignments') },
+    { screen: 'Client file', path: `/coach/clients/${C}/week`, check: seededWeek(now) },
     { screen: 'Client file', path: `/coach/clients/${C}/timeline?days=8`, check: contains(FOOD_NAME) },
-    { screen: 'Client file', path: `/coach/clients/${C}/macros/current`, check: contains('calories_kcal') },
+    { screen: 'Client file', path: `/coach/clients/${C}/macros/current`, check: seededMacros(C) },
+    { screen: 'Client file', path: '/coach/messages/unread-count', check: allClients },
+    { screen: 'Client file', path: '/users/blocks', check: none(null) },
     { screen: 'Client file', path: `/coach/clients/${C}/timeline?days=90`, check: contains(FOOD_NAME) },
     { screen: 'Client file', path: '/v1/coach/purchases?limit=100', check: allClients },
     // Money (money/MoneyScreen.tsx): summary, attention, charges, payouts, roster, the Stripe status
@@ -183,11 +265,11 @@ function reads(now: Date): Read[] {
     // test, payouts answer from the saved PayoutSnapshot and a ready account's status makes no Stripe call.
     { screen: 'Money', path: `/v1/coach/money/summary?${q({ from, to, compare_from: cFrom, compare_to: from })}`, check: both(usd, grossed) },
     { screen: 'Money', path: '/v1/coach/money/attention', check: both(none('items'), field('count', 0)) },
-    { screen: 'Money', path: '/v1/coach/money/charges?filter=all&limit=5', check: listed('charges', 5) },
+    { screen: 'Money', path: '/v1/coach/money/charges?status=all&limit=5', check: seededCharges(5) },
     { screen: 'Money', path: '/coach/connect/payouts?limit=10', check: contains(PAYOUT_ID) },
     { screen: 'Money', path: '/coach/connect/metrics', check: field('active_clients', CLIENTS) },
-    { screen: 'Money', path: '/coach/connect/status', check: both(field('charges_enabled', true), contains('acct_speedtest0000')) },
-    { screen: 'Money', path: '/coach/ai/budget', check: both(contains('period_start'), field('used_displayed_cents', 0)) },
+    { screen: 'Money', path: '/coach/connect/status', check: connectReady },
+    { screen: 'Money', path: '/coach/ai/budget', check: budgetUnused },
     // Calendar week (CoachBookingInboxScreen.tsx via hooks/useCalendar.ts).
     { screen: 'Calendar', path: '/scheduling/sessions?limit=50&status=requested', check: someClient },
     { screen: 'Calendar', path: '/scheduling/sessions?limit=50&status=scheduled%2Cpending_provider', check: someClient },
@@ -224,7 +306,7 @@ async function seed(db: Db, now: Date): Promise<Record<string, number>> {
   CLIENT_IDS.forEach((uid, c) => {
     // One unread in-app note per client in the coach's bell (no link, so the inbox keeps it).
     rows.notification.push({ user_id: COACH_ID, kind: 'message_received', body: `New message from client ${c + 1}`, channel: 'inapp', created_at: at(0, 9) });
-    rows.macroTarget.push({ client_id: uid, coach_id: COACH_ID, calories_kcal: 2200, protein_g: 160, carbs_g: 230, fats_g: 70, effective_from: created, created_at: created });
+    rows.macroTarget.push({ client_id: uid, coach_id: COACH_ID, ...MACROS, effective_from: created, created_at: created });
     for (let d = -7; d < DAYS; d++)
       if (((d % 7) + 7) % 7 !== 6)
         rows.clientWorkoutAssignment.push({ workout_plan_id: plan.id, client_id: uid, assigned_by_coach_id: COACH_ID, scheduled_for: at(d, 0), completed_at: d > 0 ? at(d, -1) : null });
@@ -257,9 +339,9 @@ async function seed(db: Db, now: Date): Promise<Record<string, number>> {
   await db.connectAccount.create({ data: { coach_user_id: COACH_ID, stripe_account_id: 'acct_speedtest0000', charges_enabled: true, payouts_enabled: true, details_submitted: true } });
   // The last payout, saved the way the Stripe sync mirrors it: what payouts answer with no Stripe key.
   await db.payoutSnapshot.create({ data: { coach_user_id: COACH_ID, stripe_account_id: 'acct_speedtest0000', charges_enabled: true, payouts_enabled: true, last_payout_stripe_id: PAYOUT_ID, last_payout_amount_cents: 810000, last_payout_status: 'paid', last_payout_arrival_at: at(2, 0) } });
-  const pkg = (await db.coachPackage.create({ data: { coach_id: COACH_ID, name: 'Monthly coaching', amount_cents: 20000, billing_type: 'recurring', interval: 'month' } })) as { id: string };
+  const pkg = (await db.coachPackage.create({ data: { coach_id: COACH_ID, name: PACKAGE_NAME, amount_cents: PRICE_CENTS, billing_type: 'recurring', interval: 'month' } })) as { id: string };
   const purchases = CLIENT_IDS.map((uid, c) => ({
-    id: `5bee0001-0000-4000-8000-${pad(c + 1, 12)}`, client_user_id: uid, coach_user_id: COACH_ID, package_id: pkg.id, amount_cents: 20000, billing_type: 'recurring',
+    id: purchaseId(c), client_user_id: uid, coach_user_id: COACH_ID, package_id: pkg.id, amount_cents: PRICE_CENTS, billing_type: 'recurring',
     stripe_checkout_session_id: `cs_speed_${c}`, stripe_subscription_id: `sub_speed_${c}`, status: 'active', entitlement_active: true,
     current_period_end: new Date(now.getTime() + (c % 30) * DAY_MS), idempotency_key: `speed-purchase-${c}`, created_at: at(88, c % 24),
   }));
@@ -297,14 +379,14 @@ const median = (xs: number[]) => {
     process.env.DATABASE_URL = DB;
     process.env.DIRECT_URL = DB;
     process.env.MWB_AUTOSAVE_LOCK_TOKEN_SECRET ||= randomBytes(32).toString('hex');
-    // The limiter is not what is timed: 35 reads x 16 calls in a few seconds.
+    // The limiter is not what is timed: 45 reads x 16 calls in a few seconds.
     process.env.RATELIMIT_AUTHED_PER_MIN = '10000';
     process.env.COACH_CMD_CENTER_PER_MIN = '1000';
     const switches = turnEverySwitchOn();
     // The plan-ended rows (Home and the client list) need FEATURE_PLAN_RENEWAL, which the desired-state file does not
     // name yet; on in this test's own process only.
     process.env.FEATURE_PLAN_RENEWAL = 'true';
-      console.log(`FEATURE_* switches on: ${switches.length}`);
+    console.log(`FEATURE_* switches on: ${switches.length}`);
 
     const { ValidationPipe } = require('@nestjs/common');
     const { Test } = require('@nestjs/testing');
@@ -359,12 +441,17 @@ const median = (xs: number[]) => {
       const times: number[] = [];
       let last = { ms: 0, status: 0, body: '' };
       let problem: string | null = null;
+      // Every timed answer must be a 200 holding the seeded data, not only the last one; the first failure is kept.
       for (let i = 0; i < TIMED; i++) {
         last = await call();
         times.push(last.ms);
-        if (last.status !== 200 && !problem) problem = `answered ${last.status}: ${last.body.slice(0, 200)}`;
+        if (problem) continue;
+        if (last.status !== 200) problem = `timed call ${i + 1} answered ${last.status}: ${last.body.slice(0, 200)}`;
+        else {
+          const bad = r.check(last.body);
+          if (bad) problem = `timed call ${i + 1} ${bad}`;
+        }
       }
-      if (!problem) problem = r.check(last.body);
       results.push({ ...r, status: last.status, bytes: Buffer.byteLength(last.body), median: median(times), worst: Math.max(...times), warmWorst: Math.max(...warm), problem });
     }
 
@@ -376,7 +463,7 @@ const median = (xs: number[]) => {
       '|---|---|---|---|---|---|---|---|',
       ...results.map((x) => `| ${x.screen} | ${x.path.replace(clientId(0), ':id').replace(/\?from=.*$/, '?from=..&to=..&compare_from=..&compare_to=..')} | ${x.status} | ${x.bytes} | ${x.median.toFixed(1)} | ${x.worst.toFixed(1)} | ${x.warmWorst.toFixed(1)} | ${x.problem ? `FAIL: ${x.problem}` : x.median > BUDGET_MS || x.worst > BUDGET_MS ? 'FAIL: over budget' : 'ok'} |`),
     ];
-      console.log(lines.join('\n'));
+    console.log(lines.join('\n'));
     if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n') + '\n');
   }, 600_000);
 
