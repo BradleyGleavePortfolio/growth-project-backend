@@ -810,6 +810,46 @@ export const SEND_ONCE_TABLE: SendOnceRow[] = [
       },
     },
   },
+  {
+    write: 'POST /community/posts/:postId/comments',
+    phone: [
+      'src/api/communityApi.ts:420-429 and :339 (an Idempotency-Key on every call, a new one each call: SEND-ONCE-PHONE keeps one per draft)',
+    ],
+    rule: {
+      kind: 'key',
+      says: 'Idempotency-Key -> the comment id itself (keyedSendId: author + post + key) under the keyed-write lock; a replay answers the first comment, no second ping or "replied" push; another body under the key: 409',
+      server: [
+        { file: 'src/community/posts/community-posts.controller.ts', holds: /const key = messageKey\(idempotencyKey\);\s*return this\.posts\.addComment\(req\.user, postId, body\.body, key\)/ },
+        { file: 'src/community/posts/community-posts.service.ts', holds: /keyedSendId\('comment', user\.id, post\.id, idempotencyKey\)/ },
+        { file: 'src/community/messages/community-messages.repository.ts', holds: /this\.keyed\(tx, id, \(\) => tx\.communityMessage\.create\(\{ data: \{ \.\.\.commentData\(params\), id \} \}\)\)/ },
+      ],
+      proof: async () => {
+        const f = fakeDb({ communityMessage: { onCreate: stamped } });
+        const POST = '44444444-4444-4444-8444-444444444444';
+        const post = { id: POST, workspace_id: '11111111-1111-4111-8111-111111111111', cohort_id: null, author_id: COACH };
+        const ping = jest.fn().mockResolvedValue(undefined);
+        const push = jest.fn().mockResolvedValue(undefined);
+        const svc = postsService(f, ping, push);
+        Object.assign(svc, {
+          visiblePost: async () => ({ post, outside: false }),
+          access: { readersOf: async (_w: string, _c: string | null, ids: string[]) => ids },
+        });
+        const add = (svc.addComment as (...a: unknown[]) => Promise<{ comment: { id: string } }>).bind(svc);
+        const author = makeUser({ id: USER, role: 'student' });
+        const key = uuid();
+        const first = await add(author, POST, 'nice one coach', key);
+        const again = await add(author, POST, 'nice one coach', key);
+        expect(again).toEqual(first);
+        expect(f.rows('communityMessage')).toHaveLength(1);
+        expect(ping).toHaveBeenCalledTimes(1);
+        expect(push).toHaveBeenCalledTimes(1);
+        await expect(add(author, POST, 'other words', key)).rejects.toBeInstanceOf(ConflictException);
+        await add(author, POST, 'nice one coach', null);
+        await add(author, POST, 'nice one coach', uuid());
+        expect(f.rows('communityMessage')).toHaveLength(3);
+      },
+    },
+  },
 ];
 
 // ─── Checks ──────────────────────────────────────────────────────────────────

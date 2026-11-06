@@ -7,7 +7,7 @@ import { CommunityNotificationsService } from '../notifications/community-notifi
 import { COMMUNITY_BROADCAST_EVENTS } from '../community-events';
 import { NotificationKind } from '../../notifications/notification-kind';
 import { CommunityPostsRepository } from './community-posts.repository';
-import { CommunityMessagesRepository } from '../messages/community-messages.repository';
+import { COMMENT_CONTEXT_TYPE, CommunityMessagesRepository } from '../messages/community-messages.repository';
 import { IDEMPOTENCY_KEY_REUSED, keyedSendId } from '../messages/message-idempotency';
 import { CommunityReactionsRepository } from '../reactions/community-reactions.repository';
 import { CommunityReactionSummary, summariseReactions } from '../dto/community-reaction.dto';
@@ -422,20 +422,23 @@ export class CommunityPostsService {
 
   // ── Comments ───────────────────────────────────────────────────────────────
 
-  async addComment(user: User, postId: string, body: string): Promise<CommunityCommentResponse> {
+  async addComment(user: User, postId: string, body: string, idempotencyKey?: string | null): Promise<CommunityCommentResponse> {
     // A blocked pair can neither see nor reply to each other's posts, so the
     // reply push below can never reach the other side of a block.
     const { post, outside } = await this.visiblePost(user, postId);
     // Any active workspace member (client or coach) may comment; rule D's own coach reads only (FR-1173).
     if (outside) throw new NotFoundException(POST_NOT_FOUND);
     this.safety.assertAllowed(body);
-    const created = await this.messages.createComment({
-      workspaceId: post.workspace_id,
-      cohortId: post.cohort_id,
-      senderId: user.id,
-      postId: post.id,
-      body,
-    });
+    // SEND-ONCE-SERVER: a resend with the same Idempotency-Key (same author, same post) answers with the first
+    // comment and repeats neither the ping nor the author's "replied" push; another body under the key is a 409.
+    const keyedId = idempotencyKey ? keyedSendId('comment', user.id, post.id, idempotencyKey) : null;
+    const sentBefore = keyedId ? await this.messages.findById(keyedId) : null;
+    if (sentBefore) return this.replayComment(sentBefore, user, post, body);
+    const params = { workspaceId: post.workspace_id, cohortId: post.cohort_id, senderId: user.id, postId: post.id, body };
+    const { row: created, replayed } = keyedId
+      ? await this.messages.createKeyedComment(keyedId, params)
+      : { row: await this.messages.createComment(params), replayed: false };
+    if (replayed) return this.replayComment(created, user, post, body);
     // v1-4 post-write tail — realtime ping to the post's readers: its space, or
     // the Hall (a comment is a CommunityMessage; the author refetches via REST).
     void this.realtime.broadcastCommunityEvent(
@@ -465,6 +468,19 @@ export class CommunityPostsService {
     return CommunityCommentResponseSchema.parse({
       comment: (await this.commentViews(user, [created]))[0],
     });
+  }
+
+  /** SEND-ONCE-SERVER: the first comment under a key, answered again only for the same author, post and words. */
+  private async replayComment(
+    row: CommunityMessage,
+    user: User,
+    post: CommunityPost,
+    body: string,
+  ): Promise<CommunityCommentResponse> {
+    const same = row.sender_id === user.id && row.plan_context_type === COMMENT_CONTEXT_TYPE
+      && row.plan_context_id === post.id && row.body === body;
+    if (!same) throw new ConflictException(IDEMPOTENCY_KEY_REUSED);
+    return CommunityCommentResponseSchema.parse({ comment: (await this.commentViews(user, [row]))[0] });
   }
 
   async listComments(user: User, postId: string, shown = false) {

@@ -145,8 +145,11 @@ export class CommunityPostsController {
     @Request() req: AuthedRequest,
     @Param('postId') postId: string,
     @Body() body: CreateCommentDto,
+    // SEND-ONCE-SERVER: optional, as on the post.
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
-    return this.posts.addComment(req.user, postId, body.body);
+    const key = messageKey(idempotencyKey);
+    return this.posts.addComment(req.user, postId, body.body, key);
   }
 
   @Get('posts/:postId/comments')
