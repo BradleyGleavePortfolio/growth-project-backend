@@ -48,8 +48,8 @@ describe('LS-1224R3 independent response controls', () => {
     '%s %s rejects non-JSON, errors, null, and missing payloads',
     (_screen, _path, entry) => {
       for (const body of ['<html>error</html>', 'undefined', 'null', '{}', '{"error":"unavailable"}', '[]']) {
-        // Bare [] is the explicit empty fixture for blocks and pending drafts.
-        if (body === '[]' && ['/users/blocks', '/ai/gateway/drafts?status=pending'].includes(entry.path)) {
+        // Bare [] is the explicit empty fixture for blocks, pending drafts, and archived clients.
+        if (body === '[]' && ['/users/blocks', '/ai/gateway/drafts?status=pending', '/coach/clients?status=archived&take=50'].includes(entry.path)) {
           expect(entry.check(body)).toBeNull();
         } else {
           expect(entry.check(body)).not.toBeNull();
