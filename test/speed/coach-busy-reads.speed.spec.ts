@@ -330,6 +330,8 @@ const median = (xs: number[]) => {
     // helmet response headers (headers only; no read depends on them).
     app = ref.createNestApplication({ rawBody: true, logger: ['error'] });
     app.use(featureFlagNotFoundMiddleware);
+    // LO-1224R2 slow-read probe (never merge): one read, the Money Stripe status, is held 600 ms before its handler.
+    app.use((req: { originalUrl: string }, _res: unknown, next: () => void) => (req.originalUrl.startsWith('/api/coach/connect/status') ? void setTimeout(next, 600) : next()));
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
     app.useGlobalFilters(new HttpExceptionFilter(), new ThrottlerExceptionFilter(app.get(MetricsService, { strict: false })));
     app.useGlobalInterceptors(new CacheControlInterceptor());
