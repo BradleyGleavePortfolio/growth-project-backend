@@ -31,13 +31,27 @@ describe('LS-1223 main-first deploy and real isolation proof', () => {
   let oldRow = '';
   let stageTwoOutput = '';
   let mainCount = 0;
+  let started = false;
 
   beforeAll(async () => {
     if (process.env.CI !== 'true') throw new Error('This review probe is CI-only.');
-    run('sudo', ['-n', 'service', 'postgresql', 'start']);
-    run('sudo', ['-n', '-u', 'postgres', 'psql', '-X', '-v', 'ON_ERROR_STOP=1', '-c',
+    // Match the PR's green forward-migration gate exactly. The hosted runner's
+    // native server has a different major version and historical catalog guards.
+    run('docker', ['run', '--detach', '--rm', '--name', 'ls1223-review-probe',
+      '-e', 'POSTGRES_HOST_AUTH_METHOD=trust', '-p', '5432:5432', 'postgres:15.18']);
+    started = true;
+    let ready = false;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      try {
+        run('docker', ['exec', 'ls1223-review-probe', 'pg_isready', '-U', 'postgres']);
+        ready = true;
+        break;
+      } catch { /* Check readiness again, without an arbitrary delay. */ }
+    }
+    expect(ready).toBe(true);
+    run('docker', ['exec', 'ls1223-review-probe', 'psql', '-U', 'postgres', '-X', '-v', 'ON_ERROR_STOP=1', '-c',
       "CREATE ROLE ls1223 LOGIN SUPERUSER PASSWORD 'ls1223_local_fixture'"]);
-    run('sudo', ['-n', '-u', 'postgres', 'createdb', '-O', 'ls1223', DB]);
+    run('docker', ['exec', 'ls1223-review-probe', 'createdb', '-U', 'postgres', '-O', 'ls1223', DB]);
     temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ls1223-main-first-'));
     const target = path.join(temp, 'migrations');
     fs.cpSync(path.join(ROOT, 'prisma/migrations'), target, { recursive: true });
@@ -74,8 +88,7 @@ describe('LS-1223 main-first deploy and real isolation proof', () => {
   afterAll(async () => {
     if (prisma) await prisma.$disconnect();
     if (temp) fs.rmSync(temp, { recursive: true, force: true });
-    run('sudo', ['-n', '-u', 'postgres', 'dropdb', '--if-exists', DB]);
-    run('sudo', ['-n', '-u', 'postgres', 'psql', '-X', '-c', 'DROP ROLE IF EXISTS ls1223']);
+    if (started) run('docker', ['rm', '--force', 'ls1223-review-probe']);
   });
 
   it('deploys only 11200 after every main migration and preserves an existing reply', () => {
