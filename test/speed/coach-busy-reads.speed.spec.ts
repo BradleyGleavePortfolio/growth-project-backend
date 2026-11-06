@@ -411,6 +411,11 @@ const median = (xs: number[]) => {
     // The request pipeline main.ts builds, minus Sentry, metrics export, Swagger and the
     // helmet response headers (headers only; no read depends on them).
     app = ref.createNestApplication({ rawBody: true, logger: ['error'] });
+    // LS-1224R3 negative control only: never merge this branch.
+    app.use((req: { path: string }, _res: unknown, next: () => void) => {
+      if (req.path === '/api/users/blocks') setTimeout(next, 600);
+      else next();
+    });
     app.use(featureFlagNotFoundMiddleware);
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
     app.useGlobalFilters(new HttpExceptionFilter(), new ThrottlerExceptionFilter(app.get(MetricsService, { strict: false })));
