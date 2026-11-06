@@ -28,7 +28,7 @@ import type { AddressInfo } from 'net';
 import type { INestApplication } from '@nestjs/common';
 
 const DB = process.env.SPEED_TEST_DATABASE_URL;
-const BUDGET_MS = 500;
+const BUDGET_MS = 1;
 const WARMUP = 1;
 const TIMED = 15;
 const CLIENTS = 45;
