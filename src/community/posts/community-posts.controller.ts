@@ -25,6 +25,7 @@ import {
   CommunityPostsEnabledGuard,
 } from '../community-write-flag.guard';
 import { CommunityPostsService } from './community-posts.service';
+import { messageKey } from '../messages/message-idempotency';
 import {
   CreateCommentDto,
   CreatePostDto,
@@ -61,8 +62,11 @@ export class CommunityPostsController {
     @Request() req: AuthedRequest,
     @Param('workspaceId') workspaceId: string,
     @Body() body: CreatePostDto,
+    // SEND-ONCE-SERVER: optional; a UUID makes a resend land once (the space chat's rule), blank keeps today's send.
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
-    return this.posts.create(req.user, workspaceId, body);
+    const key = messageKey(idempotencyKey);
+    return this.posts.create(req.user, workspaceId, body, key);
   }
 
   @Get('workspaces/:workspaceId/posts')
@@ -141,8 +145,11 @@ export class CommunityPostsController {
     @Request() req: AuthedRequest,
     @Param('postId') postId: string,
     @Body() body: CreateCommentDto,
+    // SEND-ONCE-SERVER: optional, as on the post.
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
-    return this.posts.addComment(req.user, postId, body.body);
+    const key = messageKey(idempotencyKey);
+    return this.posts.addComment(req.user, postId, body.body, key);
   }
 
   @Get('posts/:postId/comments')
