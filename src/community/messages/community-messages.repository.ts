@@ -17,7 +17,7 @@ import {
   type VoiceErasureRow,
   type VoiceErasureStorage,
 } from '../voice/voice-erasure';
-import { LOCK_NS_COMMUNITY_MESSAGE_KEY } from './message-idempotency';
+import { keyedWrite } from './message-idempotency';
 
 /** A new text message in a space. */
 export interface NewCohortMessage {
@@ -162,9 +162,7 @@ export class CommunityMessagesRepository {
     id: string,
     write: () => Promise<CommunityMessage>,
   ): Promise<{ row: CommunityMessage; replayed: boolean }> {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${LOCK_NS_COMMUNITY_MESSAGE_KEY}::int4, hashtext(${id}))`;
-    const first = await tx.communityMessage.findFirst({ where: { id } });
-    return first ? { row: first, replayed: true } : { row: await write(), replayed: false };
+    return keyedWrite(tx, id, () => tx.communityMessage.findFirst({ where: { id } }), write);
   }
 
   /**
@@ -352,26 +350,14 @@ export class CommunityMessagesRepository {
 
   // ── Post comments (stored as CommunityMessage; see service docblock) ───────
 
-  async createComment(params: {
-    workspaceId: string;
-    cohortId: string | null;
-    senderId: string;
-    postId: string;
-    body: string;
-  }): Promise<CommunityMessage> {
-    return this.prisma.communityMessage.create({
-      data: {
-        workspace_id: params.workspaceId,
-        cohort_id: params.cohortId,
-        scope: 'cohort',
-        kind: 'text',
-        sender_id: params.senderId,
-        body: params.body,
-        visibility: 'active',
-        plan_context_type: COMMENT_CONTEXT_TYPE,
-        plan_context_id: params.postId,
-      },
-    });
+  async createComment(params: NewComment): Promise<CommunityMessage> {
+    return this.prisma.communityMessage.create({ data: commentData(params) });
+  }
+
+  /** SEND-ONCE-SERVER: a post's comment under an Idempotency-Key, by createKeyedCohortMessage's rule. */
+  async createKeyedComment(id: string, params: NewComment): Promise<{ row: CommunityMessage; replayed: boolean }> {
+    return this.prisma.$transaction((tx) =>
+      this.keyed(tx, id, () => tx.communityMessage.create({ data: { ...commentData(params), id } })));
   }
 
   /** FR-1165R3: `withRemoved` keeps a coach's removals for their placeholders. */
@@ -459,3 +445,19 @@ export class CommunityMessagesRepository {
  * column (no truncation).
  */
 export const COMMENT_CONTEXT_TYPE = 'community_post_comment';
+
+type NewComment = { workspaceId: string; cohortId: string | null; senderId: string; postId: string; body: string };
+
+function commentData(params: NewComment) {
+  return {
+    workspace_id: params.workspaceId,
+    cohort_id: params.cohortId,
+    scope: 'cohort',
+    kind: 'text',
+    sender_id: params.senderId,
+    body: params.body,
+    visibility: 'active',
+    plan_context_type: COMMENT_CONTEXT_TYPE,
+    plan_context_id: params.postId,
+  } as const;
+}

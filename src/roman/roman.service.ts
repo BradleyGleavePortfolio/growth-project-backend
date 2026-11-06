@@ -97,6 +97,7 @@ import {
 import { postCheckRomanReply, type PostCheckContext } from './guardrails/roman-post-check';
 import { RomanClientContextService } from './context/roman-client-context.service';
 import { consumeRomanUsage, releaseRomanUsage, type RomanUsageDebit } from './roman-usage';
+import { keyedSendId, keyedWrite } from '../community/messages/message-idempotency';
 import { isDunningV2Enabled } from '../checkout/dunning-v2/dunning-v2.feature';
 import { effectiveLock } from '../checkout/dunning-v2/dunning-effective-access';
 import { AuditAction, AuditService } from '../audit/audit.service';
@@ -188,6 +189,12 @@ const UNERASED_TOMBSTONE_WHERE: Prisma.RomanSessionWhereInput = {
   deleted_at: { not: null },
   NOT: { day_key: { startsWith: ROMAN_ERASED_DAY_KEY_PREFIX } },
 };
+
+/** SEND-ONCE-SERVER: the ids one Idempotency-Key names in one caller's chat: the user turn and Roman's reply. */
+export type RomanTurnIds = { turn: string; reply: string };
+export function romanTurnIds(callerId: string, sessionId: string, key: string): RomanTurnIds {
+  return { turn: keyedSendId('roman', callerId, sessionId, key), reply: keyedSendId('roman-reply', callerId, sessionId, key) };
+}
 
 /** The coded 404 for a session that is not the caller's (C-635-2). */
 export function romanSessionNotFound(): NotFoundException {
@@ -816,33 +823,85 @@ export class RomanService {
       interrupted?: boolean;
       parentMessageId?: string | null;
       copilot?: StoredCopilot;
+      /** SEND-ONCE-SERVER: a keyed turn's or reply's id (romanTurnIds); absent, the schema's cuid. */
+      id?: string;
     },
   ): Promise<RomanMessage> {
-    return this.prisma.$transaction(async (tx) => {
-      const live = await tx.romanSession.updateMany({
-        where: { id: sessionId, user_id: caller.id, deleted_at: null },
-        data: {
-          message_count: { increment: 1 },
-          last_activity_at: new Date(),
-        },
-      });
-      if (live.count === 0) {
-        throw romanSessionNotFound();
-      }
-      return tx.romanMessage.create({
-        data: {
-          session_id: sessionId,
-          user_id: caller.id,
-          role: data.role,
-          content: data.content,
-          prompt_tokens: data.promptTokens ?? null,
-          completion_tokens: data.completionTokens ?? null,
-          model_id: data.modelId ?? null,
-          interrupted: data.interrupted ?? false,
-          parent_message_id: data.parentMessageId ?? null,
-          ...(data.copilot ? { copilot: data.copilot } : {}),
-        },
-      });
+    return this.prisma.$transaction((tx) => this.appendIn(tx, caller, sessionId, data));
+  }
+
+  /**
+   * SEND-ONCE-SERVER: the user turn under an Idempotency-Key, by the space chat's rule (keyedWrite): under the
+   * keyed-write lock on the turn's id, the turn already stored with it (`replayed`, nothing counted on the
+   * session), else the turn stored now with that id.
+   */
+  async appendKeyedTurn(
+    caller: RomanCaller,
+    sessionId: string,
+    id: string,
+    content: string,
+  ): Promise<{ row: RomanMessage; replayed: boolean }> {
+    return this.prisma.$transaction((tx) =>
+      keyedWrite(tx, id, () => this.ownTurn(tx, caller, sessionId, id), () =>
+        this.appendIn(tx, caller, sessionId, { role: 'user', content, id })));
+  }
+
+  /**
+   * SEND-ONCE-SERVER: what a key already holds in this caller's live chat: its stored user turn and, once Roman
+   * has stored it, the reply (null while the first turn still runs, or when it ended before Roman stored any).
+   */
+  async findKeyedTurn(
+    caller: RomanCaller,
+    sessionId: string,
+    ids: RomanTurnIds,
+  ): Promise<{ turn: RomanMessage; reply: RomanMessage | null } | null> {
+    const turn = await this.ownTurn(this.prisma, caller, sessionId, ids.turn);
+    if (!turn) return null;
+    const reply = await this.prisma.romanMessage.findFirst({
+      where: { id: ids.reply, session_id: sessionId, user_id: caller.id, role: 'roman' },
+    });
+    return { turn, reply };
+  }
+
+  /** SEND-ONCE-SERVER: a racing first send that lost the keyed lock gives back the message it counted. */
+  async giveBackTurn(debit: RomanUsageDebit | null): Promise<void> {
+    if (debit) await releaseRomanUsage(this.prisma, debit);
+  }
+
+  private ownTurn(db: Pick<Prisma.TransactionClient, 'romanMessage'>, caller: RomanCaller, sessionId: string, id: string) {
+    return db.romanMessage.findFirst({ where: { id, session_id: sessionId, user_id: caller.id, role: 'user' } });
+  }
+
+  private async appendIn(
+    tx: Prisma.TransactionClient,
+    caller: RomanCaller,
+    sessionId: string,
+    data: Parameters<RomanService['appendMessage']>[2],
+  ): Promise<RomanMessage> {
+    const live = await tx.romanSession.updateMany({
+      where: { id: sessionId, user_id: caller.id, deleted_at: null },
+      data: {
+        message_count: { increment: 1 },
+        last_activity_at: new Date(),
+      },
+    });
+    if (live.count === 0) {
+      throw romanSessionNotFound();
+    }
+    return tx.romanMessage.create({
+      data: {
+        ...(data.id ? { id: data.id } : {}),
+        session_id: sessionId,
+        user_id: caller.id,
+        role: data.role,
+        content: data.content,
+        prompt_tokens: data.promptTokens ?? null,
+        completion_tokens: data.completionTokens ?? null,
+        model_id: data.modelId ?? null,
+        interrupted: data.interrupted ?? false,
+        parent_message_id: data.parentMessageId ?? null,
+        ...(data.copilot ? { copilot: data.copilot } : {}),
+      },
     });
   }
 
@@ -937,7 +996,15 @@ export class RomanService {
   async *streamAssistantTurn(
     caller: RomanCaller,
     session: RomanSession,
-    opts: { signal?: AbortSignal; userMessage?: string; userMessageId?: string; usageDebit?: RomanUsageDebit | null; copilot?: boolean } = {},
+    opts: {
+      signal?: AbortSignal;
+      userMessage?: string;
+      userMessageId?: string;
+      usageDebit?: RomanUsageDebit | null;
+      copilot?: boolean;
+      /** SEND-ONCE-SERVER: a keyed turn's reply id (romanTurnIds), so a replay of the key finds this reply. */
+      replyId?: string;
+    } = {},
   ): AsyncGenerator<RomanStreamChunk> {
     // Defence-in-depth flag re-check (brief §1.6): never drive the model OFF.
     if (!isRomanChatEnabled()) {
@@ -968,7 +1035,7 @@ export class RomanService {
         (await this.alertCoachOfSafetyReply(caller, session, alertType, opts.userMessageId));
       const text = ROMAN_SAFETY_TEMPLATES[route.class];
       const reply = told ? `${text} ${ROMAN_COACH_TOLD_LINE}` : text;
-      yield* this.fixedSafetyReply(caller, session, reply, ROMAN_SAFETY_ROUTE_REASON[route.class]);
+      yield* this.fixedSafetyReply(caller, session, reply, ROMAN_SAFETY_ROUTE_REASON[route.class], opts.replyId);
       return;
     }
 
@@ -1217,6 +1284,7 @@ export class RomanService {
         completionTokens,
         modelId: ROMAN_MODEL_PHASE_1,
         interrupted,
+        id: opts.replyId,
         ...(copilot ? { copilot: { question_id: opts.userMessageId ?? null, sources: cited, suggestion_id: suggestionId } } : {}),
       });
     } catch (err) {
@@ -1282,6 +1350,7 @@ export class RomanService {
     caller: RomanCaller,
     session: RomanSession,
     userMessageId?: string,
+    replyId?: string,
   ): AsyncGenerator<RomanStreamChunk> {
     let hasCoach = false;
     try {
@@ -1301,7 +1370,7 @@ export class RomanService {
       hasCoach &&
       (await this.alertCoachOfSafetyReply(caller, session, 'roman_eating_disorder_reply', userMessageId));
     const text = romanEatingDisorderFallback(hasCoach, told);
-    yield* this.fixedSafetyReply(caller, session, text, ROMAN_EATING_DISORDER_FALLBACK_REASON);
+    yield* this.fixedSafetyReply(caller, session, text, ROMAN_EATING_DISORDER_FALLBACK_REASON, replyId);
   }
 
   /**
@@ -1359,12 +1428,14 @@ export class RomanService {
     session: RomanSession,
     text: string,
     reason: string,
+    replyId?: string,
   ): AsyncGenerator<RomanStreamChunk> {
     const persisted = await this.appendMessage(caller, session.id, {
       role: 'roman',
       content: text,
       modelId: ROMAN_SAFETY_ROUTER_MODEL_ID,
       interrupted: false,
+      id: replyId,
     });
     // OR-115-1 (C-651-5): one neutral action name and no class in the log
     // line. The closed reason code lives only in AuditLog.metadata, which

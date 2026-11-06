@@ -6,7 +6,8 @@
  * the sync engine, a `withRetry`, the paced health ingest, the autosave
  * replay) or resends after a lost answer with the key it kept, plus the user's
  * Retry where the composer keeps the text. Phone lines are read on
- * growth-project-mobile main c26d4dab; they are text here (that repo is not in
+ * growth-project-mobile main c26d4dab (the Roman, community and AI-consent
+ * withdraw rows on 4cc748db); they are text here (that repo is not in
  * this checkout). Default TanStack mutations are `retry: false`
  * (mobile src/services/queryClient.ts:66) and the 401 refresh replays only a
  * request the server already refused, so neither adds a row.
@@ -55,6 +56,26 @@ import { FEATURE_MWB_AUTOSAVE_UNDO_ENV } from '../src/workout-builder/workout-bu
 import { computeLockToken } from '../src/workout-builder/lock-token.helper';
 import { safetyWithBlocks } from './community/safety/safety-test-helpers';
 import { stub } from './utils/trial-fakes';
+import { CommunityDmsService } from '../src/community/dms/community-dms.service';
+import { CommunityDmsRepository } from '../src/community/dms/community-dms.repository';
+import { CommunityPostsService } from '../src/community/posts/community-posts.service';
+import { CommunityPostsRepository } from '../src/community/posts/community-posts.repository';
+import { CommunityMessagesRepository } from '../src/community/messages/community-messages.repository';
+import { CommunityChallengesService } from '../src/community/challenges/community-challenges.service';
+import { CommunityChallengesRepository } from '../src/community/challenges/community-challenges.repository';
+import { RomanController } from '../src/roman/roman.controller';
+import { RomanService } from '../src/roman/roman.service';
+import { ROMAN_SSE_FALLBACK_ERROR } from '../src/roman/roman-sse-error';
+import { keyedSendId } from '../src/community/messages/message-idempotency';
+import { AiConsentService } from '../src/ai-consent/ai-consent.service';
+import {
+  AI_CONSENT_ACTION_GRANT,
+  AI_CONSENT_ACTION_WITHDRAW,
+  CLIENT_AI_CONSENT_COPY_SHA256,
+  CLIENT_AI_CONSENT_PROCESSOR,
+  CLIENT_AI_CONSENT_PURPOSE,
+  CLIENT_AI_CONSENT_VERSION,
+} from '../src/ai-consent/ai-consent.constants';
 
 // ─── A Prisma double that keeps unique indexes ───────────────────────────────
 
@@ -108,8 +129,11 @@ function fakeDb(specs: Record<string, ModelSpec> = {}) {
       const r = table(name).find((x) => matches(x, where));
       return r ? { ...r } : null;
     },
-    findFirst: async (args: { where?: Row } = {}) => {
-      const r = table(name).find((x) => matches(x, args.where));
+    findFirst: async (args: { where?: Row; orderBy?: Record<string, 'asc' | 'desc'> } = {}) => {
+      const [col, dir] = Object.entries(args.orderBy ?? {})[0] ?? [];
+      const hits = table(name).filter((x) => matches(x, args.where));
+      if (col) hits.sort((a, b) => (Number(a[col]) - Number(b[col])) * (dir === 'desc' ? -1 : 1));
+      const r = hits[0];
       return r ? { ...r } : null;
     },
     findMany: async (args: { where?: Row } = {}) => table(name).filter((x) => matches(x, args.where)).map((r) => ({ ...r })),
@@ -187,6 +211,29 @@ const COACH = '5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b';
 const uuid = () => randomUUID();
 const emitted = () => ({ emit: jest.fn() });
 const busted = () => ({ invalidateForUser: jest.fn() });
+/** A community row as the database returns it: a uuid id (when the write named none), created_at, deleted_at. */
+const stamped = (row: Row) => {
+  if (!/^[0-9a-f]{8}-/.test(String(row.id))) row.id = randomUUID();
+  row.created_at ??= new Date();
+  row.deleted_at ??= null;
+};
+/** The posts service over the double: real repositories, the views reduced to the stored row (the rule under test is
+ *  the write, not the view), pings and pushes counted. */
+function postsService(f: ReturnType<typeof fakeDb>, ping: jest.Mock, push: jest.Mock = jest.fn()) {
+  const svc = Object.create(CommunityPostsService.prototype) as Record<string, unknown>;
+  const view = (r: Row) => ({ id: r.id, title: r.title ?? null, body: r.body, at: (r.created_at as Date).toISOString() });
+  Object.assign(svc, {
+    posts: new CommunityPostsRepository(f.db), messages: new CommunityMessagesRepository(f.db),
+    safety: { assertAllowed: () => undefined }, realtime: { broadcastCommunityEvent: ping },
+    communityPush: { sendCommunityPush: push },
+    postResponse: async (_u: unknown, r: Row) => ({ post: view(r) }),
+    commentViews: async (_u: unknown, rows: Row[]) => rows.map((r) => ({
+      id: r.id, post_id: r.plan_context_id, author_user_id: r.sender_id, author_name: 'Olive', body: r.body,
+      created_at: (r.created_at as Date).toISOString(), reactions: [],
+    })),
+  });
+  return svc;
+}
 
 export const SEND_ONCE_TABLE: SendOnceRow[] = [
   {
@@ -369,6 +416,8 @@ export const SEND_ONCE_TABLE: SendOnceRow[] = [
       server: [
         { file: 'src/messaging/client-messaging.controller.ts', holds: /resolveIdempotencyKey\(idemHeader, body\.client_message_id\)/ },
         { file: 'src/messaging/messaging.service.ts', holds: /where: \{ sender_id: senderId, client_message_id: key \}/ },
+        // A replay returns before the ping, push, audit and analytics (sendAsClient).
+        { file: 'src/messaging/messaging.service.ts', holds: /\n\s*if \(replayed\) return out;\n\s*\/\/ Ping both people in the chat/ },
       ],
       proof: async () => {
         const f = fakeDb({ coachMessage: { unique: [['sender_id', 'client_message_id']] } });
@@ -396,6 +445,8 @@ export const SEND_ONCE_TABLE: SendOnceRow[] = [
       server: [
         { file: 'src/messaging/coach-messaging.controller.ts', holds: /resolveIdempotencyKey\(idemHeader, body\.client_message_id\)/ },
         { file: 'src/messaging/messaging.service.ts', holds: /where: \{ sender_id: senderId, client_message_id: key \}/ },
+        // A replay returns before the ping, push, audit and analytics (sendAsCoach).
+        { file: 'src/messaging/messaging.service.ts', holds: /\.then\(\(\{ row, replayed \}\) => \(\{ row, duplicate: replayed \}\)\);[\s\S]{0,600}?\n\s*if \(duplicate\) return created;\n/ },
       ],
       proof: async () => {
         const f = fakeDb({ coachMessage: { unique: [['sender_id', 'client_message_id']] } });
@@ -692,36 +743,278 @@ export const SEND_ONCE_TABLE: SendOnceRow[] = [
     write: 'POST /roman/sessions/:id/messages',
     phone: [
       'src/screens/roman/useRomanChat.ts:259 (sendMessage; on no answer the composer keeps the text for Retry)',
-      'src/api/romanApi.ts:529 (POST body { content } only, no key)',
+      'src/api/romanApi.ts:529 (POST body { content }, no Idempotency-Key today: SEND-ONCE-PHONE sends one per turn and keeps it across Retry)',
     ],
-    knownGap: {
-      why: 'no key on the phone or the server: a send that reached the server but lost its answer, then Retry, stores the turn (and runs the model) twice',
-      next: 'a client_message_id on SendMessageDto, kept by the composer across Retry, unique per (session, key)',
-      stillOpen: [{ file: 'src/roman/roman.dto.ts', holds: /export class SendMessageDto \{\s*@IsString\(\)\s*@MinLength\(1\)[\s\S]*?content!: string;\s*\}/ }],
+    rule: {
+      kind: 'key',
+      says: 'Idempotency-Key -> the turn id and the reply id (romanTurnIds: caller + session + key) under the keyed-write lock; a resend is answered from what is stored before any check: no model call, no counted message, no spend; the stored reply as its done frame, or ROMAN_UNAVAILABLE while there is none; other words under the key: 409; a racing first send gives back what it counted',
+      server: [
+        { file: 'src/roman/roman.controller.ts', holds: /const sentBefore = keyed \? await this\.roman\.findKeyedTurn\(caller, session\.id, keyed\) : null;\s*if \(sentBefore\) return this\.replayTurn\(/ },
+        { file: 'src/roman/roman.controller.ts', holds: /if \(keyed && keyedTurn\?\.replayed\) \{[\s\S]*?await this\.roman\.giveBackTurn\(usageDebit\);/ },
+        { file: 'src/roman/roman.service.ts', holds: /keyedWrite\(tx, id, \(\) => this\.ownTurn\(tx, caller, sessionId, id\)/ },
+        { file: 'src/roman/roman.service.ts', holds: /interrupted,\s*id: opts\.replyId,/ },
+      ],
+      proof: async () => {
+        const SESSION = 'cm3romansession0000000001';
+        const f = fakeDb();
+        f.seed('romanSession', { id: SESSION, user_id: USER, surface: 'client', deleted_at: null, message_count: 0 });
+        const svc = Object.create(RomanService.prototype) as Record<string, unknown>;
+        const debit = { clientId: USER, kind: 'messages', day: '2026-11-06' };
+        const counted = jest.fn(async () => debit);
+        const model = jest.fn(async function* (caller: unknown, session: { id: string }, opts: { replyId?: string }) {
+          const said = await (svc.appendMessage as (...a: unknown[]) => Promise<Row>).call(svc, caller, session.id, {
+            role: 'roman', content: 'Rest today, legs tomorrow.', interrupted: false, id: opts.replyId,
+          });
+          yield { type: 'delta', text: said.content };
+          yield { type: 'done', text: said.content, messageId: said.id, interrupted: false };
+        });
+        Object.assign(svc, {
+          prisma: f.db, isSafetyShortCircuit: async () => false, isEatingDisorderRisk: () => false,
+          getOwnedSession: async () => ({ id: SESSION, user_id: USER, surface: 'client' }),
+          assertMayUseAi: async () => undefined, assertDailyCapacity: async () => undefined,
+          assertCoachPoolOpen: async () => undefined, assertWithinRateLimit: counted, streamAssistantTurn: model,
+        });
+        const gaveBack = jest.spyOn(svc as never as { giveBackTurn: () => Promise<void> }, 'giveBackTurn');
+        const ctl = Object.create(RomanController.prototype) as Record<string, unknown>;
+        Object.assign(ctl, { roman: svc, prisma: f.db, copilot: null });
+        const send = async (key: string, content: string) => {
+          const frames: string[] = [];
+          const req = { user: { id: USER, role: 'student', coach_id: COACH }, headers: { 'idempotency-key': key }, on: () => undefined, off: () => undefined };
+          const res = { writeHead: jest.fn(), setHeader: jest.fn(), write: (s: string) => frames.push(s), end: jest.fn() };
+          await (ctl.sendMessage as (...a: unknown[]) => Promise<void>).call(ctl, req, res, SESSION, { content });
+          return frames;
+        };
+        const key = uuid();
+        const first = await send(key, 'What should I train today?');
+        const again = await send(key, 'What should I train today?');
+        expect(again).toEqual(first);
+        expect(first.join('')).toContain('Rest today, legs tomorrow.');
+        expect(f.rows('romanMessage')).toHaveLength(2);
+        expect(model).toHaveBeenCalledTimes(1);
+        expect(counted).toHaveBeenCalledTimes(1);
+        await expect(send(key, 'Something else')).rejects.toBeInstanceOf(ConflictException);
+
+        // Two first sends raced: the one that lost the keyed lock counted, gives it back and answers the stored turn.
+        const raced = uuid();
+        const won = await send(raced, 'Is a rest day fine?');
+        jest.spyOn(svc as never as { findKeyedTurn: () => Promise<unknown> }, 'findKeyedTurn').mockResolvedValueOnce(null);
+        const lost = await send(raced, 'Is a rest day fine?');
+        expect(lost).toEqual(won);
+        expect(gaveBack).toHaveBeenLastCalledWith(debit);
+        expect(model).toHaveBeenCalledTimes(2);
+        expect(f.rows('romanMessage')).toHaveLength(4);
+
+        // The first send stored the turn but no reply yet: the resend gets the coded frame, no model call.
+        const open = uuid();
+        f.seed('romanMessage', { id: keyedSendId('roman', USER, SESSION, open), session_id: SESSION, user_id: USER, role: 'user', content: 'Still there?' });
+        const waiting = await send(open, 'Still there?');
+        expect(waiting).toEqual([`event: error\ndata: ${JSON.stringify(ROMAN_SSE_FALLBACK_ERROR)}\n\n`]);
+        expect(model).toHaveBeenCalledTimes(2);
+        expect(f.rows('romanMessage')).toHaveLength(5);
+      },
+    },
+  },
+  {
+    write: 'DELETE /me/ai-consent/roman',
+    phone: [
+      'src/screens/consultation/ConsultationFlow.tsx:803 (withdrawRomanWithRetry: one retry on anything but a confirmed answer)',
+      'src/lib/consultation/aiConsent.ts:324-342 and :524-540 (the pending withdrawal is resent until confirmed)',
+      'src/hooks/useAiWithdrawalDrain.ts:37 via src/navigation/ClientNavigator.tsx:751 (drained on every client mount and foreground)',
+      'src/screens/settings/RomanAiConsentScreen.tsx:299 (the same drain from Settings)',
+    ],
+    rule: {
+      kind: 'natural',
+      says: 'nothingToWithdraw: when there is no decision or the latest is already a withdraw, nothing is written and the latest row is the answer',
+      server: [
+        { file: 'src/ai-consent/ai-consent.service.ts', holds: /const nothingToWithdraw = \(row: AiConsentLatestRow \| null\): boolean =>\s*row === null \|\| row\.action !== AI_CONSENT_ACTION_GRANT;/ },
+        { file: 'src/ai-consent/ai-consent.service.ts', holds: /AI_CONSENT_ACTION_WITHDRAW,[\s\S]{0,300}?undefined,\s*nothingToWithdraw,\s*\);/ },
+        { file: 'src/ai-consent/ai-consent.service.ts', holds: /const row = await this\.latestOr503\(userId, action, purpose\);\s*if \(keep\(row\)\) return row;/ },
+      ],
+      proof: async () => {
+        const prev = process.env.FEATURE_AI_CONSENT_LEDGER_ENABLED;
+        process.env.FEATURE_AI_CONSENT_LEDGER_ENABLED = 'true';
+        try {
+          const f = fakeDb({
+            aiProcessingConsentEvent: { unique: [['user_id', 'processor', 'purpose', 'seq']], onCreate: (r) => (r.created_at ??= new Date()) },
+          });
+          f.seed('aiProcessingConsentEvent', {
+            id: 'grant-1', user_id: USER, processor: CLIENT_AI_CONSENT_PROCESSOR, purpose: CLIENT_AI_CONSENT_PURPOSE, seq: 1,
+            action: AI_CONSENT_ACTION_GRANT, consent_version: CLIENT_AI_CONSENT_VERSION, copy_sha256: CLIENT_AI_CONSENT_COPY_SHA256,
+            created_at: new Date('2026-11-01T09:00:00Z'),
+          });
+          const svc = new AiConsentService(f.db);
+          const first = await svc.withdraw(USER);
+          const again = await svc.withdraw(USER);
+          expect(again).toEqual(first);
+          expect(first.state).toBe('withdrawn');
+          expect(f.rows('aiProcessingConsentEvent').map((r) => r.action)).toEqual([AI_CONSENT_ACTION_GRANT, AI_CONSENT_ACTION_WITHDRAW]);
+          // Nothing on record: the drain's resend writes nothing at all.
+          const empty = fakeDb();
+          await new AiConsentService(empty.db).withdraw(USER);
+          await new AiConsentService(empty.db).withdraw(USER);
+          expect(empty.rows('aiProcessingConsentEvent')).toHaveLength(0);
+        } finally {
+          if (prev === undefined) delete process.env.FEATURE_AI_CONSENT_LEDGER_ENABLED;
+          else process.env.FEATURE_AI_CONSENT_LEDGER_ENABLED = prev;
+        }
+      },
     },
   },
   {
     write: 'POST /community/workspaces/:workspaceId/dms/:recipientId/messages',
     phone: [
       'src/screens/community/CommunityDmThreadScreen.tsx:84-95 (a failed send keeps the draft; Send again is a new request)',
-      'src/api/communityApi.ts:329-331 and :495 (a new Idempotency-Key on every call)',
+      'src/api/communityApi.ts:497-505 and :339 (an Idempotency-Key on every call, a new one each call: SEND-ONCE-PHONE keeps one per draft)',
     ],
-    knownGap: {
-      why: 'the phone makes a new key per send and the server reads none: a send that landed but lost its answer, sent again, is a second DM',
-      next: 'keep one key per draft on the phone and honour Idempotency-Key on the DM send (the space-chat keyedMessageId rule)',
-      stillOpen: [{ file: 'src/community/dms/community-dms.controller.ts', holds: /@Post\('workspaces\/:workspaceId\/dms\/:recipientId\/messages'\)/, lacks: /idempotency/i }],
+    rule: {
+      kind: 'key',
+      says: 'Idempotency-Key -> the DM id itself (keyedSendId: author + dm_key + key) under the keyed-write lock; a replay answers the first message, no second ping or push; other words under the key: 409',
+      server: [
+        { file: 'src/community/dms/community-dms.controller.ts', holds: /const key = messageKey\(idempotencyKey\);\s*return this\.dms\.send\(req\.user, workspaceId, recipientId, body\.body, key\)/ },
+        { file: 'src/community/dms/community-dms.service.ts', holds: /keyedSendId\('dm', user\.id, dmKey, idempotencyKey\)/ },
+        { file: 'src/community/dms/community-dms.repository.ts', holds: /keyedWrite\(tx, id, \(\) => tx\.communityMessage\.findFirst\(\{ where: \{ id \} \}\)/ },
+      ],
+      proof: async () => {
+        const f = fakeDb({ communityMessage: { onCreate: stamped } });
+        const svc = Object.create(CommunityDmsService.prototype) as Record<string, unknown>;
+        const WS = '11111111-1111-4111-8111-111111111111';
+        const dmKey = CommunityDmsRepository.dmKey(WS, USER, COACH);
+        const push = jest.fn().mockResolvedValue(undefined);
+        const ping = jest.fn().mockResolvedValue(undefined);
+        Object.assign(svc, {
+          dms: new CommunityDmsRepository(f.db), authoriseDm: async () => dmKey, safety: { assertAllowed: () => undefined },
+          realtime: { broadcastCommunityEvent: ping }, communityPush: { sendCommunityPush: push },
+        });
+        const send = (svc.send as (...a: unknown[]) => Promise<{ message: { id: string; body: string | null } }>).bind(svc);
+        const sender = makeUser({ id: USER, role: 'student' });
+        const key = uuid();
+        const first = await send(sender, WS, COACH, 'see you at 6', key);
+        const again = await send(sender, WS, COACH, 'see you at 6', key);
+        expect(again).toEqual(first);
+        expect(f.rows('communityMessage')).toHaveLength(1);
+        expect(push).toHaveBeenCalledTimes(1);
+        expect(ping).toHaveBeenCalledTimes(1);
+        await expect(send(sender, WS, COACH, 'other words', key)).rejects.toBeInstanceOf(ConflictException);
+        // No key, or a fresh key per call (what the phone sends today): a new DM each time, as before.
+        await send(sender, WS, COACH, 'see you at 6', null);
+        await send(sender, WS, COACH, 'see you at 6', uuid());
+        expect(f.rows('communityMessage')).toHaveLength(3);
+      },
     },
   },
   {
     write: 'POST /community/workspaces/:workspaceId/posts',
     phone: [
       'src/screens/community/CommunityComposerScreen.tsx:112-120 (on an error the form stays filled; Publish again is a new request)',
-      'src/api/communityApi.ts:407 (a new Idempotency-Key on every call)',
+      'src/api/communityApi.ts:408-418 and :339 (an Idempotency-Key on every call, a new one each call: SEND-ONCE-PHONE keeps one per draft)',
     ],
-    knownGap: {
-      why: 'the phone makes a new key per publish and the server reads none: a post that landed but lost its answer, published again, is a second post',
-      next: 'keep one key per draft on the phone and honour Idempotency-Key on post create',
-      stillOpen: [{ file: 'src/community/posts/community-posts.controller.ts', holds: /@Post\('workspaces\/:workspaceId\/posts'\)/, lacks: /idempotency/i }],
+    rule: {
+      kind: 'key',
+      says: 'Idempotency-Key -> the post id itself (keyedSendId: author + workspace + key) under the keyed-write lock; a replay answers the first post, no second Hall ping; another title or body under the key: 409',
+      server: [
+        { file: 'src/community/posts/community-posts.controller.ts', holds: /const key = messageKey\(idempotencyKey\);\s*return this\.posts\.create\(req\.user, workspaceId, body, key\)/ },
+        { file: 'src/community/posts/community-posts.service.ts', holds: /keyedSendId\('post', user\.id, workspaceId, idempotencyKey\)/ },
+        { file: 'src/community/posts/community-posts.repository.ts', holds: /keyedWrite\(tx, id, \(\) => tx\.communityPost\.findUnique\(\{ where: \{ id \} \}\)/ },
+      ],
+      proof: async () => {
+        const f = fakeDb({ communityPost: { onCreate: stamped } });
+        const WS = '11111111-1111-4111-8111-111111111111';
+        const ping = jest.fn().mockResolvedValue(undefined);
+        const svc = postsService(f, ping);
+        Object.assign(svc, {
+          access: { findWorkspace: async () => ({ id: WS }), canAccessWorkspace: async () => true },
+          canCreatePost: async () => true,
+        });
+        const create = (svc.create as (...a: unknown[]) => Promise<{ post: { id: string } }>).bind(svc);
+        const author = makeUser({ id: USER, role: 'student' });
+        const key = uuid();
+        const draft = { title: 'Week 3', body: 'new squat PR' };
+        const first = await create(author, WS, draft, key);
+        const again = await create(author, WS, { ...draft }, key);
+        expect(again).toEqual(first);
+        expect(f.rows('communityPost')).toHaveLength(1);
+        expect(ping).toHaveBeenCalledTimes(1);
+        await expect(create(author, WS, { ...draft, body: 'other words' }, key)).rejects.toBeInstanceOf(ConflictException);
+        // No key, or a fresh key per call (what the phone sends today): a new post each time, as before.
+        await create(author, WS, draft, null);
+        await create(author, WS, draft, uuid());
+        expect(f.rows('communityPost')).toHaveLength(3);
+      },
+    },
+  },
+  {
+    write: 'POST /community/posts/:postId/comments',
+    phone: [
+      'src/api/communityApi.ts:420-429 and :339 (an Idempotency-Key on every call, a new one each call: SEND-ONCE-PHONE keeps one per draft)',
+    ],
+    rule: {
+      kind: 'key',
+      says: 'Idempotency-Key -> the comment id itself (keyedSendId: author + post + key) under the keyed-write lock; a replay answers the first comment, no second ping or "replied" push; another body under the key: 409',
+      server: [
+        { file: 'src/community/posts/community-posts.controller.ts', holds: /const key = messageKey\(idempotencyKey\);\s*return this\.posts\.addComment\(req\.user, postId, body\.body, key\)/ },
+        { file: 'src/community/posts/community-posts.service.ts', holds: /keyedSendId\('comment', user\.id, post\.id, idempotencyKey\)/ },
+        { file: 'src/community/messages/community-messages.repository.ts', holds: /this\.keyed\(tx, id, \(\) => tx\.communityMessage\.create\(\{ data: \{ \.\.\.commentData\(params\), id \} \}\)\)/ },
+      ],
+      proof: async () => {
+        const f = fakeDb({ communityMessage: { onCreate: stamped } });
+        const POST = '44444444-4444-4444-8444-444444444444';
+        const post = { id: POST, workspace_id: '11111111-1111-4111-8111-111111111111', cohort_id: null, author_id: COACH };
+        const ping = jest.fn().mockResolvedValue(undefined);
+        const push = jest.fn().mockResolvedValue(undefined);
+        const svc = postsService(f, ping, push);
+        Object.assign(svc, {
+          visiblePost: async () => ({ post, outside: false }),
+          access: { readersOf: async (_w: string, _c: string | null, ids: string[]) => ids },
+        });
+        const add = (svc.addComment as (...a: unknown[]) => Promise<{ comment: { id: string } }>).bind(svc);
+        const author = makeUser({ id: USER, role: 'student' });
+        const key = uuid();
+        const first = await add(author, POST, 'nice one coach', key);
+        const again = await add(author, POST, 'nice one coach', key);
+        expect(again).toEqual(first);
+        expect(f.rows('communityMessage')).toHaveLength(1);
+        expect(ping).toHaveBeenCalledTimes(1);
+        expect(push).toHaveBeenCalledTimes(1);
+        await expect(add(author, POST, 'other words', key)).rejects.toBeInstanceOf(ConflictException);
+        await add(author, POST, 'nice one coach', null);
+        await add(author, POST, 'nice one coach', uuid());
+        expect(f.rows('communityMessage')).toHaveLength(3);
+      },
+    },
+  },
+  {
+    write: 'POST /community/challenges/:challengeId/comments',
+    phone: [
+      'src/api/communityChallengesApi.ts:339-349 and :210 (an Idempotency-Key on every call, a new one each call: SEND-ONCE-PHONE keeps one per draft)',
+    ],
+    rule: {
+      kind: 'key',
+      says: 'Idempotency-Key -> the comment id itself (keyedSendId: author + challenge + key) under the keyed-write lock; a replay answers the first comment; another body under the key: 409',
+      server: [
+        { file: 'src/community/challenges/community-challenges.controller.ts', holds: /const key = messageKey\(idempotencyKey\);\s*return this\.challenges\.addComment\(req\.user, challengeId, body\.body, key\)/ },
+        { file: 'src/community/challenges/community-challenges.service.ts', holds: /keyedSendId\('challenge-comment', user\.id, challengeId, idempotencyKey\)/ },
+        { file: 'src/community/challenges/community-challenges.repository.ts', holds: /keyedWrite\(tx, id, \(\) => tx\.communityMessage\.findFirst\(\{ where: \{ id \} \}\)/ },
+      ],
+      proof: async () => {
+        const f = fakeDb({ communityMessage: { onCreate: stamped } });
+        const CHALLENGE = '55555555-5555-4555-8555-555555555555';
+        const svc = Object.create(CommunityChallengesService.prototype) as Record<string, unknown>;
+        Object.assign(svc, {
+          repo: new CommunityChallengesRepository(f.db), safety: { assertAllowed: () => undefined },
+          readableChallenge: async () => ({ id: CHALLENGE, workspace_id: '11111111-1111-4111-8111-111111111111', cohort_id: null }),
+        });
+        const add = (svc.addComment as (...a: unknown[]) => Promise<{ comment: { id: string } }>).bind(svc);
+        const author = makeUser({ id: USER, role: 'student' });
+        const key = uuid();
+        const first = await add(author, CHALLENGE, 'day 12 done', key);
+        const again = await add(author, CHALLENGE, 'day 12 done', key);
+        expect(again).toEqual(first);
+        expect(f.rows('communityMessage')).toHaveLength(1);
+        await expect(add(author, CHALLENGE, 'other words', key)).rejects.toBeInstanceOf(ConflictException);
+        await add(author, CHALLENGE, 'day 12 done', null);
+        await add(author, CHALLENGE, 'day 12 done', uuid());
+        expect(f.rows('communityMessage')).toHaveLength(3);
+      },
     },
   },
 ];
@@ -749,7 +1042,7 @@ describe('SEND-ONCE: every phone write that can resend has a send-once rule', ()
   const ruled = SEND_ONCE_TABLE.filter((r) => r.rule);
 
   it.each(ruled.flatMap((r) => r.rule!.server.map((c) => [r.write, c] as const)))(
-    '%s: the claimed rule is at its server line',
+    '%s: the claimed rule is in its server file',
     (write, claim) => {
       const at = lineOf(source(claim.file), claim.holds);
       if (!at) throw new Error(`${write}: claimed rule missing — ${claim.file} no longer holds ${claim.holds}`);
@@ -764,7 +1057,10 @@ describe('SEND-ONCE: every phone write that can resend has a send-once rule', ()
     },
   );
 
-  it.each(SEND_ONCE_TABLE.filter((r) => r.knownGap).map((r) => [r.write, r] as const))(
+  const gaps = SEND_ONCE_TABLE.filter((r) => r.knownGap);
+  // SEND-ONCE-SERVER closed the last gap; a gap row added later is checked below.
+  if (gaps.length === 0) it('no row is a KNOWN GAP today', () => expect(gaps).toEqual([]));
+  else it.each(gaps.map((r) => [r.write, r] as const))(
     '%s: KNOWN GAP still open (turn this row into a rule when it closes)',
     (write, row) => {
       for (const c of row.knownGap!.stillOpen) {

@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   Param,
   Post,
   Query,
@@ -19,6 +20,7 @@ import { CommunityFeatureFlagGuard } from '../community-feature-flag.guard';
 import { CommunityDmEnabledGuard } from '../community-write-flag.guard';
 import { CommunityDmsService } from './community-dms.service';
 import { CreateDmThreadDto, SendDmDto } from '../dto/community-dm.dto';
+import { messageKey } from '../messages/message-idempotency';
 
 /**
  * 1:1 direct messages within a workspace.
@@ -108,7 +110,10 @@ export class CommunityDmsController {
     @Param('workspaceId') workspaceId: string,
     @Param('recipientId') recipientId: string,
     @Body() body: SendDmDto,
+    // SEND-ONCE-SERVER: optional; a UUID makes a resend land once (the space chat's rule), blank keeps today's send.
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
-    return this.dms.send(req.user, workspaceId, recipientId, body.body);
+    const key = messageKey(idempotencyKey);
+    return this.dms.send(req.user, workspaceId, recipientId, body.body, key);
   }
 }

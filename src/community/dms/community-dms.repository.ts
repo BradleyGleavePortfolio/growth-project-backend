@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import type { CommunityMessage } from '@prisma/client';
+import type { CommunityMessage, Prisma } from '@prisma/client';
+import { keyedWrite } from '../messages/message-idempotency';
 import { PrismaService } from '../../prisma.service';
 
 /**
@@ -24,25 +25,16 @@ export class CommunityDmsRepository {
     return `${workspaceId}:${lo}:${hi}`;
   }
 
-  async createDm(params: {
-    workspaceId: string;
-    dmKey: string;
-    senderId: string;
-    recipientId: string;
-    body: string;
-  }): Promise<CommunityMessage> {
-    return this.prisma.communityMessage.create({
-      data: {
-        workspace_id: params.workspaceId,
-        scope: 'dm',
-        kind: 'text',
-        dm_key: params.dmKey,
-        sender_id: params.senderId,
-        recipient_user_id: params.recipientId,
-        body: params.body,
-        visibility: 'active',
-      },
-    });
+  async createDm(params: NewDm): Promise<CommunityMessage> {
+    return this.prisma.communityMessage.create({ data: dmData(params) });
+  }
+
+  /** SEND-ONCE-SERVER: a DM under an Idempotency-Key, by the space chat's rule (keyedWrite): the first row with
+   *  the keyed id (`replayed`), else a new one with it. */
+  async createKeyedDm(id: string, params: NewDm): Promise<{ row: CommunityMessage; replayed: boolean }> {
+    return this.prisma.$transaction((tx) =>
+      keyedWrite(tx, id, () => tx.communityMessage.findFirst({ where: { id } }), () =>
+        tx.communityMessage.create({ data: { ...dmData(params), id } })));
   }
 
   async findById(messageId: string): Promise<CommunityMessage | null> {
@@ -103,4 +95,19 @@ export class CommunityDmsRepository {
     }
     return latest;
   }
+}
+
+type NewDm = { workspaceId: string; dmKey: string; senderId: string; recipientId: string; body: string };
+
+function dmData(params: NewDm) {
+  return {
+    workspace_id: params.workspaceId,
+    scope: 'dm',
+    kind: 'text',
+    dm_key: params.dmKey,
+    sender_id: params.senderId,
+    recipient_user_id: params.recipientId,
+    body: params.body,
+    visibility: 'active',
+  } satisfies Prisma.CommunityMessageUncheckedCreateInput;
 }

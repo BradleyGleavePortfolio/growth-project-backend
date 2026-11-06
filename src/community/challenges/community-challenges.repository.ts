@@ -7,6 +7,7 @@ import type {
   CommunityMessage,
 } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
+import { keyedWrite } from '../messages/message-idempotency';
 
 /**
  * A single page of a cursor-paginated read (D-040). `items` is at most `limit`
@@ -502,26 +503,16 @@ export class CommunityChallengesRepository {
 
   // ── Comments (CommunityMessage with challenge discriminator) ────────────────
 
-  async createComment(params: {
-    workspaceId: string;
-    cohortId: string | null;
-    senderId: string;
-    challengeId: string;
-    body: string;
-  }): Promise<CommunityMessage> {
-    return this.prisma.communityMessage.create({
-      data: {
-        workspace_id: params.workspaceId,
-        cohort_id: params.cohortId,
-        scope: 'cohort',
-        kind: 'text',
-        sender_id: params.senderId,
-        body: params.body,
-        visibility: 'active',
-        plan_context_type: CHALLENGE_COMMENT_CONTEXT_TYPE,
-        plan_context_id: params.challengeId,
-      },
-    });
+  async createComment(params: NewChallengeComment): Promise<CommunityMessage> {
+    return this.prisma.communityMessage.create({ data: challengeCommentData(params) });
+  }
+
+  /** SEND-ONCE-SERVER: a challenge comment under an Idempotency-Key, by the space chat's rule (keyedWrite): the
+   *  first row with the keyed id (`replayed`), else a new one with it. */
+  async createKeyedComment(id: string, params: NewChallengeComment): Promise<{ row: CommunityMessage; replayed: boolean }> {
+    return this.prisma.$transaction((tx) =>
+      keyedWrite(tx, id, () => tx.communityMessage.findFirst({ where: { id } }), () =>
+        tx.communityMessage.create({ data: { ...challengeCommentData(params), id } })));
   }
 
   /**
@@ -622,3 +613,19 @@ export const CHALLENGE_COMMENT_CONTEXT_TYPE = 'community_challenge_comment';
  * participation model has no opt-in column and R69 forbids adding one.
  */
 export const CHALLENGE_OPTIN_CONTEXT_TYPE = 'community_challenge_optin';
+
+type NewChallengeComment = { workspaceId: string; cohortId: string | null; senderId: string; challengeId: string; body: string };
+
+function challengeCommentData(params: NewChallengeComment) {
+  return {
+    workspace_id: params.workspaceId,
+    cohort_id: params.cohortId,
+    scope: 'cohort',
+    kind: 'text',
+    sender_id: params.senderId,
+    body: params.body,
+    visibility: 'active',
+    plan_context_type: CHALLENGE_COMMENT_CONTEXT_TYPE,
+    plan_context_id: params.challengeId,
+  } as const;
+}

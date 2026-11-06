@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -24,6 +25,7 @@ import {
   CHALLENGE_COMMENT_CONTEXT_TYPE,
   CommunityChallengesRepository,
 } from './community-challenges.repository';
+import { IDEMPOTENCY_KEY_REUSED, keyedSendId } from '../messages/message-idempotency';
 import {
   ChallengeCommentListResponse,
   ChallengeCommentListResponseSchema,
@@ -607,18 +609,25 @@ export class CommunityChallengesService {
     user: User,
     challengeId: string,
     body: string,
+    idempotencyKey?: string | null,
   ): Promise<ChallengeCommentResponse> {
     const challenge = await this.readableChallenge(user, challengeId);
     this.safety.assertAllowed(body);
-    const created = await this.repo.createComment({
-      workspaceId: challenge.workspace_id,
-      cohortId: challenge.cohort_id,
-      senderId: user.id,
-      challengeId,
-      body,
-    });
+    // SEND-ONCE-SERVER: a resend with the same Idempotency-Key (same author, same challenge) answers with the first
+    // comment; another body under the key is a 409.
+    const keyedId = idempotencyKey ? keyedSendId('challenge-comment', user.id, challengeId, idempotencyKey) : null;
+    const sentBefore = keyedId ? await this.repo.findCommentById(keyedId) : null;
+    const params = { workspaceId: challenge.workspace_id, cohortId: challenge.cohort_id, senderId: user.id, challengeId, body };
+    const { row, replayed } = sentBefore
+      ? { row: sentBefore, replayed: true }
+      : keyedId
+        ? await this.repo.createKeyedComment(keyedId, params)
+        : { row: await this.repo.createComment(params), replayed: false };
+    const same = row.sender_id === user.id && row.plan_context_type === CHALLENGE_COMMENT_CONTEXT_TYPE
+      && row.plan_context_id === challengeId && row.body === body;
+    if (replayed && !same) throw new ConflictException(IDEMPOTENCY_KEY_REUSED);
     return ChallengeCommentResponseSchema.parse({
-      comment: this.commentView(created),
+      comment: this.commentView(row),
     });
   }
 

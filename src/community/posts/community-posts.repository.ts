@@ -3,6 +3,7 @@ import type { CommunityPost, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { storeRemovalNotice } from '../safety/community-moderation-notices';
 import { clientsAmong, isPublicRowOfMyClient } from '../community-public-row';
+import { keyedWrite } from '../messages/message-idempotency';
 
 /**
  * Data access for Lab posts.
@@ -15,23 +16,16 @@ import { clientsAmong, isPublicRowOfMyClient } from '../community-public-row';
 export class CommunityPostsRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(params: {
-    workspaceId: string;
-    authorId: string;
-    title: string;
-    body: string;
-  }): Promise<CommunityPost> {
-    return this.prisma.communityPost.create({
-      data: {
-        workspace_id: params.workspaceId,
-        author_id: params.authorId,
-        scope: 'hall',
-        type: 'text',
-        title: params.title,
-        body: params.body,
-        visibility: 'active',
-      },
-    });
+  async create(params: NewPost): Promise<CommunityPost> {
+    return this.prisma.communityPost.create({ data: postData(params) });
+  }
+
+  /** SEND-ONCE-SERVER: a post under an Idempotency-Key, by the space chat's rule (keyedWrite): the first post with
+   *  the keyed id (`replayed`), else a new one with it. */
+  async createKeyed(id: string, params: NewPost): Promise<{ row: CommunityPost; replayed: boolean }> {
+    return this.prisma.$transaction((tx) =>
+      keyedWrite(tx, id, () => tx.communityPost.findUnique({ where: { id } }), () =>
+        tx.communityPost.create({ data: { ...postData(params), id } })));
   }
 
   /** `tx`: run inside the caller's transaction (moderation act, B-610-13). */
@@ -131,4 +125,18 @@ export class CommunityPostsRepository {
     };
     return tx ? run(tx) : this.prisma.$transaction(run);
   }
+}
+
+type NewPost = { workspaceId: string; authorId: string; title: string; body: string };
+
+function postData(params: NewPost) {
+  return {
+    workspace_id: params.workspaceId,
+    author_id: params.authorId,
+    scope: 'hall',
+    type: 'text',
+    title: params.title,
+    body: params.body,
+    visibility: 'active',
+  } as const;
 }
