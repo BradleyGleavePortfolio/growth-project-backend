@@ -1,9 +1,12 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { assertPairOpen, everyoneInBlockWith } from '../messaging/block-pair';
+import { NotificationsService } from '../notifications/notifications.service';
+import { sendCoachNudge } from './coach-nudge-send';
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
@@ -12,7 +15,15 @@ type ListOpts = { since?: string; limit?: number };
 
 @Injectable()
 export class NudgesService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(NudgesService.name);
+
+  // NUDGE-REACH-BE: the push sender. Not @Optional: a production boot without
+  // it fails (NudgesModule imports NotificationsModule). Only positional unit
+  // tests omit it, and then the nudge and its inbox row are still written.
+  constructor(
+    private prisma: PrismaService,
+    private readonly notifications?: NotificationsService,
+  ) {}
 
   // ---- helpers ----
 
@@ -44,8 +55,15 @@ export class NudgesService {
     await this.assertClientOfCoach(coachId, clientId);
     // FX-1141 (Sol B1): no nudge across a block either way (403, no row).
     await assertPairOpen(this.prisma, coachId, clientId);
-    return this.prisma.coachNudge.create({
-      data: { coach_id: coachId, client_id: clientId, title, body },
+    // NUDGE-REACH-BE: the nudge reaches the client the way the churn send's
+    // does: the CoachNudge row and the client's inbox row (the coach's own
+    // title and full text) in one transaction, then a push after it commits.
+    // The push never fails the send. Returns the CoachNudge row, as before.
+    return sendCoachNudge(this.prisma, this.notifications, this.logger, {
+      coachId,
+      clientId,
+      title,
+      body,
     });
   }
 

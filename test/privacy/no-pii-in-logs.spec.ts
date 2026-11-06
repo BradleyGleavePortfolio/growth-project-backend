@@ -546,7 +546,8 @@ const LEGACY_EXCEPTION_TEXT: Readonly<Record<string, number>> = {
   'src/coach-media/supabase-storage.provider.ts': 2,
   'src/coach/brief/coach-brief.scheduler.ts': 6,
   'src/coach/coach-effectiveness.scheduler.ts': 2,
-  'src/coach/command-center/churn-intervention.service.ts': 3,
+  // NUDGE-REACH-BE: its push-failure log moved to src/nudges/coach-nudge-send.ts (describeFailure).
+  'src/coach/command-center/churn-intervention.service.ts': 2,
   'src/common/cors-origins.ts': 1,
   'src/common/env-validation.ts': 6,
   'src/common/feature-flag/pilot-coach-allowlist.guard.ts': 2,

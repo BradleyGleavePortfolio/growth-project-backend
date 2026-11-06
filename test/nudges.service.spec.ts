@@ -58,10 +58,20 @@ function makePrisma() {
 
   // FX-1141: [blocker, blocked] pairs.
   const blocks: Array<[string, string]> = [];
-  return {
+  // NUDGE-REACH-BE: the client's inbox row is written with the nudge, in one transaction.
+  const inbox: any[] = [];
+  const self: any = {
     _users: users,
     _nudges: nudges,
     _blocks: blocks,
+    _inbox: inbox,
+    notification: {
+      create: jest.fn(async ({ data }: any) => {
+        inbox.push(data);
+        return { ...data };
+      }),
+    },
+    $transaction: jest.fn(async (fn: (tx: any) => Promise<unknown>) => fn(self)),
     userBlock: {
       findMany: jest.fn(async ({ where }: any) =>
         blocks
@@ -89,7 +99,8 @@ function makePrisma() {
     coachNudge: {
       create: jest.fn(async ({ data }: any) => {
         const row = {
-          id: newId(),
+          // NUDGE-REACH-BE: the shared sender picks the id (it names the inbox row and the push).
+          id: data.id ?? newId(),
           coach_id: data.coach_id,
           client_id: data.client_id,
           title: data.title,
@@ -129,6 +140,13 @@ function makePrisma() {
       }),
       count: jest.fn(async ({ where }: any) => nudges.filter((n) => matches(n, where)).length),
     },
+  };
+  return self as {
+    _users: typeof users;
+    _nudges: typeof nudges;
+    _blocks: typeof blocks;
+    _inbox: any[];
+    [k: string]: any;
   };
 }
 
