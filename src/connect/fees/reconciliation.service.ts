@@ -257,17 +257,37 @@ export class ReconciliationService {
     const ledgerSums = summarizeLedger(ledger);
 
     // LO-1225 B1: a purchase that never charged (a free trial canceled before
-    // its first charge, or whose first charge failed) has nothing to match:
-    // no payment intent, no ledger row, no transfer, no settlement, and a
-    // status that does not claim a payment. It is 'ok' (never_charged), not
-    // "could not be confirmed yet" every day forever. A paid or active
-    // purchase with nothing recorded stays 'unknown'.
+    // its first charge, or whose first charge failed) has nothing to match.
+    // It is 'ok' (never_charged), not "could not be confirmed yet" every day
+    // forever, only when there is no evidence of a charge of any kind: no
+    // payment intent, no ledger row, no transfer, no ChargeSettlement row of
+    // any status, and a status that does not claim a payment. A paid or
+    // active purchase with nothing recorded stays 'unknown'.
     if (
       !purchase.stripe_payment_intent_id &&
       ledger.length === 0 &&
       transfers.length === 0 &&
       NEVER_CHARGED_OK_STATUSES.has(purchase.status)
     ) {
+      // FIX-1225R2 (LS-1225R2 B2, LO-1225R2 C1): the settled read above
+      // skips a settlement still waiting (awaiting_fee) or of another
+      // mechanism; any such row is a known charge whose split is not
+      // finished. It is not read as matched: it stays 'unknown' until the
+      // settlement settles and the settled path above reads it from Stripe.
+      const unsettled = await this.prisma.chargeSettlement.findMany({
+        where: { purchase_id: purchase.id },
+        select: { stripe_charge_id: true, status: true },
+        orderBy: { created_at: 'desc' },
+        take: 1,
+      });
+      if (unsettled.length > 0) {
+        const [row] = unsettled;
+        return this.persistSnapshot(purchase.id, 'unknown', null, {
+          stripe: { amount_cents: null, refunded_cents: null, application_fee_cents: null, transfers_cents: null },
+          ledger: ledgerSums,
+          notes: `settlement_not_settled charge=${row.stripe_charge_id} status=${row.status}`,
+        });
+      }
       return this.persistSnapshot(purchase.id, 'ok', 0, {
         stripe: { amount_cents: null, refunded_cents: null, application_fee_cents: null, transfers_cents: null },
         ledger: ledgerSums,
@@ -598,23 +618,74 @@ export class ReconciliationService {
 }
 
 /**
- * Purchase states the money check reads: every state a charge can leave a
- * purchase in, including the ones the refund and dispute handlers write
- * (refunded, disputed, chargeback_lost; LS-1225 B2). Shared by the admin
- * button and the daily run.
+ * Purchase states the money check reads: every status written to
+ * ClientPurchase.status in which a charge can have succeeded. Shared by the
+ * admin button and the daily run. FIX-1225R2 (LS-1225R2 B1): built from every
+ * writer, not from memory; test/money-daily-states.spec.ts fails when a
+ * written status is in neither this list nor UNCHARGED_PURCHASE_STATUSES.
+ *   paid, active: checkout and invoice success (checkout-webhook-handler
+ *     :1418-1424, :2413-2416; refund-dispute-handler :2000; dunning-v2 :1699)
+ *   trialing, past_due, unpaid, paused, canceled: Stripe's own subscription
+ *     status, written as is (checkout-webhook-handler :1746 + :1849, :2679 +
+ *     :2715; :2990-2995 writes unpaid or past_due; client-billing :1143 and
+ *     :1750; guest-checkout :2001); a renewal that went unpaid after paid
+ *     periods is money (LS-1225R2 B1). canceled is also written by
+ *     client-billing :1820, dunning :805 and :964, account deletion :1027.
+ *   refunded, disputed, chargeback_lost: refund-dispute-handler :500, :1981,
+ *     :2089, :2138; guest-checkout :1550 (LS-1225 B2).
  */
 export const RECONCILED_PURCHASE_STATUSES = [
   'paid',
   'active',
+  'trialing',
   'past_due',
+  'unpaid',
+  'paused',
   'canceled',
   'refunded',
   'disputed',
   'chargeback_lost',
 ] as const;
 
-/** States in which a purchase with nothing recorded simply never charged (LO-1225 B1). */
-const NEVER_CHARGED_OK_STATUSES: ReadonlySet<string> = new Set(['canceled', 'past_due']);
+/**
+ * Written statuses the check does not read: no charge has succeeded in any
+ * of them, so there is nothing to match (and the single-charge read would
+ * compare a failed charge's amount as if it were money).
+ *   pending: checkout or subscription not finished (checkout.service :592,
+ *     :817; subscription-checkout :613, :1029, :1460, :1473;
+ *     subscription-attempt :135; checkout-webhook-handler :2479)
+ *   payment_failed: the payment did not complete (checkout-webhook-handler
+ *     :1612, :2443-2447 via :2584, only when Stripe's current payment intent
+ *     status is requires_payment_method or canceled, :55-69)
+ *   expired: checkout session expired from pending (checkout-webhook-handler
+ *     :1641; subscription-checkout :1041, :1460, :1521)
+ *   incomplete, incomplete_expired: first subscription payment never
+ *     completed (checkout-webhook-handler :1746 + :1849, :246; guest-checkout
+ *     :1980-1990); Stripe never moves a paid plan back to either.
+ *   pending_consent, revoked: $0 invite grants (invite-grant :411, :499,
+ *     :1040), source set, so never in the sweep anyway (C01).
+ */
+export const UNCHARGED_PURCHASE_STATUSES = [
+  'pending',
+  'payment_failed',
+  'expired',
+  'incomplete',
+  'incomplete_expired',
+  'pending_consent',
+  'revoked',
+] as const;
+
+/**
+ * States in which a purchase with no evidence of a charge simply never
+ * charged (LO-1225 B1): the plan states that do not claim a payment.
+ */
+const NEVER_CHARGED_OK_STATUSES: ReadonlySet<string> = new Set([
+  'trialing',
+  'past_due',
+  'unpaid',
+  'paused',
+  'canceled',
+]);
 
 function summarizeLedger(rows: SplitLedgerEntry[]): {
   destination_cents: number;
