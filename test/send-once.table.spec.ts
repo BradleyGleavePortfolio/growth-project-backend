@@ -664,7 +664,7 @@ export const SEND_ONCE_TABLE: SendOnceRow[] = [
         process.env.MWB_AUTOSAVE_LOCK_TOKEN_SECRET = 'a0'.repeat(32);
         try {
           const f = fakeDb();
-          const svc = new WorkoutBuilderAutosaveService(f.db, {} as never, { capture: jest.fn() } as never);
+          const svc = new WorkoutBuilderAutosaveService(f.db, {} as never, { capture: jest.fn() } as never, {} as never);
           const s = svc as never as Record<string, jest.Mock>;
           jest.spyOn(s, 'resolveAuthorKind' as never).mockResolvedValue('coach' as never);
           jest.spyOn(s, 'authorisePlanAccess' as never).mockResolvedValue(undefined as never);
