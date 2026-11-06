@@ -58,7 +58,9 @@ describe('LS-1223 main-first deploy and real isolation proof', () => {
     const mainNames = fs.readdirSync(target).filter((n) => /^\d{14}_/.test(n)).sort();
     expect(mainNames[mainNames.length - 1]).toBe('20270502011100_plan_swaps_revisions');
     mainCount = mainNames.length;
-    file(path.join(ROOT, 'prisma/migrations/_supabase_bootstrap.sql'));
+    // The RLS gate's shim also recreates Supabase default API grants, so a
+    // zero-row assertion is caused by RLS rather than a missing table grant.
+    file(path.join(ROOT, 'scripts/ci/supabase-shim.sql'));
     run(process.execPath, ['node_modules/prisma/build/index.js', 'migrate', 'deploy', '--schema', path.join(temp, 'schema.prisma')]);
     expect(Number(sql('SELECT count(*) FROM "_prisma_migrations" WHERE finished_at IS NOT NULL'))).toBe(mainCount);
     expect(sql("SELECT to_regclass('public.\"RomanMessageReport\"') IS NULL")).toBe('t');
