@@ -43,7 +43,7 @@ describe('LS-1223 main-first deploy and real isolation proof', () => {
     let ready = false;
     for (let attempt = 0; attempt < 100; attempt++) {
       try {
-        run('docker', ['exec', 'ls1223-review-probe', 'pg_isready', '-U', 'postgres']);
+        run('docker', ['exec', 'ls1223-review-probe', 'pg_isready', '-h', '127.0.0.1', '-U', 'postgres']);
         ready = true;
         break;
       } catch { /* Check readiness again, without an arbitrary delay. */ }
