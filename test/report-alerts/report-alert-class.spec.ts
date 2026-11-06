@@ -242,7 +242,7 @@ describe('FIX-1223: the Roman alert words and its audit row', () => {
       'New DM report a1b2c3d4: Spam',
     );
     expect(reportAlertData({ ...base, kind: 'community', reason: 'spam', targetType: 'post' }).subject).toBe(
-      'New community report a1b2c3d4: Spam',
+      'New community report a1b2c3d4: Spam or scams',
     );
   });
 
