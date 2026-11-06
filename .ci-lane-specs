@@ -1,0 +1,3 @@
+test/speed/coach-busy-reads.coverage.spec.ts
+test/speed/ls-1224-screen-coverage.spec.ts
+test/speed/ls-1224-response-proof.spec.ts
