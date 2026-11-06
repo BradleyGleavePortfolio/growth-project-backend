@@ -163,7 +163,7 @@ async function seed(db: Db, now: Date): Promise<Record<string, number>> {
     for (let d = -7; d < DAYS; d++)
       if (((d % 7) + 7) % 7 !== 6)
         rows.clientWorkoutAssignment.push({ workout_plan_id: plan.id, client_id: uid, assigned_by_coach_id: COACH_ID, scheduled_for: at(d, 0), completed_at: d > 0 ? at(d, -1) : null });
-    for (let d = 0; d < DAYS; d++) {
+    for (let d = 0; d < DAYS - 1; d++) {
       meals.forEach((meal_type, m) => rows.loggedFoodEntry.push({ user_id: uid, date: day(d), meal_type, food_item_id: food.id, quantity_multiplier: 1, logged_at: at(d, 12 - m * 4) }));
       for (let w = 0; w < 4; w++) rows.waterLog.push({ user_id: uid, amount_ml: 500, logged_at: at(d, 14 - w * 3), created_at: at(d, 14 - w * 3) });
       rows.weightLog.push({ user_id: uid, date: day(d), weight_lbs: 180 - d * 0.05 + (c % 7), logged_at: at(d, 14) });
