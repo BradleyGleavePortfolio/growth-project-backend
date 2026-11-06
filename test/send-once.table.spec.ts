@@ -6,7 +6,8 @@
  * the sync engine, a `withRetry`, the paced health ingest, the autosave
  * replay) or resends after a lost answer with the key it kept, plus the user's
  * Retry where the composer keeps the text. Phone lines are read on
- * growth-project-mobile main c26d4dab; they are text here (that repo is not in
+ * growth-project-mobile main c26d4dab (the Roman, community and AI-consent
+ * withdraw rows on 4cc748db); they are text here (that repo is not in
  * this checkout). Default TanStack mutations are `retry: false`
  * (mobile src/services/queryClient.ts:66) and the 401 refresh replays only a
  * request the server already refused, so neither adds a row.
@@ -66,6 +67,15 @@ import { RomanController } from '../src/roman/roman.controller';
 import { RomanService } from '../src/roman/roman.service';
 import { ROMAN_SSE_FALLBACK_ERROR } from '../src/roman/roman-sse-error';
 import { keyedSendId } from '../src/community/messages/message-idempotency';
+import { AiConsentService } from '../src/ai-consent/ai-consent.service';
+import {
+  AI_CONSENT_ACTION_GRANT,
+  AI_CONSENT_ACTION_WITHDRAW,
+  CLIENT_AI_CONSENT_COPY_SHA256,
+  CLIENT_AI_CONSENT_PROCESSOR,
+  CLIENT_AI_CONSENT_PURPOSE,
+  CLIENT_AI_CONSENT_VERSION,
+} from '../src/ai-consent/ai-consent.constants';
 
 // ─── A Prisma double that keeps unique indexes ───────────────────────────────
 
@@ -119,8 +129,11 @@ function fakeDb(specs: Record<string, ModelSpec> = {}) {
       const r = table(name).find((x) => matches(x, where));
       return r ? { ...r } : null;
     },
-    findFirst: async (args: { where?: Row } = {}) => {
-      const r = table(name).find((x) => matches(x, args.where));
+    findFirst: async (args: { where?: Row; orderBy?: Record<string, 'asc' | 'desc'> } = {}) => {
+      const [col, dir] = Object.entries(args.orderBy ?? {})[0] ?? [];
+      const hits = table(name).filter((x) => matches(x, args.where));
+      if (col) hits.sort((a, b) => (Number(a[col]) - Number(b[col])) * (dir === 'desc' ? -1 : 1));
+      const r = hits[0];
       return r ? { ...r } : null;
     },
     findMany: async (args: { where?: Row } = {}) => table(name).filter((x) => matches(x, args.where)).map((r) => ({ ...r })),
@@ -403,6 +416,8 @@ export const SEND_ONCE_TABLE: SendOnceRow[] = [
       server: [
         { file: 'src/messaging/client-messaging.controller.ts', holds: /resolveIdempotencyKey\(idemHeader, body\.client_message_id\)/ },
         { file: 'src/messaging/messaging.service.ts', holds: /where: \{ sender_id: senderId, client_message_id: key \}/ },
+        // A replay returns before the ping, push, audit and analytics (sendAsClient).
+        { file: 'src/messaging/messaging.service.ts', holds: /\n\s*if \(replayed\) return out;\n\s*\/\/ Ping both people in the chat/ },
       ],
       proof: async () => {
         const f = fakeDb({ coachMessage: { unique: [['sender_id', 'client_message_id']] } });
@@ -430,6 +445,8 @@ export const SEND_ONCE_TABLE: SendOnceRow[] = [
       server: [
         { file: 'src/messaging/coach-messaging.controller.ts', holds: /resolveIdempotencyKey\(idemHeader, body\.client_message_id\)/ },
         { file: 'src/messaging/messaging.service.ts', holds: /where: \{ sender_id: senderId, client_message_id: key \}/ },
+        // A replay returns before the ping, push, audit and analytics (sendAsCoach).
+        { file: 'src/messaging/messaging.service.ts', holds: /\.then\(\(\{ row, replayed \}\) => \(\{ row, duplicate: replayed \}\)\);[\s\S]{0,600}?\n\s*if \(duplicate\) return created;\n/ },
       ],
       proof: async () => {
         const f = fakeDb({ coachMessage: { unique: [['sender_id', 'client_message_id']] } });
@@ -798,6 +815,52 @@ export const SEND_ONCE_TABLE: SendOnceRow[] = [
     },
   },
   {
+    write: 'DELETE /me/ai-consent/roman',
+    phone: [
+      'src/screens/consultation/ConsultationFlow.tsx:803 (withdrawRomanWithRetry: one retry on anything but a confirmed answer)',
+      'src/lib/consultation/aiConsent.ts:324-342 and :524-540 (the pending withdrawal is resent until confirmed)',
+      'src/hooks/useAiWithdrawalDrain.ts:37 via src/navigation/ClientNavigator.tsx:751 (drained on every client mount and foreground)',
+      'src/screens/settings/RomanAiConsentScreen.tsx:299 (the same drain from Settings)',
+    ],
+    rule: {
+      kind: 'natural',
+      says: 'nothingToWithdraw: when there is no decision or the latest is already a withdraw, nothing is written and the latest row is the answer',
+      server: [
+        { file: 'src/ai-consent/ai-consent.service.ts', holds: /const nothingToWithdraw = \(row: AiConsentLatestRow \| null\): boolean =>\s*row === null \|\| row\.action !== AI_CONSENT_ACTION_GRANT;/ },
+        { file: 'src/ai-consent/ai-consent.service.ts', holds: /AI_CONSENT_ACTION_WITHDRAW,[\s\S]{0,300}?undefined,\s*nothingToWithdraw,\s*\);/ },
+        { file: 'src/ai-consent/ai-consent.service.ts', holds: /const row = await this\.latestOr503\(userId, action, purpose\);\s*if \(keep\(row\)\) return row;/ },
+      ],
+      proof: async () => {
+        const prev = process.env.FEATURE_AI_CONSENT_LEDGER_ENABLED;
+        process.env.FEATURE_AI_CONSENT_LEDGER_ENABLED = 'true';
+        try {
+          const f = fakeDb({
+            aiProcessingConsentEvent: { unique: [['user_id', 'processor', 'purpose', 'seq']], onCreate: (r) => (r.created_at ??= new Date()) },
+          });
+          f.seed('aiProcessingConsentEvent', {
+            id: 'grant-1', user_id: USER, processor: CLIENT_AI_CONSENT_PROCESSOR, purpose: CLIENT_AI_CONSENT_PURPOSE, seq: 1,
+            action: AI_CONSENT_ACTION_GRANT, consent_version: CLIENT_AI_CONSENT_VERSION, copy_sha256: CLIENT_AI_CONSENT_COPY_SHA256,
+            created_at: new Date('2026-11-01T09:00:00Z'),
+          });
+          const svc = new AiConsentService(f.db);
+          const first = await svc.withdraw(USER);
+          const again = await svc.withdraw(USER);
+          expect(again).toEqual(first);
+          expect(first.state).toBe('withdrawn');
+          expect(f.rows('aiProcessingConsentEvent').map((r) => r.action)).toEqual([AI_CONSENT_ACTION_GRANT, AI_CONSENT_ACTION_WITHDRAW]);
+          // Nothing on record: the drain's resend writes nothing at all.
+          const empty = fakeDb();
+          await new AiConsentService(empty.db).withdraw(USER);
+          await new AiConsentService(empty.db).withdraw(USER);
+          expect(empty.rows('aiProcessingConsentEvent')).toHaveLength(0);
+        } finally {
+          if (prev === undefined) delete process.env.FEATURE_AI_CONSENT_LEDGER_ENABLED;
+          else process.env.FEATURE_AI_CONSENT_LEDGER_ENABLED = prev;
+        }
+      },
+    },
+  },
+  {
     write: 'POST /community/workspaces/:workspaceId/dms/:recipientId/messages',
     phone: [
       'src/screens/community/CommunityDmThreadScreen.tsx:84-95 (a failed send keeps the draft; Send again is a new request)',
@@ -979,7 +1042,7 @@ describe('SEND-ONCE: every phone write that can resend has a send-once rule', ()
   const ruled = SEND_ONCE_TABLE.filter((r) => r.rule);
 
   it.each(ruled.flatMap((r) => r.rule!.server.map((c) => [r.write, c] as const)))(
-    '%s: the claimed rule is at its server line',
+    '%s: the claimed rule is in its server file',
     (write, claim) => {
       const at = lineOf(source(claim.file), claim.holds);
       if (!at) throw new Error(`${write}: claimed rule missing — ${claim.file} no longer holds ${claim.holds}`);
