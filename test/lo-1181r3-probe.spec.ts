@@ -83,6 +83,9 @@ const WEB_TRIAL = { stripe_checkout_session_id: 'guest_pi_seti_webtrial01', stri
   trial_days: 7, trial_started_at: new Date(), status: 'trialing', entitlement_active: true, card_on_file: true };
 
 describe('LO-1181R3 probe: a web trial life claims once, at the first paid invoice', () => {
+  const before = process.env.FEATURE_ROMAN_FIRST_PAYMENT;
+  beforeEach(() => { process.env.FEATURE_ROMAN_FIRST_PAYMENT = 'true'; });
+  afterAll(() => { if (before === undefined) delete process.env.FEATURE_ROMAN_FIRST_PAYMENT; else process.env.FEATURE_ROMAN_FIRST_PAYMENT = before; });
   it('in order: $0 trial invoice, trialing update, paid invoice, its redelivery, next cycle -> one claim of 14900', async () => {
     const w = life(WEB_TRIAL, sub('trialing', { trial_start: NOW }));
     await w.deliver(invoicePaid(0, 'subscription_create'));
@@ -105,6 +108,13 @@ describe('LO-1181R3 probe: a web trial life claims once, at the first paid invoi
     await w.deliver(invoicePaid(0, 'subscription_create'));
     expect(w.rows).toHaveLength(1);
     expect(w.rows[0]).toMatchObject({ amount: 14900 });
+  });
+  it('flag off: the whole life claims nothing', async () => {
+    process.env.FEATURE_ROMAN_FIRST_PAYMENT = 'false';
+    const w = life(WEB_TRIAL, sub('active'));
+    await w.deliver(invoicePaid(0, 'subscription_create'));
+    await w.deliver(invoicePaid(14900, 'subscription_cycle'));
+    expect(w.rows).toHaveLength(0);
   });
   it('a web trial cancelled in its trial never claims', async () => {
     const w = life(WEB_TRIAL, sub('canceled'));
