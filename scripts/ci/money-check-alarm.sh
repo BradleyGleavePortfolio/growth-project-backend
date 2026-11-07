@@ -50,7 +50,7 @@ echo "${NOW} money check: ${STATE} (HTTP ${CODE}); last finished day: ${LAST}"
 case "$STATE" in
   on_time)
     if [ -n "$open_issue" ]; then
-      gh issue close "$open_issue" --comment "Recovered: the daily money check finished for ${LAST} (UTC), wrote its result to your inbox and queued its push (checked ${NOW}). A queued push does not prove that it reached your phone. Closed automatically by the money check alarm. Run: ${RUN_URL}"
+      gh issue close "$open_issue" --comment "Recovered: the money check status is on time (last finished day: ${LAST}, UTC; checked ${NOW}). A queued push does not prove that it reached your phone or that you read it. Closed automatically by the money check alarm. Run: ${RUN_URL}"
     fi
     ;;
   off)
@@ -67,11 +67,13 @@ case "$STATE" in
 - Status: ${STATUS_URL}
 - Run: ${RUN_URL}
 
-The check runs once a day at 11:00 UTC (03:00 PST, 04:00 PDT). A finished run writes its result to your inbox in the app and queues one push to your phone; this alarm counts a day only when both were written. A queued push does not prove that it reached your phone or that you read it.
+The check runs once a day at 11:00 UTC (03:00 PST, 04:00 PDT). When a run finishes, it writes the result to your inbox in the app and queues one push to your phone. This alarm counts a day only when that push was queued. A queued push does not prove that it reached your phone or that you read it.
 
-It goes late when the run did not start or did not finish (for example the server was down or restarting at 11:00 UTC, or the check could not read its lock), when no account has the owner role, or when the result could not be written to your inbox or queued as a push (for example when no phone is signed in to your account). The admin \"run the money check\" button checks purchases but sends no daily result, so it does not close this issue. If the check was just switched back on, this closes after its next run.
+This opens when the run did not start or did not finish (for example the server was down or restarting at 11:00 UTC, or the check could not read its lock), when no account has the owner role, or when the result could not be written to your inbox or queued as a push (for example when no phone is signed in to your account). Running the reconciliation sweeper by hand (the admin run-sweeper route) checks purchases but sends no daily result, so it does not close this issue. If the check was just switched back on, this closes after its next run.
 
-Next steps: in the server logs around 11:00 UTC, a line starting MONEY_DAILY_ shows how far the run got: MONEY_DAILY_DONE means it finished and then the notice failed, MONEY_DAILY_LOCK_ERROR and MONEY_DAILY_NO_OWNER name the cause, and no such line means the run did not start. This issue is updated every hour while the check is late and closes by itself after the next run that writes its result and queues its push."
+What to look for in the server logs around 11:00 UTC: no MONEY_DAILY_ line means the run did not start; MONEY_DAILY_LOCK_ERROR means it could not read its lock; MONEY_DAILY_DONE means the purchases were checked, and MONEY_DAILY_NO_OWNER or MONEY_DAILY_ALERT_FAILED after it says why the notice was not sent. MONEY_DAILY_DONE with neither means the push was not queued.
+
+This issue is updated every hour while the check is late and closes by itself after the next run that queues its push."
     echo "::warning::The daily money check is late; last finished day: ${LAST}"
     if [ -n "$open_issue" ]; then
       gh issue edit "$open_issue" --body "$body"

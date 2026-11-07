@@ -25,17 +25,25 @@ export class MoneyCheckStatusController {
     description:
       'Unauthenticated. on_time, late (no finished run with a sent owner notice in 26 hours) or off, plus the last finished UTC day. Not a readiness probe.',
   })
-  @ApiResponse({ status: 200, description: '`{ status: "on_time" | "late" | "off", lastDay: "YYYY-MM-DD" | null }`' })
+  @ApiResponse({
+    status: 200,
+    description: '`{ status: "on_time" | "late" | "off", lastDay: "YYYY-MM-DD" | null }`',
+  })
   @ApiResponse({ status: 503, description: 'The status could not be read: `{}`' })
   @Get('status')
   @Header('Cache-Control', 'no-store')
-  async status(@Res({ passthrough: true }) res: Response): Promise<MoneyCheckStatus | Record<string, never>> {
+  async status(
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<MoneyCheckStatus | Record<string, never>> {
     try {
       const { status, lastDay } = await this.moneyCheck.status();
       return { status, lastDay };
     } catch {
       // A driver error may hold query text: log a stable event only.
-      this.logger.error({ event: 'money_check_status_unavailable', operation: 'money-check.status' });
+      this.logger.error({
+        event: 'money_check_status_unavailable',
+        operation: 'money-check.status',
+      });
       res.status(HttpStatus.SERVICE_UNAVAILABLE);
       return {};
     }

@@ -3,17 +3,20 @@
  * check's own status, read by its own alarm (.github/workflows/
  * money-check-alarm.yml). Never /readyz, never the production-down issue.
  *
- * No new table or column: the status reads only the two rows the daily check
- * already writes when a run finishes (ReconciliationDailyCron.alertOwner):
- *   1. the day's inbox row: a Notification of kind coach_alert to the owner
- *      account, payload.type 'money_check', payload.day 'YYYY-MM-DD';
- *   2. the day's queued push: a PushOutbox row to the same account with
- *      dedupe_key 'money_daily:YYYY-MM-DD'.
- * A day counts as finished with a sent owner notice only when both exist. A
- * queued push is not proof that the owner received or read it.
+ * No new table or column. A finished run writes two rows to the owner account
+ * (ReconciliationDailyCron.alertOwner), in this order:
+ *   1. the day's inbox row: a Notification of kind coach_alert, payload.type
+ *      'money_check', payload.day 'YYYY-MM-DD' (skipped, not failed, when the
+ *      owner turned in-app coach alerts off);
+ *   2. the day's queued push: a PushOutbox row with dedupe_key
+ *      'money_daily:YYYY-MM-DD', kept RETENTION_MS (30 days).
+ * The status reads the push row only: it is queued only after the run
+ * finished, the owner account was found and the inbox step did not fail, so
+ * it is the record of a finished run with a sent owner notice. A queued push
+ * is not proof that the owner received or read it.
  *
- *   on_time  the newest such day's inbox row is at most LATE_AFTER_MS old.
- *   late     none is: the timer never fired, the lease read failed, the run
+ *   on_time  the newest such row was queued at most LATE_AFTER_MS ago.
+ *   late     none was: the timer never fired, the lease read failed, the run
  *            died before the end, there is no owner account, or the inbox row
  *            or the push could not be written.
  *   off      RECONCILIATION_DAILY_ENABLED is 'false' (its meaning is kept).
@@ -30,7 +33,6 @@
  */
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import { NotificationKind } from '../notifications/notification-kind';
 import { DAILY_JOB_NAME, reconciliationDailyEnabled } from './reconciliation-daily.cron';
 
 export type MoneyCheckState = 'on_time' | 'late' | 'off';
@@ -45,9 +47,9 @@ export interface MoneyCheckStatus {
 export const LATE_AFTER_MS = 26 * 60 * 60_000;
 /** The day's push key, as the daily check writes it (reconciliation-daily.cron.ts, pushToUser's dedupeKey). */
 export const MONEY_DAILY_PUSH_KEY = 'money_daily:';
-/** Inbox rows read, newest first: about a month, the push outbox's own retention (RETENTION_MS). */
-export const STATUS_SCAN = 30;
-const DAY = /^\d{4}-\d{2}-\d{2}$/;
+/** UTC days read, today first: today and the 30 days the push outbox keeps rows (RETENTION_MS). */
+export const STATUS_DAYS = 31;
+const DAY_MS = 24 * 60 * 60_000;
 
 /** on_time, late or off from what the rows say. Pure; `now` and the machine start in ms. */
 export function moneyCheckState(input: {
@@ -58,7 +60,8 @@ export function moneyCheckState(input: {
   now: number;
 }): MoneyCheckState {
   if (!input.enabled) return 'off';
-  if (input.lastNoticeAt && input.now - input.lastNoticeAt.getTime() <= LATE_AFTER_MS) return 'on_time';
+  if (input.lastNoticeAt && input.now - input.lastNoticeAt.getTime() <= LATE_AFTER_MS)
+    return 'on_time';
   if (!input.everStarted && input.now - input.machineStartedAt <= LATE_AFTER_MS) return 'on_time';
   return 'late';
 }
@@ -71,11 +74,17 @@ export class MoneyCheckStatusService {
   constructor(private readonly prisma: PrismaService) {}
 
   /** Throws when the rows cannot be read; the route answers 503 then. */
-  async status(now: Date = new Date(), machineStartedAt: number = this.startedAt): Promise<MoneyCheckStatus> {
-    const last = await this.lastFinished();
+  async status(
+    now: Date = new Date(),
+    machineStartedAt: number = this.startedAt,
+  ): Promise<MoneyCheckStatus> {
+    const last = await this.lastFinished(now);
     const everStarted =
       last !== null ||
-      (await this.prisma.cronLease.findUnique({ where: { name: DAILY_JOB_NAME }, select: { name: true } })) !== null;
+      (await this.prisma.cronLease.findUnique({
+        where: { name: DAILY_JOB_NAME },
+        select: { name: true },
+      })) !== null;
     const status = moneyCheckState({
       enabled: reconciliationDailyEnabled(),
       lastNoticeAt: last?.at ?? null,
@@ -86,8 +95,8 @@ export class MoneyCheckStatusService {
     return { status, lastDay: last?.day ?? null };
   }
 
-  /** The newest day whose inbox row and queued push both exist, with the inbox row's time. */
-  private async lastFinished(): Promise<{ day: string; at: Date } | null> {
+  /** The newest day whose push was queued to the owner account, with the time it was queued. */
+  private async lastFinished(now: Date): Promise<{ day: string; at: Date } | null> {
     // The same owner account the daily check writes to (reconciliation-daily.cron.ts alertOwner).
     const owner = await this.prisma.user.findFirst({
       where: { role: 'owner', deleted_at: null, deletion_scheduled_at: null },
@@ -95,26 +104,17 @@ export class MoneyCheckStatusService {
       select: { id: true },
     });
     if (!owner) return null;
-    const rows = await this.prisma.notification.findMany({
-      where: {
-        user_id: owner.id,
-        kind: NotificationKind.COACH_ALERT,
-        payload: { path: ['type'], equals: 'money_check' },
-      },
+    const keys = Array.from(
+      { length: STATUS_DAYS },
+      (_, i) =>
+        MONEY_DAILY_PUSH_KEY + new Date(now.getTime() - i * DAY_MS).toISOString().slice(0, 10),
+    );
+    const row = await this.prisma.pushOutbox.findFirst({
+      where: { user_id: owner.id, dedupe_key: { in: keys } },
       orderBy: { created_at: 'desc' },
-      take: STATUS_SCAN,
-      select: { created_at: true, payload: true },
+      select: { dedupe_key: true, created_at: true },
     });
-    const days = rows.flatMap((r) => {
-      const day = (r.payload as { day?: unknown } | null)?.day;
-      return typeof day === 'string' && DAY.test(day) ? [{ day, at: r.created_at }] : [];
-    });
-    if (days.length === 0) return null;
-    const queued = await this.prisma.pushOutbox.findMany({
-      where: { user_id: owner.id, dedupe_key: { in: days.map((d) => MONEY_DAILY_PUSH_KEY + d.day) } },
-      select: { dedupe_key: true },
-    });
-    const keys = new Set(queued.map((q) => q.dedupe_key));
-    return days.find((d) => keys.has(MONEY_DAILY_PUSH_KEY + d.day)) ?? null;
+    if (!row?.dedupe_key) return null;
+    return { day: row.dedupe_key.slice(MONEY_DAILY_PUSH_KEY.length), at: row.created_at };
   }
 }
