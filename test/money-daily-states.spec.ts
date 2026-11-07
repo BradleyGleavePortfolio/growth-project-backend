@@ -7,12 +7,13 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { Logger } from '@nestjs/common';
 import {
+  INVOICE_PAGE_CAP,
   RECONCILED_PURCHASE_STATUSES,
   ReconciliationService,
   UNCHARGED_PURCHASE_STATUSES,
 } from '../src/connect/fees/reconciliation.service';
 import { AdminPaymentOpsController } from '../src/checkout/payment-ops.controller';
-import { ReconciliationDailyCron } from '../src/checkout/reconciliation-daily.cron';
+import { RUN_BUDGET_MS, ReconciliationDailyCron } from '../src/checkout/reconciliation-daily.cron';
 import { Table, asPrisma } from './utils/settlement-fakes';
 
 interface Case {
@@ -483,5 +484,229 @@ describe('FIX-1225R3 (c): every known charge is read before ok; the daily run, t
         unknown: r.expect === 'unknown' ? 1 : 0,
       },
     });
+  });
+});
+
+// FIX-1225R4 (d), LS-1225R4 B1: for a purchase on a Stripe subscription the
+// check also reads that subscription's paid invoices, every page, any payment
+// method. A paid charge we have no record of is "could not be confirmed yet";
+// a history not read in full (a failed read, the page cap, the run's time
+// budget) is unknown, and the daily run says "could not be checked". A trial
+// is never_charged only when the invoices show no money paid. The daily run,
+// the admin route and the admin sweeper agree.
+interface R4Invoice {
+  id: string;
+  status: string;
+  amount_paid: number;
+  charge: string | null;
+  payments?: { data: Array<{ status: string; payment: { payment_intent: string } }> };
+}
+interface InvoiceRow {
+  name: string;
+  status: string;
+  /** Our records: nothing; the first charge settled and matched; or that and a renewal on a second card. */
+  history: 'none' | 'settled' | 'settled_two';
+  /** Stripe's paid invoices, one array per page, newest first; 'unreadable' = the read fails; 'endless' = always more. */
+  invoices: R4Invoice[][] | 'unreadable' | 'endless';
+  expect: 'ok' | 'unknown' | 'not_checked';
+  notes: string | null;
+}
+
+const R4_FIRST = 'ch_r4_first';
+const R4_CARD2 = 'ch_r4_card2';
+const R4_LOST = 'ch_r4_lost';
+const paidInvoice = (id: string, charge: string | null, amount_paid = 4_900): R4Invoice => ({
+  id, status: 'paid', amount_paid, charge,
+});
+const TRIAL_INVOICE = paidInvoice('in_r4_trial', null, 0);
+
+function invoiceWorld(r: InvoiceRow, opts: { onInvoiceRead?: () => void; second?: boolean } = {}) {
+  const purchase = (id: string, sub: string | null) => ({
+    id, status: r.status, source: null, billing_type: 'recurring', amount_cents: 4_900,
+    stripe_payment_intent_id: null, stripe_subscription_id: sub, updated_at: new Date('2026-01-01T00:00:00Z'),
+  });
+  const charges = r.history === 'none' ? [] : r.history === 'settled' ? [R4_FIRST] : [R4_FIRST, R4_CARD2];
+  const settlements = charges.map((charge, i) => ({
+    id: `cs-r4-${i}`, purchase_id: 'p-r4', stripe_charge_id: charge, mechanism: 'separate_charge_transfer',
+    status: 'settled', coach_user_id: 'coach-r4', head_coach_user_id: null,
+    gross_cents: 4_900, stripe_fee_cents: 172, platform_fee_cents: 98, head_coach_split_cents: 0,
+    coach_net_cents: 4_630, refunded_cents: 0, dispute_withdrawn_cents: 0, dispute_fee_cents: 0,
+    target_platform_fee_cents: 98, target_head_coach_cents: 0, target_coach_net_cents: 4_630,
+    currency: 'usd', created_at: new Date(Date.UTC(2026, i, 1)),
+  }));
+  const ledger = charges.flatMap((charge, i) =>
+    ([['application_fee', 98], ['stripe_fee', 172], ['destination', 4_630]] as const).map(([kind, amount_cents]) => ({
+      purchase_id: 'p-r4', stripe_charge_id: charge, kind, amount_cents,
+      payee_user_id: kind === 'destination' ? 'coach-r4' : null,
+      reversed_cents: 0, status: 'posted', posted_at: new Date(Date.UTC(2026, i, 1)),
+    })),
+  );
+  const transfers = charges.map((charge, i) => ({
+    id: `tr-r4-${i}`, purchase_id: 'p-r4', settlement_id: `cs-r4-${i}`, destination_user_id: 'coach-r4',
+    source_stripe_charge_id: charge, amount_cents: 4_630, netted_recovery_cents: 0, reversed_amount_cents: 0,
+    status: 'succeeded',
+  }));
+  const purchases = [purchase('p-r4', 'sub-r4'), ...(opts.second ? [purchase('p-r4-next', null)] : [])];
+  const prisma = asPrisma({
+    clientPurchase: new Table(purchases, { prefix: 'purchase' }),
+    chargeSettlement: new Table(settlements, { prefix: 'settlement' }),
+    splitLedgerEntry: new Table(ledger, { prefix: 'ledger' }),
+    connectTransfer: new Table(transfers, { prefix: 'transfer' }),
+    payeeRecovery: new Table([], { prefix: 'recovery' }),
+    chargeDispute: new Table([], { prefix: 'dispute' }),
+    reconciliationSnapshot: new Table([], { prefix: 'snapshot', unique: ['purchase_id'] }),
+  });
+  let endless = 0;
+  const listInvoices = jest.fn(async (args: { subscription: string; status?: string; starting_after?: string | null }) => {
+    opts.onInvoiceRead?.();
+    if (r.invoices === 'unreadable') throw new Error('stripe unavailable');
+    if (r.invoices === 'endless') {
+      endless += 1;
+      return { data: [paidInvoice(`in_r4_e${endless}`, R4_FIRST)], has_more: true };
+    }
+    const pages = r.invoices;
+    const at = args.starting_after ? pages.findIndex((p) => p[p.length - 1]?.id === args.starting_after) + 1 : 0;
+    return { data: pages[at] ?? [], has_more: at < pages.length - 1 };
+  });
+  const stripe = {
+    // A renewal on a second payment method, named only by its payment intent.
+    retrievePaymentIntent: jest.fn(async (id: string) => ({ id, latest_charge: id === 'pi_r4_card2' ? R4_CARD2 : null })),
+    retrieveCharge: jest.fn(async (id: string) => {
+      if (!charges.includes(id)) throw new Error('charge read unavailable');
+      return {
+        id, amount: 4_900, amount_refunded: 0, application_fee_amount: 98,
+        balance_transaction: { id: `txn_${id}`, amount: 4_900, fee: 172, net: 4_728, currency: 'usd' },
+      };
+    }),
+    listInvoices,
+  };
+  const service = new ReconciliationService(prisma, stripe as any);
+  const admin = Object.create(AdminPaymentOpsController.prototype) as AdminPaymentOpsController;
+  Object.assign(admin, { reconciliation: service });
+  const notifications = {
+    createNotification: jest.fn(async (input: unknown) => input),
+    pushToUser: jest.fn(async () => ({ delivered: true })),
+  };
+  const cron = new ReconciliationDailyCron(
+    { tryAcquire: jest.fn(async () => ({ acquired: true })) } as any,
+    service,
+    notifications as any,
+    { user: { findFirst: jest.fn(async () => ({ id: 'owner-r4' })) } } as any,
+  );
+  const body = () => notifications.createNotification.mock.calls.map(([input]) => (input as { body: string }).body).join(' ');
+  return { admin, cron, listInvoices, body };
+}
+
+const INVOICE_ROWS: InvoiceRow[] = RECONCILED_PURCHASE_STATUSES.flatMap((status): InvoiceRow[] => [
+  { name: 'history matched, one page', status, history: 'settled',
+    invoices: [[paidInvoice('in_r4_1', R4_FIRST), TRIAL_INVOICE]], expect: 'ok', notes: null },
+  { name: 'history matched across two pages', status, history: 'settled',
+    invoices: [[paidInvoice('in_r4_1', R4_FIRST)], [TRIAL_INVOICE]], expect: 'ok', notes: null },
+  { name: 'Stripe-only renewal (its webhook was lost)', status, history: 'settled',
+    invoices: [[paidInvoice('in_r4_2', R4_LOST), paidInvoice('in_r4_1', R4_FIRST)]],
+    expect: 'unknown', notes: `charge_not_recorded charge=${R4_LOST} invoice=in_r4_2` },
+  { name: 'Stripe-only charge on the second page', status, history: 'settled',
+    invoices: [[paidInvoice('in_r4_2', R4_FIRST)], [paidInvoice('in_r4_1', R4_LOST)]],
+    expect: 'unknown', notes: `charge_not_recorded charge=${R4_LOST} invoice=in_r4_1` },
+  { name: 'renewal on a second card, recorded and settled', status, history: 'settled_two',
+    invoices: [[paidInvoice('in_r4_2', R4_CARD2), paidInvoice('in_r4_1', R4_FIRST)]], expect: 'ok', notes: null },
+  { name: 'renewal on a second payment method, named in the invoice payments, not recorded', status, history: 'settled',
+    invoices: [[
+      { ...paidInvoice('in_r4_2', null), payments: { data: [{ status: 'paid', payment: { payment_intent: 'pi_r4_card2' } }] } },
+      paidInvoice('in_r4_1', R4_FIRST),
+    ]],
+    expect: 'unknown', notes: `charge_not_recorded charge=${R4_CARD2} invoice=in_r4_2` },
+  { name: 'a paid invoice with no charge Stripe can name', status, history: 'settled',
+    invoices: [[paidInvoice('in_r4_2', null), paidInvoice('in_r4_1', R4_FIRST)]],
+    expect: 'unknown', notes: 'invoice_paid_no_charge invoice=in_r4_2' },
+  { name: 'invoice history unreadable', status, history: 'settled', invoices: 'unreadable',
+    expect: 'not_checked', notes: 'invoices_not_read reason=read_failed' },
+  { name: 'invoice history cut short by the page cap', status, history: 'settled', invoices: 'endless',
+    expect: 'not_checked', notes: 'invoices_not_read reason=page_cap' },
+  NEVER_CHARGED_STATES.has(status)
+    ? { name: 'nothing recorded, only the $0 trial invoice', status, history: 'none', invoices: [[TRIAL_INVOICE]],
+        expect: 'ok', notes: 'never_charged' }
+    : { name: 'nothing recorded, only the $0 trial invoice (a paid state)', status, history: 'none',
+        invoices: [[TRIAL_INVOICE]], expect: 'unknown', notes: 'no_charge_id_yet' },
+  { name: 'nothing recorded, a renewal Stripe charged', status, history: 'none',
+    invoices: [[paidInvoice('in_r4_2', R4_LOST), TRIAL_INVOICE]],
+    expect: 'unknown', notes: `charge_not_recorded charge=${R4_LOST} invoice=in_r4_2` },
+  { name: 'nothing recorded, invoice history unreadable', status, history: 'none', invoices: 'unreadable',
+    expect: 'not_checked', notes: 'invoices_not_read reason=read_failed' },
+]);
+
+describe('FIX-1225R4 (d): Stripe paid invoices are read for every subscription purchase; the three readers agree', () => {
+  beforeAll(() => {
+    for (const level of ['log', 'error', 'debug'] as const)
+      jest.spyOn(Logger.prototype, level).mockImplementation(() => undefined);
+  });
+  beforeEach(() => delete process.env.RECONCILIATION_DAILY_ENABLED);
+
+  it('covers every money-bearing state', () => {
+    expect(new Set(INVOICE_ROWS.map((r) => r.status))).toEqual(new Set(RECONCILED_PURCHASE_STATUSES));
+  });
+
+  it.each(INVOICE_ROWS)('$status: $name -> $expect', async (r) => {
+    // The per-purchase admin route: a history not read in full is unknown.
+    const one = await invoiceWorld(r).admin.getReconciliation('p-r4');
+    expect(one.status).toBe(r.expect === 'not_checked' ? 'unknown' : r.expect);
+    if (r.notes !== null) expect(one.notes ?? '').toContain(r.notes);
+    // The admin sweeper.
+    await expect(invoiceWorld(r).admin.runReconciliationSweeper('50')).resolves.toEqual({
+      scanned: 1, drifted: 0, unknown: r.expect === 'ok' ? 0 : 1,
+    });
+    // The daily run.
+    const daily = invoiceWorld(r);
+    await expect(
+      daily.cron.runOnce(new Date(Date.now() - 1_000), 'machine-r4', async () => undefined),
+    ).resolves.toMatchObject({
+      ran: true,
+      verdict: r.expect === 'ok' ? 'clean' : 'needs_review',
+      tally: {
+        checked: 1,
+        ok: r.expect === 'ok' ? 1 : 0,
+        unknown: r.expect === 'unknown' ? 1 : 0,
+        failed: r.expect === 'not_checked' ? 1 : 0,
+        stopped: null,
+      },
+    });
+    if (r.expect === 'ok') expect(daily.body()).toContain('Every one matches.');
+    else expect(daily.body()).not.toContain('Every one matches.');
+    if (r.expect === 'unknown') expect(daily.body()).toContain('1 could not be confirmed yet.');
+    if (r.expect === 'not_checked') expect(daily.body()).toContain('1 could not be checked.');
+    // Every page, never only the newest invoice or one limited list; the page cap ends endless paging.
+    const pages = r.invoices === 'endless' ? INVOICE_PAGE_CAP : r.invoices === 'unreadable' ? 1 : r.invoices.length;
+    expect(daily.listInvoices).toHaveBeenCalledTimes(pages);
+    for (const [args] of daily.listInvoices.mock.calls) {
+      expect(args).toMatchObject({ subscription: 'sub-r4', status: 'paid', limit: 100 });
+    }
+    if (Array.isArray(r.invoices) && r.invoices.length > 1) {
+      expect(daily.listInvoices.mock.calls[1][0].starting_after).toBe(r.invoices[0][r.invoices[0].length - 1].id);
+    }
+  });
+
+  const matched = INVOICE_ROWS.find((x) => x.status === 'active' && x.name === 'history matched across two pages')!;
+
+  it('the time budget, asked before each page of invoices, ends the run and says so (W7)', async () => {
+    let now = 0;
+    const w = invoiceWorld(matched, { onInvoiceRead: () => { now = RUN_BUDGET_MS; } });
+    const res = await w.cron.runOnce(new Date(Date.now() - 1_000), 'machine-r4', async () => undefined, () => now);
+    expect(res).toMatchObject({
+      ran: true, verdict: 'needs_review', tally: { checked: 1, ok: 0, failed: 1, stopped: 'time_limit' },
+    });
+    expect(w.listInvoices).toHaveBeenCalledTimes(1);
+    expect(w.body()).toContain('1 could not be checked.');
+    expect(w.body()).toContain('The check hit its time limit before it reached every purchase.');
+    expect(w.body()).not.toContain('Every one matches.');
+  });
+
+  it('the time budget, asked before each purchase, ends the run inside a batch and says so (W7)', async () => {
+    let now = 0;
+    const single = { ...matched, invoices: [[paidInvoice('in_r4_1', R4_FIRST)]] };
+    const w = invoiceWorld(single, { second: true, onInvoiceRead: () => { now = RUN_BUDGET_MS; } });
+    const res = await w.cron.runOnce(new Date(Date.now() - 1_000), 'machine-r4', async () => undefined, () => now);
+    expect(res).toMatchObject({ ran: true, verdict: 'needs_review', tally: { checked: 1, ok: 1, stopped: 'time_limit' } });
+    expect(w.body()).toContain('The check hit its time limit before it reached every purchase.');
+    expect(w.body()).not.toContain('Every one matches.');
   });
 });

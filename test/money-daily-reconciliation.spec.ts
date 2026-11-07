@@ -196,6 +196,7 @@ describe('ReconciliationService.runSweep (MONEY-DAILY additions)', () => {
         { purchase_id: 'c', status: 'unknown' },
         { purchase_id: 'd', status: 'failed' },
       ],
+      timedOut: false, // FIX-1225R4: no time budget was given
     });
   });
 
@@ -340,11 +341,13 @@ describe('ReconciliationDailyCron: every purchase, every day', () => {
     if (!r.ran) throw new Error('did not run');
     expect(r.batches).toBe(2);
     expect(r.tally.stopped).toBe('time_limit');
-    expect(r.tally.checked).toBe(100);
+    // FIX-1225R4: the budget is also asked inside a batch, before each
+    // purchase, so the batch that starts after it is gone checks none.
+    expect(r.tally.checked).toBe(50);
     const [, title, body] = notes.pushToUser.mock.calls[0] as unknown as any[];
     expect(title).toBe('Money check: needs review');
     expect(body).toBe(
-      'Checked 100 purchases against Stripe. The check hit its time limit before it reached every purchase.',
+      'Checked 50 purchases against Stripe. The check hit its time limit before it reached every purchase.',
     );
   });
 
