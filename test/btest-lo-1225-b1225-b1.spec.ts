@@ -58,6 +58,8 @@ function world() {
   const stripe = {
     retrievePaymentIntent: jest.fn(async (id: string) => ({ id, latest_charge: `ch_${id}` })),
     retrieveCharge: jest.fn(async (id: string) => ({ id, amount: 10_000, amount_refunded: 0, application_fee_amount: 200 })),
+    // FIX-1225R4: Stripe's paid invoices for sub_t: only the $0 trial invoice (it never charged).
+    listInvoices: jest.fn(async () => ({ data: [{ id: 'in_trial', status: 'paid', amount_paid: 0, charge: null }], has_more: false })),
   };
   return new ReconciliationService(prisma as any, stripe as any);
 }

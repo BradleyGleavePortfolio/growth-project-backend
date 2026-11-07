@@ -14,7 +14,9 @@
  *   - a batch that adds no new purchase id: every purchase left keeps
  *     failing (a check that throws writes no snapshot, so it would come back
  *     forever); the alert says the check stopped early;
- *   - the time budget (RUN_BUDGET_MS); the alert says the check stopped early.
+ *   - the time budget (RUN_BUDGET_MS), also asked inside a batch before each
+ *     purchase and each page of Stripe invoices (FIX-1225R4); the alert says
+ *     the check stopped early.
  * PACE_MS between batches keeps the Stripe reads (sequential, one purchase at
  * a time inside runSweep) far below Stripe's read limit.
  *
@@ -196,7 +198,12 @@ export class ReconciliationDailyCron {
       }
       let batch;
       try {
-        batch = await this.reconciliation.runSweep(BATCH, { staleBefore: runStart });
+        // FIX-1225R4: the budget is also asked inside the batch, before each
+        // purchase and each page of Stripe invoices (no endless paging).
+        batch = await this.reconciliation.runSweep(BATCH, {
+          staleBefore: runStart,
+          outOfTime: () => clock() >= deadline,
+        });
       } catch (err) {
         this.logger.error(
           `${DAILY_LOG_CODES.failed} alert=true a money-check batch failed; the alert reports what was checked: ${(err as Error)?.name ?? 'error'}`,
@@ -209,6 +216,10 @@ export class ReconciliationDailyCron {
       for (const o of batch.outcomes) {
         if (!seen.has(o.purchase_id)) added += 1;
         seen.set(o.purchase_id, o.status);
+      }
+      if (batch.timedOut) {
+        stopped = 'time_limit';
+        break;
       }
       if (batch.scanned < BATCH) break;
       if (added === 0) {

@@ -36,6 +36,15 @@ function world(intent: string | null, charged = false) {
       throw new Error('resource_missing: this is a SetupIntent, not a PaymentIntent');
     }),
     retrieveCharge: jest.fn(),
+    // FIX-1225R4: Stripe's paid invoices for the subscription: the $0 trial
+    // invoice, plus the renewal when it charged.
+    listInvoices: jest.fn(async () => ({
+      data: [
+        ...(charged ? [{ id: 'in_renewal', status: 'paid', amount_paid: 4900, charge: 'charged-renewal-example' }] : []),
+        { id: 'in_trial', status: 'paid', amount_paid: 0, charge: null },
+      ],
+      has_more: false,
+    })),
   };
   const service = new ReconciliationService(prisma, stripe as never);
   const notifications = {

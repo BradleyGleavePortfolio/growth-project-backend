@@ -174,20 +174,46 @@ const NO_STRIPE_READ: ReconciliationResult['stripe'] = {
   transfers_cents: null,
 };
 
-/** MONEY-DAILY: what one purchase's check came to; `failed` = the check threw and wrote no snapshot. */
+/**
+ * MONEY-DAILY: what one purchase's check came to; `failed` = the check threw
+ * and wrote no snapshot, or (FIX-1225R4) Stripe's paid invoices for its
+ * subscription could not be read in full: that snapshot is 'unknown' and
+ * counts in `unknown` below.
+ */
 export interface ReconciliationSweepOutcome {
   purchase_id: string;
   status: 'ok' | 'drift' | 'unknown' | 'failed';
 }
 
-/** One runSweep batch. The admin route returns only scanned / drifted / unknown. */
+/**
+ * One runSweep batch. The admin route returns only scanned / drifted / unknown.
+ * `failed` counts the checks that threw. FIX-1225R4: `timedOut` = the run's
+ * time ran out inside this batch; `scanned` = the purchases checked.
+ */
 export interface ReconciliationSweepResult {
   scanned: number;
   drifted: number;
   unknown: number;
   failed: number;
   outcomes: ReconciliationSweepOutcome[];
+  timedOut: boolean;
 }
+
+/**
+ * FIX-1225R4 (LS-1225R4 B1): every paid charge Stripe's invoices show for a
+ * subscription. `complete` = every page was read; otherwise `reason` says why
+ * not. `charges` maps a charge to its invoice; `unresolved` = paid invoices
+ * whose charge could not be found.
+ */
+interface InvoiceCensus {
+  complete: boolean;
+  reason: 'read_failed' | 'page_cap' | 'time_budget' | 'cut_short' | null;
+  charges: Map<string, string>;
+  unresolved: string[];
+}
+
+/** FIX-1225R4: at most this many pages of 100 paid invoices per subscription (no endless paging). */
+export const INVOICE_PAGE_CAP = 10;
 
 @Injectable()
 export class ReconciliationService {
@@ -207,14 +233,17 @@ export class ReconciliationService {
     if (!purchase) {
       throw new Error(`Reconcile: no purchase with id ${purchaseId}`);
     }
-    return this.reconcileFromRow(purchase);
+    return (await this.reconcileFromRow(purchase)).result;
   }
 
   // Bulk reconciler — re-checks N purchases (oldest snapshots first).
   // Used by the nightly sweeper.
+  // FIX-1225R4: `outOfTime` (the daily run's budget) is asked before each
+  // purchase and before each page of Stripe invoices; once it says yes the
+  // batch stops and says so (`timedOut`).
   async runSweep(
     limit = 50,
-    opts: { staleBefore?: Date } = {},
+    opts: { staleBefore?: Date; outOfTime?: () => boolean } = {},
   ): Promise<ReconciliationSweepResult> {
     // Reconcile purchases that have either no snapshot yet, or whose
     // snapshot is older than 24h, and which are in a money-moved state.
@@ -243,23 +272,109 @@ export class ReconciliationService {
     let drifted = 0;
     let unknown = 0;
     let failed = 0;
+    let timedOut = false;
     const outcomes: ReconciliationSweepOutcome[] = [];
     for (const row of purchases) {
+      if (opts.outOfTime?.()) {
+        timedOut = true;
+        break;
+      }
       try {
-        const result = await this.reconcileFromRow(row);
+        const { result, checked, cutByTime } = await this.reconcileFromRow(row, opts.outOfTime);
         if (result.status === 'drift') drifted += 1;
         else if (result.status === 'unknown') unknown += 1;
-        outcomes.push({ purchase_id: row.id, status: result.status });
+        // FIX-1225R4: an invoice history not read in full = "could not be checked".
+        outcomes.push({
+          purchase_id: row.id,
+          status: result.status === 'unknown' && !checked ? 'failed' : result.status,
+        });
+        if (cutByTime) {
+          timedOut = true;
+          break;
+        }
       } catch (err) {
         failed += 1;
         outcomes.push({ purchase_id: row.id, status: 'failed' });
         this.logger.warn(`reconcile failed purchase=${row.id}: ${(err as Error).message}`);
       }
     }
-    return { scanned: purchases.length, drifted, unknown, failed, outcomes };
+    return { scanned: outcomes.length, drifted, unknown, failed, outcomes, timedOut };
   }
 
-  private async reconcileFromRow(purchase: ClientPurchase): Promise<ReconciliationResult> {
+  /**
+   * FIX-1225R4 (LS-1225R4 B1): read-only census of a subscription's paid
+   * invoices, every page (`starting_after`), any payment method. A paid
+   * invoice's charge is its `charge`, else each paid entry of `payments`,
+   * else its payment intent's charge. A $0 invoice (a trial) moved no money.
+   * A failed read, the page cap or the run's time budget leaves it incomplete.
+   */
+  private async paidInvoiceCharges(
+    purchaseId: string,
+    subscriptionId: string,
+    outOfTime?: () => boolean,
+  ): Promise<InvoiceCensus> {
+    const census: InvoiceCensus = { complete: false, reason: null, charges: new Map(), unresolved: [] };
+    const idOf = (v: string | { id?: string } | null | undefined): string | null =>
+      typeof v === 'string' ? v : v?.id ?? null;
+    let after: string | null = null;
+    for (let page = 0; ; page += 1) {
+      if (page >= INVOICE_PAGE_CAP) return { ...census, reason: 'page_cap' };
+      if (outOfTime?.()) return { ...census, reason: 'time_budget' };
+      let list: Awaited<ReturnType<StripeConnectApiService['listInvoices']>>;
+      try {
+        list = await this.stripe.listInvoices({
+          subscription: subscriptionId,
+          status: 'paid',
+          limit: 100,
+          starting_after: after,
+        });
+      } catch (err) {
+        this.logger.warn(`invoice list failed purchase=${purchaseId}: ${settlementFailureCode(err)}`);
+        return { ...census, reason: 'read_failed' };
+      }
+      const data = Array.isArray(list?.data) ? list.data : null;
+      if (!data) return { ...census, reason: 'read_failed' };
+      for (const inv of data) {
+        if (inv.status && inv.status !== 'paid') continue;
+        if (typeof inv.amount_paid === 'number' && inv.amount_paid <= 0) continue;
+        const found: string[] = [];
+        const direct = idOf(inv.charge);
+        if (direct) found.push(direct);
+        else {
+          if (inv.payments?.has_more) return { ...census, reason: 'cut_short' };
+          const intents: string[] = [];
+          for (const p of inv.payments?.data ?? []) {
+            if (p.status && p.status !== 'paid') continue;
+            const charge = idOf(p.payment?.charge);
+            const intent = idOf(p.payment?.payment_intent);
+            if (charge) found.push(charge);
+            else if (intent) intents.push(intent);
+          }
+          const own = idOf(inv.payment_intent);
+          if (found.length === 0 && intents.length === 0 && own) intents.push(own);
+          for (const intent of intents) {
+            if (outOfTime?.()) return { ...census, reason: 'time_budget' };
+            const read = await this.intentCharge(intent);
+            if (!read.read) return { ...census, reason: 'read_failed' };
+            if (read.chargeId) found.push(read.chargeId);
+            else census.unresolved.push(inv.id);
+          }
+        }
+        if (found.length === 0 && !census.unresolved.includes(inv.id)) census.unresolved.push(inv.id);
+        for (const charge of found) census.charges.set(charge, inv.id);
+      }
+      if (!list.has_more) return { ...census, complete: true };
+      const last = data.length > 0 ? data[data.length - 1].id : null;
+      // Stripe said there is more but gave no new cursor: not read in full.
+      if (!last || last === after) return { ...census, reason: 'cut_short' };
+      after = last;
+    }
+  }
+
+  private async reconcileFromRow(
+    purchase: ClientPurchase,
+    outOfTime?: () => boolean,
+  ): Promise<{ result: ReconciliationResult; checked: boolean; cutByTime: boolean }> {
     const ledger = await this.prisma.splitLedgerEntry.findMany({
       where: { purchase_id: purchase.id },
     });
@@ -290,6 +405,17 @@ export class ReconciliationService {
       ? null
       : purchase.stripe_payment_intent_id;
     const ledgerSums = summarizeLedger(ledger);
+    // FIX-1225R4 (LS-1225R4 B1): our rows are not every charge. For a purchase
+    // on a Stripe subscription, Stripe's paid invoices are read too (a renewal
+    // whose webhook was lost is only there). Read-only; no write to Stripe.
+    const census = purchase.stripe_subscription_id
+      ? await this.paidInvoiceCharges(purchase.id, purchase.stripe_subscription_id, outOfTime)
+      : null;
+    const done = (result: ReconciliationResult) => ({
+      result,
+      checked: !census || census.complete,
+      cutByTime: census?.reason === 'time_budget',
+    });
 
     // LO-1225 B1: a purchase that never charged (a free trial canceled before
     // its first charge, or whose first charge failed) has nothing to match.
@@ -299,18 +425,23 @@ export class ReconciliationService {
     // ChargeSettlement row of any status (FIX-1225R2), and a status that does
     // not claim a payment. A paid or active purchase with nothing recorded
     // stays 'unknown'. Any evidence sends it through the full check below.
+    // FIX-1225R4: on a subscription, also only when Stripe's paid invoices,
+    // read in full, show no money paid; an unreadable history is not 'ok'.
     if (
       !intentId &&
       ledger.length === 0 &&
       transfers.length === 0 &&
       settlementRows.length === 0 &&
-      NEVER_CHARGED_OK_STATUSES.has(purchase.status)
+      NEVER_CHARGED_OK_STATUSES.has(purchase.status) &&
+      (!census || (census.complete && census.charges.size === 0 && census.unresolved.length === 0))
     ) {
-      return this.persistSnapshot(purchase.id, 'ok', 0, {
-        stripe: { amount_cents: null, refunded_cents: null, application_fee_cents: null, transfers_cents: null },
-        ledger: ledgerSums,
-        notes: 'never_charged',
-      });
+      return done(
+        await this.persistSnapshot(purchase.id, 'ok', 0, {
+          stripe: { amount_cents: null, refunded_cents: null, application_fee_cents: null, transfers_cents: null },
+          ledger: ledgerSums,
+          notes: 'never_charged',
+        }),
+      );
     }
 
     const verdict =
@@ -349,23 +480,39 @@ export class ReconciliationService {
       }
     }
     for (const [id, note] of unread) if (!verdict.accounted.has(id)) unchecked.push(note);
+    // FIX-1225R4 (LS-1225R4 B1): each paid charge on Stripe's invoices is one
+    // we have a record of (read above), or the purchase is not 'ok'; a history
+    // not read in full (a failed read, the page cap, the time budget) neither.
+    if (census) {
+      for (const [id, invoice] of census.charges) {
+        if (!unread.has(id) && !verdict.accounted.has(id)) {
+          unchecked.push(`charge_not_recorded charge=${id} invoice=${invoice}`);
+        }
+      }
+      for (const invoice of census.unresolved) unchecked.push(`invoice_paid_no_charge invoice=${invoice}`);
+      if (!census.complete) unchecked.push(`invoices_not_read reason=${census.reason}`);
+    }
 
     if (unchecked.length === 0 || verdict.status === 'drift') {
       const notes = [verdict.notes, ...unchecked].filter((n): n is string => !!n);
-      return this.persistSnapshot(purchase.id, verdict.status, verdict.drift_cents, {
-        stripe: verdict.stripe,
-        ledger: ledgerSums,
-        notes: notes.length > 0 ? notes.join('; ').slice(0, 2000) : null,
-      });
+      return done(
+        await this.persistSnapshot(purchase.id, verdict.status, verdict.drift_cents, {
+          stripe: verdict.stripe,
+          ledger: ledgerSums,
+          notes: notes.length > 0 ? notes.join('; ').slice(0, 2000) : null,
+        }),
+      );
     }
     // The unread charge is the reason; "no charge id" says nothing more.
     const notes = [...unchecked];
     if (verdict.notes && verdict.notes !== 'no_charge_id_yet') notes.push(verdict.notes);
-    return this.persistSnapshot(purchase.id, 'unknown', null, {
-      stripe: verdict.stripe,
-      ledger: ledgerSums,
-      notes: notes.join('; ').slice(0, 2000),
-    });
+    return done(
+      await this.persistSnapshot(purchase.id, 'unknown', null, {
+        stripe: verdict.stripe,
+        ledger: ledgerSums,
+        notes: notes.join('; ').slice(0, 2000),
+      }),
+    );
   }
 
   // A purchase with no settled settlement: one charge (the payment intent's,
