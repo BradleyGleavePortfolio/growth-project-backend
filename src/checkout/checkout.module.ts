@@ -36,6 +36,8 @@ import { RefundTransferReversalScheduler } from './refund-transfer-reversal.sche
 import { CronLeaseService } from './cron-lease.service';
 import { SettlementSweepCron } from './settlement-sweep.cron';
 import { ReconciliationDailyCron } from './reconciliation-daily.cron';
+import { MoneyCheckStatusController } from './money-check-status.controller';
+import { MoneyCheckStatusService } from './money-check-status.service';
 import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
 import { PayoutNoticeService } from './payout-notice.service';
 import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
@@ -104,6 +106,8 @@ import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
     CoachSaleRefundController,
     // C5RECEIPTS — the client's own receipts (GET /v1/checkout/receipts[/:id]).
     ClientReceiptsController,
+    // MONEY-ALARM-BE — the daily money check's own status (GET /api/money-check/status).
+    MoneyCheckStatusController,
   ],
   providers: [
     CheckoutService,
@@ -123,6 +127,7 @@ import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
     SettlementSweepCron,
     // MONEY-DAILY: the daily money check (reconciliation-daily lease).
     ReconciliationDailyCron,
+    MoneyCheckStatusService,
     // S-FEE round 5 (OR-111-1) — payout notice delivery + Money read side.
     PayoutNoticeService,
     CoachClientPaymentsService,
