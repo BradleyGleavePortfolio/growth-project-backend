@@ -70,7 +70,8 @@
     "GOOGLE_MEET_ENABLED": "unset",
     "ZOOM_ENABLED": "false",
     "FEATURE_SCOUT_INGEST": "unset",
-    "FEATURE_EXTENSION_PAIRING": "unset"
+    "FEATURE_EXTENSION_PAIRING": "unset",
+    "RECONCILIATION_DAILY_ENABLED": "true"
   },
   "secrets": {
     "GOOGLE_CLIENT_IDS": "github-secret",
@@ -200,7 +201,8 @@
     "GOOGLE_MEET_ENABLED": "Optional integration, not a launch dependency (owner 2026-10-01; ledger: stay off). Fly held 'true' (digest read, agent 123 10-06). Unset = stub adapter (only 'true' enables); unset removes the stale name.",
     "ZOOM_ENABLED": "Owner ruling 2026-10-16 (open decision 5): off for v1. Turn on only after the real Zoom adapter ships and the owner says to enable it.",
     "FEATURE_SCOUT_INGEST": "Importer (Bucket B) is paused for launch (ledger: stay off). Fly held 'true' (digest read, agent 123 10-06), set earlier by fly-feature-flags-set.yml; it failed closed only because FEATURE_SCOUT_PILOT_COACH_IDS is absent. Now owned by this manifest. Unset = /api/scout routes 404 (only 'true').",
-    "FEATURE_EXTENSION_PAIRING": "Importer (Bucket B) is paused for launch (ledger: stay off). Fly held 'true' (digest read, agent 123 10-06), set earlier by fly-feature-flags-set.yml. Now owned by this manifest. Unset = /api/extension/pair 404 (only 'true')."
+    "FEATURE_EXTENSION_PAIRING": "Importer (Bucket B) is paused for launch (ledger: stay off). Fly held 'true' (digest read, agent 123 10-06), set earlier by fly-feature-flags-set.yml. Now owned by this manifest. Unset = /api/extension/pair 404 (only 'true').",
+    "RECONCILIATION_DAILY_ENABLED": "MONEY-DAILY (owner, agent 199): the daily money check (ReconciliationDailyCron, 11:00 UTC) ships on and stays a working kill switch. Unset = on; only 'false' turns the daily run off (the admin run-sweeper button still works). Emergency kill: set 'false'; never unset to kill."
   },
   "excluded": {
     "FEATURE_COMMUNITY_API_ALLOWLIST": "A list of user ids, not a closed-choice switch; not needed at launch because FEATURE_COMMUNITY_API opens community for everyone.",

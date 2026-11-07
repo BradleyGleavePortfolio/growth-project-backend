@@ -61,6 +61,7 @@ import {
 } from './guest-outcome-mail';
 import { packageTrialDays } from '../checkout/subscription-plan';
 import { attachTrialCard } from '../checkout/trial-card';
+import { isGuestTrialIntent } from './guest-trial-intent';
 import { TrialUsageService } from '../packages/trials/trial-usage.service';
 import { CoachFirstPaymentService } from '../notifications/coach-first-payment.service';
 
@@ -137,12 +138,10 @@ const SUPABASE_LIST_USERS_TIMEOUT_MS = 8_000;
 const CANONICAL_RECURRING_BILLING_TYPE = 'recurring';
 
 // GC-3 (#GC-TRIAL op 1) — a web trial's sentinel row keeps the trial's
-// SetupIntent id in stripe_payment_intent_id (no column added): the card is
-// saved and nothing is charged that day, so there is no PaymentIntent. Every
-// guest path that reads that column tells the two apart by this prefix.
-export function isGuestTrialIntent(id: string | null | undefined): boolean {
-  return typeof id === 'string' && id.startsWith('seti_');
-}
+// SetupIntent id in stripe_payment_intent_id; isGuestTrialIntent tells the
+// two apart by its prefix (moved to ./guest-trial-intent, FIX-1225R3, so the
+// money check shares it; re-exported here for every existing importer).
+export { isGuestTrialIntent };
 
 // GC-3 — the buyer-facing words of a refused web trial live with the return
 // page, which shows them too (FR-1193); re-exported for the email below.

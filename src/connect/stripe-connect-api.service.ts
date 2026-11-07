@@ -786,15 +786,29 @@ export class StripeConnectApiService {
   // the settlement backstop to find every charge of a recurring purchase
   // (first invoice + renewals). `charge` is the invoice's charge id on API
   // version 2024-09-30.acacia.
+  // FIX-1225R4: the money check pages through every paid invoice
+  // (`starting_after`); a later API version names the charge in `payments`.
   async listInvoices(args: {
     subscription: string;
     status?: 'paid' | 'open' | 'void' | 'uncollectible' | 'draft';
     limit?: number;
+    starting_after?: string | null;
   }): Promise<{
     data: Array<{
       id: string;
       amount_paid?: number;
       charge?: string | { id?: string } | null;
+      payment_intent?: string | { id?: string } | null;
+      payments?: {
+        data?: Array<{
+          status?: string;
+          payment?: {
+            charge?: string | { id?: string } | null;
+            payment_intent?: string | { id?: string } | null;
+          } | null;
+        }>;
+        has_more?: boolean;
+      } | null;
       status?: string;
       [k: string]: unknown;
     }>;
@@ -803,6 +817,7 @@ export class StripeConnectApiService {
     const params = new URLSearchParams({ subscription: args.subscription });
     if (args.status) params.set('status', args.status);
     params.set('limit', String(Math.min(Math.max(args.limit ?? 12, 1), 100)));
+    if (args.starting_after) params.set('starting_after', args.starting_after);
     return this.get(`/invoices?${params.toString()}`);
   }
 

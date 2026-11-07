@@ -15,6 +15,7 @@ import {
   payeePositionCents,
   settlementFailureCode,
 } from './charge-settlement.service';
+import { isGuestTrialIntent } from '../../storefront/guest-trial-intent';
 
 // S-FEE — per-charge identity for a separate-charge-and-transfer settlement.
 // Every check is integer cents; drift is the sum of absolute mismatches.
@@ -151,6 +152,69 @@ export interface ReconciliationResult {
   notes: string | null;
 }
 
+type LedgerSums = ReconciliationResult['ledger'];
+
+/**
+ * FIX-1225R3: what one way of reading a purchase came to, before the
+ * known-charge check. `accounted` = the charges it read and compared, or
+ * found unreadable (its status already says so).
+ */
+interface ChargeVerdict {
+  status: 'ok' | 'drift' | 'unknown';
+  drift_cents: number | null;
+  stripe: ReconciliationResult['stripe'];
+  notes: string | null;
+  accounted: Set<string>;
+}
+
+const NO_STRIPE_READ: ReconciliationResult['stripe'] = {
+  amount_cents: null,
+  refunded_cents: null,
+  application_fee_cents: null,
+  transfers_cents: null,
+};
+
+/**
+ * MONEY-DAILY: what one purchase's check came to; `failed` = the check threw
+ * and wrote no snapshot, or (FIX-1225R4) Stripe's paid invoices for its
+ * subscription could not be read in full: that snapshot is 'unknown' and
+ * counts in `unknown` below.
+ */
+export interface ReconciliationSweepOutcome {
+  purchase_id: string;
+  status: 'ok' | 'drift' | 'unknown' | 'failed';
+}
+
+/**
+ * One runSweep batch. The admin route returns only scanned / drifted / unknown.
+ * `failed` counts the checks that threw. FIX-1225R4: `timedOut` = the run's
+ * time ran out inside this batch; `scanned` = the purchases checked.
+ */
+export interface ReconciliationSweepResult {
+  scanned: number;
+  drifted: number;
+  unknown: number;
+  failed: number;
+  outcomes: ReconciliationSweepOutcome[];
+  timedOut: boolean;
+}
+
+/**
+ * FIX-1225R4 (LS-1225R4 B1): every paid charge Stripe's invoices show for a
+ * subscription. `complete` = every page was read; otherwise `reason` says why
+ * not. `charges` maps a charge to its invoice; `unresolved` = paid invoices
+ * whose charge could not be found.
+ */
+interface InvoiceCensus {
+  complete: boolean;
+  reason: 'read_failed' | 'page_cap' | 'time_budget' | 'cut_short' | null;
+  charges: Map<string, string>;
+  unresolved: string[];
+}
+
+/** FIX-1225R4: at most this many pages of 100 paid invoices per subscription (no endless paging). */
+export const INVOICE_PAGE_CAP = 10;
+
 @Injectable()
 export class ReconciliationService {
   private readonly logger = new Logger(ReconciliationService.name);
@@ -169,17 +233,27 @@ export class ReconciliationService {
     if (!purchase) {
       throw new Error(`Reconcile: no purchase with id ${purchaseId}`);
     }
-    return this.reconcileFromRow(purchase);
+    return (await this.reconcileFromRow(purchase)).result;
   }
 
   // Bulk reconciler — re-checks N purchases (oldest snapshots first).
   // Used by the nightly sweeper.
-  async runSweep(limit = 50): Promise<{ scanned: number; drifted: number; unknown: number }> {
+  // FIX-1225R4: `outOfTime` (the daily run's budget) is asked before each
+  // purchase and before each page of Stripe invoices; once it says yes the
+  // batch stops and says so (`timedOut`).
+  async runSweep(
+    limit = 50,
+    opts: { staleBefore?: Date; outOfTime?: () => boolean } = {},
+  ): Promise<ReconciliationSweepResult> {
     // Reconcile purchases that have either no snapshot yet, or whose
     // snapshot is older than 24h, and which are in a money-moved state.
+    // MONEY-DAILY: the daily check passes staleBefore = its own start time,
+    // so one run reaches every purchase once (a snapshot written during the
+    // run is newer than that time and drops out of the next batch).
+    const staleBefore = opts.staleBefore ?? new Date(Date.now() - 24 * 60 * 60 * 1000);
     const purchases = await this.prisma.clientPurchase.findMany({
       where: {
-        status: { in: ['paid', 'active', 'past_due', 'canceled'] },
+        status: { in: [...RECONCILED_PURCHASE_STATUSES] },
         // C01 — $0 grants have no Stripe charge; they are not reconcilable
         // and must not consume the sweep budget.
         source: null,
@@ -187,7 +261,7 @@ export class ReconciliationService {
           { reconciliation: null },
           {
             reconciliation: {
-              last_checked_at: { lt: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+              last_checked_at: { lt: staleBefore },
             },
           },
         ],
@@ -197,19 +271,110 @@ export class ReconciliationService {
     });
     let drifted = 0;
     let unknown = 0;
+    let failed = 0;
+    let timedOut = false;
+    const outcomes: ReconciliationSweepOutcome[] = [];
     for (const row of purchases) {
+      if (opts.outOfTime?.()) {
+        timedOut = true;
+        break;
+      }
       try {
-        const result = await this.reconcileFromRow(row);
+        const { result, checked, cutByTime } = await this.reconcileFromRow(row, opts.outOfTime);
         if (result.status === 'drift') drifted += 1;
         else if (result.status === 'unknown') unknown += 1;
+        // FIX-1225R4: an invoice history not read in full = "could not be checked".
+        outcomes.push({
+          purchase_id: row.id,
+          status: result.status === 'unknown' && !checked ? 'failed' : result.status,
+        });
+        if (cutByTime) {
+          timedOut = true;
+          break;
+        }
       } catch (err) {
+        failed += 1;
+        outcomes.push({ purchase_id: row.id, status: 'failed' });
         this.logger.warn(`reconcile failed purchase=${row.id}: ${(err as Error).message}`);
       }
     }
-    return { scanned: purchases.length, drifted, unknown };
+    return { scanned: outcomes.length, drifted, unknown, failed, outcomes, timedOut };
   }
 
-  private async reconcileFromRow(purchase: ClientPurchase): Promise<ReconciliationResult> {
+  /**
+   * FIX-1225R4 (LS-1225R4 B1): read-only census of a subscription's paid
+   * invoices, every page (`starting_after`), any payment method. A paid
+   * invoice's charge is its `charge`, else each paid entry of `payments`,
+   * else its payment intent's charge. A $0 invoice (a trial) moved no money.
+   * A failed read, the page cap or the run's time budget leaves it incomplete.
+   */
+  private async paidInvoiceCharges(
+    purchaseId: string,
+    subscriptionId: string,
+    outOfTime?: () => boolean,
+  ): Promise<InvoiceCensus> {
+    const census: InvoiceCensus = { complete: false, reason: null, charges: new Map(), unresolved: [] };
+    const idOf = (v: string | { id?: string } | null | undefined): string | null =>
+      typeof v === 'string' ? v : v?.id ?? null;
+    let after: string | null = null;
+    for (let page = 0; ; page += 1) {
+      if (page >= INVOICE_PAGE_CAP) return { ...census, reason: 'page_cap' };
+      if (outOfTime?.()) return { ...census, reason: 'time_budget' };
+      let list: Awaited<ReturnType<StripeConnectApiService['listInvoices']>>;
+      try {
+        list = await this.stripe.listInvoices({
+          subscription: subscriptionId,
+          status: 'paid',
+          limit: 100,
+          starting_after: after,
+        });
+      } catch (err) {
+        this.logger.warn(`invoice list failed purchase=${purchaseId}: ${settlementFailureCode(err)}`);
+        return { ...census, reason: 'read_failed' };
+      }
+      const data = Array.isArray(list?.data) ? list.data : null;
+      if (!data) return { ...census, reason: 'read_failed' };
+      for (const inv of data) {
+        if (inv.status && inv.status !== 'paid') continue;
+        if (typeof inv.amount_paid === 'number' && inv.amount_paid <= 0) continue;
+        const found: string[] = [];
+        const direct = idOf(inv.charge);
+        if (direct) found.push(direct);
+        else {
+          if (inv.payments?.has_more) return { ...census, reason: 'cut_short' };
+          const intents: string[] = [];
+          for (const p of inv.payments?.data ?? []) {
+            if (p.status && p.status !== 'paid') continue;
+            const charge = idOf(p.payment?.charge);
+            const intent = idOf(p.payment?.payment_intent);
+            if (charge) found.push(charge);
+            else if (intent) intents.push(intent);
+          }
+          const own = idOf(inv.payment_intent);
+          if (found.length === 0 && intents.length === 0 && own) intents.push(own);
+          for (const intent of intents) {
+            if (outOfTime?.()) return { ...census, reason: 'time_budget' };
+            const read = await this.intentCharge(intent);
+            if (!read.read) return { ...census, reason: 'read_failed' };
+            if (read.chargeId) found.push(read.chargeId);
+            else census.unresolved.push(inv.id);
+          }
+        }
+        if (found.length === 0 && !census.unresolved.includes(inv.id)) census.unresolved.push(inv.id);
+        for (const charge of found) census.charges.set(charge, inv.id);
+      }
+      if (!list.has_more) return { ...census, complete: true };
+      const last = data.length > 0 ? data[data.length - 1].id : null;
+      // Stripe said there is more but gave no new cursor: not read in full.
+      if (!last || last === after) return { ...census, reason: 'cut_short' };
+      after = last;
+    }
+  }
+
+  private async reconcileFromRow(
+    purchase: ClientPurchase,
+    outOfTime?: () => boolean,
+  ): Promise<{ result: ReconciliationResult; checked: boolean; cutByTime: boolean }> {
     const ledger = await this.prisma.splitLedgerEntry.findMany({
       where: { purchase_id: purchase.id },
     });
@@ -223,38 +388,158 @@ export class ReconciliationService {
       orderBy: { created_at: 'desc' },
       // Every settled charge, not only the newest twelve (Opus C-683-3, round 11).
     });
-    if (settlements.length > 0) {
-      return this.reconcileSettlements(purchase, settlements, ledger, transfers);
+    // FIX-1225R3 (LS-1225R3 B1): every ChargeSettlement row of any status or
+    // mechanism is a charge we were told about (a renewal's row stays
+    // awaiting_fee while Stripe or the payout setup is not ready). Each one
+    // must be read below, or the purchase is not 'ok'.
+    const settlementRows = await this.prisma.chargeSettlement.findMany({
+      where: { purchase_id: purchase.id },
+      select: { stripe_charge_id: true, status: true, mechanism: true },
+      orderBy: { created_at: 'desc' },
+    });
+    // FIX-1225R3 (LS-1225R3 C1 = LO-1225R3 B1): a web trial keeps its
+    // SetupIntent id in stripe_payment_intent_id (isGuestTrialIntent,
+    // storefront/guest-trial-intent.ts). A SetupIntent is not a payment intent and names no
+    // charge, so it is read as no payment intent here and below.
+    const intentId = isGuestTrialIntent(purchase.stripe_payment_intent_id)
+      ? null
+      : purchase.stripe_payment_intent_id;
+    const ledgerSums = summarizeLedger(ledger);
+    // FIX-1225R4 (LS-1225R4 B1): our rows are not every charge. For a purchase
+    // on a Stripe subscription, Stripe's paid invoices are read too (a renewal
+    // whose webhook was lost is only there). Read-only; no write to Stripe.
+    const census = purchase.stripe_subscription_id
+      ? await this.paidInvoiceCharges(purchase.id, purchase.stripe_subscription_id, outOfTime)
+      : null;
+    const done = (result: ReconciliationResult) => ({
+      result,
+      checked: !census || census.complete,
+      cutByTime: census?.reason === 'time_budget',
+    });
+
+    // LO-1225 B1: a purchase that never charged (a free trial canceled before
+    // its first charge, or whose first charge failed) has nothing to match.
+    // It is 'ok' (never_charged), not "could not be confirmed yet" every day
+    // forever, only when there is no evidence of a charge of any kind: no
+    // payment intent (a SetupIntent is none), no ledger row, no transfer, no
+    // ChargeSettlement row of any status (FIX-1225R2), and a status that does
+    // not claim a payment. A paid or active purchase with nothing recorded
+    // stays 'unknown'. Any evidence sends it through the full check below.
+    // FIX-1225R4: on a subscription, also only when Stripe's paid invoices,
+    // read in full, show no money paid; an unreadable history is not 'ok'.
+    if (
+      !intentId &&
+      ledger.length === 0 &&
+      transfers.length === 0 &&
+      settlementRows.length === 0 &&
+      NEVER_CHARGED_OK_STATUSES.has(purchase.status) &&
+      (!census || (census.complete && census.charges.size === 0 && census.unresolved.length === 0))
+    ) {
+      return done(
+        await this.persistSnapshot(purchase.id, 'ok', 0, {
+          stripe: { amount_cents: null, refunded_cents: null, application_fee_cents: null, transfers_cents: null },
+          ledger: ledgerSums,
+          notes: 'never_charged',
+        }),
+      );
     }
 
-    const ledgerSums = summarizeLedger(ledger);
+    const verdict =
+      settlements.length > 0
+        ? await this.reconcileSettlements(purchase, settlements, ledger, transfers)
+        : await this.reconcileSingleCharge(purchase, intentId, ledger, transfers, ledgerSums);
 
+    // FIX-1225R3 (LS-1225R3 B1): before any 'ok', every known charge on the
+    // purchase is accounted for: each ChargeSettlement row of any status, the
+    // payment intent's charge, every ledger slice's and transfer's charge. A
+    // charge the verdict above did not read and compare (an older matched
+    // charge never speaks for a newer one) leaves the purchase 'unknown'
+    // ("could not be confirmed yet"); a drift already found stays 'drift'.
+    const unread = new Map<string, string>();
+    for (const s of settlementRows) {
+      unread.set(
+        s.stripe_charge_id,
+        s.mechanism === SETTLEMENT_MECHANISM_SCT && s.status !== 'settled'
+          ? `settlement_not_settled charge=${s.stripe_charge_id} status=${s.status}`
+          : `charge_not_checked charge=${s.stripe_charge_id} status=${s.status}`,
+      );
+    }
+    for (const id of [
+      ...ledger.map((e) => e.stripe_charge_id),
+      ...transfers.map((t) => t.source_stripe_charge_id),
+    ]) {
+      if (id && !unread.has(id)) unread.set(id, `charge_not_checked charge=${id}`);
+    }
+    const unchecked: string[] = [];
+    if (intentId && settlements.length > 0) {
+      // The settled path reads settlements, not the payment intent: read it.
+      const intent = await this.intentCharge(intentId);
+      if (!intent.read) unchecked.push(`charge_not_checked payment_intent=${intentId}`);
+      else if (intent.chargeId && !unread.has(intent.chargeId)) {
+        unread.set(intent.chargeId, `charge_not_checked charge=${intent.chargeId}`);
+      }
+    }
+    for (const [id, note] of unread) if (!verdict.accounted.has(id)) unchecked.push(note);
+    // FIX-1225R4 (LS-1225R4 B1): each paid charge on Stripe's invoices is one
+    // we have a record of (read above), or the purchase is not 'ok'; a history
+    // not read in full (a failed read, the page cap, the time budget) neither.
+    if (census) {
+      for (const [id, invoice] of census.charges) {
+        if (!unread.has(id) && !verdict.accounted.has(id)) {
+          unchecked.push(`charge_not_recorded charge=${id} invoice=${invoice}`);
+        }
+      }
+      for (const invoice of census.unresolved) unchecked.push(`invoice_paid_no_charge invoice=${invoice}`);
+      if (!census.complete) unchecked.push(`invoices_not_read reason=${census.reason}`);
+    }
+
+    if (unchecked.length === 0 || verdict.status === 'drift') {
+      const notes = [verdict.notes, ...unchecked].filter((n): n is string => !!n);
+      return done(
+        await this.persistSnapshot(purchase.id, verdict.status, verdict.drift_cents, {
+          stripe: verdict.stripe,
+          ledger: ledgerSums,
+          notes: notes.length > 0 ? notes.join('; ').slice(0, 2000) : null,
+        }),
+      );
+    }
+    // The unread charge is the reason; "no charge id" says nothing more.
+    const notes = [...unchecked];
+    if (verdict.notes && verdict.notes !== 'no_charge_id_yet') notes.push(verdict.notes);
+    return done(
+      await this.persistSnapshot(purchase.id, 'unknown', null, {
+        stripe: verdict.stripe,
+        ledger: ledgerSums,
+        notes: notes.join('; ').slice(0, 2000),
+      }),
+    );
+  }
+
+  // A purchase with no settled settlement: one charge (the payment intent's,
+  // else the newest destination slice's) against the whole ledger.
+  private async reconcileSingleCharge(
+    purchase: ClientPurchase,
+    intentId: string | null,
+    ledger: SplitLedgerEntry[],
+    transfers: ConnectTransfer[],
+    ledgerSums: LedgerSums,
+  ): Promise<ChargeVerdict> {
     // Stripe side: we need the Charge id. The shortest path is
     // PI -> latest_charge -> Charge. For recurring purchases each renewal
     // has its own Charge — we reconcile only the most recent one
     // (renewals append SplitLedgerEntry rows in the same composite-unique
     // slot for `application_fee` + `destination`, so the most recent
     // Stripe charge is the right comparison).
-    const chargeId = await this.resolveChargeId(purchase);
+    const chargeId = await this.resolveChargeId(intentId, ledger);
     let stripeAmount: number | null = null;
     let stripeRefunded: number | null = null;
     let stripeAppFee: number | null = null;
     let stripeTransfersCents = 0;
-    let notes: string | null = null;
 
     if (!chargeId) {
-      notes = 'no_charge_id_yet';
-      return this.persistSnapshot(purchase.id, 'unknown', null, {
-        stripe: {
-          amount_cents: null,
-          refunded_cents: null,
-          application_fee_cents: null,
-          transfers_cents: null,
-        },
-        ledger: ledgerSums,
-        notes,
-      });
+      return { status: 'unknown', drift_cents: null, stripe: { ...NO_STRIPE_READ }, notes: 'no_charge_id_yet', accounted: new Set() };
     }
+    const accounted = new Set([chargeId]);
 
     try {
       const charge = await this.stripe.retrieveCharge(chargeId);
@@ -276,17 +561,13 @@ export class ReconciliationService {
       this.logger.warn(
         `Stripe charge retrieve failed for purchase=${purchase.id} charge=${chargeId}: ${msg}`,
       );
-      notes = `stripe_retrieve_failed: ${msg}`;
-      return this.persistSnapshot(purchase.id, 'unknown', null, {
-        stripe: {
-          amount_cents: null,
-          refunded_cents: null,
-          application_fee_cents: null,
-          transfers_cents: null,
-        },
-        ledger: ledgerSums,
-        notes,
-      });
+      return {
+        status: 'unknown',
+        drift_cents: null,
+        stripe: { ...NO_STRIPE_READ },
+        notes: `stripe_retrieve_failed: ${msg}`,
+        accounted,
+      };
     }
 
     // Compute drift. Identity we want:
@@ -296,26 +577,46 @@ export class ReconciliationService {
     //
     // (left side = real money that left the platform Charge net of refunds;
     //  right side = what our ledger says we accounted for, net of reversals.)
-    const stripeNet = (stripeAmount ?? 0) - (stripeRefunded ?? 0);
+    let stripeNet = (stripeAmount ?? 0) - (stripeRefunded ?? 0);
     const ledgerNet =
       ledgerSums.destination_cents +
       ledgerSums.application_fee_cents +
       ledgerSums.head_coach_cents -
       ledgerSums.reversed_cents;
+    // LS-1225 B2: a lost dispute takes money back through Stripe's dispute,
+    // not a refund (amount_refunded stays 0), and the dispute handler reverses
+    // the ledger by the dispute amount. Count Stripe's lost-dispute amount (the
+    // ChargeDispute rows the dispute webhook wrote) for this charge on the
+    // Stripe side: a lost chargeback reads 'ok' only when the ledger reversal
+    // matches it, and 'drift' when the ledger was never reversed. Read for a
+    // chargeback_lost purchase, or when the ledger shows a reversal the
+    // refunds do not explain (a purchase restarted after a lost dispute).
+    if (
+      purchase.status === 'chargeback_lost' ||
+      (stripeNet !== ledgerNet && ledgerSums.reversed_cents > 0)
+    ) {
+      const lost = await this.prisma.chargeDispute.findMany({
+        where: { purchase_id: purchase.id, stripe_charge_id: chargeId, status: 'lost' },
+        select: { amount_cents: true },
+      });
+      stripeNet -= lost.reduce((sum, d) => sum + d.amount_cents, 0);
+    }
     const drift = stripeNet - ledgerNet;
 
     const status: 'ok' | 'drift' = drift === 0 ? 'ok' : 'drift';
 
-    return this.persistSnapshot(purchase.id, status, drift, {
+    return {
+      status,
+      drift_cents: drift,
       stripe: {
         amount_cents: stripeAmount,
         refunded_cents: stripeRefunded,
         application_fee_cents: stripeAppFee,
         transfers_cents: stripeTransfersCents,
       },
-      ledger: ledgerSums,
       notes: status === 'drift' ? this.describeDrift(drift) : null,
-    });
+      accounted,
+    };
   }
 
   private async reconcileSettlements(
@@ -323,8 +624,7 @@ export class ReconciliationService {
     settlements: ChargeSettlement[],
     ledger: SplitLedgerEntry[],
     transfers: ConnectTransfer[],
-  ): Promise<ReconciliationResult> {
-    const ledgerSums = summarizeLedger(ledger);
+  ): Promise<ChargeVerdict> {
     const recoveries = await this.prisma.payeeRecovery.findMany({
       where: { settlement_id: { in: settlements.map((s) => s.id) } },
     });
@@ -336,7 +636,12 @@ export class ReconciliationService {
     let receivableOpen = 0;
     let pending = 0;
     const notes: string[] = [];
+    // FIX-1225R3: a failed read no longer stops the loop, so a drift already
+    // found on another charge is reported as drift, not hidden behind unknown.
+    const failures: string[] = [];
+    const accounted = new Set<string>();
     for (const s of settlements) {
+      accounted.add(s.stripe_charge_id);
       let charge;
       let stripeRefunded: number;
       try {
@@ -353,17 +658,8 @@ export class ReconciliationService {
           stripeRefunded = list.succeeded_debit_cents;
         }
       } catch (err) {
-        const msg = settlementFailureCode(err);
-        return this.persistSnapshot(purchase.id, 'unknown', null, {
-          stripe: {
-            amount_cents: null,
-            refunded_cents: null,
-            application_fee_cents: null,
-            transfers_cents: null,
-          },
-          ledger: ledgerSums,
-          notes: `stripe_retrieve_failed charge=${s.stripe_charge_id}: ${msg}`,
-        });
+        failures.push(`stripe_retrieve_failed charge=${s.stripe_charge_id}: ${settlementFailureCode(err)}`);
+        continue;
       }
       const bt =
         charge.balance_transaction && typeof charge.balance_transaction === 'object'
@@ -396,6 +692,16 @@ export class ReconciliationService {
         }
       }
     }
+    if (failures.length > 0 && drift === 0) {
+      return {
+        status: 'unknown',
+        drift_cents: null,
+        stripe: { ...NO_STRIPE_READ },
+        notes: failures.join('; ').slice(0, 2000),
+        accounted,
+      };
+    }
+    notes.push(...failures);
     // Cash and receivables are reported separately (B-627-3): an open
     // recovery is money TGP is fronting, not money it has.
     if (receivableOpen > 0 || platformCash < 0) {
@@ -409,39 +715,49 @@ export class ReconciliationService {
     // B-683-2: until Stripe executes every transfer the cash cannot be attested.
     if (pending > 0) notes.unshift(`transfers_pending_cents=${pending}`);
     const status = drift !== 0 ? 'drift' : pending > 0 ? 'unknown' : 'ok';
-    return this.persistSnapshot(purchase.id, status, drift, {
+    return {
+      status,
+      drift_cents: drift,
       stripe: {
         amount_cents: gross,
         refunded_cents: refunded,
         application_fee_cents: 0,
         transfers_cents: transferred,
       },
-      ledger: ledgerSums,
       notes: notes.length > 0 ? notes.join('; ').slice(0, 2000) : null,
-    });
+      accounted,
+    };
   }
 
-  private async resolveChargeId(purchase: ClientPurchase): Promise<string | null> {
-    if (!purchase.stripe_payment_intent_id) {
+  private async resolveChargeId(
+    intentId: string | null,
+    ledger: SplitLedgerEntry[],
+  ): Promise<string | null> {
+    if (!intentId) {
       // For recurring purchases, the per-renewal charge id lives on the
       // SplitLedgerEntry.stripe_charge_id of the most recent destination
       // slice. Use that as a cheap fallback so we don't have to walk
-      // invoices.
-      const entry = await this.prisma.splitLedgerEntry.findFirst({
-        where: { purchase_id: purchase.id, kind: 'destination' },
-        orderBy: { posted_at: 'desc' },
-      });
+      // invoices. A web trial's SetupIntent (FIX-1225R3) lands here too.
+      // FIX-1225R3: picked from the rows already read, in the order the
+      // query used (posted_at desc; Postgres puts a null first).
+      const at = (e: SplitLedgerEntry) => (e.posted_at ? e.posted_at.getTime() : Infinity);
+      const entry = ledger
+        .filter((e) => e.kind === 'destination')
+        .reduce<SplitLedgerEntry | null>((best, e) => (!best || at(e) > at(best) ? e : best), null);
       return entry?.stripe_charge_id ?? null;
     }
+    return (await this.intentCharge(intentId)).chargeId;
+  }
+
+  // The payment intent's charge; read = false when Stripe could not be read.
+  private async intentCharge(intentId: string): Promise<{ read: boolean; chargeId: string | null }> {
     try {
-      const pi = await this.stripe.retrievePaymentIntent(purchase.stripe_payment_intent_id);
+      const pi = await this.stripe.retrievePaymentIntent(intentId);
       const latest = typeof pi.latest_charge === 'string' ? pi.latest_charge : null;
-      return latest ?? pi.charges?.data?.[0]?.id ?? null;
+      return { read: true, chargeId: latest ?? pi.charges?.data?.[0]?.id ?? null };
     } catch (err) {
-      this.logger.warn(
-        `resolveChargeId failed pi=${purchase.stripe_payment_intent_id}: ${(err as Error).message}`,
-      );
-      return null;
+      this.logger.warn(`resolveChargeId failed pi=${intentId}: ${(err as Error).message}`);
+      return { read: false, chargeId: null };
     }
   }
 
@@ -532,6 +848,77 @@ export class ReconciliationService {
     });
   }
 }
+
+/**
+ * Purchase states the money check reads: every status written to
+ * ClientPurchase.status in which a charge can have succeeded. Shared by the
+ * admin button and the daily run. FIX-1225R2 (LS-1225R2 B1): built from every
+ * writer, not from memory; test/money-daily-states.spec.ts fails when a
+ * written status is in neither this list nor UNCHARGED_PURCHASE_STATUSES.
+ *   paid, active: checkout and invoice success (checkout-webhook-handler
+ *     :1418-1424, :2413-2416; refund-dispute-handler :2000; dunning-v2 :1699)
+ *   trialing, past_due, unpaid, paused, canceled: Stripe's own subscription
+ *     status, written as is (checkout-webhook-handler :1746 + :1849, :2679 +
+ *     :2715; :2990-2995 writes unpaid or past_due; guest-checkout :2001); a
+ *     renewal that went unpaid after paid periods is money (LS-1225R2 B1).
+ *     client-billing :1142-1146 and :1750 write only active or trialing
+ *     (PAID_SUB_STATUSES :105; FIX-1225R3, LS-1225R3 N1). canceled is also written by
+ *     client-billing :1820, dunning :805 and :964, account deletion :1027.
+ *   refunded, disputed, chargeback_lost: refund-dispute-handler :500, :1981,
+ *     :2089, :2138; guest-checkout :1550 (LS-1225 B2).
+ */
+export const RECONCILED_PURCHASE_STATUSES = [
+  'paid',
+  'active',
+  'trialing',
+  'past_due',
+  'unpaid',
+  'paused',
+  'canceled',
+  'refunded',
+  'disputed',
+  'chargeback_lost',
+] as const;
+
+/**
+ * Written statuses the check does not read: no charge has succeeded in any
+ * of them, so there is nothing to match (and the single-charge read would
+ * compare a failed charge's amount as if it were money).
+ *   pending: checkout or subscription not finished (checkout.service :592,
+ *     :817; subscription-checkout :613, :1029, :1460, :1473;
+ *     subscription-attempt :135; checkout-webhook-handler :2479)
+ *   payment_failed: the payment did not complete (checkout-webhook-handler
+ *     :1612, :2443-2447 via :2584, only when Stripe's current payment intent
+ *     status is requires_payment_method or canceled, :55-69)
+ *   expired: checkout session expired from pending (checkout-webhook-handler
+ *     :1641; subscription-checkout :1041, :1460, :1521)
+ *   incomplete, incomplete_expired: first subscription payment never
+ *     completed (checkout-webhook-handler :1746 + :1849, :246; guest-checkout
+ *     :1980-1990); Stripe never moves a paid plan back to either.
+ *   pending_consent, revoked: $0 invite grants (invite-grant :411, :499,
+ *     :1040), source set, so never in the sweep anyway (C01).
+ */
+export const UNCHARGED_PURCHASE_STATUSES = [
+  'pending',
+  'payment_failed',
+  'expired',
+  'incomplete',
+  'incomplete_expired',
+  'pending_consent',
+  'revoked',
+] as const;
+
+/**
+ * States in which a purchase with no evidence of a charge simply never
+ * charged (LO-1225 B1): the plan states that do not claim a payment.
+ */
+const NEVER_CHARGED_OK_STATUSES: ReadonlySet<string> = new Set([
+  'trialing',
+  'past_due',
+  'unpaid',
+  'paused',
+  'canceled',
+]);
 
 function summarizeLedger(rows: SplitLedgerEntry[]): {
   destination_cents: number;

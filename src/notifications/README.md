@@ -1,8 +1,9 @@
 # Notifications Module
 
 The notifications module holds the in-app notification inbox, push delivery, the email digests and per-user channel preferences. Most senders go through it: an emitter in `emitters/`, `NotificationsService.createNotification` or `NotificationsService.sendPush`, so the per-kind switches, Mute all and push quiet hours are applied there. A few senders write `Notification` rows with Prisma themselves (`checkout/plan-renewal/switch-tell.ts`, `onboarding/onboarding.service.ts`, `onboarding/flagged-join-alert.ts`, `community/safety/community-moderation-notices.ts`, `ai/gateway/materialisers/send-notification.materialiser.ts`, `nudges/coach-nudge-send.ts`), so the `createNotification` gate does not run for those rows.
-Pushes sent with `NotificationsService.pushToUser` skip the core gate too: it reads no preference and goes straight to Expo, not
-through the `sendPush` outbox. Its callers read the settings themselves or not at all: the trial notice
+Pushes sent with `NotificationsService.pushToUser` skip the `createNotification` gate too: it reads no preference itself and
+puts the push, with the sender's whole words, on the `PushDeliveryService` outbox with the route its caller names (Mute all alone
+when it names none); the outbox worker applies that route and quiet hours when it sends. Its callers read the settings themselves or not at all: the trial notice
 (`packages/trials/trial-notice.service.ts`), the nudges (`notifications/nudges/nudge-engine.service.ts`), the coach brief
 (`coach/brief/coach-brief.scheduler.ts`), the coach nudge (`nudges/coach-nudge-send.ts`: the churn intervention message and `POST /coach/clients/:id/nudges`),
 the workout reminder (`engagement/workout-reminder.service.ts`), Scout (`scout/scout.service.ts`), the payout notice
@@ -22,7 +23,7 @@ only `muted`. `NotificationsService.pushToCoach` has no caller outside its spec.
 | `weight_trend_alert` | on | on | off | `weight_trend_*` | row kept, push muted | No sender on main (`weight-trend-alert.emitter.ts` has no caller; it would tell the client) |
 | `checkin_submitted` | on | off | off | `checkin_submitted_*` | row kept, push muted | No sender on main (`checkin-submitted.emitter.ts` has no caller; it would tell the coach) |
 | `build_week_day_unlocked` | on | on | on | `build_week_*` | row kept, push muted | No sender on main (`build-week-day-unlocked.emitter.ts` has no caller; it would tell the client) |
-| `coach_alert` | on | on | off | `coach_alert_*` | row kept, push muted except safety and money alerts (note 1) | Coach |
+| `coach_alert` | on | on | off | `coach_alert_*` | row kept, push muted except safety and money alerts (note 1) | Coach; the owner for the daily money check |
 | `coach_client_moved` | on | n/a | n/a | none | row kept | Coach (the coach a client left for TGP's house coach; SWITCH-TELL-BE; one in-app row written with Prisma, no push) |
 | `client_digest` | off | off | on | `digest_*` | email muted | Client |
 | `coach_digest` | off | off | on | `digest_*` | email muted | Coach (after the email goes out, one inbox row on the `email` channel says the summary was sent) |
@@ -75,6 +76,8 @@ and drives every safety key and every money sender with Mute all on.
   (`checkout/payout-notice.service.ts`) and the Day 7 payment alert (`checkout/dunning-v2/dunning-v2.dispatcher.ts`) carry
   `MUTE_ALL_PASS`, so their pushes pass too. Refund and dispute alerts are in-app rows only. Every other coach alert push is muted.
   The payout notice also sends its email through `EmailService` without reading `coach_alert_email`.
+  The daily money check (`checkout/reconciliation-daily.cron.ts`) sends the owner account one inbox row and one push a day,
+  counts only, with `passesMuteAll`; `test/money-daily-reconciliation.spec.ts` drives it with Mute all on.
 - Note 2: these senders read the settings themselves, and since FR-1154 Mute all never stops their in-app row: `engagement/workout-reminder.service.ts`
   (the push obeys Mute all), `notifications/nudges/nudge-engine.service.ts` (push and email obey Mute all; a muted user with no
   in-app channel on is `suppressed_muted`) and `community/notifications/community-notifications.service.ts` (the push obeys Mute all; it writes its
@@ -166,7 +169,7 @@ endpoints take the user from the signed token instead.
 | `NotificationDigestLog`   | `id, user_id, digest_kind, window_date, status, sent_at, error, created_at` | Idempotency guard. Unique on `(user_id, digest_kind, window_date)`. Status is `sending`, then `sent` or `failed`. |
 | `NotificationPreferences` | `user_id, muted, milestone_push, …`                                         | Per-user settings: `_inapp`, `_push` and `_email` flags for most setting families (`workout_reminder` has only `_inapp` and `_push`, `plan_renewal` only `_push`), `muted` (Mute all), the older `*_enabled` reminder switches, `new_client_alerts`, `quiet_hours_start` / `quiet_hours_end` and the time zone. |
 
-`Notification.body` is capped to 160 chars by `NotificationsService.createNotification`. The emitters set `Notification.deep_link` with the `tgp://` scheme so the mobile app routes to the right screen.
+`Notification.body` is capped to 160 chars by `NotificationsService.createNotification`, except when the sender passes `sender_words: true` (only the daily money check, `checkout/reconciliation-daily.cron.ts`, so the inbox row holds the same whole words as its push; the option is not stored). The emitters set `Notification.deep_link` with the `tgp://` scheme so the mobile app routes to the right screen.
 
 ---
 
@@ -228,7 +231,7 @@ tracked in an in-process Map (`recentPushes`, one per replica); inside a transac
 `sendPush` go through `PushDeliveryService` (`push/push-delivery.service.ts`), which never drops a distinct event: repeats in one
 conversation collapse within `COLLAPSE_WINDOW_MS` (60 s), and a per-user cap (`USER_WINDOW_MAX` = 8 per `USER_WINDOW_MS` = 10 min)
 defers the other pushes until the window has room. Exempt from the cap: an urgent push, a push that bypasses quiet hours as
-urgent, and every `booking_*` kind. `pushToUser` pushes do not go through this outbox, so neither the collapse nor the cap applies.
+urgent, and every `booking_*` kind. `pushToUser` pushes go through this outbox too; each one's collapse key is its dedupe key (a fresh one unless the caller names it), and the per-user cap applies to them as to any other push that is not exempt.
 
 ---
 
