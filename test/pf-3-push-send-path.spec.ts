@@ -112,7 +112,8 @@ const SENDERS: Sender[] = [
   },
   {
     id: 'KG-QH-CHURN',
-    file: 'src/coach/command-center/churn-intervention.service.ts',
+    // NUDGE-REACH-BE: the churn send and POST /coach/clients/:id/nudges push here.
+    file: 'src/nudges/coach-nudge-send.ts',
     to: CLIENT,
     route: { kind: 'coach_nudge', muteAllOnly: true, dedupeKey: 'coach_nudge:nd1', otherUserId: COACH },
     data: { type: 'coach_nudge', kind: 'coach_nudge', actionScreen: 'Messages', nudge_id: 'nd1' },

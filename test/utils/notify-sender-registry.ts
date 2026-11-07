@@ -175,6 +175,16 @@ export interface ImportWithoutSend {
 
 export const IMPORTS_WITHOUT_SEND: ImportWithoutSend[] = [
   {
+    file: 'src/coach/command-center/churn-intervention.service.ts',
+    name: 'NotificationsService',
+    why: 'NUDGE-REACH-BE: hands it to sendCoachNudge (src/nudges/coach-nudge-send.ts, registered), which writes the inbox row and pushes',
+  },
+  {
+    file: 'src/nudges/nudges.service.ts',
+    name: 'NotificationsService',
+    why: 'NUDGE-REACH-BE: hands it to sendCoachNudge (src/nudges/coach-nudge-send.ts, registered), which writes the inbox row and pushes',
+  },
+  {
     file: 'src/scheduling/scheduling.service.ts',
     name: 'BookingEmitter',
     why: 'hands its optional BookingEmitter to the SchedulingSessionLifecycleService it builds; the sends are in that service (registered)',
@@ -525,11 +535,13 @@ export const SENDERS: SenderRow[] = [
     covered: 'funnel table here; test/dunning-kind-fix-notification-kinds.spec.ts (every safety key with Mute all on)',
   },
   {
-    file: 'src/coach/command-center/churn-intervention.service.ts',
-    fn: 'ChurnInterventionService.sendIntervention',
+    // NUDGE-REACH-BE: the one coach-nudge sender; both nudge routes call it
+    // (ChurnInterventionService.sendIntervention and NudgesService.createForClient).
+    file: 'src/nudges/coach-nudge-send.ts',
+    fn: 'sendCoachNudge',
     via: ['notificationRow', 'pushToUser'],
     kinds: ['coach_nudge'],
-    sends: 'coach nudge + its inbox row written in the send transaction (full text, b#1171) + push (pushToUser, lock screen reads as a new message)',
+    sends: 'coach nudge + its inbox row written in the send transaction (full text, b#1171) + push (pushToUser, lock screen reads as a new message); the churn send and POST /coach/clients/:id/nudges',
     muteAll: { does: 'stops', why: 'muteAllStopsNudgePush reads muted; the nudge and its inbox row stay (owner #171-3)' },
     quietHours: QH_OUTBOX,
     mute: NO_MUTE,
@@ -537,9 +549,9 @@ export const SENDERS: SenderRow[] = [
       does: 'stops',
       why: 'assertPairOpen: a block either way is 403 before the nudge, the row and the push (FX-1141); a later block hides the row (inbox-block-rule.ts)',
     },
-    recipient: "the coach's own client the intervention names",
+    recipient: "the coach's own client (the intervention names them; POST /coach/clients/:id/nudges checks coach_id first, 404 otherwise)",
     driver: 'churnIntervention',
-    covered: 'churnIntervention driver here; test/mute-all-ordinary-senders.spec.ts',
+    covered: 'churnIntervention driver here; test/mute-all-ordinary-senders.spec.ts; test/nudge-reach-contract.spec.ts (POST /coach/clients/:id/nudges)',
   },
   {
     file: 'src/scout/scout.service.ts',

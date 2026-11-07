@@ -1,14 +1,14 @@
 # Notifications Module
 
-The notifications module holds the in-app notification inbox, push delivery, the email digests and per-user channel preferences. Most senders go through it: an emitter in `emitters/`, `NotificationsService.createNotification` or `NotificationsService.sendPush`, so the per-kind switches, Mute all and push quiet hours are applied there. A few senders write `Notification` rows with Prisma themselves (`checkout/plan-renewal/switch-tell.ts`, `onboarding/onboarding.service.ts`, `onboarding/flagged-join-alert.ts`, `community/safety/community-moderation-notices.ts`, `ai/gateway/materialisers/send-notification.materialiser.ts`), so the `createNotification` gate does not run for those rows.
+The notifications module holds the in-app notification inbox, push delivery, the email digests and per-user channel preferences. Most senders go through it: an emitter in `emitters/`, `NotificationsService.createNotification` or `NotificationsService.sendPush`, so the per-kind switches, Mute all and push quiet hours are applied there. A few senders write `Notification` rows with Prisma themselves (`checkout/plan-renewal/switch-tell.ts`, `onboarding/onboarding.service.ts`, `onboarding/flagged-join-alert.ts`, `community/safety/community-moderation-notices.ts`, `ai/gateway/materialisers/send-notification.materialiser.ts`, `nudges/coach-nudge-send.ts`), so the `createNotification` gate does not run for those rows.
 Pushes sent with `NotificationsService.pushToUser` skip the `createNotification` gate too: it reads no preference itself and
 puts the push, with the sender's whole words, on the `PushDeliveryService` outbox with the route its caller names (Mute all alone
 when it names none); the outbox worker applies that route and quiet hours when it sends. Its callers read the settings themselves or not at all: the trial notice
 (`packages/trials/trial-notice.service.ts`), the nudges (`notifications/nudges/nudge-engine.service.ts`), the coach brief
-(`coach/brief/coach-brief.scheduler.ts`), the churn intervention message (`coach/command-center/churn-intervention.service.ts`),
+(`coach/brief/coach-brief.scheduler.ts`), the coach nudge (`nudges/coach-nudge-send.ts`: the churn intervention message and `POST /coach/clients/:id/nudges`),
 the workout reminder (`engagement/workout-reminder.service.ts`), Scout (`scout/scout.service.ts`), the payout notice
 (`checkout/payout-notice.service.ts`), the dunning v2 dispatcher (`checkout/dunning-v2/dunning-v2.dispatcher.ts`) and the community
-notifications (`community/notifications/community-notifications.service.ts`). The coach brief, the churn intervention and Scout read
+notifications (`community/notifications/community-notifications.service.ts`). The coach brief, the coach nudge and Scout read
 only `muted`. `NotificationsService.pushToCoach` has no caller outside its spec.
 
 ---
