@@ -280,6 +280,20 @@ export function classifyAiGuideCrisis(message: string): AiGuideCrisisClass | nul
 }
 
 /**
+ * #202-S5: each crisis sentence shared by Roman's fixed replies and the AI
+ * guide's has this one home. Every full message that uses one keeps its bytes
+ * (test/ai-crisis-copy-one-home.spec.ts pins each by sha-256 and fails if a
+ * sentence is typed anywhere else under src).
+ */
+export const CRISIS_LINE_CALL_911_NOW = 'Please stop what you are doing and call 911 now, or your local emergency number.';
+export const CRISIS_LINE_STAY_WHERE_YOU_ARE =
+  'If you are able, stay where you are, unlock the door, and keep your phone within reach so help can find you quickly.';
+export const CRISIS_LINE_REACH_988 =
+  'Please reach the 988 Suicide & Crisis Lifeline now: call or text 988 in the United States, any hour, and a trained person will answer.';
+export const CRISIS_LINE_DANGER_911 = 'If you are in immediate danger, call 911.';
+export const CRISIS_LINE_TELL_SOMEONE = 'If you can, let someone you trust know where you are so they can sit with you.';
+
+/**
  * Fixed replies (no model call), so this is the exact text the client sees.
  * Same routing as Roman's templates (911 for an emergency, 988 for a crisis),
  * in the impersonal product voice: no first person, no contractions, no
@@ -287,13 +301,10 @@ export function classifyAiGuideCrisis(message: string): AiGuideCrisisClass | nul
  */
 export const AI_GUIDE_CRISIS_REPLIES: Record<AiGuideCrisisClass, string> = {
   emergency:
-    'Please stop what you are doing and call 911 now, or your local emergency number. ' +
-    'If you are able, stay where you are, unlock the door, and keep your phone within reach so help can find you quickly. ' +
+    `${CRISIS_LINE_CALL_911_NOW} ${CRISIS_LINE_STAY_WHERE_YOU_ARE} ` +
     'This needs a person, not an app, and it should not wait.',
   self_harm:
     'What you are carrying matters, and you do not have to hold it alone. ' +
-    'Please reach the 988 Suicide & Crisis Lifeline now: call or text 988 in the United States, any hour, and a trained person will answer. ' +
-    'If you are in immediate danger, call 911. ' +
-    'If you can, let someone you trust know where you are so they can sit with you. ' +
+    `${CRISIS_LINE_REACH_988} ${CRISIS_LINE_DANGER_911} ${CRISIS_LINE_TELL_SOMEONE} ` +
     'Talking to a person right now is the right next step.',
 };
