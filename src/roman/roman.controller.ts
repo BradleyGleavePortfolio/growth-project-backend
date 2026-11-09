@@ -53,7 +53,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import { PrismaService } from '../prisma.service';
 import { RomanFeatureGuard } from './roman-feature.guard';
 import { romanSafetyActions, type RomanSafetyAction } from './guardrails/safety-router';
-import { ROMAN_SSE_FALLBACK_ERROR, toRomanSseErrorFrame } from './roman-sse-error';
+import { ROMAN_SSE_FALLBACK_ERROR, ROMAN_SSE_REPLY_PENDING_ERROR, toRomanSseErrorFrame } from './roman-sse-error';
 import { IDEMPOTENCY_KEY_REUSED, messageKey } from '../community/messages/message-idempotency';
 import type { RomanUsageDebit } from './roman-usage';
 import {
@@ -244,13 +244,19 @@ export class RomanController {
           replyId: keyed?.reply,
         });
     try {
-      for await (const chunk of turn) {
-        const frame =
-          chunk.type === 'done'
-            ? { ...chunk, ...marker({ role: 'roman', content: chunk.text ?? '' }) }
-            : chunk;
-        res.write(`data: ${JSON.stringify(frame)}\n\n`);
-        if (chunk.type === 'done') break;
+      try {
+        for await (const chunk of turn) {
+          const frame =
+            chunk.type === 'done'
+              ? { ...chunk, ...marker({ role: 'roman', content: chunk.text ?? '' }) }
+              : chunk;
+          res.write(`data: ${JSON.stringify(frame)}\n\n`);
+          if (chunk.type === 'done') break;
+        }
+      } finally {
+        // SEND-ONCE-PENDING-BE: every way this stream ends passes here: after any reply row is stored, and before
+        // the error frame below, so the resend that frame invites reads the final answer. It never throws.
+        if (keyed) await this.roman.clearReplyPending(caller, session.id, keyed.turn);
       }
     } catch (err) {
       // Surface a structured error event, never a raw stack (AGENT_RULES #9).
@@ -283,22 +289,24 @@ export class RomanController {
   /**
    * SEND-ONCE-SERVER: the answer to a resend of a keyed turn, from what is stored; nothing is counted, spent,
    * alerted or written. Other words under the key: 409 (before the stream opens). Reply stored: its delta and
-   * `done` frame, as the first send gave them (the Copilot facts as the history read builds them). No reply yet
-   * (the first send is still answering, or it ended before Roman stored one): the coded ROMAN_UNAVAILABLE frame,
-   * which the phone already reads as "turn stored, no reply" (it keeps the turn and reloads the chat).
+   * `done` frame, as the first send gave them (the Copilot facts as the history read builds them). No reply yet:
+   * SEND-ONCE-PENDING-BE, the coded ROMAN_REPLY_PENDING frame while the first send may still store one (`pending`,
+   * RomanService.findKeyedTurn), else the coded ROMAN_UNAVAILABLE frame, which the phone already reads as "turn
+   * stored, no reply" (it keeps the turn and reloads the chat). The two carry the same words.
    */
   private async replayTurn(
     req: Request & AuthedRequest,
     res: Response,
     caller: RomanCaller,
     content: string,
-    first: { turn: { content: string }; reply: RomanMessage | null },
+    first: { turn: { content: string }; reply: RomanMessage | null; pending?: boolean },
   ): Promise<void> {
     if (first.turn.content !== content) throw new ConflictException(IDEMPOTENCY_KEY_REUSED);
     this.openStream(req, res);
     const { reply } = first;
     if (!reply) {
-      res.write(`event: error\ndata: ${JSON.stringify({ ...ROMAN_SSE_FALLBACK_ERROR })}\n\n`);
+      const frame = first.pending ? ROMAN_SSE_REPLY_PENDING_ERROR : ROMAN_SSE_FALLBACK_ERROR;
+      res.write(`event: error\ndata: ${JSON.stringify({ ...frame })}\n\n`);
       res.end();
       return;
     }

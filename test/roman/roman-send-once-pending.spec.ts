@@ -28,6 +28,8 @@ import type { CoachAlertsService } from '../../src/coach/coach-alerts.service';
 import * as safetyRouter from '../../src/roman/guardrails/safety-router';
 import { CopilotTurnService } from '../../src/copilot/copilot-turn';
 import { CopilotService } from '../../src/copilot/copilot.service';
+import { ROMAN_REPLY_PENDING_MARK, ROMAN_REPLY_PENDING_MAX_MS } from '../../src/roman/roman.constants';
+import { ROMAN_SSE_FALLBACK_ERROR, ROMAN_SSE_REPLY_PENDING_ERROR } from '../../src/roman/roman-sse-error';
 import { fakeOf, grantAllEgress } from '../ai-egress/ai-egress.fakes';
 
 /** The wire contract, as literals: a change to either is a change the phone sees. */
@@ -638,7 +640,6 @@ describe('case 13: the mark is invisible', () => {
     const set = JSON.stringify(await read(conversation(MARK)));
     expect(set).toEqual(JSON.stringify(await read(conversation(null))));
     expect(set).not.toContain('completion_tokens');
-    expect(set).not.toContain(String(MARK));
   });
 
   it('roman.service.ts is the only source file naming the token columns, and the export selects neither', () => {
@@ -685,21 +686,73 @@ describe('case 15: the chat is deleted while Roman answers', () => {
 });
 
 describe('a failed clear changes nothing the phone sees', () => {
-  it('done path: the same frames, the stream ends', async () => {
+  const logged = (w: World) => jest.spyOn((w.service as never as { logger: { warn: (m: string) => void } }).logger, 'warn');
+  const expectLoggedByCode = (warn: jest.SpyInstance) => {
+    const line = warn.mock.calls.map(([m]) => String(m)).find((m) => m.startsWith('roman.reply_pending_clear_failed'));
+    expect(line).toMatch(/^roman\.reply_pending_clear_failed session=sess_1: /);
+    expect(line).not.toContain('db down');
+  };
+
+  it('done path: the same frames, the stream ends, the failure logged by code', async () => {
     const w = world();
+    const warn = logged(w);
     w.db.romanMessage.updateMany.mockRejectedValue(new Error('db down'));
     const out = await w.send(WORDS);
     expect(out.writes).toHaveLength(2);
     expect(out.writes[1]).toContain('"type":"done"');
     expect(out.res.end).toHaveBeenCalledTimes(1);
+    expectLoggedByCode(warn);
   });
 
-  it('error path: its one error frame, the stream ends', async () => {
+  it('error path: its one error frame, the stream ends, the failure logged by code', async () => {
     const w = world();
+    const warn = logged(w);
     jest.spyOn(w.service, 'buildContextTurns').mockRejectedValue(new Error('read failed'));
     w.db.romanMessage.updateMany.mockRejectedValue(new Error('db down'));
     const out = await w.send(WORDS);
     expect(out.writes.filter((c) => c.startsWith('event: error'))).toHaveLength(1);
     expect(out.res.end).toHaveBeenCalledTimes(1);
+    expectLoggedByCode(warn);
+  });
+});
+
+describe('the mark itself', () => {
+  it('the stored mark and the bound are the values these guards pin', () => {
+    expect(ROMAN_REPLY_PENDING_MARK).toBe(MARK);
+    expect(ROMAN_REPLY_PENDING_MAX_MS).toBe(BOUND_MS);
+    expect(ROMAN_SSE_REPLY_PENDING_ERROR).toEqual({ code: 'ROMAN_REPLY_PENDING', message: ROMAN_SSE_FALLBACK_ERROR.message });
+  });
+
+  it('is written in the same insert as the keyed turn', async () => {
+    const w = world();
+    await w.send(WORDS);
+    expect(w.db.romanMessage.create.mock.calls[0][0].data).toMatchObject({ role: 'user', completion_tokens: MARK });
+    expect(w.db.romanMessage.create.mock.calls[1][0].data).toMatchObject({ role: 'roman', completion_tokens: 7 });
+  });
+
+  it('the reply row is written first and the mark cleared after, once', async () => {
+    const w = world();
+    await w.send(WORDS);
+    expect(w.db.romanMessage.updateMany).toHaveBeenCalledTimes(1);
+    expect(w.db.romanMessage.create.mock.invocationCallOrder[1]).toBeLessThan(w.db.romanMessage.updateMany.mock.invocationCallOrder[0]);
+  });
+
+  it('the clear is scoped to the caller, the chat, the turn and its role', async () => {
+    const w = world();
+    w.seedTurn({ completion_tokens: MARK });
+    const turnId = romanTurnIds(USER_A.id, SESSION, KEY).turn;
+    await w.service.clearReplyPending({ id: USER_B.id, role: 'student' }, SESSION, turnId);
+    await w.service.clearReplyPending({ id: USER_A.id, role: 'student' }, 'sess_2', turnId);
+    expect(w.turn()?.completion_tokens).toBe(MARK);
+    expect(w.db.romanMessage.updateMany.mock.calls[0][0].where).toEqual({ id: turnId, session_id: SESSION, user_id: USER_B.id, role: 'user' });
+    await w.service.clearReplyPending({ id: USER_A.id, role: 'student' }, SESSION, turnId);
+    expect(w.turn()?.completion_tokens).toBeNull();
+  });
+
+  it('a turn that vanished between the lost race\'s two reads answers as today, not pending', async () => {
+    const w = world();
+    w.seedTurn({ completion_tokens: MARK });
+    jest.spyOn(w.service, 'findKeyedTurn').mockResolvedValue(null);
+    expect((await w.send(WORDS)).writes).toEqual([WIRE_UNAVAILABLE]);
   });
 });

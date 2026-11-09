@@ -54,6 +54,8 @@ import {
   ROMAN_MAX_OUTPUT_TOKENS,
   ROMAN_MESSAGES_DEFAULT_LIMIT,
   ROMAN_MESSAGES_MAX_LIMIT,
+  ROMAN_REPLY_PENDING_MARK,
+  ROMAN_REPLY_PENDING_MAX_MS,
   ROMAN_RATE_LIMIT_WINDOW_MS,
   ROMAN_ERASED_DAY_KEY_PREFIX,
   ROMAN_SESSION_NOT_FOUND_MESSAGE,
@@ -833,7 +835,8 @@ export class RomanService {
   /**
    * SEND-ONCE-SERVER: the user turn under an Idempotency-Key, by the space chat's rule (keyedWrite): under the
    * keyed-write lock on the turn's id, the turn already stored with it (`replayed`, nothing counted on the
-   * session), else the turn stored now with that id.
+   * session), else the turn stored now with that id, carrying the mark that its reply may still come
+   * (SEND-ONCE-PENDING-BE, ROMAN_REPLY_PENDING_MARK) in the same insert.
    */
   async appendKeyedTurn(
     caller: RomanCaller,
@@ -843,24 +846,46 @@ export class RomanService {
   ): Promise<{ row: RomanMessage; replayed: boolean }> {
     return this.prisma.$transaction((tx) =>
       keyedWrite(tx, id, () => this.ownTurn(tx, caller, sessionId, id), () =>
-        this.appendIn(tx, caller, sessionId, { role: 'user', content, id })));
+        this.appendIn(tx, caller, sessionId, { role: 'user', content, id, completionTokens: ROMAN_REPLY_PENDING_MARK })));
   }
 
   /**
    * SEND-ONCE-SERVER: what a key already holds in this caller's live chat: its stored user turn and, once Roman
    * has stored it, the reply (null while the first turn still runs, or when it ended before Roman stored any).
+   * SEND-ONCE-PENDING-BE: `pending` tells those two apart: no reply, the mark still set, and the turn younger than
+   * the bound. The turn is read before the reply, the opposite of the first send's order (reply stored, then mark
+   * cleared), so a read that finds the mark gone also finds any reply there is.
    */
   async findKeyedTurn(
     caller: RomanCaller,
     sessionId: string,
     ids: RomanTurnIds,
-  ): Promise<{ turn: RomanMessage; reply: RomanMessage | null } | null> {
+  ): Promise<{ turn: RomanMessage; reply: RomanMessage | null; pending: boolean } | null> {
     const turn = await this.ownTurn(this.prisma, caller, sessionId, ids.turn);
     if (!turn) return null;
     const reply = await this.prisma.romanMessage.findFirst({
       where: { id: ids.reply, session_id: sessionId, user_id: caller.id, role: 'roman' },
     });
-    return { turn, reply };
+    const pending =
+      !reply &&
+      turn.completion_tokens === ROMAN_REPLY_PENDING_MARK &&
+      Date.now() - turn.created_at.getTime() < ROMAN_REPLY_PENDING_MAX_MS;
+    return { turn, reply, pending };
+  }
+
+  /**
+   * SEND-ONCE-PENDING-BE: a keyed turn's first send has ended, so a resend now reads the final answer. Never throws:
+   * a failed clear is logged by code, and the mark then lasts only until ROMAN_REPLY_PENDING_MAX_MS.
+   */
+  async clearReplyPending(caller: RomanCaller, sessionId: string, turnId: string): Promise<void> {
+    try {
+      await this.prisma.romanMessage.updateMany({
+        where: { id: turnId, session_id: sessionId, user_id: caller.id, role: 'user' },
+        data: { completion_tokens: null },
+      });
+    } catch (err) {
+      this.logger.warn(`roman.reply_pending_clear_failed session=${sessionId}: ${romanErrorTag(err)}`);
+    }
   }
 
   /** SEND-ONCE-SERVER: a racing first send that lost the keyed lock gives back the message it counted. */

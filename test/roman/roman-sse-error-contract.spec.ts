@@ -32,6 +32,7 @@ import type { RomanService } from '../../src/roman/roman.service';
 import {
   ROMAN_SSE_ERROR_KEYS,
   ROMAN_SSE_FALLBACK_ERROR,
+  ROMAN_SSE_REPLY_PENDING_ERROR,
   toRomanSseErrorFrame,
 } from '../../src/roman/roman-sse-error';
 import {
@@ -167,6 +168,11 @@ describe('Roman SSE error frame: pinned to the mobile strict parser (B-626-2)', 
           message: 'Roman is not available right now.',
         }),
       { code: ROMAN_ERROR_UNAVAILABLE, message: 'Roman is not available right now.' },
+    ],
+    [
+      'ROMAN_REPLY_PENDING (a resend while the first send may still store its reply)',
+      () => new ServiceUnavailableException({ ...ROMAN_SSE_REPLY_PENDING_ERROR }),
+      { code: 'ROMAN_REPLY_PENDING', message: 'Roman is not available right now.' },
     ],
     [
       'a structured body with extra keys (retryAfterSeconds, requestId, statusCode)',
