@@ -38,6 +38,14 @@ export const CONTENT_REJECTED = {
     'This message was not posted because it appears to contain abusive or explicit language. Please rephrase it.',
 } as const;
 
+/**
+ * COMMUNITY_CRISIS_CHECK_ENABLED: unset = on; only the exact string "false"
+ * turns the crisis check off (no field, no alert, today's word list).
+ */
+export function communityCrisisCheckEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.COMMUNITY_CRISIS_CHECK_ENABLED !== 'false';
+}
+
 /** The community write a crisis match came from (alert payload only). */
 export type CrisisSurface =
   | 'space_chat'
@@ -261,7 +269,8 @@ export class CommunitySafetyService {
     fields: TextFields,
     edit?: { asStored: TextFields; before: TextFields },
   ): CrisisScreen {
-    const flag = crisisIn(edit?.asStored ?? fields);
+    const on = communityCrisisCheckEnabled();
+    const flag = on && crisisIn(edit?.asStored ?? fields);
     const page = flag && !(edit && crisisIn(edit.before));
     const screen: CrisisScreen = { surface, posterId, flag, page };
     if (!checkCommunityText(...fields).allowed) {
