@@ -1,0 +1,17 @@
+test/checkin-draft-be.spec.ts
+test/ai-gateway.service.spec.ts
+test/ai-approval.service.spec.ts
+test/ai-coach-message-materialiser.spec.ts
+test/ai-approval-materialiser-integration.spec.ts
+test/ai-capability-materialiser-registry.spec.ts
+test/nest-tokens-134-wiring.spec.ts
+test/copilot/client-path-change.spec.ts
+test/fr-1205-saved-text-author.spec.ts
+test/ls-1205-gateway-draft-author.spec.ts
+test/moved-client-drafts.spec.ts
+test/ai-credits-gateway-402.spec.ts
+test/aib2b-subset-approve.spec.ts
+test/ai-execution-stream2.spec.ts
+test/ai/ai-gateway-hardening.spec.ts
+test/entitlement-guards-mounted.spec.ts
+test/roles-enforced.spec.ts
