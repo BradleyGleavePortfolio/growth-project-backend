@@ -1,0 +1,39 @@
+# MONEY-ALARM-BE (owner #202-E3, 202-S1 op 1): the daily money check's own
+# alarm. Every hour, read the public GET /api/money-check/status of production
+# (on time, late or off, plus the last finished day), then open, refresh or
+# close one GitHub issue labelled money-check-late
+# (scripts/ci/money-check-alarm.sh). Never the production-down issue and never
+# /readyz. Schedules run only from the default branch. Uses only the default
+# GITHUB_TOKEN: no secrets, no fly.
+name: Money check alarm
+
+on:
+  schedule:
+    # The status changes once a day (late after 26 hours); hourly, off minute 0.
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: money-check-alarm
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Read the money check status
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Read the money check status; open, refresh or close the money-check-late issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+        run: bash scripts/ci/money-check-alarm.sh
