@@ -379,6 +379,22 @@ export const SENDERS: SenderRow[] = [
     covered: 'not driven here (settlement world); test/dunning-kind-fix-notification-kinds.spec.ts drives it with Mute all on',
   },
   {
+    file: 'src/community/safety/community-safety.service.ts',
+    fn: 'CommunitySafetyService.alertStaff',
+    via: ['createNotification', 'sendPush'],
+    kinds: ['coach_alert'],
+    sends: 'inapp + push',
+    muteAll: { does: 'passes', why: 'a safety alert (context.safetyAlert, owner #168-18); Mute all never stops a row' },
+    quietHours: { does: 'passes', why: 'urgent: a crisis page never waits for morning' },
+    mute: NO_MUTE,
+    blockBan: { does: 'n/a', why: 'a safety alert about a member must reach TGP staff; it holds no text or name' },
+    recipient: 'every owner-role account (not deleted, not scheduled for deletion), minus the poster (#200-S1 op 1)',
+    funnel: [
+      { kind: NotificationKind.COACH_ALERT, context: { safetyAlert: 'community_crisis_text' }, urgent: true, muteAll: 'passes', quietHours: 'passes', note: 'community text that matched the crisis check' },
+    ],
+    covered: 'funnel table here; test/community/safety/community-crisis-text.table.spec.ts drives every write path',
+  },
+  {
     file: 'src/checkout/reconciliation-daily.cron.ts',
     fn: 'ReconciliationDailyCron.alertOwner',
     via: ['createNotification', 'pushToUser'],

@@ -121,12 +121,19 @@ const TEMPLATES: Record<string, LockScreenCopy> = {
 // safety coach alerts (no name, no message), keyed by alert type. The title
 // stays the coach-alert title. The stored alert text is the same line. The
 // crisis alert reuses the urgent line.
+/** #200-S1 op 1: the staff alert for a community text that matched Roman's crisis check. */
+export const COMMUNITY_CRISIS_ALERT_KEY = 'community_crisis_text';
+/** The inbox row's title (payload.title); the row opens nothing, so it says only what happened. */
+export const COMMUNITY_CRISIS_ALERT_TITLE = 'Safety alert';
+
 export const SAFETY_ALERT_PUSH_BODY: Readonly<Record<string, string>> = {
   roman_urgent_reply: 'Urgent safety alert for one of your clients. Open TGP to see details.',
   roman_eating_disorder_reply: 'Safety alert for one of your clients. Open TGP to see details.',
   roman_crisis_reply: 'Urgent safety alert for one of your clients. Open TGP to see details.',
   // FR-1152 (#172-5): the photo safety alert reuses the approved urgent line.
   community_photo_safety: 'Urgent safety alert for one of your clients. Open TGP to see details.',
+  // #200-S1 op 1: staff, not a coach; no "tap" or "see details" while the row opens nothing.
+  [COMMUNITY_CRISIS_ALERT_KEY]: 'Urgent safety alert in the community. Open TGP to see it.',
 };
 
 // Owner 57d: the coach's inbox row for the same alerts (no name, no message).
@@ -135,6 +142,7 @@ export const SAFETY_ALERT_INBOX_BODY: Readonly<Record<string, string>> = {
   roman_eating_disorder_reply: 'Safety alert for one of your clients. Tap to see details.',
   roman_crisis_reply: 'Urgent safety alert for one of your clients. Tap to see details.',
   community_photo_safety: 'Urgent safety alert for one of your clients. Tap to see details.',
+  [COMMUNITY_CRISIS_ALERT_KEY]: 'Urgent safety alert in the community.',
 };
 
 // FR-1152R3 B1 (owner rule D): a public space's owner and team get their copy

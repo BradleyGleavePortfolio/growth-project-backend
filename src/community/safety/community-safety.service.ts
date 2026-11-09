@@ -2,10 +2,23 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
+  Optional,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma.service';
+import { NotificationKind } from '../../notifications/notification-kind';
+import { NotificationsService } from '../../notifications/notifications.service';
+import {
+  COMMUNITY_CRISIS_ALERT_KEY,
+  COMMUNITY_CRISIS_ALERT_TITLE,
+  SAFETY_ALERT_INBOX_BODY,
+  SAFETY_ALERT_PUSH_BODY,
+} from '../../notifications/push/lock-screen-copy';
+import { describeFailure } from '../../observability/log-pii';
 import { classifySafety } from '../../roman/guardrails/safety-router';
 import { checkCommunityText } from './community-content-filter';
 import { memberFirstName } from '../member-display-name';
@@ -217,7 +230,15 @@ export function assertDmParticipantIfDm(
  */
 @Injectable()
 export class CommunitySafetyService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(CommunitySafetyService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    // Finds NotificationsService without importing NotificationsModule into
+    // the six modules that provide this service (as alertCoachOfPhotoSafety
+    // finds CoachAlertsService).
+    @Optional() private readonly moduleRef?: ModuleRef,
+  ) {}
 
   // ── Content filter and crisis check ──────────────────────────────────────
 
@@ -275,7 +296,58 @@ export class CommunitySafetyService {
    */
   async alertStaff(screen: CrisisScreen, rowId: string | null): Promise<void> {
     if (!screen.page) return;
-    void rowId;
+    try {
+      const notifications = this.moduleRef?.get(NotificationsService, { strict: false });
+      if (!notifications) {
+        this.logger.warn('community.crisis_alert outcome=no_service');
+        return;
+      }
+      const staff = await this.prisma.user.findMany({
+        where: { role: 'owner', deleted_at: null, deletion_scheduled_at: null, id: { not: screen.posterId } },
+        select: { id: true },
+      });
+      if (staff.length === 0) {
+        this.logger.warn('community.crisis_alert outcome=no_recipient');
+        return;
+      }
+      const write = randomUUID();
+      let failure: unknown;
+      for (const { id } of staff) {
+        try {
+          await notifications.createNotification({
+            user_id: id,
+            kind: NotificationKind.COACH_ALERT,
+            body: SAFETY_ALERT_INBOX_BODY[COMMUNITY_CRISIS_ALERT_KEY],
+            payload: {
+              title: COMMUNITY_CRISIS_ALERT_TITLE,
+              severity: 'critical',
+              surface: screen.surface,
+              poster_id: screen.posterId,
+              ...(rowId ? { row_id: rowId } : {}),
+            },
+            channel: 'inapp',
+          });
+        } catch (err) {
+          failure = err;
+        }
+        try {
+          await notifications.sendPush({
+            user_id: id,
+            kind: NotificationKind.COACH_ALERT,
+            body: SAFETY_ALERT_PUSH_BODY[COMMUNITY_CRISIS_ALERT_KEY],
+            // No alertId: there is no CoachAlert row for a tap to open.
+            context: { safetyAlert: COMMUNITY_CRISIS_ALERT_KEY },
+            dedupe_key: `community_crisis:${write}`,
+            urgent: true,
+          });
+        } catch (err) {
+          failure = err;
+        }
+      }
+      if (failure) this.logger.warn(`community.crisis_alert outcome=send_failed ${describeFailure(failure)}`);
+    } catch (err) {
+      this.logger.warn(`community.crisis_alert outcome=failed ${describeFailure(err)}`);
+    }
   }
 
   // ── Blocks ───────────────────────────────────────────────────────────────
