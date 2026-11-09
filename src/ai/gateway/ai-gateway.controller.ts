@@ -13,13 +13,16 @@ import {
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { IsEnum, isUUID } from 'class-validator';
 import { JwtAuthGuard } from '../../auth/auth.guard';
 import { RolesGuard } from '../../auth/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import type { AuthedRequest } from '../../auth/auth-request';
 import { AiGatewayService } from './ai-gateway.service';
 import { AiApprovalService } from './ai-approval.service';
-import { PrivateContextService } from './private-context.service';
+import { CHECK_IN_CANNOT_DRAFT, PrivateContextService } from './private-context.service';
+import { COACH_MESSAGE_CAPABILITY } from './materialisers/coach-message.materialiser';
+import { REPORT_REASONS, type ReportReason } from '../../messages-safety/dto/report-message.dto';
 import { ClientEntitlementGuard } from '../../common/guards/client-entitlement.guard';
 import { SkipClientEntitlement } from '../../common/decorators/skip-client-entitlement.decorator';
 import { RomanRequiresCoachGuard } from '../../roman/roman-requires-coach';
@@ -42,6 +45,12 @@ import { RomanRequiresCoachGuard } from '../../roman/roman-requires-coach';
 //
 // A client with no coach has no Roman (139-15): 403 ROMAN_REQUIRES_COACH on
 // every route here, before the paywall, the context load or the model.
+/** The body of a draft report: the DM report's reason list; no text. */
+export class ReportAiDraftDto {
+  @IsEnum(REPORT_REASONS)
+  reason!: ReportReason;
+}
+
 @ApiTags('ai-gateway')
 @Controller('ai/gateway')
 @UseGuards(JwtAuthGuard, RomanRequiresCoachGuard, ClientEntitlementGuard)
@@ -68,18 +77,14 @@ export class AiGatewayController {
   async invoke(
     @Request() req: AuthedRequest,
     @Body()
-    body: {
-      capability: string;
-      message: string;
-      subject_user_id?: string;
-      conversation_history?: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
-      proposed_action?: Record<string, unknown>;
-    },
+    body: InvokeBody,
   ) {
     const cap = (body.capability ?? '').trim();
     if (!cap) {
       throw new ForbiddenException('capability is required');
     }
+    const fromCheckIn = body.check_in_id !== undefined;
+    if (fromCheckIn) assertCheckInDraftRequest(body, cap, req.user.role);
     // Resolve permissioned context. For self-only capabilities the
     // subject defaults to the caller; the context service enforces the
     // boundary either way.
@@ -89,15 +94,24 @@ export class AiGatewayController {
       subjectId,
       { capability: cap },
     );
+    // CHECKIN-DRAFT-BE: only a coach who has just passed the check above reaches a check-in; the words come from the
+    // server, never the request. A client's token goes on to the gateway's 403 without any read.
+    const checkIn = fromCheckIn && req.user.role === 'coach'
+      ? await this.context.loadCheckInDraft(
+          { id: req.user.id, role: req.user.role, coach_id: req.user.coach_id ?? null },
+          subjectId,
+          String(body.check_in_id),
+        )
+      : null;
     const result = await this.gateway.invoke({
       capability: cap,
       requester: { id: req.user.id, role: req.user.role },
       subjectUserId: subjectId,
       tenantCoachId: req.user.role === 'coach' ? req.user.id : undefined,
-      userMessage: body.message ?? '',
+      userMessage: checkIn ? checkIn.userMessage : body.message ?? '',
       systemPrompt: ctx.systemPrompt,
       conversationHistory: body.conversation_history,
-      provenance: ctx.provenance,
+      provenance: checkIn ? [...ctx.provenance, checkIn.provenance] : ctx.provenance,
       proposedActionPayload: body.proposed_action,
       ip: extractIp(req),
       userAgent: extractUserAgent(req),
@@ -178,6 +192,49 @@ export class AiGatewayController {
       userAgent: extractUserAgent(req),
     });
   }
+
+  // CHECKIN-DRAFT-BE: Report this draft. The draft stays pending and nothing is sent.
+  @Post('drafts/:id/report')
+  @Roles('coach')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Throttle({ default: { ttl: 3_600_000, limit: 20 } })
+  async reportDraft(
+    @Request() req: AuthedRequest,
+    @Param('id') id: string,
+    @Body() body: ReportAiDraftDto,
+  ) {
+    return this.approvals.reportDraft({
+      draftId: id,
+      reporter: { id: req.user.id, role: req.user.role },
+      reason: body.reason,
+      ip: extractIp(req),
+      userAgent: extractUserAgent(req),
+    });
+  }
+}
+
+interface InvokeBody {
+  capability: string;
+  message: string;
+  subject_user_id?: string;
+  conversation_history?: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
+  proposed_action?: Record<string, unknown>;
+  // CHECKIN-DRAFT-BE: draft a reply to this check-in of subject_user_id. Everything else comes from the server.
+  check_in_id?: unknown;
+}
+
+/** A check-in draft is a coach's, for one named client, with no caller context. A client's token stays today's 403. */
+function assertCheckInDraftRequest(body: InvokeBody, cap: string, role: string): void {
+  if (cap === COACH_MESSAGE_CAPABILITY && role !== 'coach' && role !== 'owner') return;
+  const valid =
+    cap === COACH_MESSAGE_CAPABILITY &&
+    role === 'coach' &&
+    typeof body.check_in_id === 'string' &&
+    isUUID(body.check_in_id) &&
+    !!body.subject_user_id &&
+    body.conversation_history === undefined &&
+    body.proposed_action === undefined;
+  if (!valid) throw new BadRequestException({ code: 'CHECK_IN_DRAFT_INVALID', message: CHECK_IN_CANNOT_DRAFT });
 }
 
 function extractIp(req: AuthedRequest): string | null {

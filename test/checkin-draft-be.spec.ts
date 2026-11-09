@@ -573,6 +573,7 @@ describe('CHECKIN-DRAFT-BE: a coach-approved reply to one check-in', () => {
       expect(second.next_cursor).toBeNull();
       expect([...first.items, ...second.items].map((d) => d.id).sort()).toEqual([...ids].sort());
       expect((await plain()).map((d) => d.id).sort()).toEqual([...ids].sort());
+      for (const d of await plain()) expect(JSON.stringify(d.provenance)).toContain('"source":"check_in"');
       expect(await prisma.aIDraft.count()).toBe(0);
       expect(await prisma.messageDraft.count()).toBe(0);
     });

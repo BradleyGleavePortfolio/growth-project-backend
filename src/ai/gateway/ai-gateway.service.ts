@@ -45,7 +45,7 @@ import {
   isMwbLiveCreateCapability,
   MWB_LIVE_CREATE_CAPABILITIES,
 } from './mwb-live-create.feature';
-import { ROMAN_MESSAGE_CAPABILITIES, ROMAN_MESSAGE_SOURCE } from './roman-message-draft';
+import { ROMAN_MESSAGE_CAPABILITIES, ROMAN_MESSAGE_SOURCE, checkInRefOf } from './roman-message-draft';
 import { inBlockWith } from '../../messaging/block-pair';
 import { MESSAGING_ERRORS, messagingError } from '../../messaging/messaging-errors';
 import { AuditService } from '../../audit/audit.service';
@@ -272,6 +272,9 @@ export class AiGatewayService {
     }
 
     const adapter = this.providers.resolve(resolved.provider);
+    // Only the server writes this entry: the route never takes provenance from the body.
+    const checkInId = checkInRefOf(req.provenance);
+    let reusedBody: string | null = null;
 
     // R2b — whose data is in this request, derived from every client id the
     // gateway can see (never only the caller's declaration). When the
@@ -287,6 +290,12 @@ export class AiGatewayService {
         adapter.name === 'anthropic' ? 'anthropic' : 'perplexity',
         'gateway',
       );
+      // CHECKIN-DRAFT-BE: one draft per check-in. Past every gate above, so a re-tap with consent now off is
+      // refused, never answered; before the budget and the model, so it costs nothing.
+      if (checkInId) {
+        const live = await this.liveCheckInDraft(this.prisma, req, checkInId);
+        if (live) return this.answerFromLiveDraft(req, live, requestId, adapter.name);
+      }
     }
 
     // Stream 1 — pre-call budget gate. Skip for capabilities not in the
@@ -537,6 +546,15 @@ export class AiGatewayService {
           : await this.prisma.$transaction(async (tx) => {
               await lockClientsForDraftWrite(tx, namedClientIds(req));
               await this.assertRequesterMayActOn(req, tx);
+              if (checkInId) {
+                // CHECKIN-DRAFT-BE: the client lock above is FOR SHARE, so two first taps both pass it. This one is exclusive.
+                await tx.$queryRaw`SELECT "id" FROM "CheckIn" WHERE "id" = ${checkInId} FOR NO KEY UPDATE`;
+                const live = await this.liveCheckInDraft(tx, req, checkInId);
+                if (live) {
+                  reusedBody = assertCoachMessagePayload(live.payload).body;
+                  return live;
+                }
+              }
               return write(tx);
             });
       approvalDraftId = draft.id;
@@ -594,12 +612,56 @@ export class AiGatewayService {
       enabled: response.enabled,
       provider: response.provider,
       model: response.model,
-      reply: response.text,
+      reply: reusedBody ?? response.text,
       redactionsApplied: redactionSummary,
       provenance,
       // Caller MUST mark output as draft if either: no real model ran,
       // or the capability requires human approval. The two combine.
       draftMode: !response.enabled || approvalRequired,
+    };
+  }
+
+  /** CHECKIN-DRAFT-BE: this coach's live draft replying to this check-in, matched in code on the bounded pending rows. */
+  private async liveCheckInDraft(db: Prisma.TransactionClient, req: AiGatewayRequest, checkInId: string) {
+    const rows = await db.aiActionDraft.findMany({
+      where: {
+        capability: req.capability,
+        status: 'pending',
+        tenant_coach_id: req.tenantCoachId ?? null,
+        subject_user_id: req.subjectUserId ?? null,
+      },
+      select: { id: true, payload: true, provenance: true, redacted_inputs: true },
+      orderBy: { created_at: 'desc' },
+      take: 200,
+    });
+    return rows.find((row) => checkInRefOf(row.provenance) === checkInId) ?? null;
+  }
+
+  /** The answer a first tap got, for the same draft: no model call, spend or new row. */
+  private async answerFromLiveDraft(
+    req: AiGatewayRequest,
+    live: { id: string; payload: Prisma.JsonValue; redacted_inputs: Prisma.JsonValue },
+    requestId: string,
+    adapterName: string,
+  ): Promise<AiGatewayResult> {
+    const audit = await this.prisma.aiRequestAudit.findFirst({
+      where: { approval_draft_id: live.id },
+      orderBy: { created_at: 'asc' },
+      select: { id: true, request_id: true, provider: true, model: true },
+    });
+    return {
+      requestId: audit?.request_id ?? requestId,
+      auditId: audit?.id ?? '',
+      approvalDraftId: live.id,
+      approvalRequired: true,
+      approvalStatus: 'pending',
+      enabled: true,
+      provider: audit?.provider ?? adapterName,
+      model: audit?.model ?? '',
+      reply: assertCoachMessagePayload(live.payload).body,
+      redactionsApplied: Object.assign(this.redaction.emptySummary(), live.redacted_inputs),
+      provenance: req.provenance ?? [],
+      draftMode: true,
     };
   }
 

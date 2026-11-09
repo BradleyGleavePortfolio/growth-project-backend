@@ -45,6 +45,8 @@ import { EditWorkoutPlanMaterializer } from './materialisers/edit-workout-plan.m
 import { ClientPathChangeMaterializer } from './materialisers/client-path-change.materialiser';
 import { WorkoutBuilderAiController } from './workout-builder/workout-builder-ai.controller';
 import { WorkoutBuilderAiService } from './workout-builder/workout-builder-ai.service';
+// CHECKIN-DRAFT-BE: Report this draft emails the support inbox like every other report.
+import { ReportAlertService } from '../../report-alerts/report-alert.service';
 
 // @Global so feature services (coach messaging, meal-plan AI suggestions,
 // finance proof drafts, …) can inject AiGatewayService without first
@@ -78,6 +80,7 @@ import { WorkoutBuilderAiService } from './workout-builder/workout-builder-ai.se
     PrivateContextService,
     AiGatewayService,
     AiApprovalService,
+    ReportAlertService,
     WorkoutBuilderStatusService,
     WorkoutBuilderAiService,
     // PR AI-3 (PRODUCT-1): capability materialisation registry. Each

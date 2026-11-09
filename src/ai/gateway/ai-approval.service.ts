@@ -14,8 +14,17 @@ import {
 import { PrismaService } from '../../prisma.service';
 import { AuditService } from '../../audit/audit.service';
 import { inBlockWith } from '../../messaging/block-pair';
-import { ROMAN_MESSAGE_CAPABILITIES } from './roman-message-draft';
-import { Prisma } from '@prisma/client';
+import { ROMAN_MESSAGE_CAPABILITIES, checkInRefOf, isCheckInDraft } from './roman-message-draft';
+import {
+  COACH_MESSAGE_CAPABILITY,
+  CoachMessageMaterializer,
+  parseCoachMessageEdit,
+} from './materialisers/coach-message.materialiser';
+import type { MaterializeResult } from './materialisers/capability-materialiser.interface';
+import { ConsentScope, ConsentService } from '../../consent/consent.service';
+import { ReportAlertService } from '../../report-alerts/report-alert.service';
+import type { ReportReason } from '../../messages-safety/dto/report-message.dto';
+import { Prisma, type AiActionDraft } from '@prisma/client';
 import { CapabilityMaterializerRegistry } from './materialisers/capability-materialiser.registry';
 import { WORKOUT_BUILDER_MODEL_DIFF_SOURCE } from './ai-gateway.service';
 import { isMwbLiveCreateCapability } from './mwb-live-create.feature';
@@ -40,6 +49,10 @@ import {
 // admin actions.
 
 type Decision = 'approved' | 'rejected';
+
+// The wearable path's own words for a coach's edit (wearable-insights.controller.ts).
+const COACH_EDIT_NOTE = 'Coach edited body before approve';
+const DRAFT_REPORTED_ACTION = 'safety.ai_draft_reported';
 
 /**
  * B-AIB1-125 — true when a draft's payload is the model's own reply: the
@@ -101,6 +114,14 @@ export function selectAcceptedOps<T extends { kind: string }>(diff: readonly T[]
   return diff.filter((op, i) => ok.has(`c${i}`) && (op.kind !== 'reorder' || allOthers));
 }
 
+type DraftRowForReader = {
+  id: string;
+  capability: string;
+  subject_user_id: string | null;
+  payload: Prisma.JsonValue;
+  provenance: Prisma.JsonValue;
+};
+
 export interface DecideInput {
   draftId: string;
   decider: { id: string; role: string };
@@ -111,6 +132,14 @@ export interface DecideInput {
   acceptedChangeIds?: string[];
   // COPILOT-BE: the coach's Edit of a client_path_change draft (its one editable field), applied on approval.
   editedPayload?: unknown;
+  ip?: string | null;
+  userAgent?: string | null;
+}
+
+export interface ReportDraftInput {
+  draftId: string;
+  reporter: { id: string; role: string };
+  reason: ReportReason;
   ip?: string | null;
   userAgent?: string | null;
 }
@@ -132,6 +161,11 @@ export class AiApprovalService {
     @Optional()
     @Inject(CapabilityMaterializerRegistry)
     private materialisers: CapabilityMaterializerRegistry | null = null,
+    // CHECKIN-DRAFT-BE: the share gate on a draft bound to a check-in. ConsentModule is @Global; only hand-built
+    // tests omit it, and such a draft is then withheld.
+    @Optional() private consent?: ConsentService,
+    // CHECKIN-DRAFT-BE: Report this draft's support-inbox email.
+    @Optional() private reportAlerts?: ReportAlertService,
   ) {}
 
   async listPending(scope: { tenantCoachId?: string; subjectUserId?: string; limit?: number; status?: string; readerId?: string }) {
@@ -153,8 +187,47 @@ export class AiApprovalService {
       orderBy: { created_at: 'desc' },
       take: limit,
     });
-    const kept = scope.tenantCoachId ? await this.keepOnRoster(scope.tenantCoachId, drafts) : drafts;
-    return this.withoutBlockedSources(scope.readerId, kept);
+    return this.readableBy(scope.tenantCoachId, scope.readerId, drafts);
+  }
+
+  /** What one reader of a list may see of these drafts: a coach his clients' drafts; an owner what an owner sees. */
+  private async readableBy<T extends DraftRowForReader>(
+    coachId: string | undefined,
+    readerId: string | undefined,
+    drafts: T[],
+  ): Promise<T[]> {
+    let kept = drafts;
+    if (coachId) {
+      kept = await this.keepOnRoster(coachId, kept);
+      const withheld = await this.unsharedCheckInDrafts(coachId, kept);
+      if (withheld.size > 0) kept = kept.filter((d) => !withheld.has(d.id));
+    }
+    return this.withoutBlockedSources(readerId, kept);
+  }
+
+  /**
+   * CHECKIN-DRAFT-BE (the FR-1205 rule, applied to this source): while the check-in a draft replies to is gone, or
+   * this coach may no longer read that client's check-ins, the draft is withheld. Sharing on returns it.
+   */
+  private async unsharedCheckInDrafts<T extends DraftRowForReader>(coachId: string, drafts: T[]): Promise<Set<string>> {
+    const bound = drafts.filter((d) => isCheckInDraft(d));
+    if (bound.length === 0) return new Set();
+    const clients = [...new Set(bound.flatMap((d) => (d.subject_user_id ? [d.subject_user_id] : [])))];
+    const [rows, shared] = await Promise.all([
+      this.prisma.checkIn.findMany({
+        where: { id: { in: bound.flatMap((d) => checkInRefOf(d.provenance) ?? []) } },
+        select: { id: true, user_id: true },
+      }),
+      this.consent
+        ? this.consent.grantedScopesByClient(coachId, clients, [ConsentScope.FITNESS_HABITS_PROGRESS])
+        : new Map<string, Set<string>>(),
+    ]);
+    const ownerOf = new Map(rows.map((r) => [r.id, r.user_id]));
+    const readable = (d: T) =>
+      !!d.subject_user_id &&
+      ownerOf.get(checkInRefOf(d.provenance) ?? '') === d.subject_user_id &&
+      shared.get(d.subject_user_id)?.has(ConsentScope.FITNESS_HABITS_PROGRESS) === true;
+    return new Set(bound.filter((d) => !readable(d)).map((d) => d.id));
   }
 
   /**
@@ -183,8 +256,7 @@ export class AiApprovalService {
     ]);
     const items = rows.slice(0, scope.limit);
     const next_cursor = rows.length > scope.limit ? items[items.length - 1].id : null;
-    const kept = coachId ? await this.keepOnRoster(coachId, items) : items;
-    return { items: await this.withoutBlockedSources(scope.readerId, kept), total, next_cursor };
+    return { items: await this.readableBy(coachId, scope.readerId, items), total, next_cursor };
   }
 
   /**
@@ -320,6 +392,65 @@ export class AiApprovalService {
     return subject?.coach_id === decider.id;
   }
 
+  /** decide's access checks, shared with Report: tenant, roster, every client the payload names, the requester rule. */
+  private async assertMayDecide(draft: AiActionDraft, decider: { id: string; role: string }): Promise<void> {
+    // Tenant boundary: coaches can only decide drafts inside their own
+    // tenant, for their own clients. Owners can decide any draft. Other
+    // roles are rejected. B-AIB1-125: a draft with no tenant is no coach's
+    // to decide, and the subject must be on the deciding coach's roster
+    // (re-read now), so a coach can never decide another coach's client's
+    // draft.
+    if (decider.role !== 'owner') {
+      if (decider.role !== 'coach') {
+        throw new ForbiddenException('Approver role not permitted');
+      }
+      if (draft.tenant_coach_id !== decider.id) {
+        throw new ForbiddenException('Draft is outside your tenant');
+      }
+      if (draft.subject_user_id) {
+        const subject = await this.prisma.user.findUnique({
+          where: { id: draft.subject_user_id },
+          select: { coach_id: true },
+        });
+        if (subject?.coach_id !== decider.id) {
+          throw new ForbiddenException('Draft is outside your tenant');
+        }
+      }
+      // FIX-AIB-125 (B-807-1): every client the payload names must be the
+      // subject (checked above) or on the deciding coach's roster, so an
+      // approved assign / notification draft can never reach another
+      // coach's client.
+      for (const clientId of payloadClientIds(draft.payload)) {
+        if (clientId === draft.subject_user_id) continue;
+        const named = await this.prisma.user.findUnique({
+          where: { id: clientId },
+          select: { coach_id: true },
+        });
+        if (named?.coach_id !== decider.id) {
+          throw new ForbiddenException('Draft is outside your tenant');
+        }
+      }
+    }
+
+    // AI never approves itself. The original requester also cannot
+    // approve their OWN human-written draft when someone else in the
+    // tenant could — approving an action they themselves typed defeats the
+    // human-in-the-loop check. Owners stay bound by this rule.
+    //
+    // B-AIB1-125 (AUDIT-14 U2, SAFE-MWBAI-125 blocker 3): the tenant coach
+    // IS the human in the loop for (a) a draft whose payload the model
+    // wrote, and (b) any draft in a single-coach tenant (no one else in the
+    // tenant can decide, so the rule only dead-ended the coach). The tenant
+    // and roster checks above already ran.
+    if (
+      draft.requester_id &&
+      draft.requester_id === decider.id &&
+      !(await this.tenantCoachMayDecideOwnDraft(draft, decider))
+    ) {
+      throw new ForbiddenException('A draft cannot be decided by its requester');
+    }
+  }
+
   async decide(input: DecideInput) {
     const draft = await this.prisma.aiActionDraft.findUnique({
       where: { id: input.draftId },
@@ -341,60 +472,11 @@ export class AiApprovalService {
       throw new ForbiddenException(`Draft already ${draft.status}`);
     }
 
-    // Tenant boundary: coaches can only decide drafts inside their own
-    // tenant, for their own clients. Owners can decide any draft. Other
-    // roles are rejected. B-AIB1-125: a draft with no tenant is no coach's
-    // to decide, and the subject must be on the deciding coach's roster
-    // (re-read now), so a coach can never decide another coach's client's
-    // draft.
-    if (input.decider.role !== 'owner') {
-      if (input.decider.role !== 'coach') {
-        throw new ForbiddenException('Approver role not permitted');
-      }
-      if (draft.tenant_coach_id !== input.decider.id) {
-        throw new ForbiddenException('Draft is outside your tenant');
-      }
-      if (draft.subject_user_id) {
-        const subject = await this.prisma.user.findUnique({
-          where: { id: draft.subject_user_id },
-          select: { coach_id: true },
-        });
-        if (subject?.coach_id !== input.decider.id) {
-          throw new ForbiddenException('Draft is outside your tenant');
-        }
-      }
-      // FIX-AIB-125 (B-807-1): every client the payload names must be the
-      // subject (checked above) or on the deciding coach's roster, so an
-      // approved assign / notification draft can never reach another
-      // coach's client.
-      for (const clientId of payloadClientIds(draft.payload)) {
-        if (clientId === draft.subject_user_id) continue;
-        const named = await this.prisma.user.findUnique({
-          where: { id: clientId },
-          select: { coach_id: true },
-        });
-        if (named?.coach_id !== input.decider.id) {
-          throw new ForbiddenException('Draft is outside your tenant');
-        }
-      }
-    }
+    await this.assertMayDecide(draft, input.decider);
 
-    // AI never approves itself. The original requester also cannot
-    // approve their OWN human-written draft when someone else in the
-    // tenant could — approving an action they themselves typed defeats the
-    // human-in-the-loop check. Owners stay bound by this rule.
-    //
-    // B-AIB1-125 (AUDIT-14 U2, SAFE-MWBAI-125 blocker 3): the tenant coach
-    // IS the human in the loop for (a) a draft whose payload the model
-    // wrote, and (b) any draft in a single-coach tenant (no one else in the
-    // tenant can decide, so the rule only dead-ended the coach). The tenant
-    // and roster checks above already ran.
-    if (
-      draft.requester_id &&
-      draft.requester_id === input.decider.id &&
-      !(await this.tenantCoachMayDecideOwnDraft(draft, input.decider))
-    ) {
-      throw new ForbiddenException('A draft cannot be decided by its requester');
+    // CHECKIN-DRAFT-BE: after the tenant and roster checks, which keep today's 403s. An owner decides as today.
+    if (input.decider.role !== 'owner' && (await this.unsharedCheckInDrafts(input.decider.id, [draft])).size > 0) {
+      throw new NotFoundException('AI draft not found');
     }
 
     // #CP-LAPSE: a Copilot change the coach did not decide in time expires (the client sees "expired"); nothing applies.
@@ -405,8 +487,13 @@ export class AiApprovalService {
 
     const status = input.decision;
     // COPILOT-BE (CP-NOTE): a client's Copilot change carries at most one short line, which the client sees.
-    const note = draft.capability === CLIENT_PATH_CHANGE ? pathChangeNote(input.note) : input.note ?? null;
-    if (input.editedPayload !== undefined && (draft.capability !== CLIENT_PATH_CHANGE || status !== 'approved')) {
+    // CHECKIN-DRAFT-BE: Roman's reply to one check-in may carry the coach's edit on approval; no other draft gains this.
+    const edited = input.editedPayload !== undefined;
+    const editableCheckIn = isCheckInDraft(draft);
+    const note = draft.capability === CLIENT_PATH_CHANGE
+      ? pathChangeNote(input.note)
+      : edited && editableCheckIn ? COACH_EDIT_NOTE : input.note ?? null;
+    if (edited && ((draft.capability !== CLIENT_PATH_CHANGE && !editableCheckIn) || status !== 'approved')) {
       throw new BadRequestException({ code: 'PAYLOAD_EDIT_UNSUPPORTED', message: 'This draft cannot be edited.' });
     }
 
@@ -443,7 +530,22 @@ export class AiApprovalService {
       appliedPayload = { ...(payload as Prisma.JsonObject), diff: subset };
       toMaterialise = { ...draft, payload: appliedPayload };
     }
-    if (input.editedPayload !== undefined) {
+    let sendEdited: (() => Promise<MaterializeResult>) | undefined;
+    if (edited && editableCheckIn) {
+      const editor = this.materialisers?.resolve(draft.capability);
+      if (!(editor instanceof CoachMessageMaterializer)) {
+        throw new BadRequestException({ code: 'PAYLOAD_EDIT_UNSUPPORTED', message: 'This draft cannot be edited.' });
+      }
+      const parsed = parseCoachMessageEdit(input.editedPayload);
+      if (!parsed.success) {
+        throw new BadRequestException({
+          error: 'AI_DRAFT_PAYLOAD_INVALID',
+          capability: draft.capability,
+          issues: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message, code: i.code })),
+        });
+      }
+      sendEdited = () => editor.materializeEdited(draft, parsed.data.body);
+    } else if (edited) {
       // The coach's Edit: his one field on a baseline refreshed to the live plan, re-checked (owner, consent, bounds).
       const editor = this.materialisers?.resolve(draft.capability);
       if (!(editor instanceof ClientPathChangeMaterializer)) {
@@ -468,7 +570,7 @@ export class AiApprovalService {
       const materialiser = this.materialisers.resolve(draft.capability);
       if (materialiser) {
         try {
-          const result = await materialiser.materialize(toMaterialise);
+          const result = await (sendEdited ? sendEdited() : materialiser.materialize(toMaterialise));
           materialisationRef = result.ref ?? null;
           if (result.status === 'racing') {
             // P1-1: a concurrent approver holds the materialisation claim
@@ -699,6 +801,63 @@ export class AiApprovalService {
       this.logger.warn(`workout builder lock token unavailable: ${err instanceof Error ? err.name : 'unknown'}`);
       return ref;
     }
+  }
+
+  /**
+   * CHECKIN-DRAFT-BE: Report this draft. One AuditLog row (no text) is the record; a failed write fails the call.
+   * Whatever this coach cannot see or decide, or that is no longer pending, is 404 as an unknown id. Nothing is sent
+   * and the draft stays pending.
+   */
+  async reportDraft(input: ReportDraftInput): Promise<{ reportId: string; status: 'received' | 'already_reported' }> {
+    const gone = () => new NotFoundException('AI draft not found');
+    const draft = await this.prisma.aiActionDraft.findUnique({ where: { id: input.draftId } });
+    if (!draft || draft.status !== 'pending' || draft.capability !== COACH_MESSAGE_CAPABILITY || input.reporter.role !== 'coach') {
+      throw gone();
+    }
+    try {
+      await this.assertMayDecide(draft, input.reporter);
+    } catch (err) {
+      if (err instanceof ForbiddenException) throw gone();
+      throw err;
+    }
+    if ((await this.readableBy(input.reporter.id, input.reporter.id, [draft])).length === 0) throw gone();
+
+    // The row lock makes "already reported" true under concurrent taps, and a decided draft stops here too.
+    const status = await this.prisma.$transaction(async (tx) => {
+      const [row] = await tx.$queryRaw<Array<{ status: string }>>`
+        SELECT "status" FROM "AiActionDraft" WHERE "id" = ${draft.id} FOR NO KEY UPDATE`;
+      if (row?.status !== 'pending') throw gone();
+      const seen = await tx.auditLog.findFirst({
+        where: { action: DRAFT_REPORTED_ACTION, actor_id: input.reporter.id, target_id: draft.id },
+        select: { id: true },
+      });
+      if (seen) return 'already_reported' as const;
+      await this.audit.writeTx(tx, {
+        action: DRAFT_REPORTED_ACTION,
+        actorId: input.reporter.id,
+        actorRole: input.reporter.role,
+        targetType: 'ai_action_draft',
+        targetId: draft.id,
+        targetUserId: draft.subject_user_id,
+        tenantCoachId: draft.tenant_coach_id,
+        ip: input.ip ?? null,
+        userAgent: input.userAgent ?? null,
+        metadata: { reason: input.reason },
+      });
+      return 'received' as const;
+    });
+    // Only a new report reaches the inbox. Best-effort: reportFiled() never rejects.
+    if (status === 'received') {
+      void this.reportAlerts?.reportFiled({
+        kind: 'ai_draft',
+        reportId: draft.id,
+        reason: input.reason,
+        createdAt: new Date(),
+        targetType: 'ai_action_draft',
+        targetId: draft.id,
+      });
+    }
+    return { reportId: draft.id, status };
   }
 
   // Background sweep entry point. Mark any pending draft past its

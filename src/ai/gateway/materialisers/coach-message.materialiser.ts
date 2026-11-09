@@ -42,6 +42,14 @@ export const CoachMessagePayloadSchema = z
 
 export type CoachMessagePayload = z.infer<typeof CoachMessagePayloadSchema>;
 
+const CoachMessageEditSchema = CoachMessagePayloadSchema.pick({ body: true }).strict();
+
+/** CHECKIN-DRAFT-BE: the coach's edit: `{ body }` alone, trimmed, on the schema's body rule. */
+export function parseCoachMessageEdit(raw: unknown) {
+  const body: unknown = typeof raw === 'object' && raw !== null ? Reflect.get(raw, 'body') : undefined;
+  return CoachMessageEditSchema.safeParse(typeof body === 'string' ? { ...(raw as object), body: body.trim() } : raw);
+}
+
 /**
  * Convenience guard used by `AiGatewayService.invoke` to validate the
  * `proposedActionPayload` for `draft.coach_message` before the draft row is
@@ -90,6 +98,19 @@ export class CoachMessageMaterializer implements CapabilityMaterializer {
   }
 
   async materialize(draft: AiActionDraft): Promise<MaterializeResult> {
+    return this.run(draft);
+  }
+
+  /**
+   * CHECKIN-DRAFT-BE: the coach's Send with his own text. The row takes the edit in the claim's one conditional
+   * UPDATE, so it always holds the text of whoever holds the claim; a failed send puts the stored text back as it
+   * releases the claim; a loser whose winner rolled back sends its own edit. decide() flips no payload for this path.
+   */
+  async materializeEdited(draft: AiActionDraft, body: string): Promise<MaterializeResult> {
+    return this.run(draft, body);
+  }
+
+  private async run(draft: AiActionDraft, editedBody?: string): Promise<MaterializeResult> {
     // P1-1 / P2-1 — the invariant we hold for callers (AiApprovalService.decide):
     //   `status='approved'` MUST imply a committed downstream side-effect
     //   (`materialised_ref` non-null). To make that safe under concurrency the
@@ -124,15 +145,17 @@ export class CoachMessageMaterializer implements CapabilityMaterializer {
     // Re-validate the persisted payload. Drift-detection: if a future
     // migration or admin tool ever rewrites payload shape, we'd rather
     // 4xx the approval than crash inside MessagingService.
-    let payload: CoachMessagePayload;
+    let stored: CoachMessagePayload;
     try {
-      payload = assertCoachMessagePayload(draft.payload);
+      stored = assertCoachMessagePayload(draft.payload);
     } catch (err) {
       this.logger.warn(
         `CoachMessageMaterializer: payload validation failed for draft ${draft.id}: ${(err as Error).message}`,
       );
       throw err;
     }
+    const payload = editedBody === undefined ? stored : { ...stored, body: editedBody };
+    const keep = editedBody === undefined ? {} : { payload: stored };
 
     // Optimistic idempotency lock. We claim the right to materialise this
     // draft by setting `materialised_at` in a conditional UPDATE that
@@ -154,7 +177,7 @@ export class CoachMessageMaterializer implements CapabilityMaterializer {
     // count=0; the race-loser path's polling + recovery loop handles it.
     const claim = await this.prisma.aiActionDraft.updateMany({
       where: { id: draft.id, materialised_at: null, status: 'pending' },
-      data: { materialised_at: new Date() },
+      data: { materialised_at: new Date(), ...(editedBody === undefined ? {} : { payload }) },
     });
     if (claim.count === 0) {
       // Race lost (or STUCK-CLAIM present). We do NOT assume the winner
@@ -167,7 +190,7 @@ export class CoachMessageMaterializer implements CapabilityMaterializer {
       //   - The poll budget elapses → return `status: 'racing'` so decide()
       //     refuses to flip status and surfaces a conflict to the caller,
       //     who can retry after the winner finishes.
-      return this.awaitWinnerOrRecover(draft, payload);
+      return this.awaitWinnerOrRecover(draft, payload, editedBody);
     }
 
     // Send. If `sendAsCoach` throws (auth boundary, blocked sender, DB
@@ -187,7 +210,7 @@ export class CoachMessageMaterializer implements CapabilityMaterializer {
       await this.prisma.aiActionDraft
         .updateMany({
           where: { id: draft.id, materialised_at: { not: null }, materialised_ref: null },
-          data: { materialised_at: null },
+          data: { materialised_at: null, ...keep },
         })
         .catch((rollbackErr) => {
           // We tried our best to release the claim. Log and continue —
@@ -225,6 +248,7 @@ export class CoachMessageMaterializer implements CapabilityMaterializer {
   private async awaitWinnerOrRecover(
     draft: AiActionDraft,
     payload: CoachMessagePayload,
+    editedBody?: string,
   ): Promise<MaterializeResult> {
     for (let i = 0; i < CoachMessageMaterializer.RACE_POLL_ATTEMPTS; i++) {
       const fresh = await this.prisma.aiActionDraft.findUnique({
@@ -262,7 +286,7 @@ export class CoachMessageMaterializer implements CapabilityMaterializer {
         // is bounded by the poll budget on our side; if our own claim is
         // lost again to a third caller we'll re-poll under that caller's
         // ownership. No unbounded loops.
-        return this.materialize(fresh as AiActionDraft);
+        return this.run(fresh as AiActionDraft, editedBody);
       }
       await this.sleep(CoachMessageMaterializer.RACE_POLL_INTERVAL_MS);
     }

@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import type { User, UserProfile } from '@prisma/client';
 import { createHash } from 'crypto';
 import { PrismaService } from '../../prisma.service';
@@ -8,10 +8,12 @@ import { CREATE_WORKOUT_PLAN_CAPABILITY } from './materialisers/create-workout-p
 import { EDIT_WORKOUT_PLAN_CAPABILITY } from './materialisers/edit-workout-plan.materialiser';
 import { toInjuryAreas } from './workout-builder/training-substitutions';
 import { UNTRUSTED_TEXT_RULE, fenceUntrusted } from '../utils/untrusted-text';
-import { ConsentService } from '../../consent/consent.service';
+import { ConsentScope, ConsentService } from '../../consent/consent.service';
 import { seesWeight, weightIfShared } from '../../consent/coach-sharing-gate';
 import { notInBlockWith } from '../../messaging/block-pair';
 import { authorReadableBy } from '../../common/count-rule';
+import { classifySafety } from '../../roman/guardrails/safety-router';
+import { CHECK_IN_SOURCE } from './roman-message-draft';
 
 // B-AIB3-126 (plan section 1, SAFE 2): the workout capabilities get the minimised block — no name, body weight, height,
 // preferred snacks or coach message excerpt (the message row is not even read).
@@ -31,6 +33,23 @@ export interface ClientContextResult {
   systemPrompt: string;
   provenance: ProvenanceRef[];
 }
+
+export interface CheckInDraftRequest {
+  /** Server-written; the check-in is inside the fence, so the gateway's redaction reaches it. */
+  userMessage: string;
+  provenance: ProvenanceRef;
+}
+
+/** The app's own words for "Roman will not draft this" (mobile DraftSheets.tsx). */
+export const CHECK_IN_CANNOT_DRAFT = "Roman can't write this right now. Nothing was sent.";
+
+const CHECK_IN_DRAFT_ASK =
+  "Write a short, warm reply from me, their coach, to this client's check-in. " +
+  'Speak to them directly and ask at most one easy question. ' +
+  'The check-in is inside the client_data tags below. Use only what it says. ' +
+  'Mood and energy, when present, are scores from one to five. ' +
+  'Do not invent a feeling, a score, a comparison with other days, or an answer to a question they were not asked. ' +
+  'If a field is missing, do not mention it. Reply with the message text only.';
 
 interface CallerScope {
   id: string;
@@ -156,6 +175,52 @@ export class PrivateContextService {
     return { systemPrompt, provenance };
   }
 
+  /**
+   * CHECKIN-DRAFT-BE: one check-in, as a server-written request for its reply draft. The caller has already
+   * passed loadClientContext. Unknown, another client's and not shared are one identical 404 (no probing).
+   * Sends only the note, mood, energy and sleep that are present; weight (its own switch) and soreness are not read.
+   */
+  async loadCheckInDraft(caller: CallerScope, clientId: string, checkInId: string): Promise<CheckInDraftRequest> {
+    const row = clientId === caller.id
+      ? null
+      : await this.prisma.checkIn.findFirst({
+          where: { id: checkInId, user_id: clientId },
+          select: { id: true, date: true, notes: true, mood: true, energy: true, sleep_hours: true },
+        });
+    const shared = this.consent
+      ? await this.consent.coachCanAccess(caller.id, clientId, ConsentScope.FITNESS_HABITS_PROGRESS, caller.role)
+      : false;
+    if (!row || !shared) throw new NotFoundException({ code: 'CHECK_IN_NOT_FOUND', message: 'Check-in not found' });
+
+    const note = row.notes?.trim() || null;
+    const numbers = { mood: row.mood, energy: row.energy, sleep_hours: row.sleep_hours };
+    if (!note && Object.values(numbers).every((n) => n === null)) {
+      throw new UnprocessableEntityException({ code: 'CHECK_IN_NOTHING_TO_DRAFT', message: CHECK_IN_CANNOT_DRAFT });
+    }
+    // The two checks Roman's own path makes: such a note gets the coach's own words, never a draft.
+    if (note) {
+      const safety = classifySafety(note);
+      if (safety.short_circuit || safety.class === 'eating_disorder_risk') {
+        throw new UnprocessableEntityException({ code: 'CHECK_IN_NEEDS_COACH', message: CHECK_IN_CANNOT_DRAFT });
+      }
+    }
+    const sent = {
+      ...(note ? { note: flatForRedaction(note) } : {}),
+      ...Object.fromEntries(Object.entries(numbers).filter(([, n]) => n !== null)),
+    };
+    return {
+      userMessage: `${CHECK_IN_DRAFT_ASK}\n\n${fenceUntrusted(sent, 2)}`,
+      provenance: {
+        source: CHECK_IN_SOURCE,
+        ref: row.id,
+        count: 1,
+        hash: hash(JSON.stringify(sent)),
+        origin: 'local',
+        date: row.date.toISOString().slice(0, 10),
+      },
+    };
+  }
+
   // Self-context shortcut for the chat surface: same shape as
   // loadClientContext but the caller is implicitly the subject. Used by
   // the `chat.client_self` capability so a logged-in client can ask the
@@ -191,6 +256,14 @@ function workoutBlock(role: User['role'], profile: UserProfile | null) {
         }
       : null,
   };
+}
+
+/**
+ * The fence writes a newline as `\\n` and `<` as `\\u003c`, which glues the escape's last letter to the next word, so
+ * the redaction patterns that start at a word boundary would miss a number there. One line, and < > & set apart.
+ */
+function flatForRedaction(note: string): string {
+  return note.replace(/[<>&]/g, ' $& ').replace(/[\s\p{Cc}]+/gu, ' ').trim();
 }
 
 function hash(s: string): string {

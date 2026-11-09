@@ -29,6 +29,25 @@ export const ROMAN_MESSAGE_CAPABILITIES: ReadonlySet<string> = new Set([
  */
 export const ROMAN_MESSAGE_SOURCE = 'roman_message_text';
 
+/** CHECKIN-DRAFT-BE: provenance source of the one check-in a draft replies to (`ref` = CheckIn.id); only the server writes it. */
+export const CHECK_IN_SOURCE = 'check_in';
+
+/** The check-in a provenance list names, or null. */
+export function checkInRefOf(provenance: unknown): string | null {
+  if (!Array.isArray(provenance)) return null;
+  for (const entry of provenance as unknown[]) {
+    if (typeof entry !== 'object' || entry === null || Reflect.get(entry, 'source') !== CHECK_IN_SOURCE) continue;
+    const ref: unknown = Reflect.get(entry, 'ref');
+    if (typeof ref === 'string') return ref;
+  }
+  return null;
+}
+
+/** True when the draft is Roman's reply to one check-in: the only coach_message row the coach may edit before Send. */
+export function isCheckInDraft(draft: { capability: string; provenance: unknown }): boolean {
+  return draft.capability === 'draft.coach_message' && checkInRefOf(draft.provenance) !== null;
+}
+
 /** True when the draft is a Roman message draft the server marked as Roman's text. */
 export function isRomanMessageDraft(draft: { capability: string; provenance: unknown }): boolean {
   if (!ROMAN_MESSAGE_CAPABILITIES.has(draft.capability) || !Array.isArray(draft.provenance)) return false;
