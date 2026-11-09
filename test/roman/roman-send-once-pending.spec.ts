@@ -26,6 +26,7 @@ import {
 import type { AuditService } from '../../src/audit/audit.service';
 import type { CoachAlertsService } from '../../src/coach/coach-alerts.service';
 import * as safetyRouter from '../../src/roman/guardrails/safety-router';
+import * as postCheck from '../../src/roman/guardrails/roman-post-check';
 import { CopilotTurnService } from '../../src/copilot/copilot-turn';
 import { CopilotService } from '../../src/copilot/copilot.service';
 import { ROMAN_REPLY_PENDING_MARK, ROMAN_REPLY_PENDING_MAX_MS } from '../../src/roman/roman.constants';
@@ -470,6 +471,9 @@ describe('cases 3 and 6: a first send that ended with no reply', () => {
     ['any other read that throws (:1108)', {}, (w) => {
       jest.spyOn(w.service, 'buildContextTurns').mockRejectedValue(new Error('read failed'));
     }],
+    ['the post-check throws (:1250)', {}, () => {
+      jest.spyOn(postCheck, 'postCheckRomanReply').mockImplementation(() => { throw new Error('check failed'); });
+    }],
     ['the fixed fallback could not be stored (:1433)', {}, (w) => {
       routeAs('eating_disorder_risk');
       jest.spyOn(w.egress, 'assertMaySend').mockRejectedValue(new AiConsentRequiredException('client'));
@@ -747,6 +751,20 @@ describe('the mark itself', () => {
     expect(w.db.romanMessage.updateMany.mock.calls[0][0].where).toEqual({ id: turnId, session_id: SESSION, user_id: USER_B.id, role: 'user' });
     await w.service.clearReplyPending({ id: USER_A.id, role: 'student' }, SESSION, turnId);
     expect(w.turn()?.completion_tokens).toBeNull();
+  });
+
+  it('a throw before the stream\'s try (the head could not be written, :229): only the bound ends the mark', async () => {
+    const w = world();
+    const out = w.response();
+    out.res.writeHead.mockImplementationOnce(() => {
+      throw new Error('head failed');
+    });
+    await expect(w.send(WORDS, { out })).rejects.toThrow('head failed');
+    expect(w.turn()?.completion_tokens).toBe(MARK);
+    expect(w.db.romanMessage.updateMany).not.toHaveBeenCalled();
+    expect((await w.send(WORDS)).writes).toEqual([WIRE_PENDING]);
+    (w.turn() as Row).created_at = new Date(Date.now() - BOUND_MS - 1_000);
+    expect((await w.send(WORDS)).writes).toEqual([WIRE_UNAVAILABLE]);
   });
 
   it('a turn that vanished between the lost race\'s two reads answers as today, not pending', async () => {
