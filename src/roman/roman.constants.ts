@@ -74,8 +74,8 @@ export const ROMAN_ERROR_UNAVAILABLE = 'ROMAN_UNAVAILABLE';
 /** In-stream, on a same-key resend only: this turn's first send may still store its reply (SEND-ONCE-PENDING-BE). */
 export const ROMAN_ERROR_REPLY_PENDING = 'ROMAN_REPLY_PENDING';
 /**
- * SEND-ONCE-PENDING-BE: `completion_tokens` on a keyed user turn from its insert until its first send ends. A real
- * count is never negative, and no reader of a user turn looks at this column.
+ * SEND-ONCE-PENDING-BE: the completion token count stored on a keyed user turn from its insert until its first send
+ * ends. A real count is never negative, and no reader of a user turn looks at that column.
  */
 export const ROMAN_REPLY_PENDING_MARK = -1;
 /**
