@@ -160,7 +160,10 @@ describe('CHECKIN-DRAFT-BE: a coach-approved reply to one check-in', () => {
     };
     audit = new AuditService(db);
     messaging = new MessagingService(db, stub({ pingChat: quiet }), stub({ capture: quiet }),
-      stub({ emit: quiet }), stub({ emit: quiet }), stub({ write: quiet }), stub({ invalidateForUser: quiet }));
+      stub({ emit: quiet }), stub({ emit: quiet }), stub({ write: quiet }), stub({ invalidateForUser: quiet }),
+      // The send's own block check, on the real UserBlock rows.
+      stub({ isEitherSideBlocked: async (a: string, b: string) =>
+        (await prisma.userBlock.count({ where: { OR: [{ blocker_id: a, blocked_id: b }, { blocker_id: b, blocked_id: a }] } })) > 0 }));
     const approvalCtor = stub<new (...args: unknown[]) => AiApprovalService>(AiApprovalService);
     const approvals = new approvalCtor(db, audit, new CapabilityMaterializerRegistry([new CoachMessageMaterializer(db, messaging)]), consent, { reportFiled });
     const egress = egressWithGrants([client, otherClient]);
