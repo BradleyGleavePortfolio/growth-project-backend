@@ -57,6 +57,8 @@ describe('the lock-screen push', () => {
       roman_crisis_reply: URGENT_PUSH,
       // FR-1152 (#172-5): the space chat photo safety alert, the same line.
       community_photo_safety: URGENT_PUSH,
+      // CRISIS-TEXT-BE (#200-S1 op 1): the staff alert for community text; no client and nothing to tap.
+      community_crisis_text: 'Urgent safety alert in the community. Open TGP to see it.',
     });
   });
 });

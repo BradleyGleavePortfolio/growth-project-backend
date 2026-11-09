@@ -1257,7 +1257,6 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'COMMUNITY_CRISIS_CHECK_ENABLED',
-    values: ['true', 'false'],
     unsetIs: 'on',
     tier: 'optional',
     launch: 'switch',
