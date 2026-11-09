@@ -453,6 +453,16 @@ describe('CHECKIN-DRAFT-BE: a coach-approved reply to one check-in', () => {
       expect(await prisma.coachMessage.count()).toBe(0);
     });
 
+    it("promise A: an owner token cannot send a reply to a check-in, with or without an edit", async () => {
+      const { id } = await draftOf();
+      const asOwner = req(owner, 'owner');
+      for (const body of [{ decision: 'approved' }, { decision: 'approved', payload: { body: 'Owner words' } }]) {
+        expect(await refusal(patch(id, body, asOwner))).toMatchObject({ status: 403, body: { message: 'Approver role not permitted' } });
+      }
+      expect(await row(id)).toMatchObject({ status: 'pending', materialised_at: null });
+      expect(await prisma.coachMessage.count()).toBe(0);
+    });
+
     it('case 18: every other edit keeps today\'s 400', async () => {
       const unsupported = { status: 400, body: { code: 'PAYLOAD_EDIT_UNSUPPORTED', message: 'This draft cannot be edited.' } };
       const { id } = await draftOf();

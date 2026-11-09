@@ -478,6 +478,10 @@ export class AiApprovalService {
     if (input.decider.role !== 'owner' && (await this.unsharedCheckInDrafts(input.decider.id, [draft])).size > 0) {
       throw new NotFoundException('AI draft not found');
     }
+    // CHECKIN-DRAFT-BE: a reply to a client's check-in reaches them only on the Send of the coach who holds them.
+    if (input.decision === 'approved' && input.decider.role !== 'coach' && isCheckInDraft(draft)) {
+      throw new ForbiddenException('Approver role not permitted');
+    }
 
     // #CP-LAPSE: a Copilot change the coach did not decide in time expires (the client sees "expired"); nothing applies.
     if (pathChangeLapsed(draft)) {
