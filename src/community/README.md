@@ -22,9 +22,15 @@ where each lives. Code: `src/community/safety/` and
   ...), repeated letters and separators between single letters, and matches on
   word boundaries so ordinary words containing a term are not blocked. Terms
   are stored ROT13-encoded so the source does not carry slurs in plain text.
-- `CommunitySafetyService.assertAllowed(...)` is called BEFORE the write on:
-  post create + edit (title and body), post comments, cohort messages (send +
-  edit), DMs, challenge comments.
+- `CommunitySafetyService.screenText(...)` runs BEFORE the write on: post
+  create + edit (title and body), post comments, cohort messages (send +
+  edit), DMs, challenge comments, wins. It is the word list and Roman's crisis
+  check together, so no surface can have one without the other (#200-S1 op 1).
+  A text the crisis check marks emergency or self_harm, in any field, gives
+  the poster's own write answer (or its 422) `crisis_flag: true` and pages
+  every owner-role account once in generic words (`alertStaff`, ids only, no
+  text). Never in a row, list, realtime event or push to anyone else.
+  COMMUNITY_CRISIS_CHECK_ENABLED: unset = on, only `false` turns it off.
 - Rejection: HTTP **422** `{ error: 'content_rejected', code:
 'community.content.rejected', message }`. Nothing is written. The app shows
   the message and keeps the draft.

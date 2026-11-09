@@ -23,7 +23,7 @@ import {
   CommunityDmThreadResponse,
   CommunityDmThreadResponseSchema,
 } from '../dto/community-dm.dto';
-import { CommunitySafetyService, DM_UNAVAILABLE } from '../safety/community-safety.service';
+import { CommunitySafetyService, DM_UNAVAILABLE, crisisField } from '../safety/community-safety.service';
 
 const DEFAULT_PAGE = 30;
 const MAX_PAGE = 100;
@@ -183,19 +183,19 @@ export class CommunityDmsService {
     recipientId: string,
     body: string,
     idempotencyKey?: string | null,
-  ): Promise<CommunityDmMessageResponse> {
+  ): Promise<CommunityDmMessageResponse & { crisis_flag?: true }> {
     const dmKey = await this.authoriseDm(workspaceId, user, recipientId);
-    this.safety.assertAllowed(body);
+    const screen = this.safety.screenText('dm', user.id, [body]);
     // SEND-ONCE-SERVER: a resend with the same Idempotency-Key (same author, same thread) answers with the first
     // message and repeats neither the realtime ping nor the push; the same key on other words is refused (409).
     const keyedId = idempotencyKey ? keyedSendId('dm', user.id, dmKey, idempotencyKey) : null;
     const sentBefore = keyedId ? await this.dms.findById(keyedId) : null;
-    if (sentBefore) return this.replay(sentBefore, user, dmKey, body);
+    if (sentBefore) return { ...this.replay(sentBefore, user, dmKey, body), ...crisisField(screen) };
     const params = { workspaceId, dmKey, senderId: user.id, recipientId, body };
     const { row: created, replayed } = keyedId
       ? await this.dms.createKeyedDm(keyedId, params)
       : { row: await this.dms.createDm(params), replayed: false };
-    if (replayed) return this.replay(created, user, dmKey, body);
+    if (replayed) return { ...this.replay(created, user, dmKey, body), ...crisisField(screen) };
     // v1-4 post-write tail (after gateDmRead, inside authoriseDm). Best-effort
     // realtime refetch ping to the RECIPIENT's private topic only — IDs only,
     // never the DM body (#24/#36). DMs have no dedicated broadcast event in the
@@ -224,9 +224,11 @@ export class CommunityDmsService {
       otherUserId: created.sender_id,
       workspaceId,
     });
-    return CommunityDmMessageResponseSchema.parse({
+    void this.safety.alertStaff(screen, created.id);
+    const answer = CommunityDmMessageResponseSchema.parse({
       message: this.messageView(created),
     });
+    return { ...answer, ...crisisField(screen) };
   }
 
   /** SEND-ONCE-SERVER: the first DM under a key, answered again only for the same author, thread and words. */

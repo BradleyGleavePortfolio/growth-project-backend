@@ -11,6 +11,7 @@ import type { CommunitySafetyService } from '../../../src/community/safety/commu
 import { CommunitySpacePushController } from '../../../src/community/space-push/community-space-push.controller';
 import type { CommunitySpacePushService } from '../../../src/community/space-push/community-space-push.service';
 import type { AuthedRequest } from '../../../src/auth/auth-request';
+import { textPasses } from '../safety/safety-test-helpers';
 
 const stub = <T>(v: unknown): T => v as T;
 const COHORT = '11111111-1111-1111-1111-111111111111';
@@ -63,7 +64,7 @@ function build() {
     stub<CommunityRealtimeService>({ broadcastCommunityEvent: jest.fn(async () => undefined) }),
     stub<PlanContextService>({ validate: jest.fn(async () => null) }),
     stub<CommunitySafetyService>({
-      assertAllowed: jest.fn(),
+      ...textPasses,
       hiddenFromViewer: jest.fn(async () => new Set()),
       assertVisibleTo: jest.fn(async () => undefined),
     }),

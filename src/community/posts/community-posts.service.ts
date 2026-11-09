@@ -23,7 +23,7 @@ import {
   CommunityPostSchema,
   CommunityPostView,
 } from '../dto/community-post.dto';
-import { CommunitySafetyService } from '../safety/community-safety.service';
+import { CommunitySafetyService, crisisField } from '../safety/community-safety.service';
 import { placeOf } from '../community-space-access';
 import { countedReactions } from '../../common/count-rule';
 import { z } from 'zod';
@@ -238,7 +238,7 @@ export class CommunityPostsService {
     workspaceId: string,
     input: { title: string; body: string },
     idempotencyKey?: string | null,
-  ): Promise<CommunityPostResponse> {
+  ): Promise<CommunityPostResponse & { crisis_flag?: true }> {
     const workspace = await this.access.findWorkspace(workspaceId);
     // Non-members can't see the workspace exists (404); members who aren't
     // permitted to author get an explicit 403.
@@ -251,18 +251,18 @@ export class CommunityPostsService {
         code: 'community.post.client_posts_disabled',
       });
     }
-    // Apple 1.2: objectionable-content filter before publication.
-    this.safety.assertAllowed(input.title, input.body);
+    // Apple 1.2: objectionable-content filter before publication; #200-S1: and the crisis check, each field alone.
+    const screen = this.safety.screenText('post', user.id, [input.title, input.body]);
     // SEND-ONCE-SERVER: a resend with the same Idempotency-Key (same author, same workspace) answers with the first
     // post and repeats no Hall ping; the same key on another title or body is refused (409).
     const keyedId = idempotencyKey ? keyedSendId('post', user.id, workspaceId, idempotencyKey) : null;
     const sentBefore = keyedId ? await this.posts.findById(keyedId) : null;
-    if (sentBefore) return this.replayPost(sentBefore, user, workspaceId, input);
+    if (sentBefore) return { ...(await this.replayPost(sentBefore, user, workspaceId, input)), ...crisisField(screen) };
     const params = { workspaceId, authorId: user.id, title: input.title, body: input.body };
     const { row: created, replayed } = keyedId
       ? await this.posts.createKeyed(keyedId, params)
       : { row: await this.posts.create(params), replayed: false };
-    if (replayed) return this.replayPost(created, user, workspaceId, input);
+    if (replayed) return { ...(await this.replayPost(created, user, workspaceId, input)), ...crisisField(screen) };
     // v1-4 post-write tail — best-effort realtime ping (IDs only, #24/#36) to
     // everyone who may read the Hall now (readablePost: canAccessWorkspace).
     void this.realtime.broadcastCommunityEvent(
@@ -276,7 +276,8 @@ export class CommunityPostsService {
       },
       { distinctId: created.author_id, channelKind: 'workspace' },
     );
-    return this.postResponse(user, created);
+    void this.safety.alertStaff(screen, created.id);
+    return { ...(await this.postResponse(user, created)), ...crisisField(screen) };
   }
 
   /** SEND-ONCE-SERVER: the first post under a key, answered again only for the same author, workspace and words. */
@@ -372,7 +373,7 @@ export class CommunityPostsService {
     user: User,
     postId: string,
     input: { title?: string; body?: string },
-  ): Promise<CommunityPostResponse> {
+  ): Promise<CommunityPostResponse & { crisis_flag?: true }> {
     const post = await this.readablePost(user, postId);
     if (post.author_id !== user.id) {
       throw new ForbiddenException({
@@ -380,7 +381,11 @@ export class CommunityPostsService {
         code: 'community.post.not_author',
       });
     }
-    this.safety.assertAllowed(input.title, input.body);
+    // The word list reads what was sent; the crisis check reads the post as it will be stored.
+    const screen = this.safety.screenText('post_edit', user.id, [input.title, input.body], {
+      asStored: [input.title ?? post.title, input.body ?? post.body],
+      before: [post.title, post.body],
+    });
     const updated = await this.posts.update(postId, {
       ...(input.title !== undefined ? { title: input.title } : {}),
       ...(input.body !== undefined ? { body: input.body } : {}),
@@ -395,7 +400,8 @@ export class CommunityPostsService {
       },
       { distinctId: updated.author_id, channelKind: 'workspace' },
     );
-    return this.postResponse(user, updated);
+    void this.safety.alertStaff(screen, updated.id);
+    return { ...(await this.postResponse(user, updated)), ...crisisField(screen) };
   }
 
   async remove(user: User, postId: string, shown = false) {
@@ -422,23 +428,23 @@ export class CommunityPostsService {
 
   // ── Comments ───────────────────────────────────────────────────────────────
 
-  async addComment(user: User, postId: string, body: string, idempotencyKey?: string | null): Promise<CommunityCommentResponse> {
+  async addComment(user: User, postId: string, body: string, idempotencyKey?: string | null): Promise<CommunityCommentResponse & { crisis_flag?: true }> {
     // A blocked pair can neither see nor reply to each other's posts, so the
     // reply push below can never reach the other side of a block.
     const { post, outside } = await this.visiblePost(user, postId);
     // Any active workspace member (client or coach) may comment; rule D's own coach reads only (FR-1173).
     if (outside) throw new NotFoundException(POST_NOT_FOUND);
-    this.safety.assertAllowed(body);
+    const screen = this.safety.screenText('post_comment', user.id, [body]);
     // SEND-ONCE-SERVER: a resend with the same Idempotency-Key (same author, same post) answers with the first
     // comment and repeats neither the ping nor the author's "replied" push; another body under the key is a 409.
     const keyedId = idempotencyKey ? keyedSendId('comment', user.id, post.id, idempotencyKey) : null;
     const sentBefore = keyedId ? await this.messages.findById(keyedId) : null;
-    if (sentBefore) return this.replayComment(sentBefore, user, post, body);
+    if (sentBefore) return { ...(await this.replayComment(sentBefore, user, post, body)), ...crisisField(screen) };
     const params = { workspaceId: post.workspace_id, cohortId: post.cohort_id, senderId: user.id, postId: post.id, body };
     const { row: created, replayed } = keyedId
       ? await this.messages.createKeyedComment(keyedId, params)
       : { row: await this.messages.createComment(params), replayed: false };
-    if (replayed) return this.replayComment(created, user, post, body);
+    if (replayed) return { ...(await this.replayComment(created, user, post, body)), ...crisisField(screen) };
     // v1-4 post-write tail — realtime ping to the post's readers: its space, or
     // the Hall (a comment is a CommunityMessage; the author refetches via REST).
     void this.realtime.broadcastCommunityEvent(
@@ -465,9 +471,11 @@ export class CommunityPostsService {
         workspaceId: post.workspace_id,
       });
     }
-    return CommunityCommentResponseSchema.parse({
+    void this.safety.alertStaff(screen, created.id);
+    const answer = CommunityCommentResponseSchema.parse({
       comment: (await this.commentViews(user, [created]))[0],
     });
+    return { ...answer, ...crisisField(screen) };
   }
 
   /** SEND-ONCE-SERVER: the first comment under a key, answered again only for the same author, post and words. */

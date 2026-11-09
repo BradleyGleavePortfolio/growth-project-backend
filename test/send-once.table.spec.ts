@@ -54,7 +54,7 @@ import { PackagesService } from '../src/packages/packages.service';
 import { WorkoutBuilderAutosaveService } from '../src/workout-builder/workout-builder-autosave.service';
 import { FEATURE_MWB_AUTOSAVE_UNDO_ENV } from '../src/workout-builder/workout-builder-autosave.feature';
 import { computeLockToken } from '../src/workout-builder/lock-token.helper';
-import { safetyWithBlocks } from './community/safety/safety-test-helpers';
+import { safetyWithBlocks, textPasses } from './community/safety/safety-test-helpers';
 import { stub } from './utils/trial-fakes';
 import { CommunityDmsService } from '../src/community/dms/community-dms.service';
 import { CommunityDmsRepository } from '../src/community/dms/community-dms.repository';
@@ -224,7 +224,7 @@ function postsService(f: ReturnType<typeof fakeDb>, ping: jest.Mock, push: jest.
   const view = (r: Row) => ({ id: r.id, title: r.title ?? null, body: r.body, at: (r.created_at as Date).toISOString() });
   Object.assign(svc, {
     posts: new CommunityPostsRepository(f.db), messages: new CommunityMessagesRepository(f.db),
-    safety: { assertAllowed: () => undefined }, realtime: { broadcastCommunityEvent: ping },
+    safety: textPasses, realtime: { broadcastCommunityEvent: ping },
     communityPush: { sendCommunityPush: push },
     postResponse: async (_u: unknown, r: Row) => ({ post: view(r) }),
     commentViews: async (_u: unknown, rows: Row[]) => rows.map((r) => ({
@@ -882,7 +882,7 @@ export const SEND_ONCE_TABLE: SendOnceRow[] = [
         const push = jest.fn().mockResolvedValue(undefined);
         const ping = jest.fn().mockResolvedValue(undefined);
         Object.assign(svc, {
-          dms: new CommunityDmsRepository(f.db), authoriseDm: async () => dmKey, safety: { assertAllowed: () => undefined },
+          dms: new CommunityDmsRepository(f.db), authoriseDm: async () => dmKey, safety: textPasses,
           realtime: { broadcastCommunityEvent: ping }, communityPush: { sendCommunityPush: push },
         });
         const send = (svc.send as (...a: unknown[]) => Promise<{ message: { id: string; body: string | null } }>).bind(svc);
@@ -1000,7 +1000,7 @@ export const SEND_ONCE_TABLE: SendOnceRow[] = [
         const CHALLENGE = '55555555-5555-4555-8555-555555555555';
         const svc = Object.create(CommunityChallengesService.prototype) as Record<string, unknown>;
         Object.assign(svc, {
-          repo: new CommunityChallengesRepository(f.db), safety: { assertAllowed: () => undefined },
+          repo: new CommunityChallengesRepository(f.db), safety: textPasses,
           readableChallenge: async () => ({ id: CHALLENGE, workspace_id: '11111111-1111-4111-8111-111111111111', cohort_id: null }),
         });
         const add = (svc.addComment as (...a: unknown[]) => Promise<{ comment: { id: string } }>).bind(svc);

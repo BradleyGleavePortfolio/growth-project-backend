@@ -221,13 +221,6 @@ export class CommunitySafetyService {
 
   // ── Content filter and crisis check ──────────────────────────────────────
 
-  /** Throw 422 when any field contains objectionable content. */
-  assertAllowed(...fields: Array<string | null | undefined>): void {
-    if (!checkCommunityText(...fields).allowed) {
-      throw new UnprocessableEntityException(CONTENT_REJECTED);
-    }
-  }
-
   /**
    * Every community text write comes through here, so no surface can have
    * one check without the other (#200-S1 op 1). The word list runs over
