@@ -1263,7 +1263,7 @@ export const ENV_RULES: EnvRule[] = [
     launch: 'switch',
     default: "on (unset = on; only the exact string 'false' turns the check off)",
     reason:
-      "#200-S1 op 1 kill switch for Roman's crisis check over community text (src/community/safety/community-safety.service.ts). Ships on: a matching community text carries crisis_flag on the poster's answer and pages owner-role staff in generic words. Emergency kill: set 'false' (unsetting turns it back on); off = no field, no alert, today's word list.",
+      "#200-S1 op 1 kill switch for Roman's crisis check over community text (src/community/safety/community-safety.service.ts). Ships on: a matching community text gives its poster's own answer the flag and pages owner-role staff in generic words. Emergency kill: set 'false' (unsetting turns it back on); off = no field, no alert, today's word list.",
   },
   {
     name: 'RECONCILIATION_DAILY_ENABLED',

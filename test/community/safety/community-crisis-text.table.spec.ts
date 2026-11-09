@@ -16,6 +16,8 @@ import { join, relative } from 'path';
 import { CommunitySafetyService } from '../../../src/community/safety/community-safety.service';
 import { CommunityMessagesService } from '../../../src/community/messages/community-messages.service';
 import { CommunityPostsService } from '../../../src/community/posts/community-posts.service';
+import { COMMENT_CONTEXT_TYPE } from '../../../src/community/messages/community-messages.repository';
+import { CHALLENGE_COMMENT_CONTEXT_TYPE } from '../../../src/community/challenges/community-challenges.repository';
 import { CommunityDmsService } from '../../../src/community/dms/community-dms.service';
 import { CommunityChallengesService } from '../../../src/community/challenges/community-challenges.service';
 import { CommunityService } from '../../../src/community/community.service';
@@ -164,7 +166,7 @@ function world(opts: WorldOptions = {}) {
   };
   const race = { landed: null as Row | null };
   const keyed = async (id: string, r: Row) => {
-    if (race.landed) return { row: stamp({ ...race.landed, id }), replayed: true };
+    if (race.landed) return { row: stamp({ ...r, ...race.landed, id }), replayed: true };
     return { row: stamp({ ...r, id }), replayed: false };
   };
   const messageRepo = {
@@ -205,7 +207,7 @@ function world(opts: WorldOptions = {}) {
   const postRows = new Map<string, Row>();
   const postView = (r: Row) => ({ id: r.id, title: r.title, body: r.body });
   const commentRow = (id: string | undefined, d: Row) =>
-    stamp({ ...(id ? { id } : {}), body: d.body, plan_context_type: 'comment', plan_context_id: d.postId });
+    stamp({ ...(id ? { id } : {}), body: d.body, plan_context_type: COMMENT_CONTEXT_TYPE, plan_context_id: d.postId });
   const posts = Object.assign(Object.create(CommunityPostsService.prototype) as Record<string, unknown>, {
     access,
     safety,
@@ -275,7 +277,7 @@ function world(opts: WorldOptions = {}) {
 
   const challengeRow = (d: Row) => ({
     body: d.body,
-    plan_context_type: 'challenge_comment',
+    plan_context_type: CHALLENGE_COMMENT_CONTEXT_TYPE,
     plan_context_id: CHALLENGE,
   });
   const challenges = Object.assign(Object.create(CommunityChallengesService.prototype) as Record<string, unknown>, {
@@ -355,7 +357,7 @@ const PATHS: PathRow[] = [
     id: 'S4 post edit',
     surface: 'post_edit',
     keyed: false,
-    stored: (w) => [...w.postRows.values()].filter((p) => p.body !== ORDINARY && p.title !== ORDINARY && p.body !== 'Who is in tomorrow').length,
+    stored: (w) => [...w.postRows.values()].filter((p) => p.title !== ORDINARY && p.title !== 'Morning crew').length,
     write: async (w, text) => {
       const id = w.seedPost(ORDINARY, ORDINARY);
       return answer(await w.posts.edit(poster, id, { title: text, body: ORDINARY }));
@@ -533,12 +535,15 @@ describe('C. the field exists only on the write\'s own answer', () => {
 
   it('S1: GET and list for that row equal an ordinary row, the poster reading too', async () => {
     const w = world();
+    jest.spyOn(w.safety, 'filterBlocked').mockImplementation(async (_v: string, rows: unknown[]) => rows as never);
+    jest.spyOn(w.safety, 'assertVisibleTo').mockResolvedValue(undefined);
     const sent = answer(await w.chat.send(poster, SPACE, SELF_HARM));
     const id = (sent.message as Row).id as string;
     const one = answer(await w.chat.getOne(poster, id));
     expect(one).not.toHaveProperty('crisis_flag');
     expect(one.message).not.toHaveProperty('crisis_flag');
     const list = answer(await w.chat.list(poster, SPACE, {}));
+    expect((list.messages as Row[]).map((m) => m.id)).toEqual([id]);
     expect(JSON.stringify(list)).not.toContain('crisis_flag');
     expect(Object.keys(one)).toEqual(['message']);
   });
@@ -869,7 +874,10 @@ describe('G. the alert', () => {
     });
     expect(w.inbox[0].deep_link).toBeUndefined();
     expect(pushesOf(w)[0].body).toBe('Urgent safety alert in the community. Open TGP to see it.');
-    expect(pushesOf(w)[0].data).not.toHaveProperty('actionScreen');
+    // No alertId, so no tap to an alert that does not exist: the push opens the inbox like any other.
+    expect(pushesOf(w)[0].data).not.toHaveProperty('actionParams');
+    expect(pushesOf(w)[0].data).not.toMatchObject({ actionScreen: 'CoachSafetyAlert' });
+    expect(w.inbox[0].payload).not.toHaveProperty('actionScreen');
     expect(pushesOf(w)[0].context).toEqual({ safetyAlert: 'community_crisis_text' });
   });
 
