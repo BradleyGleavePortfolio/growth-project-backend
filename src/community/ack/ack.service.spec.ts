@@ -78,7 +78,7 @@ describe('AckService', () => {
     isSpaceTeam: jest.Mock;
   };
   let access: { isWorkspaceCoach: jest.Mock; findCohort: jest.Mock; canAccessCohort: jest.Mock;
-    findWorkspace: jest.Mock; membershipInWorkspace: jest.Mock };
+    findWorkspace: jest.Mock; membershipInWorkspace: jest.Mock; isCoachWithClient: jest.Mock };
   let analytics: { capture: jest.Mock };
   let safety: { assertVisibleTo: jest.Mock; assertDmAllowed: jest.Mock };
   let service: AckService;
@@ -102,6 +102,8 @@ describe('AckService', () => {
       canAccessCohort: jest.fn(async () => true),
       findWorkspace: jest.fn(async () => ({ id: FIXTURE_IDS.workspace, dm_enabled_default: true })),
       membershipInWorkspace: jest.fn(async () => ({ dm_enabled: null })),
+      // COACH-DM-BE: the workspace coach with their own client (no membership on the coach's side): no by default.
+      isCoachWithClient: jest.fn(async () => false),
     };
     analytics = { capture: jest.fn() };
     // Default: the coach can read the message (the gate passes).

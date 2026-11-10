@@ -42,9 +42,13 @@ const DM_DISABLED = {
  * or a coach move ends the DM for both at once, and neither blocked the other (Apple 1.2). Throws the
  * refusal `a` gets; returns a's and b's memberships. */
 export async function assertDmOpen(access: CommunityAccessService, safety: CommunitySafetyService,
-  workspaceId: string, a: string, b: string): Promise<CommunityMembership[]> {
+  workspaceId: string, a: string, b: string): Promise<Array<CommunityMembership | null>> {
   const [ma, mb] = await Promise.all([a, b].map((p) => access.membershipInWorkspace(workspaceId, p)));
-  if (!ma || !mb) throw new NotFoundException(DM_NOT_FOUND);
+  const open = ma && mb ? true
+    : ma ? await access.isCoachWithClient(workspaceId, b, a)
+    : mb ? await access.isCoachWithClient(workspaceId, a, b)
+    : false;
+  if (!open) throw new NotFoundException(DM_NOT_FOUND);
   await safety.assertDmAllowed(a, b);
   return [ma, mb];
 }
@@ -260,7 +264,10 @@ export class CommunityDmsService {
   ): Promise<CommunityDmThreadListResponse> {
     const workspace = await this.access.findWorkspace(workspaceId);
     const membership = await this.access.membershipInWorkspace(workspaceId, user.id);
-    if (!workspace || !membership) {
+    // COACH-DM-BE: the workspace's coach holds no membership row; they list only their threads with their own
+    // current clients (assertDmOpen's coach pair), kept before the page is cut.
+    const coach = workspace?.coach_id === user.id;
+    if (!workspace || !(membership || coach)) {
       throw new NotFoundException(DM_NOT_FOUND);
     }
     // Reading thread metadata is a DM surface too: gate on the caller's
@@ -270,6 +277,7 @@ export class CommunityDmsService {
       workspaceId,
       userId: user.id,
       limit: this.parsePage(query.limit),
+      clientsOnly: coach,
     });
     // #168-4: the other member's place in this community too (left, or banned). Owner 10-23
     // "Dissapear": a block either way drops the thread from both lists (no row, no name, no time);
