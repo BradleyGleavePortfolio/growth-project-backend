@@ -246,8 +246,11 @@ export class RomanService implements OnModuleDestroy {
    * SEND-ONCE-CLEAR-BE: the keyed turns this process stored and has not cleared, by turn id: only what the shutdown
    * hook may clear. The mark itself stays durable on the row, with its bound, for a death no hook sees.
    */
-  private readonly openTurns = new Map<string, { sessionId: string; userId: string; mark: number }>();
-  private openTurnsEnded: (() => void) | null = null;
+  private openTurnsByKey?: Map<string, { sessionId: string; userId: string; mark: number }>;
+  private openTurnsEnded?: () => void;
+  private get openTurns() {
+    return (this.openTurnsByKey ??= new Map());
+  }
 
   constructor(
     private readonly prisma: PrismaService,
@@ -929,7 +932,7 @@ export class RomanService implements OnModuleDestroy {
         done();
       };
     });
-    this.openTurnsEnded = null;
+    this.openTurnsEnded = undefined;
     const open = [...this.openTurns];
     if (open.length === 0) return;
     let timer: NodeJS.Timeout | undefined;
