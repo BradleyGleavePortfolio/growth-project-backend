@@ -41,7 +41,7 @@ export function staffAlertWorld(opts: { staff?: string[]; at?: Date; prefs?: Rec
       return new Date(clock.at.getTime());
     }
   }
-  const delivery = new Clocked(stub<ConstructorParameters<typeof PushDeliveryService>[0]>(db), {
+  const delivery: PushDeliveryService = new Clocked(stub<ConstructorParameters<typeof PushDeliveryService>[0]>(db), {
     send: jest.fn(async (m: unknown[]) => m.map(() => ({ status: 'ok' as const, id: 't' }))),
     getReceipts: jest.fn(async () => ({})),
   });
