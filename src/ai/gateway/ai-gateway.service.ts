@@ -45,7 +45,7 @@ import {
   isMwbLiveCreateCapability,
   MWB_LIVE_CREATE_CAPABILITIES,
 } from './mwb-live-create.feature';
-import { ROMAN_MESSAGE_CAPABILITIES, ROMAN_MESSAGE_SOURCE, checkInRefOf } from './roman-message-draft';
+import { ROMAN_MESSAGE_CAPABILITIES, ROMAN_MESSAGE_SOURCE, checkInHashOf, checkInRefOf } from './roman-message-draft';
 import { inBlockWith } from '../../messaging/block-pair';
 import { MESSAGING_ERRORS, messagingError } from '../../messaging/messaging-errors';
 import { AuditService } from '../../audit/audit.service';
@@ -621,8 +621,12 @@ export class AiGatewayService {
     };
   }
 
-  /** CHECKIN-DRAFT-BE: this coach's live draft replying to this check-in, matched in code on the bounded pending rows. */
+  /**
+   * CHECKIN-DRAFT-BE: this coach's live draft replying to this check-in, matched in code on the bounded pending rows.
+   * FIX-1234R1: live only while written from the check-in as it is now (the hash the controller has just built).
+   */
   private async liveCheckInDraft(db: Prisma.TransactionClient, req: AiGatewayRequest, checkInId: string) {
+    const now = checkInHashOf(req.provenance);
     const rows = await db.aiActionDraft.findMany({
       where: {
         capability: req.capability,
@@ -634,7 +638,7 @@ export class AiGatewayService {
       orderBy: { created_at: 'desc' },
       take: 200,
     });
-    return rows.find((row) => checkInRefOf(row.provenance) === checkInId) ?? null;
+    return rows.find((row) => checkInRefOf(row.provenance) === checkInId && now !== null && checkInHashOf(row.provenance) === now) ?? null;
   }
 
   /** The answer a first tap got, for the same draft: no model call, spend or new row. */

@@ -14,7 +14,8 @@ import {
 import { PrismaService } from '../../prisma.service';
 import { AuditService } from '../../audit/audit.service';
 import { inBlockWith } from '../../messaging/block-pair';
-import { ROMAN_MESSAGE_CAPABILITIES, checkInRefOf, isCheckInDraft } from './roman-message-draft';
+import { ROMAN_MESSAGE_CAPABILITIES, checkInHashOf, checkInRefOf, isCheckInDraft } from './roman-message-draft';
+import { checkInSent } from './private-context.service';
 import {
   COACH_MESSAGE_CAPABILITY,
   CoachMessageMaterializer,
@@ -116,6 +117,7 @@ export function selectAcceptedOps<T extends { kind: string }>(diff: readonly T[]
 
 type DraftRowForReader = {
   id: string;
+  status: string;
   capability: string;
   subject_user_id: string | null;
   payload: Prisma.JsonValue;
@@ -208,6 +210,8 @@ export class AiApprovalService {
   /**
    * CHECKIN-DRAFT-BE (the FR-1205 rule, applied to this source): while the check-in a draft replies to is gone, or
    * this coach may no longer read that client's check-ins, the draft is withheld. Sharing on returns it.
+   * FIX-1234R1: a pending draft is also withheld once the check-in's note, mood, energy or sleep differ from what it was
+   * written from (its stored hash); changing them back returns it. Decided rows keep the rule above only.
    */
   private async unsharedCheckInDrafts<T extends DraftRowForReader>(coachId: string, drafts: T[]): Promise<Set<string>> {
     const bound = drafts.filter((d) => isCheckInDraft(d));
@@ -216,17 +220,23 @@ export class AiApprovalService {
     const [rows, shared] = await Promise.all([
       this.prisma.checkIn.findMany({
         where: { id: { in: bound.flatMap((d) => checkInRefOf(d.provenance) ?? []) } },
-        select: { id: true, user_id: true },
+        select: { id: true, user_id: true, notes: true, mood: true, energy: true, sleep_hours: true },
       }),
       this.consent
         ? this.consent.grantedScopesByClient(coachId, clients, [ConsentScope.FITNESS_HABITS_PROGRESS])
         : new Map<string, Set<string>>(),
     ]);
-    const ownerOf = new Map(rows.map((r) => [r.id, r.user_id]));
-    const readable = (d: T) =>
-      !!d.subject_user_id &&
-      ownerOf.get(checkInRefOf(d.provenance) ?? '') === d.subject_user_id &&
-      shared.get(d.subject_user_id)?.has(ConsentScope.FITNESS_HABITS_PROGRESS) === true;
+    const now = new Map(rows.map((r) => [r.id, { owner: r.user_id, hash: checkInSent(r).hash }]));
+    const readable = (d: T) => {
+      const checkIn = now.get(checkInRefOf(d.provenance) ?? '');
+      return (
+        !!d.subject_user_id &&
+        checkIn !== undefined &&
+        checkIn.owner === d.subject_user_id &&
+        shared.get(d.subject_user_id)?.has(ConsentScope.FITNESS_HABITS_PROGRESS) === true &&
+        (d.status !== 'pending' || checkInHashOf(d.provenance) === checkIn.hash)
+      );
+    };
     return new Set(bound.filter((d) => !readable(d)).map((d) => d.id));
   }
 

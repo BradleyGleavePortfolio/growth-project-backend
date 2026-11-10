@@ -1,5 +1,5 @@
 import { ForbiddenException, Injectable, Logger, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
-import type { User, UserProfile } from '@prisma/client';
+import type { CheckIn, User, UserProfile } from '@prisma/client';
 import { createHash } from 'crypto';
 import { PrismaService } from '../../prisma.service';
 import { ProvenanceRef } from './data-quality.types';
@@ -12,7 +12,7 @@ import { ConsentScope, ConsentService } from '../../consent/consent.service';
 import { seesWeight, weightIfShared } from '../../consent/coach-sharing-gate';
 import { notInBlockWith } from '../../messaging/block-pair';
 import { authorReadableBy } from '../../common/count-rule';
-import { classifySafety } from '../../roman/guardrails/safety-router';
+import { classifySafety, routerHintFor } from '../../roman/guardrails/safety-router';
 import { CHECK_IN_SOURCE } from './roman-message-draft';
 
 // B-AIB3-126 (plan section 1, SAFE 2): the workout capabilities get the minimised block — no name, body weight, height,
@@ -192,29 +192,24 @@ export class PrivateContextService {
       : false;
     if (!row || !shared) throw new NotFoundException({ code: 'CHECK_IN_NOT_FOUND', message: 'Check-in not found' });
 
-    const note = row.notes?.trim() || null;
-    const numbers = { mood: row.mood, energy: row.energy, sleep_hours: row.sleep_hours };
-    if (!note && Object.values(numbers).every((n) => n === null)) {
+    const { note, sent, hash: sentHash } = checkInSent(row);
+    if (!note && Object.keys(sent).length === 0) {
       throw new UnprocessableEntityException({ code: 'CHECK_IN_NOTHING_TO_DRAFT', message: CHECK_IN_CANNOT_DRAFT });
     }
     // The two checks Roman's own path makes: such a note gets the coach's own words, never a draft.
-    if (note) {
-      const safety = classifySafety(note);
-      if (safety.short_circuit || safety.class === 'eating_disorder_risk') {
-        throw new UnprocessableEntityException({ code: 'CHECK_IN_NEEDS_COACH', message: CHECK_IN_CANNOT_DRAFT });
-      }
+    const safety = note ? classifySafety(note) : null;
+    if (safety && (safety.short_circuit || safety.class === 'eating_disorder_risk')) {
+      throw new UnprocessableEntityException({ code: 'CHECK_IN_NEEDS_COACH', message: CHECK_IN_CANNOT_DRAFT });
     }
-    const sent = {
-      ...(note ? { note: flatForRedaction(note) } : {}),
-      ...Object.fromEntries(Object.entries(numbers).filter(([, n]) => n !== null)),
-    };
+    // FIX-1234R1: and Roman's router hint (medical_scope, injury_pain), server-written and outside the fence.
+    const hint = safety ? routerHintFor(safety.class) : null;
     return {
-      userMessage: `${CHECK_IN_DRAFT_ASK}\n\n${fenceUntrusted(sent, 2)}`,
+      userMessage: `${CHECK_IN_DRAFT_ASK}\n\n${hint ? `${hint}\n\n` : ''}${fenceUntrusted(sent, 2)}`,
       provenance: {
         source: CHECK_IN_SOURCE,
         ref: row.id,
         count: 1,
-        hash: hash(JSON.stringify(sent)),
+        hash: sentHash,
         origin: 'local',
         date: row.date.toISOString().slice(0, 10),
       },
@@ -264,6 +259,20 @@ function workoutBlock(role: User['role'], profile: UserProfile | null) {
  */
 function flatForRedaction(note: string): string {
   return note.replace(/[<>&]/g, ' $& ').replace(/[\s\p{Cc}]+/gu, ' ').trim();
+}
+
+/**
+ * CHECKIN-DRAFT-BE: what a check-in draft is written from (the note, flattened, and the numbers present) and the hash
+ * its provenance stores. FIX-1234R1: the one builder, so the approval service's stale check compares like with like.
+ */
+export function checkInSent(row: Pick<CheckIn, 'notes' | 'mood' | 'energy' | 'sleep_hours'>) {
+  const note = row.notes?.trim() || null;
+  const numbers = { mood: row.mood, energy: row.energy, sleep_hours: row.sleep_hours };
+  const sent = {
+    ...(note ? { note: flatForRedaction(note) } : {}),
+    ...Object.fromEntries(Object.entries(numbers).filter(([, n]) => n !== null)),
+  };
+  return { note, sent, hash: hash(JSON.stringify(sent)) };
 }
 
 function hash(s: string): string {
