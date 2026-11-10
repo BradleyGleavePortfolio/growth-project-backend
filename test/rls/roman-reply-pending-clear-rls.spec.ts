@@ -54,17 +54,19 @@ const MARK = -1;
       `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${PROBE}') THEN CREATE ROLE ${PROBE} NOLOGIN NOINHERIT; END IF; END $$`,
     );
     await prisma.$executeRawUnsafe(`GRANT service_role TO ${PROBE}`);
-    await prisma.$executeRawUnsafe(`GRANT USAGE ON SCHEMA public, app TO ${PROBE}`);
+    // What authenticated may use, granted to the probe directly (a NOINHERIT role inherits nothing).
+    await prisma.$executeRawUnsafe(`GRANT USAGE ON SCHEMA public, app, auth TO ${PROBE}`);
+    await prisma.$executeRawUnsafe(`GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA app, auth TO ${PROBE}`);
     await prisma.$executeRawUnsafe(`GRANT SELECT, UPDATE ON "RomanMessage", "RomanSession" TO ${PROBE}`);
   });
   afterAll(() => prisma.$disconnect());
 
   it.each<[string, string | null, boolean, number]>([
-    ['the superuser (rolsuper)', null, true, 1],
-    ['service_role (BYPASSRLS, and its FOR ALL policy)', 'service_role', true, 1],
-    ['authenticated (no bypass, no UPDATE policy)', 'authenticated', false, 0],
-    ['a NOINHERIT member of service_role (MEMBER, not USAGE)', PROBE, false, 0],
-  ])('%s: the query answers %s and the clear changes %s row(s), never an error', async (_name, role, clears, count) => {
+    ['the superuser (rolsuper): the query answers true and the clear changes 1 row', null, true, 1],
+    ['service_role (BYPASSRLS, and its FOR ALL policy): true, 1 row', 'service_role', true, 1],
+    ['authenticated (no bypass, no UPDATE policy): false, 0 rows, no error', 'authenticated', false, 0],
+    ['a NOINHERIT member of service_role (MEMBER, not USAGE): false, 0 rows, no error', PROBE, false, 0],
+  ])('%s', async (_name, role, clears, count) => {
     await prisma.romanMessage.update({ where: { id: T }, data: { completion_tokens: MARK } });
     expect(await as(role, (tx) => tx.$queryRawUnsafe<{ clears: boolean }[]>(CLEARS_QUERY))).toEqual([{ clears }]);
     await expect(as(role, clearOf)).resolves.toEqual({ count });
