@@ -12,7 +12,7 @@ import type { SendVia } from './notify-sender-scan';
  * The five rules (KT-4):
  * - Mute all (`NotificationPreferences.muted`, owner #171-3): stops every device push except money kinds
  *   (MONEY_NOTIFICATION_KINDS) and a push whose context passes (MUTE_ALL_PASS, or a safety alert key of
- *   SAFETY_ALERT_PUSH_BODY, owner #168-18). It never stops an in-app row. A renewal offer (RENEWAL_OFFER,
+ *   SAFETY_ALERT_PUSH_BODY but community_crisis_text, owner #168-18 and #203-E21). It never stops an in-app row. A renewal offer (RENEWAL_OFFER,
  *   STORE-B2) is not a money pass: Mute all stops it, and it is sent only after the person's yes in the app.
  * - Quiet hours (21:00 to 08:00 in the recipient's zone, OR-113-5): a push waits to 08:00 unless it is urgent
  *   (quietHoursFor in push-quiet-hours.ts, or the nudge QuietHoursPolicy for the senders that use it).
@@ -377,6 +377,22 @@ export const SENDERS: SenderRow[] = [
     blockBan: NO_ACTOR,
     recipient: 'the coach a refund or dispute takes money from',
     covered: 'not driven here (settlement world); test/dunning-kind-fix-notification-kinds.spec.ts drives it with Mute all on',
+  },
+  {
+    file: 'src/community/safety/community-safety.service.ts',
+    fn: 'CommunitySafetyService.alertStaff',
+    via: ['createNotification', 'sendPush'],
+    kinds: ['coach_alert'],
+    sends: 'inapp + push',
+    muteAll: { does: 'stops', why: 'a normal push (owner #203-E21 "Op 1: normal push"): its safety key keeps the line but not the Mute all pass (push-preferences.ts); the inbox row stays' },
+    quietHours: { does: 'held', why: 'not urgent: held to 08:00 in the recipient zone (quietHoursFor); at most one push per staff account per poster per UTC day' },
+    mute: NO_MUTE,
+    blockBan: { does: 'n/a', why: 'a safety alert about a member must reach TGP staff; it holds no text or name' },
+    recipient: 'every owner-role account (not deleted, not scheduled for deletion), minus the poster (#200-S1 op 1)',
+    funnel: [
+      { kind: NotificationKind.COACH_ALERT, context: { safetyAlert: 'community_crisis_text' }, urgent: false, muteAll: 'stops', quietHours: 'held', note: 'community text that matched the crisis check' },
+    ],
+    covered: 'funnel table here; test/community/safety/community-crisis-text.table.spec.ts drives every write path',
   },
   {
     file: 'src/checkout/reconciliation-daily.cron.ts',

@@ -2,10 +2,23 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
+  Optional,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { PrismaService } from '../../prisma.service';
+import { NotificationKind } from '../../notifications/notification-kind';
+import { NotificationsService } from '../../notifications/notifications.service';
+import {
+  COMMUNITY_CRISIS_ALERT_KEY,
+  COMMUNITY_CRISIS_ALERT_TITLE,
+  SAFETY_ALERT_INBOX_BODY,
+  SAFETY_ALERT_PUSH_BODY,
+} from '../../notifications/push/lock-screen-copy';
+import { describeFailure } from '../../observability/log-pii';
+import { classifySafety } from '../../roman/guardrails/safety-router';
 import { checkCommunityText } from './community-content-filter';
 import { memberFirstName } from '../member-display-name';
 import { SUPPORT_EMAIL } from '../../public-pages/trust-pages.html';
@@ -23,6 +36,60 @@ export const CONTENT_REJECTED = {
   message:
     'This message was not posted because it appears to contain abusive or explicit language. Please rephrase it.',
 } as const;
+
+/**
+ * COMMUNITY_CRISIS_CHECK_ENABLED: unset = on; only the exact string "false"
+ * turns the crisis check off (no field, no alert, today's word list).
+ */
+export function communityCrisisCheckEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.COMMUNITY_CRISIS_CHECK_ENABLED !== 'false';
+}
+
+/** The community write a crisis match came from (alert payload only). */
+export type CrisisSurface =
+  | 'space_chat'
+  | 'space_chat_edit'
+  | 'post'
+  | 'post_edit'
+  | 'post_comment'
+  | 'dm'
+  | 'challenge_comment'
+  | 'win';
+
+type TextFields = ReadonlyArray<string | null | undefined>;
+
+/**
+ * What screenText found for one write. `flag`: the text as it will be stored
+ * matched, so the poster's answer carries crisis_flag. `page`: staff are told
+ * (a match on an edit whose text before it already matched was told once).
+ */
+export interface CrisisScreen {
+  surface: CrisisSurface;
+  posterId: string;
+  flag: boolean;
+  page: boolean;
+}
+
+/** The poster's own answer: `{ crisis_flag: true }` on a match, otherwise nothing at all. */
+export function crisisField(screen: CrisisScreen): { crisis_flag?: true } {
+  return screen.flag ? { crisis_flag: true } : {};
+}
+
+/** The photo check's two refusals (community-photo-check.ts); its 503 is not a refusal. */
+const PHOTO_REFUSAL_CODES: ReadonlySet<string> = new Set(['PHOTO_NOT_ALLOWED', 'CAPTION_NOT_ALLOWED']);
+
+/**
+ * Roman's crisis check over each field alone. Only the two classes that get
+ * the 911 / 988 line count; `short_circuit` is also true for urgent_symptoms.
+ * `matched` is never read: no log, row or answer holds what fired.
+ */
+function crisisIn(fields: TextFields): boolean {
+  return fields.some((field) => {
+    if (!field) return false;
+    const found = classifySafety(field).class;
+    return found === 'emergency' || found === 'self_harm';
+  });
+}
 
 /**
  * DM refusal for the person who placed the block: they know, so they get the
@@ -170,14 +237,140 @@ export function assertDmParticipantIfDm(
  */
 @Injectable()
 export class CommunitySafetyService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(CommunitySafetyService.name);
 
-  // ── Content filter ───────────────────────────────────────────────────────
+  constructor(
+    private readonly prisma: PrismaService,
+    // Finds NotificationsService without importing NotificationsModule into
+    // the six modules that provide this service (as alertCoachOfPhotoSafety
+    // finds CoachAlertsService).
+    @Optional() private readonly moduleRef?: ModuleRef,
+  ) {}
 
-  /** Throw 422 when any field contains objectionable content. */
-  assertAllowed(...fields: Array<string | null | undefined>): void {
+  // ── Content filter and crisis check ──────────────────────────────────────
+
+  /**
+   * Every community text write comes through here, so no surface can have
+   * one check without the other (#200-S1 op 1). The word list runs over
+   * `fields` exactly as it always has: 422, nothing stored. The crisis check
+   * runs over the text as it will be stored, each field alone. A refused
+   * text that matched keeps its 422, with crisis_flag beside CONTENT_REJECTED's
+   * keys, and staff are told now, as nothing is written afterwards. A text
+   * that passes is answered with the screen; the caller spreads crisisField
+   * on its own answer and calls alertStaff right after its write (and its
+   * replayed return), before any later step that can throw.
+   *
+   * `edit`: the post or message as it will be stored and as it is now. An edit
+   * pages staff only when the text before it did not match.
+   */
+  screenText(
+    surface: CrisisSurface,
+    posterId: string,
+    fields: TextFields,
+    edit?: { asStored: TextFields; before: TextFields },
+  ): CrisisScreen {
+    const on = communityCrisisCheckEnabled();
+    const flag = on && crisisIn(edit?.asStored ?? fields);
+    const page = flag && !(edit && crisisIn(edit.before));
+    const screen: CrisisScreen = { surface, posterId, flag, page };
     if (!checkCommunityText(...fields).allowed) {
-      throw new UnprocessableEntityException(CONTENT_REJECTED);
+      void this.alertStaff(screen, null);
+      throw new UnprocessableEntityException(flag ? { ...CONTENT_REJECTED, crisis_flag: true } : CONTENT_REJECTED);
+    }
+    return screen;
+  }
+
+  /**
+   * Case F for a photo: the photo check's refusal of a matching caption keeps
+   * its own 422 body (and its coach alert), with crisis_flag beside it and
+   * staff told once. Anything else (the check is unavailable, no match) is
+   * left exactly as it was thrown.
+   */
+  async crisisOnPhotoRefusal<T>(screen: CrisisScreen, check: () => Promise<T>): Promise<T> {
+    try {
+      return await check();
+    } catch (err) {
+      const body = err instanceof UnprocessableEntityException ? (err.getResponse() as Record<string, unknown>) : null;
+      if (!screen.flag || !body || !PHOTO_REFUSAL_CODES.has(String(body.code))) throw err;
+      void this.alertStaff(screen, null);
+      throw new UnprocessableEntityException({ ...body, crisis_flag: true });
+    }
+  }
+
+  /**
+   * #200-S1 op 1: every TGP staff account (role owner, the one definition in
+   * code) except the poster gets one inbox row and one push: the approved
+   * generic line, ids only, no text, class or name. Never throws and is never
+   * awaited by a write; a failure is one log line by closed code.
+   *
+   * #203-E21 ("Op 1: normal push"): the row carries `type` (the alert's key),
+   * which the inbox rule lists it by (current-coach-inbox.ts), so the push's
+   * tap to the notification center finds it. The push is a normal one: Mute
+   * all stops it (push-preferences.ts) and quiet hours hold it, and its dedupe
+   * key is the poster and the UTC day, so each staff account gets at most one
+   * push per poster per day (a repeat is 'duplicate'). Every match still
+   * writes its rows. A match that reached nobody (no row written and no push
+   * queued, deferred or duplicate) is one warn line, by code and counts only.
+   */
+  async alertStaff(screen: CrisisScreen, rowId: string | null): Promise<void> {
+    if (!screen.page) return;
+    try {
+      const notifications = this.moduleRef?.get(NotificationsService, { strict: false });
+      if (!notifications) {
+        this.logger.warn('community.crisis_alert outcome=no_service');
+        return;
+      }
+      const staff = await this.prisma.user.findMany({
+        where: { role: 'owner', deleted_at: null, deletion_scheduled_at: null, id: { not: screen.posterId } },
+        select: { id: true },
+      });
+      if (staff.length === 0) {
+        this.logger.warn('community.crisis_alert outcome=no_recipient');
+        return;
+      }
+      const dedupeKey = `community_crisis:${screen.posterId}:${new Date().toISOString().slice(0, 10)}`;
+      let failure: unknown;
+      let reached = 0;
+      for (const { id } of staff) {
+        let got = false;
+        try {
+          const row = await notifications.createNotification({
+            user_id: id,
+            kind: NotificationKind.COACH_ALERT,
+            body: SAFETY_ALERT_INBOX_BODY[COMMUNITY_CRISIS_ALERT_KEY],
+            payload: {
+              type: COMMUNITY_CRISIS_ALERT_KEY,
+              title: COMMUNITY_CRISIS_ALERT_TITLE,
+              severity: 'critical',
+              surface: screen.surface,
+              poster_id: screen.posterId,
+              ...(rowId ? { row_id: rowId } : {}),
+            },
+            channel: 'inapp',
+          });
+          got = row !== null;
+        } catch (err) {
+          failure = err;
+        }
+        try {
+          const push = await notifications.sendPush({
+            user_id: id,
+            kind: NotificationKind.COACH_ALERT,
+            body: SAFETY_ALERT_PUSH_BODY[COMMUNITY_CRISIS_ALERT_KEY],
+            // No alertId: there is no CoachAlert row for a tap to open; the tap opens the inbox that lists the row.
+            context: { safetyAlert: COMMUNITY_CRISIS_ALERT_KEY },
+            dedupe_key: dedupeKey,
+          });
+          got = got || push !== null;
+        } catch (err) {
+          failure = err;
+        }
+        if (got) reached += 1;
+      }
+      if (failure) this.logger.warn(`community.crisis_alert outcome=send_failed ${describeFailure(failure)}`);
+      if (reached === 0) this.logger.warn(`community.crisis_alert outcome=none_delivered staff=${staff.length}`);
+    } catch (err) {
+      this.logger.warn(`community.crisis_alert outcome=failed ${describeFailure(err)}`);
     }
   }
 

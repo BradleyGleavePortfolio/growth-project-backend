@@ -2,7 +2,7 @@ import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/commo
 import type { CommunityMembership, CommunityWorkspace, User } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { CommunityRepository } from './community.repository';
-import { CommunitySafetyService } from './safety/community-safety.service';
+import { CommunitySafetyService, crisisField } from './safety/community-safety.service';
 import { memberName } from './member-display-name';
 import { fullNamesFor, membersNow, placeOf } from './community-space-access';
 import { isBannedFromWorkspace } from './community-ban';
@@ -532,8 +532,8 @@ export class CommunityService {
   async postWin(
     userId: string,
     data: { title: string; description: string; visibility?: 'circle' | 'public' },
-  ): Promise<CommunityWinView> {
-    this.safety.assertAllowed(data.title, data.description);
+  ): Promise<CommunityWinView & { crisis_flag?: true }> {
+    const screen = this.safety.screenText('win', userId, [data.title, data.description]);
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { coach_id: true, role: true, id: true },
@@ -555,8 +555,9 @@ export class CommunityService {
       },
       select: WIN_SELECT,
     });
+    void this.safety.alertStaff(screen, win.id);
     const full = await fullNamesFor(this.prisma, userId, workspaceId, [[null, userId]]);
-    return winView(win, userId, full(null, userId));
+    return { ...winView(win, userId, full(null, userId)), ...crisisField(screen) };
   }
 
   /**

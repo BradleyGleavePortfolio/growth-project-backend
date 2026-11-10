@@ -34,7 +34,7 @@ import {
   CommunityMessageSchema,
   CommunityMessageView,
 } from '../dto/community-message.dto';
-import { CommunitySafetyService } from '../safety/community-safety.service';
+import { type CrisisScreen, CommunitySafetyService, crisisField } from '../safety/community-safety.service';
 import { placeOf } from '../community-space-access';
 import { memberName } from '../member-display-name';
 import { CommunityNotificationsService } from '../notifications/community-notifications.service';
@@ -283,6 +283,7 @@ export class CommunityMessagesService {
     image: ImageSend,
     planContext: PlanContextTag | null,
     keyedId: string | null,
+    screen: CrisisScreen,
   ): Promise<{ row: CommunityMessage; replayed: boolean }> {
     if (!communityImagesEnabled()) throw IMAGE_REJECTED('community.image.disabled');
     if (!isPublishableImageKey(image.key, user.id, cohort.id)) throw IMAGE_REJECTED('community.image.key_invalid');
@@ -297,8 +298,11 @@ export class CommunityMessagesService {
     }
     if (result !== 'ok') throw IMAGE_REJECTED(`community.image.${result}`);
     if (this.egress) {
-      await assertPhotoAllowed(this.egress, images, image.key, user.id, size, body, () =>
-        this.alertCoachOfPhotoSafety(user, cohort),
+      const egress = this.egress;
+      await this.safety.crisisOnPhotoRefusal(screen, () =>
+        assertPhotoAllowed(egress, images, image.key, user.id, size, body, () =>
+          this.alertCoachOfPhotoSafety(user, cohort),
+        ),
       );
     }
     const params = {
@@ -493,7 +497,7 @@ export class CommunityMessagesService {
     image?: ImageSend,
     highAlert?: boolean,
     idempotencyKey?: string | null,
-  ): Promise<CommunityMessageResponse & { high_alert_reach?: number }> {
+  ): Promise<CommunityMessageResponse & { high_alert_reach?: number; crisis_flag?: true }> {
     const cohort = await this.access.findCohort(cohortId);
     // Treat a missing cohort and an unauthorised cohort identically (404).
     if (!cohort || !(await this.access.canAccessCohort(cohort, user))) {
@@ -503,8 +507,8 @@ export class CommunityMessagesService {
     // SC-BE1: there a member may still reply to the coach's thread.
     if (!parentId || cohort.kind === 'section') await this.access.assertCanPost(cohort, user);
     const parent = await this.replyParent(user, cohort, parentId);
-    // Apple 1.2: objectionable-content filter before anything is written.
-    this.safety.assertAllowed(body);
+    // Apple 1.2: objectionable-content filter before anything is written; #200-S1: and the crisis check.
+    const screen = this.safety.screenText('space_chat', user.id, [body]);
     // v2-1: validate + authorize any attached plan-context tag BEFORE the write
     // (flag-off drops it; malformed → 422; missing entity → 422; foreign → 403).
     const planContext = await this.resolveIncomingPlanContext(user, planContextRaw);
@@ -520,17 +524,19 @@ export class CommunityMessagesService {
     // only a new message counts against the 3 and an upload is used once.
     const keyedId = idempotencyKey ? keyedMessageId(user.id, cohort.id, idempotencyKey) : null;
     const sentBefore = keyedId ? await this.repo.findById(keyedId) : null;
-    if (sentBefore) return this.replay(sentBefore, user, cohort, body, parent, image, alert);
+    if (sentBefore) return this.replay(sentBefore, user, cohort, body, parent, image, alert, screen);
     if (alert && alert.used_today >= alert.limit) {
       throw new HttpException({ code: 'community.high_alert.limit', limit: alert.limit }, HttpStatus.TOO_MANY_REQUESTS);
     }
     const data = { workspaceId: cohort.workspace_id, cohortId: cohort.id, senderId: user.id, body, planContext, parent };
     const { row: created, replayed } = image
-      ? await this.createImage(user, cohort, body, parent, image, planContext, keyedId)
+      ? await this.createImage(user, cohort, body, parent, image, planContext, keyedId, screen)
       : keyedId
         ? await this.repo.createKeyedCohortMessage(keyedId, data)
         : { row: await this.repo.createCohortMessage(data), replayed: false };
-    if (replayed) return this.replay(created, user, cohort, body, parent, image, alert);
+    if (replayed) return this.replay(created, user, cohort, body, parent, image, alert, screen);
+    // #200-S1 / FIX-1232R1 C1: staff are told right after the write, before any later step that can throw.
+    void this.safety.alertStaff(screen, created.id);
     if (alert) await this.spacePush?.markHighAlert(created.id);
     // v1-6 coach-inbox producer: a coach/owner message into the cohort answers
     // the cohort's outstanding client messages, so stamp coach_replied_at on
@@ -563,7 +569,7 @@ export class CommunityMessagesService {
     // forget after the write; never blocks or fails the send.
     void this.pushCohortMessage(created, cohort.workspace_id, created.cohort_id ?? cohort.id);
     const sent = CommunityMessageResponseSchema.parse({ message: this.view(created, undefined, undefined, await this.imagesOf([created])) });
-    return alert ? { ...sent, high_alert_reach: alert.reach } : sent;
+    return { ...sent, ...(alert ? { high_alert_reach: alert.reach } : {}), ...crisisField(screen) };
   }
 
   /** FX-IDEM: the answer to a resend; its first message if it is that message (author, space, kind, words, thread
@@ -576,13 +582,14 @@ export class CommunityMessagesService {
     parent: { id: string; at: Date } | null,
     image: ImageSend | undefined,
     alert: { reach: number } | null,
-  ): Promise<CommunityMessageResponse & { high_alert_reach?: number }> {
+    screen: CrisisScreen,
+  ): Promise<CommunityMessageResponse & { high_alert_reach?: number; crisis_flag?: true }> {
     const photo = !image || (await this.repo.imagesFor([row.id]))[0]?.storage_key === sentImageKey(image.key);
     const same = row.sender_id === user.id && row.cohort_id === cohort.id && row.kind === (image ? 'image' : 'text')
       && row.body === body && row.parent_message_id === (parent?.id ?? null) && photo;
     if (!same) throw new ConflictException(IDEMPOTENCY_KEY_REUSED);
     const first = CommunityMessageResponseSchema.parse({ message: this.view(row, undefined, undefined, await this.imagesOf([row])) });
-    return alert && row.high_alert ? { ...first, high_alert_reach: alert.reach } : first;
+    return { ...first, ...(alert && row.high_alert ? { high_alert_reach: alert.reach } : {}), ...crisisField(screen) };
   }
 
   /**
@@ -686,7 +693,7 @@ export class CommunityMessagesService {
     return MessageRowResponseSchema.parse({ message: this.view(m, voice, chat, images) });
   }
 
-  async edit(user: User, messageId: string, body: string): Promise<CommunityMessageResponse> {
+  async edit(user: User, messageId: string, body: string): Promise<CommunityMessageResponse & { crisis_flag?: true }> {
     const m = await this.repo.findById(messageId);
     // See getOne: any non-null plan_context_type row is a sub-surface row and
     // is not editable through the cohort chat message endpoint.
@@ -711,7 +718,7 @@ export class CommunityMessagesService {
         code: 'community.message.not_author',
       });
     }
-    this.safety.assertAllowed(body);
+    const screen = this.safety.screenText('space_chat_edit', user.id, [body], { asStored: [body], before: [m.body] });
     if (Date.now() - m.created_at.getTime() > EDIT_WINDOW_MS) {
       throw new ForbiddenException({
         error: 'forbidden',
@@ -722,9 +729,14 @@ export class CommunityMessagesService {
     // write, the edit as well as the send. Refused or unavailable: nothing is
     // written, the old caption stays, the sent photo is never touched.
     if (m.kind === 'image' && this.egress) {
-      await assertCaptionAllowed(this.egress, body, () => this.alertCoachOfPhotoSafety(user, cohort));
+      const egress = this.egress;
+      await this.safety.crisisOnPhotoRefusal(screen, () =>
+        assertCaptionAllowed(egress, body, () => this.alertCoachOfPhotoSafety(user, cohort)),
+      );
     }
     const updated = await this.repo.updateBody(m, body);
+    // #200-S1 / FIX-1232R1 C1: staff are told right after the write, before any later step that can throw.
+    void this.safety.alertStaff(screen, updated.id);
     void this.realtime.broadcastCommunityEvent(
       { workspaceId: cohort.workspace_id, cohortId: cohort.id },
       COMMUNITY_BROADCAST_EVENTS.messageUpdated,
@@ -736,7 +748,8 @@ export class CommunityMessagesService {
       { distinctId: updated.sender_id, channelKind: 'cohort' },
     );
     // FX-1139 (C-2): a live photo keeps its `image` on the edit answer, as on GET.
-    return CommunityMessageResponseSchema.parse({ message: this.view(updated, undefined, undefined, await this.imagesOf([updated])) });
+    const edited = CommunityMessageResponseSchema.parse({ message: this.view(updated, undefined, undefined, await this.imagesOf([updated])) });
+    return { ...edited, ...crisisField(screen) };
   }
 
   async remove(user: User, messageId: string): Promise<CommunityMessageResponse> {

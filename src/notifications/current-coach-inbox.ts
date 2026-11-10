@@ -3,7 +3,7 @@ import type { PrismaService } from '../prisma.service';
 import { SchedulingAccessService } from '../scheduling/scheduling-access.service';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { NotificationKind } from './notification-kind';
-import { COACH_CLIENT_LINK, COACH_SPACE_ALERT_LINK } from './push/lock-screen-copy';
+import { COACH_CLIENT_LINK, COACH_SPACE_ALERT_LINK, COMMUNITY_CRISIS_ALERT_KEY } from './push/lock-screen-copy';
 import { publicSpacesLedBy } from '../community/space-safety-alerts';
 
 /**
@@ -21,6 +21,8 @@ import { publicSpacesLedBy } from '../community/space-safety-alerts';
  *     safety alert, while the reader still leads that space (FR-1152R3 B1,
  *     owner rule D; src/community/space-safety-alerts.ts);
  *   - no link: the onboarding flag item names its client in payload.client_id.
+ * The community crisis staff alert (#203-E21) names no client: it is the
+ * reader's own row, listed by its payload.type (community-safety.service.ts).
  * Every other row (money notices, digests) is unchanged.
  */
 export const CLIENT_LINKS = [COACH_CLIENT_LINK, 'tgp://messages/'];
@@ -78,6 +80,7 @@ export async function currentCoachInbox(db: PrismaService, userId: string): Prom
       },
       { deep_link: null, kind: { not: NotificationKind.COACH_ALERT } },
       ...mine.map((id) => ({ deep_link: null, payload: { path: ['client_id'], equals: id } })),
+      { deep_link: null, kind: NotificationKind.COACH_ALERT, payload: { path: ['type'], equals: COMMUNITY_CRISIS_ALERT_KEY } },
     ],
   };
 }
