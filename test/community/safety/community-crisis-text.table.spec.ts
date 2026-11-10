@@ -28,6 +28,8 @@ import { PushDeliveryService } from '../../../src/notifications/push/push-delive
 import * as photoCheck from '../../../src/community/images/community-photo-check';
 import { classifySafety } from '../../../src/roman/guardrails/safety-router';
 import { pushOutboxWorld } from '../../utils/push-outbox-fake';
+import { COMMUNITY_CRISIS_ALERT_KEY, SAFETY_ALERT_PUSH_BODY } from '../../../src/notifications/push/lock-screen-copy';
+import { muteAllStops } from '../../../src/notifications/push/push-preferences';
 
 const rot13 = (s: string): string =>
   s.replace(/[a-z]/gi, (c) => String.fromCharCode(c.charCodeAt(0) + (c.toLowerCase() <= 'm' ? 13 : -13)));
@@ -294,7 +296,7 @@ function world(opts: WorldOptions = {}) {
 
   return {
     clock, out, inbox, prisma, safety, notifications, realtime, memberPush, messages, postRows, race, POST, seedPost,
-    chat, messageRepo, stamp, wins,
+    chat, messageRepo, stamp, wins, access, delivery,
     posts: posts as unknown as CommunityPostsService,
     dms: dms as unknown as CommunityDmsService,
     challenges: challenges as unknown as CommunityChallengesService,
@@ -423,7 +425,8 @@ const expectOneAlertEach = (w: World, surface: string) => {
   expect(w.inbox.every((r) => r.kind === NotificationKind.COACH_ALERT && r.channel === 'inapp')).toBe(true);
   expect(w.inbox.every((r) => (r.payload as Row).surface === surface)).toBe(true);
   expect(pushesOf(w).map((p) => p.user_id).sort()).toEqual([STAFF_A, STAFF_B].sort());
-  expect(pushesOf(w).every((p) => p.urgent === true && p.kind === NotificationKind.COACH_ALERT)).toBe(true);
+  // FIX-1232R1 (#203-E21 "Op 1: normal push"): the owner overruled the urgent page; the push is a normal one.
+  expect(pushesOf(w).every((p) => p.urgent === false && p.kind === NotificationKind.COACH_ALERT)).toBe(true);
 };
 const expectNoAlert = (w: World) => {
   expect(w.inbox).toEqual([]);
@@ -458,7 +461,7 @@ describe('the samples', () => {
 // ─── A. Every path ───────────────────────────────────────────────────────────────────────
 
 describe('A. a matching text is stored and pages staff once; an ordinary text is untouched', () => {
-  it.each(eachPath)('%s: a match is stored, the answer has the flag, one row and one urgent push per recipient', async (_n, p) => {
+  it.each(eachPath)('%s: a match is stored, the answer has the flag, one row and one normal push per recipient', async (_n, p) => {
     const w = world();
     const before = p.stored(w);
     const a = await p.write(w, SELF_HARM);
@@ -597,13 +600,15 @@ describe('D. send once', () => {
     expectNoAlert(w);
   });
 
-  it.each(eachKeyed)('%s: no key, a second send is a new row and a new alert', async (_n, p) => {
+  // FIX-1232R1 (#203-E21): a second unkeyed send is a new row for every staff account, but the same poster's
+  // second match that UTC day is no second push (the daily cap, community_crisis:<poster>:<day>).
+  it.each(eachKeyed)('%s: no key, a second send is a new row for each staff account and no second push', async (_n, p) => {
     const w = world();
     await p.write(w, SELF_HARM, null);
     await p.write(w, SELF_HARM, null);
     await settled();
     expect(w.inbox).toHaveLength(4);
-    expect(pushesOf(w)).toHaveLength(4);
+    expect(pushesOf(w)).toHaveLength(2);
   });
 });
 
@@ -865,7 +870,9 @@ describe('G. the alert', () => {
     const sent = await w.posts.addComment(poster, w.POST, SELF_HARM);
     await settled();
     expect(w.inbox[0].body).toBe('Urgent safety alert in the community.');
+    // FIX-1232R1 B1: one key more, `type`, which the inbox rule lists the row by (current-coach-inbox.ts).
     expect(w.inbox[0].payload).toEqual({
+      type: 'community_crisis_text',
       title: 'Safety alert',
       severity: 'critical',
       surface: 'post_comment',
@@ -873,7 +880,8 @@ describe('G. the alert', () => {
       row_id: sent.comment.id,
     });
     expect(w.inbox[0].deep_link).toBeUndefined();
-    expect(pushesOf(w)[0].body).toBe('Urgent safety alert in the community. Open TGP to see it.');
+    // Operator ruling 22:3x (#203-E15): a normal push no longer says "Urgent".
+    expect(pushesOf(w)[0].body).toBe('Safety alert in the community. Open TGP to see it.');
     // No alertId, so no tap to an alert that does not exist: the push opens the inbox like any other.
     expect(pushesOf(w)[0].data).not.toHaveProperty('actionParams');
     expect(pushesOf(w)[0].data).not.toMatchObject({ actionScreen: 'CoachSafetyAlert' });
@@ -881,21 +889,23 @@ describe('G. the alert', () => {
     expect(pushesOf(w)[0].context).toEqual({ safetyAlert: 'community_crisis_text' });
   });
 
-  it('Mute all on and inside 21:00-08:00: the push is queued to go now', async () => {
+  // FIX-1232R1 (#203-E21 "Op 1: normal push"): the owner overruled both cases below as they were (Mute all at night
+  // went now; two matches in a minute were two pushes).
+  it('Mute all on and inside 21:00-08:00: the rows are written and Mute all stops the push', async () => {
     const w = world({ at: NIGHT, prefs: { muted: true } });
     await w.dms.send(poster, WS, MEMBER, SELF_HARM);
     await settled();
-    expect(pushesOf(w)).toHaveLength(2);
-    expect(pushesOf(w).every((r) => r.not_before.getTime() === NIGHT.getTime() && r.deferred_reason === null)).toBe(true);
+    expect(w.inbox).toHaveLength(2);
+    expect(pushesOf(w)).toHaveLength(0);
   });
 
-  it('two matches in one minute are two pushes (none folds into another)', async () => {
+  it('two matches in one minute are two rows and one push (the daily cap; rows never fold)', async () => {
     const w = world({ owners: [STAFF_A] });
     await w.dms.send(poster, WS, MEMBER, SELF_HARM);
     await w.dms.send(poster, WS, MEMBER, SELF_HARM);
     await settled();
-    expect(pushesOf(w)).toHaveLength(2);
-    expect(new Set(pushesOf(w).map((r) => r.dedupe_key)).size).toBe(2);
+    expect(w.inbox).toHaveLength(2);
+    expect(pushesOf(w)).toHaveLength(1);
   });
 
   it('the poster\'s coach gets no CoachAlert: this path has no coach alert service', async () => {
@@ -1005,5 +1015,190 @@ describe('J. speed', () => {
     }
     process.stdout.write(`CRISIS-TEXT-BE J: classifySafety 20000 chars worst of ${runs}: ${worst.toFixed(2)} ms\n`);
     expect(worst).toBeLessThan(100);
+  });
+});
+
+// ─── FIX-1232R1 (agent 203): the owner's normal push (#203-E21), the lost page, the unlogged page ─────────────────
+
+describe('FIX-1232R1 K4. the push opens the notification center (green at the head too)', () => {
+  it('the tap data is actionScreen NotificationCenter with no deep link, no params and no alert tap', async () => {
+    const w = world();
+    await w.dms.send(poster, WS, MEMBER, SELF_HARM);
+    await settled();
+    for (const r of pushesOf(w)) {
+      expect(r.data).toMatchObject({ actionScreen: 'NotificationCenter' });
+      expect(r.data).not.toHaveProperty('deepLink');
+      expect(r.data).not.toHaveProperty('actionParams');
+    }
+  });
+});
+
+describe('FIX-1232R1 P. a normal push: Mute all, quiet hours, the daily cap', () => {
+  it('P2: Mute all on: every row is written and no push is queued', async () => {
+    const w = world({ prefs: { muted: true } });
+    await w.dms.send(poster, WS, MEMBER, SELF_HARM);
+    await settled();
+    expect(w.inbox.map((r) => r.user_id).sort()).toEqual([STAFF_A, STAFF_B].sort());
+    expect(pushesOf(w)).toEqual([]);
+  });
+
+  it('P2: a push queued while unmuted is dropped at send once the account mutes (preference-off)', async () => {
+    const w = world();
+    await w.dms.send(poster, WS, MEMBER, SELF_HARM);
+    await settled();
+    expect(pushesOf(w)).toHaveLength(2);
+    for (const o of [STAFF_A, STAFF_B]) w.out.prefs[o].muted = true;
+    await w.delivery.drain();
+    expect(pushesOf(w).map((r) => [r.status, r.result_code])).toEqual([
+      ['dropped', 'preference-off'],
+      ['dropped', 'preference-off'],
+    ]);
+  });
+
+  it('P3: 23:30 New York, Mute all off: queued for 08:00 local as quiet_hours; a send at 23:45 defers it again', async () => {
+    const w = world({ at: NIGHT });
+    await w.dms.send(poster, WS, MEMBER, SELF_HARM);
+    await settled();
+    const MORNING = new Date('2026-06-03T12:00:00Z'); // 08:00 in New York (EDT)
+    expect(pushesOf(w).map((r) => [r.not_before.toISOString(), r.deferred_reason])).toEqual([
+      [MORNING.toISOString(), 'quiet_hours'],
+      [MORNING.toISOString(), 'quiet_hours'],
+    ]);
+    w.clock.at = new Date(NIGHT.getTime() + 15 * 60_000);
+    for (const r of pushesOf(w)) r.not_before = w.clock.at; // due now, as if a sweep had picked it up at 23:45
+    await w.delivery.drain();
+    expect(pushesOf(w).map((r) => [r.status, r.not_before.toISOString(), r.sent_at])).toEqual([
+      ['pending', MORNING.toISOString(), null],
+      ['pending', MORNING.toISOString(), null],
+    ]);
+  });
+
+  describe('P4: at most one push per staff account per poster per UTC day; every match writes its rows', () => {
+    const REAL = ['hrtime', 'nextTick', 'performance', 'queueMicrotask', 'setImmediate', 'clearImmediate', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'] as const;
+    afterEach(() => jest.useRealTimers());
+    it('two matches on one UTC day on two surfaces, a second poster that day, then the next UTC day', async () => {
+      jest.useFakeTimers({ now: new Date('2026-06-02T10:00:00Z'), doNotFake: [...REAL] });
+      const w = world();
+      const member = stub<User>({ id: MEMBER, role: 'student', coach_id: 'coach-1' });
+      const perStaff = () => [STAFF_A, STAFF_B].map((s) => [w.inbox.filter((r) => r.user_id === s).length, pushesOf(w).filter((r) => r.user_id === s).length]);
+      await w.dms.send(poster, WS, MEMBER, SELF_HARM);
+      await w.posts.addComment(poster, w.POST, EMERGENCY);
+      await settled();
+      expect(perStaff()).toEqual([[2, 1], [2, 1]]);
+      await w.dms.send(member, WS, POSTER, SELF_HARM);
+      await settled();
+      expect(perStaff()).toEqual([[3, 2], [3, 2]]);
+      jest.setSystemTime(new Date('2026-06-03T00:05:00Z'));
+      await w.dms.send(poster, WS, MEMBER, SELF_HARM);
+      await settled();
+      expect(perStaff()).toEqual([[4, 3], [4, 3]]);
+      expect(pushesOf(w).map((r) => r.dedupe_key).sort()).toEqual(
+        [
+          `community_crisis:${POSTER}:2026-06-02`,
+          `community_crisis:${POSTER}:2026-06-02`,
+          `community_crisis:${MEMBER}:2026-06-02`,
+          `community_crisis:${MEMBER}:2026-06-02`,
+          `community_crisis:${POSTER}:2026-06-03`,
+          `community_crisis:${POSTER}:2026-06-03`,
+        ].sort(),
+      );
+    });
+  });
+
+  // P5: one row per SAFETY_ALERT_PUSH_BODY key; every Roman key, the photo key and the space copy keep the pass.
+  it.each(Object.keys(SAFETY_ALERT_PUSH_BODY).map((k) => [k, k !== COMMUNITY_CRISIS_ALERT_KEY] as const))(
+    'P5: safety key %s passes Mute all: %s',
+    (key, passes) => {
+      expect(muteAllStops({ muted: true }, NotificationKind.COACH_ALERT, 'push', { safetyAlert: key })).toBe(!passes);
+    },
+  );
+
+  it('P6 (green at the head too; Found, not fixed): a staff account with no usable zone gets the push at once', async () => {
+    const w = world({ at: NIGHT, prefs: { timezone: null } });
+    await w.dms.send(poster, WS, MEMBER, SELF_HARM);
+    await settled();
+    expect(pushesOf(w).map((r) => [r.not_before.getTime(), r.deferred_reason])).toEqual([
+      [NIGHT.getTime(), null],
+      [NIGHT.getTime(), null],
+    ]);
+  });
+});
+
+describe('FIX-1232R1 L1. a stored write pages staff before any later step can throw', () => {
+  const coach = stub<User>({ id: POSTER, role: 'coach' });
+  const L1: Array<[string, (w: World) => void, (w: World, key: string) => Promise<unknown>]> = [
+    [
+      'S1, markHighAlert throws',
+      (w) => {
+        process.env.FEATURE_COMMUNITY_SPACE_PUSH = 'true';
+        const spacePush = {
+          highAlertAllowance: jest.fn(async () => ({ used_today: 0, limit: 3, reach: 7 })),
+          markHighAlert: jest.fn(async () => {
+            throw new Error('mark failed');
+          }),
+        };
+        Object.assign(w.chat as unknown as Row, { spacePush });
+      },
+      (w, key) => w.chat.send(coach, SPACE, SELF_HARM, undefined, undefined, undefined, true, key),
+    ],
+    [
+      'S1, markCohortClientMessagesReplied throws for a coach sender',
+      (w) => {
+        w.messageRepo.markCohortClientMessagesReplied = jest.fn(async () => {
+          throw new Error('stamp failed');
+        });
+      },
+      (w, key) => w.chat.send(coach, SPACE, SELF_HARM, undefined, undefined, undefined, undefined, key),
+    ],
+    [
+      'S5, readersOf throws',
+      (w) => {
+        w.postRows.get(w.POST)!.author_id = MEMBER;
+        w.access.readersOf = jest.fn(async () => {
+          throw new Error('readers failed');
+        });
+      },
+      (w, key) => w.posts.addComment(poster, w.POST, SELF_HARM, key),
+    ],
+  ];
+  it.each(L1)('%s: the row is stored, the request errors as today, staff got their rows; a keyed resend replays and pages nobody again', async (_n, arrange, write) => {
+    const w = world();
+    arrange(w);
+    const key = randomUUID();
+    await expect(write(w, key)).rejects.toThrow();
+    await settled();
+    expect(w.messages.size).toBe(1);
+    expect(w.inbox.map((r) => r.user_id).sort()).toEqual([STAFF_A, STAFF_B].sort());
+    const again = answer(await write(w, key).catch(() => ({ resend: 'failed' })));
+    await settled();
+    expect(again.crisis_flag).toBe(true);
+    expect(w.messages.size).toBe(1);
+    expect(w.inbox).toHaveLength(2);
+  });
+});
+
+describe('FIX-1232R1 G1-G2. a page that reached nobody is one closed-code line', () => {
+  const NONE = /^community\.crisis_alert outcome=none_delivered/;
+  const linesOf = (log: jest.SpyInstance) => log.mock.calls.map(([m]) => String(m)).filter((m) => NONE.test(m));
+  it('G1: every staff account has coach_alert in-app and push off: one line, by code and counts only', async () => {
+    const log = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const w = world({ prefs: { coach_alert_inapp: false, coach_alert_push: false } });
+    await w.dms.send(poster, WS, MEMBER, SELF_HARM);
+    await settled();
+    expect(w.inbox).toEqual([]);
+    expect(pushesOf(w)).toEqual([]);
+    expect(linesOf(log)).toEqual(['community.crisis_alert outcome=none_delivered staff=2']);
+  });
+
+  it.each([
+    ['a row written, every push muted', { prefs: { muted: true } }, 1],
+    ['a row written, every push deferred to 08:00', { at: NIGHT }, 1],
+    ['in-app off, the second push a duplicate', { prefs: { coach_alert_inapp: false } }, 2],
+  ] as const)('G2 (green at the head too): %s: no such line', async (_n, o, sends) => {
+    const log = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const w = world(o as WorldOptions);
+    for (let i = 0; i < sends; i += 1) await w.dms.send(poster, WS, MEMBER, SELF_HARM);
+    await settled();
+    expect(linesOf(log)).toEqual([]);
   });
 });
