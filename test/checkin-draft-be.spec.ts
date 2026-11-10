@@ -27,7 +27,7 @@ import { MessagingService } from '../src/messaging/messaging.service';
 import { AuditService } from '../src/audit/audit.service';
 import { AiConsentRequiredException } from '../src/ai-egress/ai-consent-required.exception';
 import { deleteDraftsLeftByMove } from '../src/coach/moved-client-drafts';
-import { classifySafety } from '../src/roman/guardrails/safety-router';
+import { ROMAN_ROUTER_HINTS, classifySafety } from '../src/roman/guardrails/safety-router';
 import type { PrismaService } from '../src/prisma.service';
 import type { AuthedRequest } from '../src/auth/auth-request';
 import { ls1197Database } from './ls-1197-live-fixture';
@@ -43,6 +43,8 @@ const classify = jest.mocked(classifySafety);
 const CAP = COACH_MESSAGE_CAPABILITY;
 const ROMAN = 'Thanks for checking in. What helped you make time this week?';
 const NOTE = 'Busy week at work but I made time for my sessions.';
+const NOTE_B = 'Quieter week, so I added a long walk on Sunday.';
+const ROMAN_B = 'A long walk is a great add. How did Sunday feel?';
 const CANNOT_WRITE = "Roman can't write this right now. Nothing was sent.";
 const LIVE = { enabled: true, provider: 'anthropic', capabilityAllowed: true, requireApproval: true };
 const OFF = { enabled: false, provider: 'stub', capabilityAllowed: true, requireApproval: true, reason: 'gateway-disabled' };
@@ -668,6 +670,155 @@ describe('CHECKIN-DRAFT-BE: a coach-approved reply to one check-in', () => {
       expect(errors('spam')).toBe(0);
       expect(errors('nonsense')).toBeGreaterThan(0);
       expect(errors(undefined)).toBeGreaterThan(0);
+    });
+  });
+
+  // FIX-1234R1 fix 2: a pending draft is live only while the check-in's note, mood, energy and sleep are what it was
+  // written from. The client's same-day row is updated in place, with the same id (check-ins.service.ts upsert).
+  describe('the client changes the check-in after the draft (S1-S7)', () => {
+    const rewrite = (id: string, data: Record<string, unknown>) => prisma.checkIn.update({ where: { id }, data });
+    /** Gone from both lists; Send with and without an edit, Not now and Report are 404; nothing sent; still pending. */
+    const expectWithheld = async (id: string) => {
+      expect(await inBothLists(id)).toEqual([false, false]);
+      for (const body of [{ decision: 'approved' }, { decision: 'approved', payload: { body: 'Edit' } }, { decision: 'rejected' }]) {
+        expect(await refusal(patch(id, body))).toMatchObject({ status: 404, body: { message: 'AI draft not found' } });
+      }
+      expect(await refusal(report(id))).toMatchObject({ status: 404, body: { message: 'AI draft not found' } });
+      expect(await row(id)).toMatchObject({ status: 'pending', materialised_at: null, decided_at: null, payload: { clientId: client, body: ROMAN } });
+      expect(await messagesOf(id)).toHaveLength(0);
+    };
+
+    it('S1: the note changed: the draft is withheld everywhere and nothing is sent', async () => {
+      const { id, checkIn } = await draftOf();
+      await rewrite(checkIn.id, { notes: NOTE_B });
+      await expectWithheld(id);
+      expect(await prisma.coachMessage.count()).toBe(0);
+    });
+
+    it('S2: a re-tap after the change drafts afresh once; the old row stays pending and withheld', async () => {
+      const { id, checkIn } = await draftOf();
+      await rewrite(checkIn.id, { notes: NOTE_B });
+      complete.mockClear();
+      complete.mockImplementationOnce(async () => ({ ...answer(), text: ROMAN_B }));
+      const fresh = await tap(checkIn.id);
+      expect(complete).toHaveBeenCalledTimes(1);
+      expect(prompt().user).toContain(NOTE_B);
+      expect(fresh.approval.draft_id).not.toBe(id);
+      expect(fresh.reply).toBe(ROMAN_B);
+      const again = await tap(checkIn.id);
+      expect(again.approval.draft_id).toBe(fresh.approval.draft_id);
+      expect(again.reply).toBe(ROMAN_B);
+      expect(complete).toHaveBeenCalledTimes(1);
+      expect(await inBothLists(String(fresh.approval.draft_id))).toEqual([true, true]);
+      await expectWithheld(id);
+    });
+
+    it('S3: changed to a note Roman leaves to the coach, or to nothing: the re-tap is 422 and the old draft is withheld', async () => {
+      const routed = await draftOf({ notes: NOTE, mood: 3 });
+      await rewrite(routed.checkIn.id, { notes: NOTE_B });
+      classify.mockReturnValueOnce({ class: 'emergency', matched: 'x', short_circuit: true });
+      expect(await refusal(tap(routed.checkIn.id))).toEqual({ status: 422, body: { code: 'CHECK_IN_NEEDS_COACH', message: CANNOT_WRITE } });
+      await expectWithheld(routed.id);
+
+      const emptied = await draftOf({ notes: NOTE, mood: 3, energy: 4, sleep_hours: 7 });
+      await rewrite(emptied.checkIn.id, { notes: null, mood: null, energy: null, sleep_hours: null });
+      expect(await refusal(tap(emptied.checkIn.id))).toEqual({ status: 422, body: { code: 'CHECK_IN_NOTHING_TO_DRAFT', message: CANNOT_WRITE } });
+      await expectWithheld(emptied.id);
+    });
+
+    it('S4: numbers only, mood 3 to 4, behaves as a changed note', async () => {
+      const { id, checkIn } = await draftOf({ notes: null, mood: 3 });
+      await rewrite(checkIn.id, { mood: 4 });
+      await expectWithheld(id);
+      complete.mockClear();
+      const fresh = await tap(checkIn.id);
+      expect(complete).toHaveBeenCalledTimes(1);
+      expect(prompt().user).toContain('"mood": 4');
+      expect(fresh.approval.draft_id).not.toBe(id);
+    });
+
+    it('S5: soreness, weight_kg or spacing only: the draft stays live, a re-tap returns it and Send works', async () => {
+      for (const change of [{ soreness: 1 }, { weight_kg: 79.5 }, { notes: `  ${NOTE.replace(/ /g, '   ')}\n ` }]) {
+        const { id, checkIn } = await draftOf();
+        await rewrite(checkIn.id, change);
+        complete.mockClear();
+        expect(await inBothLists(id)).toEqual([true, true]);
+        expect((await tap(checkIn.id)).approval.draft_id).toBe(id);
+        expect(complete).not.toHaveBeenCalled();
+        expect((await patch(id, { decision: 'approved' })).status).toBe('approved');
+        expect((await messagesOf(id)).map((m) => m.body)).toEqual([ROMAN]);
+      }
+    });
+
+    it("S6: changed to B, then back to A: A's draft is live again, B's withheld, and a re-tap returns A's", async () => {
+      const first = await draftOf();
+      await rewrite(first.checkIn.id, { notes: NOTE_B });
+      const second = String((await tap(first.checkIn.id)).approval.draft_id);
+      expect(second).not.toBe(first.id);
+      await rewrite(first.checkIn.id, { notes: NOTE });
+      complete.mockClear();
+      expect(await inBothLists(first.id)).toEqual([true, true]);
+      await expectWithheld(second);
+      expect((await tap(first.checkIn.id)).approval.draft_id).toBe(first.id);
+      expect(complete).not.toHaveBeenCalled();
+    });
+
+    it('S7: after a Send the client changes the note: the sent draft stays in the approved list', async () => {
+      const { id, checkIn } = await draftOf();
+      expect((await patch(id, { decision: 'approved' })).status).toBe('approved');
+      await rewrite(checkIn.id, { notes: NOTE_B });
+      const approved = (await controller.listDrafts(asCoach, '200', client, 'approved')) as Row[];
+      expect(approved.map((d) => d.id)).toEqual([id]);
+    });
+  });
+
+  // FIX-1234R1 fix 3: a note Roman's own path answers with a router hint is drafted with the same hint, server-written,
+  // outside the fence. The classifier is a stand-in here, so no sample text is quoted ([R22]).
+  describe("Roman's router hint (H1-H3)", () => {
+    const expectHintBeforeFence = (hint: string) => {
+      const { user, system } = prompt();
+      expect(user.split(hint)).toHaveLength(2);
+      const open = user.indexOf('<client_data>');
+      expect(open).toBeGreaterThan(0);
+      expect(user.indexOf(hint) + hint.length).toBeLessThan(open);
+      expect(user.slice(open)).not.toContain('ROUTER HINT');
+      expect(system).not.toContain('ROUTER HINT');
+    };
+
+    it('H1: a medical_scope note carries the medical_scope hint once, before the fence opens', async () => {
+      classify.mockReturnValueOnce({ class: 'medical_scope', matched: 'x', short_circuit: false });
+      await draftOf();
+      expectHintBeforeFence(ROMAN_ROUTER_HINTS.medical_scope);
+    });
+
+    it('H2: an injury_pain note carries the injury_pain hint once, before the fence opens', async () => {
+      classify.mockReturnValueOnce({ class: 'injury_pain', matched: 'x', short_circuit: false });
+      await draftOf();
+      expectHintBeforeFence(ROMAN_ROUTER_HINTS.injury_pain);
+    });
+
+    it('H3: a normal note and a numbers-only check-in carry no hint; the stub echo holds no note and no hint', async () => {
+      await draftOf();
+      expect(classify).toHaveBeenCalledTimes(1);
+      classify.mockClear();
+      await draftOf({ notes: null, mood: 4 });
+      expect(classify).not.toHaveBeenCalled();
+      for (const call of [0, 1]) {
+        const { user, system } = prompt(call);
+        expect(user + system).not.toContain('ROUTER HINT');
+      }
+      resolved = OFF;
+      for (const verdict of [
+        { class: 'normal', matched: null, short_circuit: false },
+        { class: 'medical_scope', matched: 'x', short_circuit: false },
+      ] as const) {
+        classify.mockReturnValueOnce(verdict);
+        const out = await tap((await newCheckIn()).id);
+        expect(out).toMatchObject({ enabled: false, provider: 'stub', approval: { status: 'not_required', draft_id: null } });
+        expect(out.reply).not.toContain(NOTE);
+        expect(out.reply).not.toContain('ROUTER HINT');
+      }
+      expect(complete).toHaveBeenCalledTimes(2);
     });
   });
 });
