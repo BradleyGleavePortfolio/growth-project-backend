@@ -6,6 +6,12 @@ function stub<T>(v: unknown): T {
   return v as T;
 }
 
+/** A hand-built safety stub's word list and crisis check: every text passes and nothing matches. */
+export const textPasses = {
+  screenText: () => ({ surface: 'dm', posterId: 'poster', flag: false, page: false }),
+  alertStaff: async () => undefined,
+};
+
 /**
  * A real CommunitySafetyService over an in-memory block list. Used by unit
  * specs that construct community services directly: the content filter runs

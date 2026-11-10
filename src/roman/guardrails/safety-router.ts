@@ -6,7 +6,15 @@
  * tighten the post-check.
  */
 
-import { CRISIS_EMERGENCY_PATTERNS, CRISIS_SELF_HARM_PATTERNS } from '../../ai/ai-crisis-router';
+import {
+  CRISIS_EMERGENCY_PATTERNS,
+  CRISIS_LINE_CALL_911_NOW,
+  CRISIS_LINE_DANGER_911,
+  CRISIS_LINE_REACH_988,
+  CRISIS_LINE_STAY_WHERE_YOU_ARE,
+  CRISIS_LINE_TELL_SOMEONE,
+  CRISIS_SELF_HARM_PATTERNS,
+} from '../../ai/ai-crisis-router';
 
 export type SafetyClass =
   | 'emergency'
@@ -321,16 +329,13 @@ export function classifySafety(message: string, earlierUserText = ''): SafetyRou
 type FixedReplyClass = 'emergency' | 'self_harm' | 'urgent_symptoms';
 export const ROMAN_SAFETY_TEMPLATES: Record<FixedReplyClass, string> = {
   emergency:
-    'Please stop what you are doing and call 911 now, or your local emergency number. ' +
-    'If you are able, stay where you are, unlock the door, and keep your phone within reach so help can find you quickly. ' +
+    `${CRISIS_LINE_CALL_911_NOW} ${CRISIS_LINE_STAY_WHERE_YOU_ARE} ` +
     'This is beyond what I can help with, and it should not wait. ' +
     // CF-ROMAN-COPY-B-128: no coach is assumed (a client may have none).
     'Once you are safe, let someone you trust know what happened, and I will be here.',
   self_harm:
     'I am sorry you are carrying this, and I am glad you said it here rather than holding it alone. ' +
-    'Please reach the 988 Suicide & Crisis Lifeline now: call or text 988 in the United States, any hour, and a trained person will answer. ' +
-    'If you are in immediate danger, call 911. ' +
-    'If you can, let someone you trust know where you are so they can sit with you. ' +
+    `${CRISIS_LINE_REACH_988} ${CRISIS_LINE_DANGER_911} ${CRISIS_LINE_TELL_SOMEONE} ` +
     'You matter, and talking to a person right now is the right next step.',
   // Owner C6a (Option 1) wording, word for word.
   urgent_symptoms:
@@ -416,7 +421,7 @@ export function romanEatingDisorderFallback(hasCoach: boolean, coachTold = false
     ...(hasCoach && coachTold ? [ROMAN_COACH_TOLD_LINE] : []),
     'A physician, or a qualified professional who works with eating concerns, is the right person to talk to, and it helps to tell someone you trust how you are doing.',
     'If you are in distress, call or text 988 in the United States, any hour, and a trained person will answer.',
-    'If you are in immediate danger, call 911.',
+    CRISIS_LINE_DANGER_911,
   ].join(' ');
 }
 

@@ -33,6 +33,7 @@ import type { VoiceUploadProvider } from '../../src/community/voice/voice-upload
 import type { PrismaService } from '../../src/prisma.service';
 import { stub } from '../utils/trial-fakes';
 import { liveTestDatabaseUrl } from '../utils/live-test-db';
+import { textPasses } from '../community/safety/safety-test-helpers';
 
 const DB_URL = liveTestDatabaseUrl();
 if (!DB_URL && process.env.CI === 'true') {
@@ -74,7 +75,7 @@ const sorted = (xs: string[]) => [...xs].sort();
   const foundation = new CommunityRepository(db);
   const messages = new CommunityMessagesRepository(db);
   const postsRepo = new CommunityPostsRepository(db);
-  const safety = stub<CommunitySafetyService>({ assertAllowed: () => undefined, filterBlocked: async <T>(_v: string, rows: T[]) => rows,
+  const safety = stub<CommunitySafetyService>({ ...textPasses, filterBlocked: async <T>(_v: string, rows: T[]) => rows,
     assertVisibleTo: async () => undefined, hiddenFromViewer: async () => null });
   const realtime = stub<CommunityRealtimeService>({ broadcastCommunityEvent: async () => undefined });
   const push = stub<CommunityNotificationsService>({ pushEnabled: () => false });

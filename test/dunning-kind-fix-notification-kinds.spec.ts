@@ -444,7 +444,9 @@ describe('FR-1154: safety alerts and money senders reach a user with Mute all on
   });
   afterAll(() => jest.restoreAllMocks());
 
-  const SAFETY = Object.keys(SAFETY_ALERT_PUSH_BODY) as Array<keyof typeof SAFETY_ALERT_PUSH_BODY>;
+  // FIX-1232R1 (owner #203-E21 "Op 1: normal push"): the community crisis staff key keeps its line but not the
+  // Mute all pass, and it never rides a CoachAlert (alertStaff writes none); every Roman and photo key stays here.
+  const SAFETY = Object.keys(SAFETY_ALERT_PUSH_BODY).filter((k) => k !== 'community_crisis_text') as Array<keyof typeof SAFETY_ALERT_PUSH_BODY>;
   it.each(SAFETY)('%s: queued and sent to a muted coach; urgent only when its severity is critical', async (type) => {
     const w = pushWorld();
     const emitter = new CoachAlertEmitter(w.svc);

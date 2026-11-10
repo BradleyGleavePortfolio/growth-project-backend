@@ -18,6 +18,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleDestroy,
   Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -56,6 +57,10 @@ import {
   ROMAN_MESSAGES_MAX_LIMIT,
   ROMAN_REPLY_PENDING_MARK,
   ROMAN_REPLY_PENDING_MAX_MS,
+  ROMAN_FIXED_REPLY_PENDING_MARK,
+  ROMAN_FIXED_REPLY_PENDING_MAX_MS,
+  ROMAN_SHUTDOWN_WAIT_MS,
+  ROMAN_SHUTDOWN_CLEAR_MS,
   ROMAN_RATE_LIMIT_WINDOW_MS,
   ROMAN_ERASED_DAY_KEY_PREFIX,
   ROMAN_SESSION_NOT_FOUND_MESSAGE,
@@ -97,7 +102,7 @@ import {
   ROMAN_COACH_TOLD_LINE,
 } from './guardrails/safety-router';
 import { postCheckRomanReply, type PostCheckContext } from './guardrails/roman-post-check';
-import { quoteOpensReply, splitRomanQuote } from './guardrails/roman-quote';
+import { ownWordsOfTurns } from './guardrails/roman-quote-read';
 import { RomanClientContextService } from './context/roman-client-context.service';
 import { consumeRomanUsage, releaseRomanUsage, type RomanUsageDebit } from './roman-usage';
 import { keyedSendId, keyedWrite } from '../community/messages/message-idempotency';
@@ -236,8 +241,17 @@ export function erasedDayKey(sessionId: string): string {
 }
 
 @Injectable()
-export class RomanService {
+export class RomanService implements OnModuleDestroy {
   private readonly logger = new Logger(RomanService.name);
+  /**
+   * SEND-ONCE-CLEAR-BE: the keyed turns this process stored and has not cleared, by turn id: only what the shutdown
+   * hook may clear. The mark itself stays durable on the row, with its bound, for a death no hook sees.
+   */
+  private openTurnsByKey?: Map<string, { sessionId: string; userId: string; mark: number }>;
+  private openTurnsEnded?: () => void;
+  private get openTurns() {
+    return (this.openTurnsByKey ??= new Map());
+  }
 
   constructor(
     private readonly prisma: PrismaService,
@@ -837,17 +851,23 @@ export class RomanService {
    * SEND-ONCE-SERVER: the user turn under an Idempotency-Key, by the space chat's rule (keyedWrite): under the
    * keyed-write lock on the turn's id, the turn already stored with it (`replayed`, nothing counted on the
    * session), else the turn stored now with that id, carrying the mark that its reply may still come
-   * (SEND-ONCE-PENDING-BE, ROMAN_REPLY_PENDING_MARK) in the same insert.
+   * (SEND-ONCE-PENDING-BE, ROMAN_REPLY_PENDING_MARK) in the same insert. SEND-ONCE-CLEAR-BE: a fixed reply
+   * (`fixedReply`, no model call) carries ROMAN_FIXED_REPLY_PENDING_MARK instead; a turn stored here is open until its
+   * own clear (openTurns).
    */
   async appendKeyedTurn(
     caller: RomanCaller,
     sessionId: string,
     id: string,
     content: string,
+    fixedReply = false,
   ): Promise<{ row: RomanMessage; replayed: boolean }> {
-    return this.prisma.$transaction((tx) =>
+    const mark = fixedReply ? ROMAN_FIXED_REPLY_PENDING_MARK : ROMAN_REPLY_PENDING_MARK;
+    const stored = await this.prisma.$transaction((tx) =>
       keyedWrite(tx, id, () => this.ownTurn(tx, caller, sessionId, id), () =>
-        this.appendIn(tx, caller, sessionId, { role: 'user', content, id, completionTokens: ROMAN_REPLY_PENDING_MARK })));
+        this.appendIn(tx, caller, sessionId, { role: 'user', content, id, completionTokens: ROMAN_REPLY_PENDING_MARK, ...(fixedReply ? { completionTokens: mark } : {}) })));
+    if (!stored.replayed) this.openTurns.set(id, { sessionId, userId: caller.id, mark });
+    return stored;
   }
 
   /**
@@ -867,25 +887,74 @@ export class RomanService {
     const reply = await this.prisma.romanMessage.findFirst({
       where: { id: ids.reply, session_id: sessionId, user_id: caller.id, role: 'roman' },
     });
-    const pending =
-      !reply &&
-      turn.completion_tokens === ROMAN_REPLY_PENDING_MARK &&
-      Date.now() - turn.created_at.getTime() < ROMAN_REPLY_PENDING_MAX_MS;
+    // SEND-ONCE-CLEAR-BE: the bound follows the mark (a fixed reply needs no model, so its bound is short).
+    const bound =
+      turn.completion_tokens === ROMAN_REPLY_PENDING_MARK ? ROMAN_REPLY_PENDING_MAX_MS
+      : turn.completion_tokens === ROMAN_FIXED_REPLY_PENDING_MARK ? ROMAN_FIXED_REPLY_PENDING_MAX_MS
+      : null;
+    const pending = !reply && bound !== null && Date.now() - turn.created_at.getTime() < bound;
     return { turn, reply, pending };
   }
 
   /**
    * SEND-ONCE-PENDING-BE: a keyed turn's first send has ended, so a resend now reads the final answer. Never throws:
-   * a failed clear is logged by code, and the mark then lasts only until ROMAN_REPLY_PENDING_MAX_MS.
+   * a clear that throws or matches no row (SEND-ONCE-CLEAR-BE: a role row security stops, or a deleted chat) is
+   * logged by code, and the mark then lasts only until its bound. Its where names the turn, not the mark, so a turn
+   * the shutdown hook already cleared still matches.
    */
   async clearReplyPending(caller: RomanCaller, sessionId: string, turnId: string): Promise<void> {
     try {
-      await this.prisma.romanMessage.updateMany({
+      const { count } = await this.prisma.romanMessage.updateMany({
         where: { id: turnId, session_id: sessionId, user_id: caller.id, role: 'user' },
         data: { completion_tokens: null },
       });
+      if (count === 0) this.logger.warn(`roman.reply_pending_clear_noop session=${sessionId}`);
     } catch (err) {
       this.logger.warn(`roman.reply_pending_clear_failed session=${sessionId}: ${romanErrorTag(err)}`);
+    } finally {
+      this.openTurns.delete(turnId);
+      if (this.openTurns.size === 0) this.openTurnsEnded?.();
+    }
+  }
+
+  /**
+   * SEND-ONCE-CLEAR-BE: at shutdown (Nest runs this before the global PrismaModule's $disconnect and before the HTTP
+   * server stops), the keyed turns this process stored get until ROMAN_SHUTDOWN_WAIT_MS to end by themselves; the
+   * marks of those still open (any stored during the wait included) are cleared in one write, scoped per turn to its
+   * id, chat, member, role and own mark, with a deadline, so a resend reads ROMAN_UNAVAILABLE instead of waiting out
+   * the bound for a reply this process may not live to store. No open turn: no query. Never throws.
+   */
+  async onModuleDestroy(): Promise<void> {
+    if (this.openTurns.size === 0) return;
+    await new Promise<void>((done) => {
+      const timer = setTimeout(done, ROMAN_SHUTDOWN_WAIT_MS);
+      this.openTurnsEnded = () => {
+        clearTimeout(timer);
+        done();
+      };
+    });
+    this.openTurnsEnded = undefined;
+    const open = [...this.openTurns];
+    if (open.length === 0) return;
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      const cleared = await Promise.race([
+        this.prisma.romanMessage.updateMany({
+          where: {
+            OR: open.map(([id, t]) => ({ id, session_id: t.sessionId, user_id: t.userId, role: 'user' as const, completion_tokens: t.mark })),
+          },
+          data: { completion_tokens: null },
+        }),
+        new Promise<null>((done) => (timer = setTimeout(() => done(null), ROMAN_SHUTDOWN_CLEAR_MS))),
+      ]);
+      if (!cleared) this.logger.warn(`roman.reply_pending_shutdown_clear_timeout turns=${open.length}`);
+      else if (cleared.count < open.length) {
+        this.logger.warn(`roman.reply_pending_shutdown_clear_noop turns=${open.length} cleared=${cleared.count}`);
+      }
+    } catch (err) {
+      this.logger.warn(`roman.reply_pending_shutdown_clear_failed turns=${open.length}: ${romanErrorTag(err)}`);
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -1641,32 +1710,15 @@ export class RomanService {
   }
 
   /**
-   * ROMAN-QUOTE-SAFETY-BE: for each raw text, the member's own words when it is a Reply (roman-quote.ts) whose
-   * quote opens one of Roman's stored replies in the caller's own client-surface chat, else the text as sent.
-   * No text in that shape: no read. One read of the newest Roman rows, scoped to the caller like
-   * earlierUserText, compared as the room reads them (a Copilot reply without its [n], as GET messages gives
-   * it). A reply older than that page is unproven, and a failed read leaves every text whole: today's answer.
+   * ROMAN-QUOTE-SAFETY-BE: for each raw text, the member's own words when it is a Reply whose quote is the phone's
+   * exact excerpt of one of Roman's stored replies in the caller's own client-surface chat, else the text as sent
+   * (ROMAN-QUOTE-READERS-BE: the shared read and proof, roman-quote-read.ts). No text in that shape: no read; a
+   * failed read leaves every text whole: today's answer.
    */
   private async ownWordsOf(caller: RomanCaller, sessionId: string, texts: string[]): Promise<string[]> {
-    const quoted = texts.map(splitRomanQuote);
-    if (quoted.every((q) => q === null)) return texts;
-    let replies: string[];
-    try {
-      const rows = await this.prisma.romanMessage.findMany({
-        where: { session_id: sessionId, user_id: caller.id, role: 'roman', session: { surface: 'client' } },
-        orderBy: { created_at: 'desc' },
-        take: ROMAN_MESSAGES_MAX_LIMIT,
-        select: { content: true, copilot: true },
-      });
-      replies = rows.map((r) => (r.copilot ? withoutCites(r.content) : r.content));
-    } catch (err) {
-      this.logger.warn(`roman.safety_quote_failed: ${romanErrorTag(err)}`);
-      return texts;
-    }
-    return texts.map((text, i) => {
-      const q = quoted[i];
-      return q && replies.some((reply) => quoteOpensReply(q.quote, reply)) ? q.body : text;
-    });
+    return ownWordsOfTurns(this.prisma, caller.id, texts.map((text) => ({ text, sessionId })), (code) =>
+      this.logger.warn(`roman.safety_quote_failed: ${code}`),
+    );
   }
 
   /** Newest user turn of the caller's session (the controller stores it first). */

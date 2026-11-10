@@ -66,7 +66,8 @@ walks every kind through the real gate and fails when one lands under an off set
 Mute all (`muted`, owner ruling #171-3) never stops a row, since every row is listed in the inbox, and never stops a money kind
 (`MONEY_NOTIFICATION_KINDS` in `notification-kind.ts`, "passes (money)") on any channel; no email sender reads it except the digests and the nudges (note 2).
 It mutes every other push, at enqueue and again at send time (`muteAllStops` in `push-preferences.ts`), except a push whose context
-passes Mute all: a safety alert (`context.safetyAlert`, any key of `SAFETY_ALERT_PUSH_BODY`, owner ruling #168-18) or a money notice
+passes Mute all: a safety alert (`context.safetyAlert`, any key of `SAFETY_ALERT_PUSH_BODY` but `community_crisis_text`, owner rulings
+#168-18 and #203-E21: the community crisis staff alert is a normal push, at most one per poster per UTC day) or a money notice
 sent on a kind that is not money (`context.passesMuteAll`, the `MUTE_ALL_PASS` flag). The Mute all column says what the core gate does;
 `test/dunning-kind-fix-notification-kinds.spec.ts` walks every kind through it and fails when a new kind is not classed money or not,
 and drives every safety key and every money sender with Mute all on.
