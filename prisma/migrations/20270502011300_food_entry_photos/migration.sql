@@ -50,6 +50,6 @@ CREATE POLICY "food_entry_photos_current_coach_select" ON "food_entry_photos"
 COMMENT ON POLICY "food_entry_photos_current_coach_select" ON "food_entry_photos" IS '20270502011300: the client''s current coach reads the photo, exactly as food_entry_current_coach_select reads the entry.';
 
 COMMENT ON TABLE "food_entry_photos" IS
-  '20270502011300: the photo a client keeps with one food entry; the object is at storage_key in the private community-images bucket.';
+  '20270502011300: the photo a client keeps with one food entry, its object at storage_key in the private community-images bucket.';
 
 COMMIT;
