@@ -355,3 +355,61 @@ describe('COACH-DM-BE part 2: the Studio list row, no new field', () => {
     }]);
   });
 });
+
+/**
+ * The phone's read of a push link, copied from growth-project-mobile src/navigation/incomingLinks.ts at
+ * 93de2cbd8ddfda52865895d697fd51fb49ccc37d (mobile main on 11-09): incomingLinkPath (:5-17) as written, and from
+ * resolveAppLink the segment split (:40) and the community dm test (:83-85). The phone opens the thread with
+ * CommunityDmThread {recipientId}, the other person of the reader's thread.
+ */
+function incomingLinkPath(url: string): string | null {
+  const match = /^([a-z][a-z0-9+.-]*):\/\/([^/?#]*)([^?#]*)([?#].*)?$/i.exec(url);
+  if (!match || /[\s\\]/.test(url)) return null;
+  const [, rawScheme, host, path, suffix = ''] = match;
+  const scheme = rawScheme.toLowerCase();
+  if (scheme === 'https') {
+    if (host.toLowerCase() !== 'app.trygrowthproject.com') return null;
+    return path.replace(/^\/+/, '') + suffix;
+  }
+  if (scheme !== 'tgp' && scheme !== 'com.growthproject.app') return null;
+  if (/[@:%]/.test(host)) return null;
+  return (host + path).replace(/^\/+/, '') + suffix;
+}
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function phoneDmTarget(url: string): { screen: string; params: { recipientId: string } } | null {
+  const path = incomingLinkPath(url);
+  if (path === null) return null;
+  const segments = path.split(/[?#]/, 1)[0].replace(/\/$/, '').split('/').map(decodeURIComponent);
+  const [first, id] = segments;
+  if (segments.length === 3 && first === 'community' && UUID.test(segments[2]) && id === 'dm') {
+    return { screen: 'CommunityDmThread', params: { recipientId: segments[2] } };
+  }
+  return null;
+}
+
+describe('COACH-DM-BE part 3: the DM push link is the one the phone reads', () => {
+  let w: World;
+  beforeEach(async () => {
+    w = await world();
+  });
+
+  it('3 (link). the coach\'s DM push to the client carries tgp://community/dm/<coach id>, never the thread key', async () => {
+    await w.dms.send(w.coach, w.wsId, w.viewer.id, 'Glad it helps');
+    expect(w.pushes.map((p) => [p.recipientId, p.deepLink])).toEqual([[w.viewer.id, `tgp://community/dm/${w.coach.id}`]]);
+    expect(w.pushes[0].deepLink).not.toContain(CommunityDmsRepository.dmKey(w.wsId, w.coach.id, w.viewer.id));
+  });
+
+  it('4 (link). the client\'s DM push to their coach carries tgp://community/dm/<client id>', async () => {
+    await w.dms.send(w.viewer, w.wsId, w.coach.id, 'Thanks for the plan');
+    expect(w.pushes.map((p) => [p.recipientId, p.deepLink])).toEqual([[w.coach.id, `tgp://community/dm/${w.viewer.id}`]]);
+  });
+
+  it('6. a client recipient\'s link resolves through the copied phone parse to CommunityDmThread {recipientId: sender}', async () => {
+    await w.dms.send(w.coach, w.wsId, w.viewer.id, 'Glad it helps');
+    await w.dms.send(w.control, w.wsId, w.viewer.id, 'See you at the session');
+    expect(w.pushes.map((p) => phoneDmTarget(p.deepLink ?? ''))).toEqual([
+      { screen: 'CommunityDmThread', params: { recipientId: w.coach.id } },
+      { screen: 'CommunityDmThread', params: { recipientId: w.control.id } },
+    ]);
+  });
+});
