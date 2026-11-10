@@ -102,7 +102,7 @@ import {
   ROMAN_COACH_TOLD_LINE,
 } from './guardrails/safety-router';
 import { postCheckRomanReply, type PostCheckContext } from './guardrails/roman-post-check';
-import { quoteOpensReply, splitRomanQuote } from './guardrails/roman-quote';
+import { ownWordsOfTurns } from './guardrails/roman-quote-read';
 import { RomanClientContextService } from './context/roman-client-context.service';
 import { consumeRomanUsage, releaseRomanUsage, type RomanUsageDebit } from './roman-usage';
 import { keyedSendId, keyedWrite } from '../community/messages/message-idempotency';
@@ -1710,32 +1710,15 @@ export class RomanService implements OnModuleDestroy {
   }
 
   /**
-   * ROMAN-QUOTE-SAFETY-BE: for each raw text, the member's own words when it is a Reply (roman-quote.ts) whose
-   * quote opens one of Roman's stored replies in the caller's own client-surface chat, else the text as sent.
-   * No text in that shape: no read. One read of the newest Roman rows, scoped to the caller like
-   * earlierUserText, compared as the room reads them (a Copilot reply without its [n], as GET messages gives
-   * it). A reply older than that page is unproven, and a failed read leaves every text whole: today's answer.
+   * ROMAN-QUOTE-SAFETY-BE: for each raw text, the member's own words when it is a Reply whose quote is the phone's
+   * exact excerpt of one of Roman's stored replies in the caller's own client-surface chat, else the text as sent
+   * (ROMAN-QUOTE-READERS-BE: the shared read and proof, roman-quote-read.ts). No text in that shape: no read; a
+   * failed read leaves every text whole: today's answer.
    */
   private async ownWordsOf(caller: RomanCaller, sessionId: string, texts: string[]): Promise<string[]> {
-    const quoted = texts.map(splitRomanQuote);
-    if (quoted.every((q) => q === null)) return texts;
-    let replies: string[];
-    try {
-      const rows = await this.prisma.romanMessage.findMany({
-        where: { session_id: sessionId, user_id: caller.id, role: 'roman', session: { surface: 'client' } },
-        orderBy: { created_at: 'desc' },
-        take: ROMAN_MESSAGES_MAX_LIMIT,
-        select: { content: true, copilot: true },
-      });
-      replies = rows.map((r) => (r.copilot ? withoutCites(r.content) : r.content));
-    } catch (err) {
-      this.logger.warn(`roman.safety_quote_failed: ${romanErrorTag(err)}`);
-      return texts;
-    }
-    return texts.map((text, i) => {
-      const q = quoted[i];
-      return q && replies.some((reply) => quoteOpensReply(q.quote, reply)) ? q.body : text;
-    });
+    return ownWordsOfTurns(this.prisma, caller.id, texts.map((text) => ({ text, sessionId })), (code) =>
+      this.logger.warn(`roman.safety_quote_failed: ${code}`),
+    );
   }
 
   /** Newest user turn of the caller's session (the controller stores it first). */

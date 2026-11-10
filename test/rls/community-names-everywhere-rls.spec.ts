@@ -25,6 +25,7 @@ import type { CommunitySafetyService } from '../../src/community/safety/communit
 import type { PrismaService } from '../../src/prisma.service';
 import { stub } from '../utils/trial-fakes';
 import { liveTestDatabaseUrl } from '../utils/live-test-db';
+import { textPasses } from '../community/safety/safety-test-helpers';
 
 const DB_URL = liveTestDatabaseUrl();
 if (!DB_URL && process.env.CI === 'true') {
@@ -89,7 +90,7 @@ const CONTROL: Record<Key, string> = { X: 'the Hall of X', Y: 'the Hall of Y', I
 (DB_URL ? describe : describe.skip)('#C6-NAMES-EVERYWHERE: full names on posts, comments, wins and the leaderboard', () => {
   const prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
   const db = stub<PrismaService>(prisma);
-  const safety = stub<CommunitySafetyService>({ assertAllowed: () => undefined, filterBlocked: async <T>(_v: string, rows: T[]) => rows,
+  const safety = stub<CommunitySafetyService>({ ...textPasses, filterBlocked: async <T>(_v: string, rows: T[]) => rows,
     assertVisibleTo: async () => undefined, hiddenFromViewer: async () => null });
   const posts = new CommunityPostsService(new CommunityAccessService(db), new CommunityPostsRepository(db), new CommunityMessagesRepository(db),
     stub<CommunityRealtimeService>({ broadcastCommunityEvent: async () => undefined }),

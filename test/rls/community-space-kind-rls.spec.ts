@@ -23,6 +23,7 @@ import type { VoiceUploadProvider } from '../../src/community/voice/voice-upload
 import type { PrismaService } from '../../src/prisma.service';
 import { stub } from '../utils/trial-fakes';
 import { liveTestDatabaseUrl } from '../utils/live-test-db';
+import { textPasses } from '../community/safety/safety-test-helpers';
 
 const DB_URL = liveTestDatabaseUrl();
 if (!DB_URL && process.env.CI === 'true') {
@@ -53,7 +54,7 @@ const REPLY = 'community_challenge_comment';
   const cohorts = new CommunityCohortWriteService(access, new CommunityCohortWriteRepository(db));
   const chat = new CommunityMessagesService(access, new CommunityMessagesRepository(db),
     stub<CommunityRealtimeService>({ broadcastCommunityEvent: async () => undefined }), stub<PlanContextService>({}),
-    stub<CommunitySafetyService>({ assertAllowed: () => undefined }), stub<CommunityNotificationsService>({ pushEnabled: () => false }));
+    stub<CommunitySafetyService>(textPasses), stub<CommunityNotificationsService>({ pushEnabled: () => false }));
   const voice = new CommunityVoiceService(access, stub<CommunityVoiceRepository>({}), stub<VoiceUploadProvider>({ bucket: () => 'voice-notes' }),
     stub<CommunityRealtimeService>({}), stub<AnalyticsService>({ capture: () => undefined }), stub<CommunitySafetyService>({}));
   const uuids = <K extends string>(keys: readonly K[]) => Object.fromEntries(keys.map((k) => [k, randomUUID()])) as Record<K, string>;

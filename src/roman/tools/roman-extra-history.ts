@@ -11,11 +11,13 @@
  * Numbers are computed here; strings are sanitised and clamped.
  */
 
+import { Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { sanitizePromptInput } from '../../ai/utils/sanitize-prompt-input';
 import { localClock, localDateOf, selectWearableProviders } from '../context/roman-client-context.service';
 import { METRIC_AGGREGATION } from '../../wearables/samples/metric-bucket.map';
 import { withoutCites } from '../../copilot/copilot-turn';
+import { ownWordsOfTurns } from '../guardrails/roman-quote-read';
 
 export const ROMAN_EXTRA_HISTORY_KINDS = ['health_day', 'fasting', 'roman_chat', 'community_post'] as const;
 export type RomanExtraHistoryKind = (typeof ROMAN_EXTRA_HISTORY_KINDS)[number];
@@ -74,6 +76,8 @@ function healthValue(metric: HealthMetric, v: number): number | string {
 }
 
 export class RomanExtraHistory {
+  private readonly logger = new Logger(RomanExtraHistory.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   async read(
@@ -180,12 +184,21 @@ export class RomanExtraHistory {
       },
       orderBy: { created_at: 'asc' },
       take: CAP + 1,
-      select: { created_at: true, role: true, content: true, copilot: true },
+      select: { created_at: true, role: true, content: true, copilot: true, session_id: true },
     });
+    // ROMAN-QUOTE-READERS-BE: a client turn sent as a Reply carries Roman's words on its quote line; the event
+    // from 'client' gets the member's words alone. One read (any Roman row of those chats before the window's end,
+    // interrupted ones too); a failed read keeps every text whole. Roman's own rows are never split.
+    const kept = rows.slice(0, CAP);
+    const turns = kept.filter((r) => r.role === 'user');
+    const own = await ownWordsOfTurns(this.prisma, callerId, turns.map((r) => ({ text: r.content, sessionId: r.session_id })),
+      (code) => this.logger.warn(`roman.history_quote_failed: ${code}`), w.to);
+    const ownOf = new Map(turns.map((r, i) => [r, own[i]]));
     const events: ExtraEvent[] = [];
-    for (const r of rows.slice(0, CAP)) {
+    for (const r of kept) {
+      const raw = ownOf.get(r) ?? r.content;
       // COPILOT-BE2: a Copilot reply's [n] markers mean nothing outside its own turn.
-      const text = clamp(r.copilot ? withoutCites(r.content) : r.content, 300);
+      const text = clamp(r.copilot ? withoutCites(raw) : raw, 300);
       if (!text) continue;
       const c = localClock(r.created_at, w.tz);
       const from = r.role === 'user' ? 'client' : 'roman';

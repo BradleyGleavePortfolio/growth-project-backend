@@ -47,6 +47,10 @@ const MWB_HEAD_CONFLICT_DETAILS: Readonly<
   undo_head_moved: MWB_HEAD_CONFLICT,
 };
 
+// CRISIS-TEXT-BE (#200-S1 op 1): a refused community text that matched Roman's
+// crisis check tells only its own poster, so the phone can show the 911/988 line.
+const COMMUNITY_CRISIS_REFUSAL: Readonly<Record<string, DetailCheck>> = { crisis_flag: (v) => v === true };
+
 /** code -> field name -> shape check. Extend only with client-safe facts. */
 export const ERROR_DETAIL_ALLOWLIST: Readonly<Record<string, Readonly<Record<string, DetailCheck>>>> =
   {
@@ -84,6 +88,9 @@ export const ERROR_DETAIL_ALLOWLIST: Readonly<Record<string, Readonly<Record<str
       kind: oneOf('messages', 'files', 'changes'),
       resets_at: isoOrNull,
     },
+    'community.content.rejected': COMMUNITY_CRISIS_REFUSAL,
+    PHOTO_NOT_ALLOWED: COMMUNITY_CRISIS_REFUSAL,
+    CAPTION_NOT_ALLOWED: COMMUNITY_CRISIS_REFUSAL,
     ...MWB_HEAD_CONFLICT_DETAILS,
   };
 

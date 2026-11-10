@@ -45,7 +45,7 @@ import {
   ParticipationResponseSchema,
   ParticipationView,
 } from './community-challenges.dto';
-import { CommunitySafetyService } from '../safety/community-safety.service';
+import { CommunitySafetyService, crisisField } from '../safety/community-safety.service';
 import { z } from 'zod';
 import { RemovedKeys, removedByOf, type Removed } from '../posts/community-post-removal';
 
@@ -610,9 +610,9 @@ export class CommunityChallengesService {
     challengeId: string,
     body: string,
     idempotencyKey?: string | null,
-  ): Promise<ChallengeCommentResponse> {
+  ): Promise<ChallengeCommentResponse & { crisis_flag?: true }> {
     const challenge = await this.readableChallenge(user, challengeId);
-    this.safety.assertAllowed(body);
+    const screen = this.safety.screenText('challenge_comment', user.id, [body]);
     // SEND-ONCE-SERVER: a resend with the same Idempotency-Key (same author, same challenge) answers with the first
     // comment; another body under the key is a 409.
     const keyedId = idempotencyKey ? keyedSendId('challenge-comment', user.id, challengeId, idempotencyKey) : null;
@@ -626,9 +626,11 @@ export class CommunityChallengesService {
     const same = row.sender_id === user.id && row.plan_context_type === CHALLENGE_COMMENT_CONTEXT_TYPE
       && row.plan_context_id === challengeId && row.body === body;
     if (replayed && !same) throw new ConflictException(IDEMPOTENCY_KEY_REUSED);
-    return ChallengeCommentResponseSchema.parse({
+    if (!replayed) void this.safety.alertStaff(screen, row.id);
+    const answer = ChallengeCommentResponseSchema.parse({
       comment: this.commentView(row),
     });
+    return { ...answer, ...crisisField(screen) };
   }
 
   async listComments(

@@ -1256,6 +1256,15 @@ export const ENV_RULES: EnvRule[] = [
       "Partner C05 item 6 kill switch for the coach welcome-message cron (src/engagement/engagement.flags.ts, read by coach-welcome.service.ts every minute). Ships on; it sends nothing until the owner enables a coach's welcome setting at C04 (CoachWelcomeMessageSetting.enabled, default false). Emergency kill: set 'false' (unsetting turns it back on); scheduling and sending stop without a deploy, the erasure sweep keeps running.",
   },
   {
+    name: 'COMMUNITY_CRISIS_CHECK_ENABLED',
+    unsetIs: 'on',
+    tier: 'optional',
+    launch: 'switch',
+    default: "on (unset = on; only the exact string 'false' turns the check off)",
+    reason:
+      "#200-S1 op 1 kill switch for Roman's crisis check over community text (src/community/safety/community-safety.service.ts). Ships on: a matching community text gives its poster's own answer the flag and pages owner-role staff in generic words. Emergency kill: set 'false' (unsetting turns it back on); off = no field, no alert, today's word list.",
+  },
+  {
     name: 'RECONCILIATION_DAILY_ENABLED',
     values: ['true', 'false'],
     unsetIs: 'on',
