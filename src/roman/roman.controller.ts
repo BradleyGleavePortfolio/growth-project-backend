@@ -205,7 +205,10 @@ export class RomanController {
       edFallback = true;
     }
     // The stored turn's id: a safety alert points at this one message.
-    const keyedTurn = keyed ? await this.roman.appendKeyedTurn(caller, session.id, keyed.turn, dto.content) : null;
+    // SEND-ONCE-CLEAR-BE: a fixed reply (no model call) carries the short mark.
+    const keyedTurn = keyed
+      ? await this.roman.appendKeyedTurn(caller, session.id, keyed.turn, dto.content, crisis || edFallback)
+      : null;
     if (keyed && keyedTurn?.replayed) {
       // Two first sends raced and the other one stored the turn: this one gives back what it counted.
       await this.roman.giveBackTurn(usageDebit);

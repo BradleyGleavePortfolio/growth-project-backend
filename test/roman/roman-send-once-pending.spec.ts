@@ -29,7 +29,12 @@ import * as safetyRouter from '../../src/roman/guardrails/safety-router';
 import * as postCheck from '../../src/roman/guardrails/roman-post-check';
 import { CopilotTurnService } from '../../src/copilot/copilot-turn';
 import { CopilotService } from '../../src/copilot/copilot.service';
-import { ROMAN_REPLY_PENDING_MARK, ROMAN_REPLY_PENDING_MAX_MS } from '../../src/roman/roman.constants';
+import {
+  ROMAN_FIXED_REPLY_PENDING_MARK,
+  ROMAN_FIXED_REPLY_PENDING_MAX_MS,
+  ROMAN_REPLY_PENDING_MARK,
+  ROMAN_REPLY_PENDING_MAX_MS,
+} from '../../src/roman/roman.constants';
 import { ROMAN_SSE_FALLBACK_ERROR, ROMAN_SSE_REPLY_PENDING_ERROR } from '../../src/roman/roman-sse-error';
 import { fakeOf, grantAllEgress } from '../ai-egress/ai-egress.fakes';
 
@@ -42,6 +47,9 @@ const MOBILE_FRAME = z.object({ code: z.string(), message: z.string() }).strict(
 /** The stored mark and the bound, as literals here so these guards also run against a server that has neither. */
 const MARK = -1;
 const BOUND_MS = 660_000;
+/** SEND-ONCE-CLEAR-BE: a fixed-reply turn's mark and bound. */
+const FIXED_MARK = -2;
+const FIXED_BOUND_MS = 120_000;
 
 const KEY = '2f1c7e52-8a6b-4c2d-9f1e-7b3a5d9e0c11';
 const WORDS = 'What should I train today?';
@@ -370,13 +378,14 @@ const running: Array<[string, { copilot?: boolean; headers?: Record<string, stri
 ];
 
 describe('case 1: the first send is still being written', () => {
-  it.each(running)('%s: the resend gets exactly the pending frame and touches nothing', async (_name, o, park) => {
+  it.each(running)('%s: the resend gets exactly the pending frame and touches nothing', async (name, o, park) => {
     const w = world({ copilot: o.copilot });
     const h = hold();
     park(w, h.wait);
     const first = w.send(WORDS, { headers: o.headers });
     await h.reached;
-    expect(w.turn()?.completion_tokens).toBe(MARK);
+    // SEND-ONCE-CLEAR-BE: a fixed reply (crisis, eating-disorder fallback) carries the short mark.
+    expect(w.turn()?.completion_tokens).toBe(/fixed|eating/.test(name) ? FIXED_MARK : MARK);
 
     const before = w.effects();
     const again = await w.send(WORDS, { headers: o.headers });
@@ -724,6 +733,8 @@ describe('the mark itself', () => {
   it('the stored mark and the bound are the values these guards pin', () => {
     expect(ROMAN_REPLY_PENDING_MARK).toBe(MARK);
     expect(ROMAN_REPLY_PENDING_MAX_MS).toBe(BOUND_MS);
+    expect(ROMAN_FIXED_REPLY_PENDING_MARK).toBe(FIXED_MARK);
+    expect(ROMAN_FIXED_REPLY_PENDING_MAX_MS).toBe(FIXED_BOUND_MS);
     expect(ROMAN_SSE_REPLY_PENDING_ERROR).toEqual({ code: 'ROMAN_REPLY_PENDING', message: ROMAN_SSE_FALLBACK_ERROR.message });
   });
 
