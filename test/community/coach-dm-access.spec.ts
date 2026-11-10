@@ -338,3 +338,20 @@ describe('COACH-DM-BE part 1: the workspace coach and their own client in commun
     expect(await listed(w, w.coach, '2')).toEqual([w.viewer.id]);
   });
 });
+
+describe('COACH-DM-BE part 2: the Studio list row, no new field', () => {
+  it('a coach\'s row for a roster thread carries other_user_id and last_message_at (the newest message\'s time), and nothing new', async () => {
+    const w = await world();
+    w.dm(w.viewer, w.coach, 'Thanks for the plan');
+    const newest = w.dm(w.coach, w.viewer, 'Glad it helps');
+    const at = (w.db.table('communityMessage').find((m) => m.id === newest)?.created_at as Date).toISOString();
+    const { threads } = await w.dms.listThreads(w.coach, w.wsId, {});
+    expect(threads).toEqual([{
+      thread_id: CommunityDmsRepository.dmKey(w.wsId, w.coach.id, w.viewer.id),
+      workspace_id: w.wsId,
+      other_user_id: w.viewer.id,
+      created_at: null,
+      last_message_at: at,
+    }]);
+  });
+});
