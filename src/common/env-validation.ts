@@ -1256,6 +1256,15 @@ export const ENV_RULES: EnvRule[] = [
       "Partner C05 item 6 kill switch for the coach welcome-message cron (src/engagement/engagement.flags.ts, read by coach-welcome.service.ts every minute). Ships on; it sends nothing until the owner enables a coach's welcome setting at C04 (CoachWelcomeMessageSetting.enabled, default false). Emergency kill: set 'false' (unsetting turns it back on); scheduling and sending stop without a deploy, the erasure sweep keeps running.",
   },
   {
+    name: 'COMMUNITY_CRISIS_CHECK_ENABLED',
+    unsetIs: 'on',
+    tier: 'optional',
+    launch: 'switch',
+    default: "on (unset = on; only the exact string 'false' turns the check off)",
+    reason:
+      "#200-S1 op 1 kill switch for Roman's crisis check over community text (src/community/safety/community-safety.service.ts). Ships on: a matching community text gives its poster's own answer the flag and pages owner-role staff in generic words. Emergency kill: set 'false' (unsetting turns it back on); off = no field, no alert, today's word list.",
+  },
+  {
     name: 'RECONCILIATION_DAILY_ENABLED',
     values: ['true', 'false'],
     unsetIs: 'on',
@@ -2006,18 +2015,24 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'FEATURE_CONTRACTS_ENABLED',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
-    default: 'unset → on in development/test, off otherwise',
+    default: 'unset → off in production (on only in development or test)',
     reason: 'Not used in v1 / contracts module flag.',
   },
   {
     name: 'FEATURE_CONTRACTS_DOCUSIGN_PROVIDER',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only explicit true)',
     reason: 'Not used in v1 / DocuSign contracts provider flag.',
   },
   {
     name: 'FEATURE_CONTRACTS_NATIVE_CANVAS',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only explicit true)',
     reason: 'Not used in v1 / native signature canvas flag.',
@@ -2063,6 +2078,8 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'FEATURE_COACH_ACCOUNT_HOLD',
+    values: ['true', 'false'],
+    unsetIs: 'on',
     tier: 'optional',
     default: "on (unset = on; only exactly 'false' turns it off)",
     reason:
@@ -2070,6 +2087,8 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'FEATURE_PLAN_RENEWAL',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason:
@@ -2400,6 +2419,8 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'FEATURE_ROMAN_CRISIS_ALERT',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only explicit true)',
     reason:
@@ -2431,6 +2452,8 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'FEATURE_SCOUT_RECONSTRUCT',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → /api/scout/reconstruct 404 (only "true")',
     reason: 'Scout reconstruct route.',
@@ -2460,6 +2483,8 @@ export const ENV_RULES: EnvRule[] = [
   // --- CLOUD WEARABLES (not used in v1: Apple Health / Health Connect are live and need no server key) ---
   {
     name: 'FEATURE_WEARABLES_CLOUD_CONNECTORS',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off; OAuth start and the eight webhooks return 503',
     reason:

@@ -86,6 +86,22 @@ export const ROMAN_REPLY_PENDING_MARK = -1;
  * reads before and the store after, is a planner's number. Too long only holds a crashed turn's key a little longer.
  */
 export const ROMAN_REPLY_PENDING_MAX_MS = 660_000;
+/**
+ * SEND-ONCE-CLEAR-BE: the mark on a keyed turn whose reply is fixed text decided before any model call (a crisis
+ * template or the eating-disorder fallback), with its own bound. That path is about a dozen database reads and writes
+ * (the coach alert, its inbox and outbox rows, the reply, the audit row) and no network call: normally well under a
+ * second. 120 s is a planner's number: some twelve queries each waiting out Prisma's 10 s pool timeout and still
+ * succeeding. Too short lets a resend store a crisis turn twice; too long only keeps a cut turn's key a little longer.
+ */
+export const ROMAN_FIXED_REPLY_PENDING_MARK = -2;
+export const ROMAN_FIXED_REPLY_PENDING_MAX_MS = 120_000;
+/**
+ * SEND-ONCE-CLEAR-BE: at shutdown, how long RomanService waits for its open keyed turns to end by themselves, then
+ * the deadline of the one write that clears the marks of those still open: 2.5 s in all, inside Fly's default
+ * kill_timeout of 5 s ("best-effort"), leaving the rest to the shutdown hooks that may run first.
+ */
+export const ROMAN_SHUTDOWN_WAIT_MS = 1_500;
+export const ROMAN_SHUTDOWN_CLEAR_MS = 1_000;
 /** 404: the session does not exist for this caller (never 403: no ID probing). */
 export const ROMAN_ERROR_SESSION_NOT_FOUND = 'ROMAN_SESSION_NOT_FOUND';
 /** 503: a delete could not finish; nothing of that chat was removed, retry is safe. */

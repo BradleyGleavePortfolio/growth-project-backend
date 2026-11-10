@@ -53,6 +53,10 @@ export class MessageReceivedEmitter {
         kind: NotificationKind.MESSAGE_RECEIVED,
         body,
         deep_link: deepLink,
+        // COACH-ROW-CHAT-BE (owner 203-D4): the thread is the client, so a
+        // recipient who is not the thread's client is that client's coach;
+        // their push names the client by the link's own id (never a name).
+        ...(payload.threadId && payload.threadId !== recipientUserId ? { tap_client_id: payload.threadId } : {}),
         ...(payload.senderId
           ? {
               context: {
