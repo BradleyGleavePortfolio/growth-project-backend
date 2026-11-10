@@ -92,7 +92,7 @@ export class MealPhotoService {
     if (result === 'unavailable') throw unavailable();
     if (result !== 'ok') {
       // Erased now; if storage refuses, the upload_expiry row erases it when the link dies.
-      await this.store.removeObjects([body.key]).catch(() => undefined);
+      if ((await this.store.removeObjects([body.key])).failed) this.logger.warn('meal photo refused: erase deferred to link expiry');
       throw refused(result);
     }
     const state = { published: false };
@@ -161,7 +161,11 @@ export class MealPhotoService {
   /** After commit: try the recorded erasure; an unverified row stays open for the 10-minute cron. */
   async erase(rows: VoiceErasureRow[]): Promise<void> {
     if (rows.length === 0) return;
-    await attemptVoiceErasures(this.prisma, { images: this.store }, rows, this.logger).catch(() => undefined);
+    try {
+      await attemptVoiceErasures(this.prisma, { images: this.store }, rows, this.logger);
+    } catch {
+      this.logger.warn('meal photo erasure: left open for the erasure cron');
+    }
   }
 
   /**
