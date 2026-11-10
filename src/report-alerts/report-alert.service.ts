@@ -16,7 +16,7 @@ import { COMMUNITY_REPORT_REASONS } from '../community/safety/community-safety.s
  * reportFiled() resolves in every case: a failure is logged and counted in
  * report_alert_email_total{outcome="failed"}, the report itself stands.
  */
-export type ReportAlertKind = 'message' | 'community' | 'roman';
+export type ReportAlertKind = 'message' | 'community' | 'roman' | 'ai_draft';
 
 export interface ReportFiledInput {
   kind: ReportAlertKind;
@@ -49,15 +49,17 @@ const KIND_LABEL: Record<ReportAlertKind, string> = {
   message: 'Direct message report',
   community: 'Community report',
   roman: 'Roman reply report',
+  ai_draft: 'Roman draft report',
 };
 
 /** The short name in the subject's reference, e.g. "DM report a1b2c3d4". */
-const SUBJECT_REF: Record<ReportAlertKind, string> = { message: 'DM', community: 'community', roman: 'Roman' };
+const SUBJECT_REF: Record<ReportAlertKind, string> = { message: 'DM', community: 'community', roman: 'Roman', ai_draft: 'Roman draft' };
 
 const REVIEW_HINT: Record<ReportAlertKind, string> = {
   message: 'Look it up by the report id in the MessageReport table.',
   community: 'Open it in the coach app under Messages, then Reports, or by the report id in CommunityModerationAction.',
   roman: 'Look it up by the report id in the RomanMessageReport table.',
+  ai_draft: 'Look it up by the report id (target_id) in the AuditLog table, action safety.ai_draft_reported.',
 };
 
 const PT_OPTIONS = { timeZone: 'America/Los_Angeles', dateStyle: 'medium', timeStyle: 'short' } as const;

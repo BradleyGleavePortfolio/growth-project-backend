@@ -29,6 +29,38 @@ export const ROMAN_MESSAGE_CAPABILITIES: ReadonlySet<string> = new Set([
  */
 export const ROMAN_MESSAGE_SOURCE = 'roman_message_text';
 
+/** CHECKIN-DRAFT-BE: provenance source of the one check-in a draft replies to (`ref` = CheckIn.id); only the server writes it. */
+export const CHECK_IN_SOURCE = 'check_in';
+
+/** The check-in entry of a provenance list (the first with a string ref), or null. */
+function checkInEntryOf(provenance: unknown): object | null {
+  if (!Array.isArray(provenance)) return null;
+  for (const entry of provenance as unknown[]) {
+    if (typeof entry !== 'object' || entry === null || Reflect.get(entry, 'source') !== CHECK_IN_SOURCE) continue;
+    if (typeof Reflect.get(entry, 'ref') === 'string') return entry;
+  }
+  return null;
+}
+
+/** The check-in a provenance list names, or null. */
+export function checkInRefOf(provenance: unknown): string | null {
+  const entry = checkInEntryOf(provenance);
+  const ref: unknown = entry ? Reflect.get(entry, 'ref') : null;
+  return typeof ref === 'string' ? ref : null;
+}
+
+/** FIX-1234R1: the hash of what the draft was written from (checkInSent in private-context.service.ts), or null. */
+export function checkInHashOf(provenance: unknown): string | null {
+  const entry = checkInEntryOf(provenance);
+  const hash: unknown = entry ? Reflect.get(entry, 'hash') : null;
+  return typeof hash === 'string' ? hash : null;
+}
+
+/** True when the draft is Roman's reply to one check-in: the only coach_message row the coach may edit before Send. */
+export function isCheckInDraft(draft: { capability: string; provenance: unknown }): boolean {
+  return draft.capability === 'draft.coach_message' && checkInRefOf(draft.provenance) !== null;
+}
+
 /** True when the draft is a Roman message draft the server marked as Roman's text. */
 export function isRomanMessageDraft(draft: { capability: string; provenance: unknown }): boolean {
   if (!ROMAN_MESSAGE_CAPABILITIES.has(draft.capability) || !Array.isArray(draft.provenance)) return false;

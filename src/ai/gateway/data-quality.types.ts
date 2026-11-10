@@ -45,6 +45,8 @@ export interface ProvenanceRef {
   // federation, mark the origin so reviewers can trace cross-app
   // provenance back to the right system of record.
   origin?: 'local' | 'finance' | 'external';
+  // CHECKIN-DRAFT-BE: the day of the record, when a single dated record drove the call ('YYYY-MM-DD').
+  date?: string;
 }
 
 // Proof-of-claim contract used when the AI cites a number that came
