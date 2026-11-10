@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { CommunityMessage, Prisma } from '@prisma/client';
 import { keyedWrite } from '../messages/message-idempotency';
+import { clientsAmong } from '../community-public-row';
 import { PrismaService } from '../../prisma.service';
 
 /**
@@ -37,6 +38,11 @@ export class CommunityDmsRepository {
         tx.communityMessage.create({ data: { ...dmData(params), id } })));
   }
 
+  /** COACH-DM-BE (rule D's roster rule, community-public-row.ts): the people among `ids` who are the viewer's current clients. */
+  clientsAmong(viewerId: string, ids: string[]): Promise<Set<string>> {
+    return clientsAmong(this.prisma, viewerId, ids);
+  }
+
   async findById(messageId: string): Promise<CommunityMessage | null> {
     return this.prisma.communityMessage.findFirst({ where: { id: messageId } });
   }
@@ -71,6 +77,8 @@ export class CommunityDmsRepository {
     workspaceId: string;
     userId: string;
     limit: number;
+    /** COACH-DM-BE: keep only threads whose other person is the user's current client (the workspace coach's list). */
+    clientsOnly?: boolean;
   }): Promise<CommunityMessage[]> {
     const rows = await this.prisma.communityMessage.findMany({
       where: {
@@ -84,11 +92,14 @@ export class CommunityDmsRepository {
       },
       orderBy: { created_at: 'desc' },
     });
+    // Asked of every row before the page is cut, so threads off the roster never shorten page one (KT-10).
+    const other = (r: CommunityMessage) => (r.sender_id === params.userId ? r.recipient_user_id : r.sender_id) ?? '';
+    const roster = params.clientsOnly ? await this.clientsAmong(params.userId, [...new Set(rows.map(other))]) : null;
     const seen = new Set<string>();
     const latest: CommunityMessage[] = [];
     for (const r of rows) {
       const key = r.dm_key ?? r.id;
-      if (seen.has(key)) continue;
+      if (seen.has(key) || (roster && !roster.has(other(r)))) continue;
       seen.add(key);
       latest.push(r);
       if (latest.length >= params.limit) break;

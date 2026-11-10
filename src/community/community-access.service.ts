@@ -7,6 +7,7 @@ import type {
 } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { isBannedFromWorkspace } from './community-ban';
+import { clientsAmong } from './community-public-row';
 import { canEnterSpace, fullNamesFor, rowsWithSpaceAccess } from './community-space-access';
 import { spaceLeaders } from './space-safety-alerts';
 
@@ -132,6 +133,14 @@ export class CommunityAccessService {
       select: { id: true },
     });
     return ws !== null;
+  }
+
+  /** COACH-DM-BE: true when `coachId` is the workspace's coach (workspace.coach_id) and `clientId` is that coach's
+   *  current client by the one roster rule (clientsAmong, community-public-row.ts): the DM pair that the coach's
+   *  missing membership row does not close (assertDmOpen). */
+  async isCoachWithClient(workspaceId: string, coachId: string, clientId: string): Promise<boolean> {
+    if (coachId === clientId || !(await this.isWorkspaceCoach(workspaceId, coachId))) return false;
+    return (await clientsAmong(this.prisma, coachId, [clientId])).has(clientId);
   }
 
   /** True when the user may read and write in a space: the rule, or the platform owner's override. */

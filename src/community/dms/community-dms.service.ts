@@ -38,13 +38,21 @@ const DM_DISABLED = {
 } as const;
 
 /** C10RT: the DM rule, for reading a DM (authoriseDm) and for who hears a DM row's reaction pings.
- * Both people still hold a membership the rule opens (owner and coach included), so a removal, a ban
- * or a coach move ends the DM for both at once, and neither blocked the other (Apple 1.2). Throws the
- * refusal `a` gets; returns a's and b's memberships. */
+ * Open when both people still hold a membership the rule opens (membershipInWorkspace), or, COACH-DM-BE,
+ * when one of them is the workspace's coach (who holds no membership row) and the other is that coach's
+ * current client (isCoachWithClient: clientOf) who still holds one. So a removal, a ban or a coach move
+ * ends the DM for both at once; and neither may have blocked the other (Apple 1.2). Nobody else is let in:
+ * a co-coach or assistant row, another coach, the platform owner role and a sub-coach need their own
+ * membership as before. Throws the refusal `a` gets; returns a's and b's memberships (null in the coach's
+ * slot, which gateDmRead resolves to the workspace's default). */
 export async function assertDmOpen(access: CommunityAccessService, safety: CommunitySafetyService,
-  workspaceId: string, a: string, b: string): Promise<CommunityMembership[]> {
+  workspaceId: string, a: string, b: string): Promise<Array<CommunityMembership | null>> {
   const [ma, mb] = await Promise.all([a, b].map((p) => access.membershipInWorkspace(workspaceId, p)));
-  if (!ma || !mb) throw new NotFoundException(DM_NOT_FOUND);
+  const open = ma && mb ? true
+    : ma ? await access.isCoachWithClient(workspaceId, b, a)
+    : mb ? await access.isCoachWithClient(workspaceId, a, b)
+    : false;
+  if (!open) throw new NotFoundException(DM_NOT_FOUND);
   await safety.assertDmAllowed(a, b);
   return [ma, mb];
 }
@@ -100,14 +108,17 @@ export async function assertDmReadable(access: CommunityAccessService, safety: C
  * tri-state dm_policy (coach_only | members | disabled) on the workspace. No
  * such column exists in the v1-1 schema (only dm_enabled_default:boolean and the
  * per-membership dm_enabled:boolean?). Adding it would violate R69. This module
- * therefore enforces the boolean gate that DOES exist: both participants must be
- * active members of the same workspace AND have DMs effectively enabled. The
+ * therefore enforces the boolean gate that DOES exist: the pair must be open by
+ * assertDmOpen (both active members of the same workspace, or the workspace's
+ * coach with their own current client who is one) AND have DMs effectively
+ * enabled (the coach, who has no membership row, by the workspace default). The
  * coach_only/members distinction is the single thing that cannot be honoured
  * until the column lands; assertDmReadable() is the one place to relax this.
  *
- * Both participants must be active workspace members or the caller gets 404
- * (cross-tenant non-leak posture). A disabled recipient yields 403 with an
- * explicit code so the client can render "this member has DMs off".
+ * A pair assertDmOpen does not open gets 404 (cross-tenant non-leak posture). The
+ * workspace coach's thread list holds only their threads with their own current
+ * clients. A disabled recipient yields 403 with an explicit code so the client
+ * can render "this member has DMs off".
  */
 @Injectable()
 export class CommunityDmsService {
@@ -146,7 +157,7 @@ export class CommunityDmsService {
 
   /**
    * Authorise a DM between the caller and a recipient in a workspace. Throws 404
-   * if either side is not an active member (non-leak), 403 if either side has
+   * when assertDmOpen does not open the pair (non-leak), 403 if either side has
    * DMs disabled. Returns the deterministic thread key.
    */
   private async authoriseDm(
@@ -222,7 +233,7 @@ export class CommunityDmsService {
       kind: NotificationKind.COMMUNITY_DM_RECEIVED,
       targetType: 'dm',
       targetId: created.id,
-      deepLink: `tgp://community/dms/${dmKey}`,
+      deepLink: `tgp://community/dm/${user.id}`,
       otherUserId: created.sender_id,
       workspaceId,
     });
@@ -263,7 +274,10 @@ export class CommunityDmsService {
   ): Promise<CommunityDmThreadListResponse> {
     const workspace = await this.access.findWorkspace(workspaceId);
     const membership = await this.access.membershipInWorkspace(workspaceId, user.id);
-    if (!workspace || !membership) {
+    // COACH-DM-BE: the workspace's coach holds no membership row; they list only their threads with their own
+    // current clients (assertDmOpen's coach pair), kept before the page is cut.
+    const coach = workspace?.coach_id === user.id;
+    if (!workspace || !(membership || coach)) {
       throw new NotFoundException(DM_NOT_FOUND);
     }
     // Reading thread metadata is a DM surface too: gate on the caller's
@@ -273,6 +287,7 @@ export class CommunityDmsService {
       workspaceId,
       userId: user.id,
       limit: this.parsePage(query.limit),
+      clientsOnly: coach,
     });
     // #168-4: the other member's place in this community too (left, or banned). Owner 10-23
     // "Dissapear": a block either way drops the thread from both lists (no row, no name, no time);

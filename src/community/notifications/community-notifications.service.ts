@@ -24,6 +24,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { NotificationsService } from '../../notifications/notifications.service';
+import { NotificationKind } from '../../notifications/notification-kind';
 import { AnalyticsService } from '../../analytics/analytics.service';
 import {
   COMMUNITY_TELEMETRY_EVENTS,
@@ -257,8 +258,8 @@ export class CommunityNotificationsService {
         return;
       }
 
-      // 6) Deliver via the one send path (the push outbox). data carries IDs
-      // + enum only — never user text.
+      // 6) Deliver via the one send path (the push outbox). data carries IDs,
+      // the enum and, for a DM, the thread's link (a user id, no user text).
       const result = await this.notifications.pushToUser(
         recipientId,
         title,
@@ -268,6 +269,7 @@ export class CommunityNotificationsService {
           category: defaults.category,
           target_type: targetType,
           target_id: targetId,
+          ...(kind === NotificationKind.COMMUNITY_DM_RECEIVED && input.deepLink ? { deepLink: input.deepLink } : {}),
         },
         undefined,
         // PF-3-BE: the one send path. Mute all alone, read again when it goes
