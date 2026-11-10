@@ -53,6 +53,22 @@ const ROMAN_SWITCHES = [
   'FEATURE_ROMAN_COPY_V2',
 ];
 
+/**
+ * Launch switches (SWITCH-LIST-BE): managed at production's value today, which
+ * is absent. FEATURE_COACH_ACCOUNT_HOLD reads absent as on; the other seven as off.
+ */
+const HOLD = 'FEATURE_COACH_ACCOUNT_HOLD';
+const LAUNCH_SWITCHES = [
+  'FEATURE_PLAN_RENEWAL',
+  HOLD,
+  'FEATURE_CONTRACTS_ENABLED',
+  'FEATURE_CONTRACTS_DOCUSIGN_PROVIDER',
+  'FEATURE_CONTRACTS_NATIVE_CANVAS',
+  'FEATURE_ROMAN_CRISIS_ALERT',
+  'FEATURE_SCOUT_RECONSTRUCT',
+  'FEATURE_WEARABLES_CLOUD_CONNECTORS',
+];
+
 /** Wave A / Wave B inventory this lane must manage (B-FLAGS-2 brief). */
 const WAVE_FLAGS = [
   'FEATURE_AI_CONSENT_LEDGER_ENABLED',
@@ -74,7 +90,23 @@ const WAVE_FLAGS = [
   'COACH_WELCOME_SCHEDULER_ENABLED',
   'WORKOUT_REMINDERS_ENABLED',
   ...ROMAN_SWITCHES,
+  ...LAUNCH_SWITCHES,
 ];
+
+/** Runs `read` with these env names set (undefined = absent), then puts each one back. */
+function withEnv<T>(env: Record<string, string | undefined>, read: () => T): T {
+  const saved = Object.keys(env).map((k) => [k, process.env[k]] as const);
+  const put = (k: string, v: string | undefined) => {
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  };
+  try {
+    for (const [k, v] of Object.entries(env)) put(k, v);
+    return read();
+  } finally {
+    for (const [k, v] of saved) put(k, v);
+  }
+}
 
 function edit(
   m: FlyEnvManifest,
@@ -121,6 +153,7 @@ describe('emergency kill per flag (B-637-2): defaults-on switches are killed by 
   const kills = fem.killSwitches(base(), rules);
   const DEFAULTS_ON = [
     'COACH_WELCOME_SCHEDULER_ENABLED',
+    HOLD,
     'FEATURE_COMMUNITY_SCHEMA',
     'RECONCILIATION_DAILY_ENABLED',
     'SIGNUP_ROLE_CHOICE_ENABLED',
@@ -164,8 +197,14 @@ describe('emergency kill per flag (B-637-2): defaults-on switches are killed by 
     const { reconciliationDailyEnabled } = require('../../src/checkout/reconciliation-daily.cron') as {
       reconciliationDailyEnabled: () => boolean;
     };
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { isCoachAccountHoldEnabled } = require('../../src/checkout/dunning-v2/coach-account-hold') as {
+      isCoachAccountHoldEnabled: () => boolean;
+    };
     const readers: Record<string, () => boolean> = {
       COACH_WELCOME_SCHEDULER_ENABLED: isCoachWelcomeSchedulerEnabled,
+      // The hold rides on Dunning v2, which is on in the manifest.
+      [HOLD]: () => withEnv({ FEATURE_DUNNING_V2: 'true' }, isCoachAccountHoldEnabled),
       FEATURE_COMMUNITY_SCHEMA: isCommunitySchemaEnabled,
       RECONCILIATION_DAILY_ENABLED: reconciliationDailyEnabled,
       SIGNUP_ROLE_CHOICE_ENABLED: signupRoleChoiceEnabled,
@@ -211,6 +250,112 @@ describe('emergency kill per flag (B-637-2): defaults-on switches are killed by 
     expect(reads?.length).toBeGreaterThan(0);
     for (const r of reads ?? [])
       expect(r).toBe("process.env.FEATURE_ROMAN_FIRST_PAYMENT !== 'true') return;");
+  });
+
+  it('launch switches: declared unset, gated, closed true/false, unsetIs as the code reads absent', () => {
+    const m = base();
+    for (const n of LAUNCH_SWITCHES)
+      expect([n, m.flags[n], m.gates[n], rules.get(n)?.values, rules.get(n)?.unsetIs]).toEqual([
+        n,
+        'unset',
+        expect.stringContaining('emergency kill: '),
+        ['true', 'false'],
+        n === HOLD ? 'on' : 'off',
+      ]);
+  });
+
+  it('launch switches: each reader under absent, "false" and "true" in the production env', () => {
+    const states: Array<string | undefined> = [undefined, 'false', 'true'];
+    type Reader = (env: NodeJS.ProcessEnv) => boolean;
+    /* eslint-disable @typescript-eslint/no-require-imports */
+    const contracts = require('../../src/contracts/contracts.feature');
+    const readers: Record<string, Reader> = {
+      FEATURE_PLAN_RENEWAL: require('../../src/checkout/plan-renewal/plan-renewal.cadence')
+        .isPlanRenewalEnabled,
+      FEATURE_CONTRACTS_ENABLED: contracts.isContractsEnabled,
+      FEATURE_CONTRACTS_DOCUSIGN_PROVIDER: contracts.isDocuSignProviderEnabled,
+      FEATURE_CONTRACTS_NATIVE_CANVAS: contracts.isNativeCanvasProviderEnabled,
+      FEATURE_ROMAN_CRISIS_ALERT: require('../../src/roman/roman.feature').isRomanCrisisAlertEnabled,
+    };
+    const { isCoachAccountHoldEnabled } = require('../../src/checkout/dunning-v2/coach-account-hold') as {
+      isCoachAccountHoldEnabled: () => boolean;
+    };
+    const { isWearablesCloudConnectorsEnabled } = require('../../src/wearables/cloud-connectors.feature') as {
+      isWearablesCloudConnectorsEnabled: () => boolean;
+    };
+    const { FEATURE_GATED_ROUTES } =
+      require('../../src/common/feature-flag/feature-flag-not-found.middleware') as {
+        FEATURE_GATED_ROUTES: ReadonlyArray<{ pattern: string; envVar: string }>;
+      };
+    const { isFlagDark } = require('../../src/common/feature-flag/pilot-coach-allowlist') as {
+      isFlagDark: (routes: ReadonlyArray<{ pattern: string; envVar: string }>) => boolean;
+    };
+    /* eslint-enable @typescript-eslint/no-require-imports */
+    for (const [n, read] of Object.entries(readers)) {
+      const seen = states.map((v) =>
+        read({ NODE_ENV: 'production', ...(v === undefined ? {} : { [n]: v }) }),
+      );
+      expect([n, ...seen]).toEqual([n, false, false, true]);
+    }
+    // The hold reads process.env and rides on Dunning v2: absent is on only while v2 is on.
+    for (const [dunning, want] of [
+      ['true', [true, false, true]],
+      ['false', [false, false, false]],
+    ] as const) {
+      const seen = states.map((v) =>
+        withEnv({ FEATURE_DUNNING_V2: dunning, [HOLD]: v }, isCoachAccountHoldEnabled),
+      );
+      expect([dunning, ...seen]).toEqual([dunning, ...want]);
+    }
+    const WEAR = 'FEATURE_WEARABLES_CLOUD_CONNECTORS';
+    const wear = states.map((v) => withEnv({ [WEAR]: v }, isWearablesCloudConnectorsEnabled));
+    expect([WEAR, ...wear]).toEqual([WEAR, false, false, true]);
+    // Scout: the 404 middleware reads its row inline, on only for "true"; the guard's isFlagDark reads the same row.
+    const SCOUT = 'FEATURE_SCOUT_RECONSTRUCT';
+    const route = FEATURE_GATED_ROUTES.find((r) => r.envVar === SCOUT);
+    expect(route).toEqual({ pattern: '/api/scout/reconstruct', envVar: SCOUT });
+    const middleware = readFileSync(
+      join(ROOT, 'src/common/feature-flag/feature-flag-not-found.middleware.ts'),
+      'utf8',
+    );
+    expect(middleware.match(/process\.env\[route\.envVar\].*/g)).toEqual([
+      "process.env[route.envVar] !== 'true') {",
+    ]);
+    const dark = states.map((v) => withEnv({ [SCOUT]: v }, () => isFlagDark([route!])));
+    expect([SCOUT, ...dark]).toEqual([SCOUT, true, true, false]);
+  });
+
+  it('launch switches: the hold is killed by setting "false", the other seven by an unset, each row in the runbook', () => {
+    const runbook = readFileSync(join(ROOT, 'docs/runbooks/launch-flags.md'), 'utf8');
+    for (const n of LAUNCH_SWITCHES) {
+      const k = kills.find((x) => x.name === n);
+      expect([n, k?.action, k?.value]).toEqual(
+        n === HOLD ? [n, 'set', 'false'] : [n, 'unset', 'unset'],
+      );
+      const row =
+        n === HOLD
+          ? `${n} | on | fly secrets set -a ${fem.APP} ${n}=false (never unset: that turns it on) | "${n}": "false"`
+          : `${n} | off | fly secrets unset -a ${fem.APP} ${n} | "${n}": "unset"`;
+      expect([n, runbook.includes(row)]).toEqual([n, true]);
+    }
+  });
+
+  it('launch switches: with the eight absent from Fly every row is keep and nothing is written', () => {
+    const p = fem.planChanges(base(), new Map(), { results: {} }, {});
+    const written = new Set([...p.setFlags.map(([n]) => n), ...p.setSecrets, ...p.unset]);
+    for (const n of LAUNCH_SWITCHES)
+      expect([n, p.rows.find((r) => r.name === n)?.action, written.has(n)]).toEqual([
+        n,
+        'keep',
+        false,
+      ]);
+  });
+
+  it('launch switches: a name found on Fly may not be declared unset, the apply would remove it', () => {
+    const n = 'FEATURE_PLAN_RENEWAL';
+    const p = fem.planChanges(base(), new Map([[n, 'Deployed']]), { results: { [n]: 'present' } }, {});
+    expect(p.rows.find((r) => r.name === n)?.action).toBe('unset');
+    expect(p.unset).toContain(n);
   });
 
   it('defaults-on kills are a set of the off value; defaults-off kills are an unset', () => {
@@ -287,7 +432,7 @@ describe('emergency kill per flag (B-637-2): defaults-on switches are killed by 
       kills,
     );
     expect(plan.join('\n')).toContain(
-      'defaults-on switches are killed by SETTING their off value, never by unsetting: FEATURE_COMMUNITY_SCHEMA=false SIGNUP_ROLE_CHOICE_ENABLED=false COACH_WELCOME_SCHEDULER_ENABLED=false WORKOUT_REMINDERS_ENABLED=false RECONCILIATION_DAILY_ENABLED=false.',
+      'defaults-on switches are killed by SETTING their off value, never by unsetting: FEATURE_COMMUNITY_SCHEMA=false SIGNUP_ROLE_CHOICE_ENABLED=false COACH_WELCOME_SCHEDULER_ENABLED=false WORKOUT_REMINDERS_ENABLED=false FEATURE_COACH_ACCOUNT_HOLD=false RECONCILIATION_DAILY_ENABLED=false.',
     );
   });
 });
