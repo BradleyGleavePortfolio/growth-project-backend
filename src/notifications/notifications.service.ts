@@ -645,6 +645,8 @@ export class NotificationsService implements OnModuleInit {
       context?: (PushContext & MuteAllPass & RenewalOffer & Pick<SendPathContext, 'otherUserId' | 'alsoUserId' | 'coachThread' | 'dunning'>) | null;
       dedupe_key?: string | null;
       urgent?: boolean;
+      /** COACH-ROW-CHAT-BE: the one client a coach's message push is about (its id only): `actionParams.clientId`. */
+      tap_client_id?: string;
     },
     tx?: Prisma.TransactionClient,
   ): Promise<EnqueueResult | null> {
@@ -674,6 +676,7 @@ export class NotificationsService implements OnModuleInit {
                 input.user_id,
                 input.context?.sessionId,
               ),
+              input.tap_client_id,
             ),
             // Owner 57d: a Roman safety alert push opens that alert.
             ...(input.context?.safetyAlert && input.context.alertId
@@ -1108,13 +1111,15 @@ export const BOOKING_PUSH_SCREEN = { client: 'CalendarSession', coach: 'CoachBoo
  * route falls back to the notification center (the mobile tap router's
  * unknown-screen rule). A message opens Messages; everything else opens the
  * notification center. `deepLink` and the top-level `sessionId` stay for
- * builds that read them.
+ * builds that read them. COACH-ROW-CHAT-BE: a coach's message push names its
+ * client as `actionParams.clientId` (the deep link's id, no name).
  */
 export function pushTapData(
   kind: string,
   deepLink: string | undefined,
   sessionId: string | undefined,
   bookingRole: 'client' | 'coach' | null = null,
+  clientId?: string,
 ): Record<string, unknown> {
   const prefix = notificationPrefsPrefix(kind);
   const booking =
@@ -1134,7 +1139,11 @@ export function pushTapData(
         : 'NotificationCenter';
   return {
     actionScreen,
-    ...(booking ? { actionParams: { sessionId } } : {}),
+    ...(booking
+      ? { actionParams: { sessionId } }
+      : actionScreen === 'Messages' && clientId
+        ? { actionParams: { clientId } }
+        : {}),
     ...(deepLink ? { deepLink } : {}),
     ...(sessionId ? { sessionId } : {}),
   };
