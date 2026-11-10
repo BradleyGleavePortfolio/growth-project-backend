@@ -387,7 +387,7 @@ describe('case 1: the first send is still being written', () => {
 
     h.open();
     const done = await first;
-    expect(done.writes.at(-1)).toContain('"type":"done"');
+    expect(done.writes[done.writes.length - 1]).toContain('"type":"done"');
     expect(w.turn()?.completion_tokens).toBeNull();
     expect((await w.send(WORDS, { headers: o.headers })).writes).toEqual(done.writes);
   });
@@ -577,7 +577,7 @@ describe('case 9: no Idempotency-Key', () => {
   it('no mark, a cuid row, no extra query', async () => {
     const w = world();
     const out = await w.send(WORDS, { key: null });
-    expect(out.writes.at(-1)).toContain('"type":"done"');
+    expect(out.writes[out.writes.length - 1]).toContain('"type":"done"');
     const stored = w.db.romanMessage.create.mock.calls[0][0].data;
     expect(stored).not.toHaveProperty('id');
     expect(stored.completion_tokens).toBeNull();
@@ -670,7 +670,7 @@ describe('case 14: the same key from anyone else', () => {
     w.seedTurn({ completion_tokens: MARK });
     const own = await w.send(WORDS, { user, session });
     expect(own.writes.join('')).not.toContain('ROMAN_REPLY_PENDING');
-    expect(own.writes.at(-1)).toContain('"type":"done"');
+    expect(own.writes[own.writes.length - 1]).toContain('"type":"done"');
     expect(w.turn()?.completion_tokens).toBe(MARK);
     expect(w.turn(KEY, user, session)?.id).not.toBe(w.turn()?.id);
     expect(romanTurnIds(user.id, session, KEY)).not.toEqual(romanTurnIds(USER_A.id, SESSION, KEY));
