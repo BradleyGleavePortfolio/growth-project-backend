@@ -355,7 +355,18 @@ describe('Privacy Policy accuracy (/privacy)', () => {
   // client can turn memory off; owner 11:46 10-07: notes are deleted only
   // with the account, never by memory off, withdrawal or chat deletion). Coach-method wording
   // follows the owner-approved v5 paragraph (ai-consent.constants.ts).
-  it('describes Roman’s memory: on within the Roman permission, chats and logs, off switch, survives chat deletion', () => {
+  // The page reads the crisis-alert switch on every render, so each row renders
+  // the page itself with the switch set (or deleted) and restores it afterwards.
+  const savedCrisisSwitch = process.env[FEATURE_ROMAN_CRISIS_ALERT_ENV];
+  afterEach(() => {
+    if (savedCrisisSwitch === undefined) delete process.env[FEATURE_ROMAN_CRISIS_ALERT_ENV];
+    else process.env[FEATURE_ROMAN_CRISIS_ALERT_ENV] = savedCrisisSwitch;
+  });
+
+  it.each([false, true])('describes Roman’s memory: on within the Roman permission, chats and logs, off switch, survives chat deletion, crisis switch on: %s', (switchOn) => {
+    if (switchOn) process.env[FEATURE_ROMAN_CRISIS_ALERT_ENV] = 'true';
+    else delete process.env[FEATURE_ROMAN_CRISIS_ALERT_ENV];
+    const text = visibleText(renderTrustPage('privacy'));
     expect(text).not.toContain(
       'Only your own data is used — never another client’s, and never your coach’s private notes about you.',
     );
