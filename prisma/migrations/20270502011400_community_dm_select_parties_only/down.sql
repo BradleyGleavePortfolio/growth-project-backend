@@ -1,12 +1,23 @@
 -- Reverse of 20270502011400_community_dm_select_parties_only, for a confirmed defect only: it gives the
--- workspace coach every DM of the workspace at the row layer again, and every DM voice note. Restores verbatim
--- the community_messages_select USING of 20261212000000_community_v1_1_schema and the
--- community_voice_notes_coach_all USING of 20261217000000_community_voice_notes (its WITH CHECK was not changed).
+-- workspace coach every DM of the workspace at the row layer again, and every DM voice note, and it shows the
+-- coach and every member of the workspace every reaction again, a reaction on another pair's DM included.
+-- Restores verbatim the community_messages_select, community_responses_coach_all and
+-- community_responses_member_select USINGs of 20261212000000_community_v1_1_schema and the
+-- community_voice_notes_coach_all USING of 20261217000000_community_voice_notes (no WITH CHECK was changed),
+-- then drops app.community_response_dm_party once no policy uses it.
 
 BEGIN;
 
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '30s';
+
+ALTER POLICY "community_responses_member_select" ON "community_responses"
+  USING (app.is_community_workspace_member("workspace_id"));
+
+ALTER POLICY "community_responses_coach_all" ON "community_responses"
+  USING (app.is_community_workspace_coach("workspace_id"));
+
+DROP FUNCTION app.community_response_dm_party("CommunityResponseTargetType", uuid);
 
 ALTER POLICY "community_messages_select" ON "community_messages"
   USING (

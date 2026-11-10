@@ -33,9 +33,12 @@ const DIR = join(__dirname, '..', '..', 'prisma', 'migrations', '20270502011400_
 const statements = (file: string) =>
   readFileSync(join(DIR, file), 'utf8').replace(/^--.*$/gm, '').split(/;\s*$/m)
     .map((s) => s.trim()).filter((s) => s && !/^(BEGIN|COMMIT)$/i.test(s));
-const TABLES = ['community_messages', 'community_voice_notes'];
+const TABLES = ['community_messages', 'community_voice_notes', 'community_responses'];
 const MSG = 'community_messages.community_messages_select';
 const VOICE = 'community_voice_notes.community_voice_notes_coach_all';
+const RESP_COACH = 'community_responses.community_responses_coach_all';
+const RESP_MEMBER = 'community_responses.community_responses_member_select';
+const FN = `app.community_response_dm_party("CommunityResponseTargetType", uuid)`;
 // The policy text as the deparser prints it, line breaks folded.
 const flat = (sql: string | null) => sql && sql.replace(/\s+/g, ' ');
 const COACH = 'app.is_community_workspace_coach(workspace_id)';
@@ -45,6 +48,10 @@ const MSG_NEW = `((${COACH} AND ${COHORT}) OR (${COHORT} AND app.shares_communit
 const MSG_OLD = `(${COACH} OR (${COHORT} AND app.shares_community_cohort(cohort_id)) OR ${DM_ARM})`;
 const VOICE_NEW = `(${COACH} AND (conversation_id IS NULL))`;
 const VOICE_OLD = COACH;
+const MEMBER = 'app.is_community_workspace_member(workspace_id)';
+const DM_PARTY = 'app.community_response_dm_party(target_type, target_id)';
+const RESP_COACH_NEW = `(${COACH} AND ${DM_PARTY})`;
+const RESP_MEMBER_NEW = `(${MEMBER} AND ${DM_PARTY})`;
 
 type Key = 'K' | 'L' | 'A' | 'B' | 'C';
 type Who = { key: Key; guc: boolean };
@@ -148,7 +155,9 @@ const sqlState = (e: unknown) => {
     FROM pg_policies p WHERE p."schemaname" = 'public' AND p."tablename"::text = ANY(${TABLES}::text[]) ORDER BY 1`
     .then((list) => list.map((p) => ({ ...p, qual: flat(p.qual), check: flat(p.check) })));
   const pick = (list: Policy[], name: string) => list.find((p) => p.name === name);
-  const others = (list: Policy[]) => list.filter((p) => p.name !== MSG && p.name !== VOICE);
+  const others = (list: Policy[]) => list.filter((p) => ![MSG, VOICE, RESP_COACH, RESP_MEMBER].includes(p.name));
+  const hasFn = () => prisma.$queryRawUnsafe<{ n: number }[]>(
+    `SELECT count(*)::int AS "n" FROM pg_proc WHERE "oid" = to_regprocedure($1)`, FN).then((r) => r[0].n);
   let chain: Policy[] = [];
 
   beforeAll(async () => {
@@ -288,6 +297,9 @@ const sqlState = (e: unknown) => {
   it('case 11: the chain prints the new texts; down.sql restores the old ones exactly; migration.sql brings the new back', async () => {
     expect(pick(chain, MSG)).toEqual({ name: MSG, permissive: 'PERMISSIVE', cmd: 'SELECT', roles: '{public}', qual: MSG_NEW, check: null });
     expect(pick(chain, VOICE)).toEqual({ name: VOICE, permissive: 'PERMISSIVE', cmd: 'ALL', roles: '{public}', qual: VOICE_NEW, check: COACH });
+    expect(pick(chain, RESP_COACH)).toEqual({ name: RESP_COACH, permissive: 'PERMISSIVE', cmd: 'ALL', roles: '{public}', qual: RESP_COACH_NEW, check: COACH });
+    expect(pick(chain, RESP_MEMBER)).toEqual({ name: RESP_MEMBER, permissive: 'PERMISSIVE', cmd: 'SELECT', roles: '{public}', qual: RESP_MEMBER_NEW, check: null });
+    expect(await hasFn()).toBe(1);
     expect(await reads(backend('K'), row.dAB)).toBe(0);
     expect(await readsVoice(backend('K'), voice.vAB)).toBe(0);
     await apply('down.sql');
@@ -295,6 +307,9 @@ const sqlState = (e: unknown) => {
       const down = await policies();
       expect(pick(down, MSG)).toEqual({ ...pick(chain, MSG), qual: MSG_OLD });
       expect(pick(down, VOICE)).toEqual({ ...pick(chain, VOICE), qual: VOICE_OLD });
+      expect(pick(down, RESP_COACH)).toEqual({ ...pick(chain, RESP_COACH), qual: COACH });
+      expect(pick(down, RESP_MEMBER)).toEqual({ ...pick(chain, RESP_MEMBER), qual: MEMBER });
+      expect(await hasFn()).toBe(0); // the function is gone after down.sql
       expect(others(down)).toEqual(others(chain));
       expect(await reads(backend('K'), row.dAB)).toBe(1); // case 1 under the old text
       expect(await readsVoice(backend('K'), voice.vAB)).toBe(1); // case 13 under the old text
@@ -302,6 +317,7 @@ const sqlState = (e: unknown) => {
       await apply('migration.sql');
     }
     expect(await policies()).toEqual(chain);
+    expect(await hasFn()).toBe(1); // and back after migration.sql
     expect(await reads(backend('K'), row.dAB)).toBe(0);
     expect(await readsVoice(backend('K'), voice.vAB)).toBe(0);
   });
