@@ -64,6 +64,7 @@ function matches(r: Row, where: W): boolean {
 
 function setup(rows: Row[], reply: unknown = { notes: [] }, opts: { quoteReadThrows?: boolean } = {}) {
   const notes: Array<Record<string, unknown>> = [];
+  let self: unknown = null;
   const db = {
     $queryRaw: jest.fn(async () => [{ client_id: CLIENT, newest_at: at(16) }]),
     romanMemoryState: { findUnique: jest.fn(async () => null), upsert: jest.fn(async () => undefined) },
@@ -86,8 +87,9 @@ function setup(rows: Row[], reply: unknown = { notes: [] }, opts: { quoteReadThr
       }),
       updateMany: jest.fn(async () => undefined),
     },
-    $transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(db)),
+    $transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(self)),
   };
+  self = db;
   const create = jest.fn(async () => ({
     content: [{ type: 'text', text: JSON.stringify(reply) }],
     usage: { input_tokens: 120, output_tokens: 40 },
