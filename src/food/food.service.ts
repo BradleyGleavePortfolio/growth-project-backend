@@ -940,6 +940,8 @@ export class FoodService implements OnModuleInit {
         // FOOD-TRUE-BE: a product whose numbers cannot be true, or missing its protein, carbs or fat, is left out,
         // before the limit is taken (FIX-1222).
         .filter(({ product, mapped }) => offNumbersUsable(product, mapped))
+        // OFF-PHOTO-BE: a product with neither a code nor an _id has no id a log can import, so it is not listed.
+        .filter(({ product }) => product.code || product._id)
         .slice(0, limit)
         .map(({ mapped }) => mapped);
     } finally {
@@ -960,7 +962,7 @@ export class FoodService implements OnModuleInit {
     // contract as mapUSDAFood — store the per-100g macro verbatim, set
     // nutrient_basis = PER_100G, and let mobile scale by grams_consumed.
     return {
-      id: `off_${product.code || product._id || Math.random().toString(36).slice(2)}`,
+      id: `off_${product.code || product._id || ''}`,
       name: (product.product_name || '').trim(),
       brand_or_restaurant: product.brands?.split(',')[0]?.trim() || null,
       category: 'generic',
