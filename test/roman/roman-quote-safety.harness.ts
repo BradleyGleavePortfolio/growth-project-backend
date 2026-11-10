@@ -98,6 +98,11 @@ function matches(r: Row, where: Where): boolean {
       if (SESSIONS[r.session_id]?.surface !== (v as { surface?: string }).surface) return false;
       continue;
     }
+    // ROMAN-QUOTE-READERS-BE: the shared quote read names its chats as { in: [...] }.
+    if (v && typeof v === 'object' && Array.isArray((v as { in?: unknown }).in)) {
+      if (!(v as { in: unknown[] }).in.includes(r[k])) return false;
+      continue;
+    }
     if (r[k] !== v) return false;
   }
   return true;

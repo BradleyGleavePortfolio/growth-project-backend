@@ -21,6 +21,7 @@ import { RomanBackgroundSpendService, type RomanBackgroundRefusal } from '../bac
 import { ROMAN_MEMORY_CAPABILITY } from '../roman.constants';
 import { romanErrorTag, romanSanitizedError } from '../roman-error-tag';
 import { inputTokenUpperBound } from '../roman.service';
+import { ownWordsOfTurns } from '../guardrails/roman-quote-read';
 import { isRomanMemoryEnabled } from './roman-memory.feature';
 import { ROMAN_NOTES_PER_REPLY_MAX, parseRomanNotesReply, romanNoteExpiresAt, validateRomanNote } from './roman-notes.schema';
 import type { RomanNoteCandidate } from './roman-notes.schema';
@@ -116,13 +117,17 @@ export class RomanNotesWriter {
       },
       orderBy: { created_at: 'desc' },
       take: ROMAN_NOTES_LIMITS.turns,
-      select: { id: true, content: true, created_at: true },
+      select: { id: true, session_id: true, content: true, created_at: true },
     });
     const watermark = later(turns[0]?.created_at, c.newest_at);
+    // ROMAN-QUOTE-READERS-BE: a Reply's quote line is Roman's words, not a fact the client stated; split on the
+    // raw text, before sanitising and the clamp. One read per client run; a failed read keeps every text whole.
+    const own = await ownWordsOfTurns(this.prisma, clientId, turns.map((t) => ({ text: t.content, sessionId: t.session_id })),
+      (code) => this.logger.warn(`roman.notes_quote_failed: ${code}`));
     const refs: TurnRef[] = [];
-    for (const t of [...turns].reverse()) {
+    for (const [i, t] of [...turns.entries()].reverse()) {
       const max = ROMAN_NOTES_LIMITS.turnChars;
-      const text = sanitizePromptInput(t.content, max).slice(0, max).trim();
+      const text = sanitizePromptInput(own[i], max).slice(0, max).trim();
       if (text) refs.push({ ref: `t${refs.length + 1}`, id: t.id, at: t.created_at, text });
     }
     if (refs.length === 0) return mark(this.prisma, clientId, 'ok', watermark, now);
