@@ -16,7 +16,7 @@ import { renderHelpPage } from '../src/public-pages/help-pages.html';
 import { TRIAGE_CATEGORIES } from '../src/community/ai-triage/triage-output.schema';
 import buildInboxTriagePrompt from '../src/community/ai-triage/prompts/inbox-triage.prompt';
 import { renderDownloadPage, renderSignupPage } from '../src/public-pages/public-pages.html';
-import { FEATURE_ROMAN_CRISIS_ALERT_ENV } from '../src/roman/roman.feature';
+import { FEATURE_ROMAN_CRISIS_ALERT_ENV, ROMAN_CRISIS_TOLD_SENTENCE } from '../src/roman/roman.feature';
 import { contrastOnPaper } from './_fixtures/css-contrast';
 
 const ALL_TRUST_PAGES: TrustPage[] = ['privacy', 'consumer-health', 'terms', 'security', 'status'];
@@ -373,8 +373,12 @@ describe('Privacy Policy accuracy (/privacy)', () => {
     expect(text).toContain(
       'With Roman’s memory off, only your own data is used — never another client’s, and never your coach’s private notes about you.',
     );
+    // With the crisis switch on, the approved sentence follows the exception, once, inside this paragraph.
+    const crisisSentence = switchOn ? ` ${ROMAN_CRISIS_TOLD_SENTENCE}` : '';
     expect(text).toContain(
-      'Roman’s memory is part of the Roman permission the app asks for when you first open Roman or, in some versions of the app, in a second box at the start of the consultation, and it is on unless you turn it off. Roman keeps notes and summaries about your training, preferences and circumstances, from your Roman chats and from everything you log or connect in the app, to personalise his replies. Roman may also learn your coach’s methods, including from your coach’s private session notes, and information about your training may help with that without identifying you. Roman never quotes those notes or shows you another client’s information. Your coach never sees your conversations with Roman or his notes about you. One exception: if Roman sends you an urgent medical safety reply or an eating-disorder safety reply, your coach sees the message that prompted it, so they can check in with you. You can turn Roman’s memory off at any time in Settings > Privacy > Roman and AI; Roman then stops using his notes until you turn it back on. Turning memory off, withdrawing the AI agreement or deleting a chat does not delete the notes: they are kept with your account and deleted when you delete your account.',
+      'Roman’s memory is part of the Roman permission the app asks for when you first open Roman or, in some versions of the app, in a second box at the start of the consultation, and it is on unless you turn it off. Roman keeps notes and summaries about your training, preferences and circumstances, from your Roman chats and from everything you log or connect in the app, to personalise his replies. Roman may also learn your coach’s methods, including from your coach’s private session notes, and information about your training may help with that without identifying you. Roman never quotes those notes or shows you another client’s information. Your coach never sees your conversations with Roman or his notes about you. One exception: if Roman sends you an urgent medical safety reply or an eating-disorder safety reply, your coach sees the message that prompted it, so they can check in with you.' +
+        crisisSentence +
+        ' You can turn Roman’s memory off at any time in Settings > Privacy > Roman and AI; Roman then stops using his notes until you turn it back on. Turning memory off, withdrawing the AI agreement or deleting a chat does not delete the notes: they are kept with your account and deleted when you delete your account.',
     );
     expect(text).toContain('food, water and habit logs, workouts and workout history, check-ins, bookings,');
     expect(text).toContain(
