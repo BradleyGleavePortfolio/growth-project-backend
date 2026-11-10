@@ -160,7 +160,7 @@ export class RomanController {
     // CF-ROMAN-COPY-B-128 (owner default 10-07): an eating-disorder message
     // that one of the checks below refuses gets the fixed fallback (a pointer
     // to people, no model call) instead of the refusal.
-    const edRisk = !crisis && this.roman.isEatingDisorderRisk(dto.content);
+    const edRisk = !crisis && (await this.roman.isEatingDisorderRisk(caller, id, dto.content));
     let edFallback = false;
     let usageDebit: RomanUsageDebit | null = null;
 

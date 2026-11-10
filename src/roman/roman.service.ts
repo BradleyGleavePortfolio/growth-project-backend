@@ -97,6 +97,7 @@ import {
   ROMAN_COACH_TOLD_LINE,
 } from './guardrails/safety-router';
 import { postCheckRomanReply, type PostCheckContext } from './guardrails/roman-post-check';
+import { quoteOpensReply, splitRomanQuote } from './guardrails/roman-quote';
 import { RomanClientContextService } from './context/roman-client-context.service';
 import { consumeRomanUsage, releaseRomanUsage, type RomanUsageDebit } from './roman-usage';
 import { keyedSendId, keyedWrite } from '../community/messages/message-idempotency';
@@ -1042,7 +1043,8 @@ export class RomanService {
     // B-913-2: the controller has stored this turn; skip it so this reads the
     // same five earlier turns as the controller's pre-check.
     const earlier = await this.earlierUserText(caller, session.id, userMessage);
-    const route = classifySafety(userMessage, earlier);
+    const [ownWords] = await this.ownWordsOf(caller, session.id, [userMessage]);
+    const route = classifySafety(ownWords, earlier);
 
     if (
       route.short_circuit &&
@@ -1357,12 +1359,14 @@ export class RomanService {
     sessionId: string,
     message: string,
   ): Promise<boolean> {
-    return classifySafety(message, await this.earlierUserText(caller, sessionId)).short_circuit;
+    const [ownWords] = await this.ownWordsOf(caller, sessionId, [message]);
+    return classifySafety(ownWords, await this.earlierUserText(caller, sessionId)).short_circuit;
   }
 
   /** CF-ROMAN-COPY-B-128: true when the message gets the eating-disorder fallback if the AI cannot answer. */
-  isEatingDisorderRisk(message: string): boolean {
-    return classifySafety(message).class === 'eating_disorder_risk';
+  async isEatingDisorderRisk(caller: RomanCaller, sessionId: string, message: string): Promise<boolean> {
+    const [ownWords] = await this.ownWordsOf(caller, sessionId, [message]);
+    return classifySafety(ownWords).class === 'eating_disorder_risk';
   }
 
   /**
@@ -1626,15 +1630,43 @@ export class RomanService {
         take: storedTurn === undefined ? 5 : 6,
         select: { content: true },
       });
+      // Raw against raw: the stored turn is the text as sent, quote included.
       if (storedTurn !== undefined && rows[0]?.content === storedTurn) rows.shift();
-      return rows
-        .slice(0, 5)
-        .map((r) => r.content)
-        .join('. ');
+      const own = await this.ownWordsOf(caller, sessionId, rows.slice(0, 5).map((r) => r.content));
+      return own.join('. ');
     } catch (err) {
       this.logger.warn(`roman.safety_history_failed: ${romanErrorTag(err)}`);
       return '';
     }
+  }
+
+  /**
+   * ROMAN-QUOTE-SAFETY-BE: for each raw text, the member's own words when it is a Reply (roman-quote.ts) whose
+   * quote opens one of Roman's stored replies in the caller's own client-surface chat, else the text as sent.
+   * No text in that shape: no read. One read of the newest Roman rows, scoped to the caller like
+   * earlierUserText, compared as the room reads them (a Copilot reply without its [n], as GET messages gives
+   * it). A reply older than that page is unproven, and a failed read leaves every text whole: today's answer.
+   */
+  private async ownWordsOf(caller: RomanCaller, sessionId: string, texts: string[]): Promise<string[]> {
+    const quoted = texts.map(splitRomanQuote);
+    if (quoted.every((q) => q === null)) return texts;
+    let replies: string[];
+    try {
+      const rows = await this.prisma.romanMessage.findMany({
+        where: { session_id: sessionId, user_id: caller.id, role: 'roman', session: { surface: 'client' } },
+        orderBy: { created_at: 'desc' },
+        take: ROMAN_MESSAGES_MAX_LIMIT,
+        select: { content: true, copilot: true },
+      });
+      replies = rows.map((r) => (r.copilot ? withoutCites(r.content) : r.content));
+    } catch (err) {
+      this.logger.warn(`roman.safety_quote_failed: ${romanErrorTag(err)}`);
+      return texts;
+    }
+    return texts.map((text, i) => {
+      const q = quoted[i];
+      return q && replies.some((reply) => quoteOpensReply(q.quote, reply)) ? q.body : text;
+    });
   }
 
   /** Newest user turn of the caller's session (the controller stores it first). */
