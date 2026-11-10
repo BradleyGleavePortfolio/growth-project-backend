@@ -404,12 +404,12 @@ describe('MEAL-PHOTO-BE: refused keys and objects', () => {
   });
 
   it.each([
-    ['missing', null, 'missing'],
-    ['not JPEG by type', { contentType: 'image/png' }, 'not_jpeg'],
-    ['not JPEG by bytes', { head: [0x89, 0x50, 0x4e, 0x47] }, 'not_jpeg'],
-    ['over 10 MB', { size: 10 * MB + 1 }, 'too_large'],
-    ['carrying a location', { head: LOCATED['GPS in EXIF, little endian'], size: LOCATED['GPS in EXIF, little endian'].length }, 'has_location'],
-  ] as const)('case 7: %s: 422 log.photo.%s and the upload erased now', async (_name, obj, code) => {
+    ['missing', 'missing', null],
+    ['not JPEG by type', 'not_jpeg', { contentType: 'image/png' }],
+    ['not JPEG by bytes', 'not_jpeg', { head: [0x89, 0x50, 0x4e, 0x47] }],
+    ['over 10 MB', 'too_large', { size: 10 * MB + 1 }],
+    ['carrying a location', 'has_location', { head: LOCATED['GPS in EXIF, little endian'], size: LOCATED['GPS in EXIF, little endian'].length }],
+  ] as const)('case 7: %s: 422 log.photo.%s and the upload erased now', async (_name, code, obj) => {
     const w = world();
     const key = await w.upload(A, obj ?? {});
     if (obj === null) w.objects.delete(key);
