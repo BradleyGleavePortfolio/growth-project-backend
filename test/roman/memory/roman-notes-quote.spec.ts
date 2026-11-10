@@ -140,7 +140,7 @@ describe('ROMAN-QUOTE-READERS-BE case 7: the notes writer reads a proven quote a
 
   it('7: a proven turn among plain ones: only it is split; the order and ids stay', async () => {
     const t = setup([
-      row('u0', CHAT, 'user', 'I train before work most days.', 12),
+      row('u0', CHAT, 'user', 'I train before work most days.', 12, 30), // after the 12:00 grant
       row('r1', CHAT, 'roman', ROMAN_SAYS, 13),
       row('u1', CHAT, 'user', withRomanQuote(ROMAN_SAYS, OWN), 14),
       row('u2', CHAT, 'user', 'And I have a bike at home.', 15),
