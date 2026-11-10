@@ -115,7 +115,7 @@ describe('FIX-1232R1 B1: the staff crisis row is in its own recipient\'s inbox',
     expect(theirs.read_at).toBeNull();
   });
 
-  it('Found, not fixed (MONEY-ROW-INBOX-BE; green at the head too): the daily money-check row, a link-free coach_alert with payload.type money_check and no client_id, stays out of the owner inbox', async () => {
+  it('MONEY-ROW-INBOX-BE (b#1241, operator ruling 00:4x: b#1241 lands second and flips this case): the daily money-check row, a link-free coach_alert with payload.type money_check and no client_id, is listed and counted unread for its own recipient only', async () => {
     const w = world();
     await w.notifications.createNotification({
       user_id: STAFF_A,
@@ -124,6 +124,15 @@ describe('FIX-1232R1 B1: the staff crisis row is in its own recipient\'s inbox',
       payload: { type: 'money_check', title: 'Money check', verdict: 'ok', day: '2026-06-02' },
       channel: 'inapp',
     });
-    expect((await w.notifications.listNotifications(STAFF_A, {})).items).toEqual([]);
+    // Listed by the money arm of currentCoachInbox (current-coach-inbox.ts, payload.type equals MONEY_CHECK_ROW_TYPE).
+    expect((await w.notifications.listNotifications(STAFF_A, {})).items).toEqual([
+      expect.objectContaining({
+        user_id: STAFF_A,
+        kind: NotificationKind.COACH_ALERT,
+        payload: expect.objectContaining({ type: 'money_check' }),
+      }),
+    ]);
+    expect(await w.notifications.getUnreadCount(STAFF_A)).toBe(1);
+    expect((await w.notifications.listNotifications(STAFF_B, {})).items).toEqual([]);
   });
 });
