@@ -224,7 +224,7 @@ export class CommunityDmsService {
       kind: NotificationKind.COMMUNITY_DM_RECEIVED,
       targetType: 'dm',
       targetId: created.id,
-      deepLink: `tgp://community/dms/${dmKey}`,
+      deepLink: `tgp://community/dm/${user.id}`,
       otherUserId: created.sender_id,
       workspaceId,
     });
