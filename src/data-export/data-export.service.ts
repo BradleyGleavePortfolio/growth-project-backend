@@ -1435,6 +1435,7 @@ export class DataExportService {
       notificationPrefs,
       weightLogs,
       loggedEntries,
+      foodEntryPhotos,
       customFoods,
       foodFavorites,
       savedMeals,
@@ -1508,6 +1509,9 @@ export class DataExportService {
       this._streamAll('notificationPreferences', { user_id: userId }),
       this._streamAll('weightLog', { user_id: userId }),
       this._streamAll('loggedFoodEntry', { user_id: userId }),
+      // MEAL-PHOTO-BE: each meal photo's details, never its storage key or a link (the bytes stay out,
+      // as for every stored photo and recording today).
+      this._foodEntryPhotos(userId),
       this._streamAll(
         'foodItem',
         { created_by_user_id: userId },
@@ -1709,6 +1713,7 @@ export class DataExportService {
       notification_preferences: notificationPrefs,
       weight_logs: weightLogs,
       food_entries: loggedEntries,
+      food_entry_photos: foodEntryPhotos,
       custom_foods: customFoods,
       food_favorites: foodFavorites,
       saved_meals: savedMeals,
@@ -1793,6 +1798,29 @@ export class DataExportService {
    * `shape.orderBy` is the order the archive presents the rows in; it is
    * applied once all pages are read.
    */
+  /**
+   * MEAL-PHOTO-BE: the user's meal photo rows (keyed by entry_id, so paged by it: `entry_id > last`),
+   * oldest first. Only entry_id, width, height, size_bytes and created_at: never the key or a link.
+   */
+  private async _foodEntryPhotos(userId: string): Promise<unknown[]> {
+    // As _streamAll: a test double without this delegate exports none.
+    if (!Reflect.get(this.prisma, 'foodEntryPhoto')) return [];
+    const rows: Array<{ entry_id: string; created_at: Date }> = [];
+    let after: string | null = null;
+    for (;;) {
+      const page: Array<{ entry_id: string; created_at: Date }> = await this.prisma.foodEntryPhoto.findMany({
+        where: after === null ? { user_id: userId } : { AND: [{ user_id: userId }, { entry_id: { gt: after } }] },
+        select: { entry_id: true, width: true, height: true, size_bytes: true, created_at: true },
+        orderBy: [{ entry_id: 'asc' }],
+        take: EXPORT_PAGE,
+      });
+      rows.push(...page);
+      if (page.length < EXPORT_PAGE) break;
+      after = page[page.length - 1].entry_id;
+    }
+    return rows.sort((a, b) => compareExportValues(a.created_at, b.created_at) || compareExportValues(a.entry_id, b.entry_id));
+  }
+
   private async _streamAll(
     model: string,
     where: Record<string, unknown>,

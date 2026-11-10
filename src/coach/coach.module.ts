@@ -27,6 +27,7 @@ import { AdminModule } from '../admin/admin.module';
 // the provider is reachable, but we import it explicitly here so the
 // CoachEffectivenessService dependency is declared at the module we own.
 import { SubCoachModule } from '../sub-coach/sub-coach.module';
+import { MealPhotoModule } from '../log/meal-photo.module';
 // EFF-2: coach-facing self-service effectiveness route.
 import { CoachEffectivenessController } from './coach-effectiveness.controller';
 // LTV metrics suite — Coach Command Center revenue dashboard
@@ -76,6 +77,8 @@ import { ChurnInterventionService } from './command-center/churn-intervention.se
     SubCoachModule,
     // CoachConsultationService reads the coach's /join link (lazy-create).
     InviteCodesModule,
+    // MEAL-PHOTO-BE: CoachService signs the photos of the food its summary and timeline return.
+    MealPhotoModule,
   ],
   controllers: [
     CoachController,

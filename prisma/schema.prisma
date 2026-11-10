@@ -1027,6 +1027,8 @@ model LoggedFoodEntry {
   // FOODLINK: set by the Food tab's "Your usual day" (Repeat or Something else) for a client with no plan.
   // False for every other log and every older row.
   fills_usual_meal    Boolean  @default(false)
+  // MEAL-PHOTO-BE: the relation side of food_entry_photos (no column on this table).
+  photo               FoodEntryPhoto?
 
   // Hot path: LogService.getDaily + CoachService.getClientSummary both query by (user_id, date).
   @@index([user_id, date])
@@ -9391,4 +9393,22 @@ model CommunityMessageImage {
   @@index([cohort_id, created_at])
   @@index([author_id])
   @@map("community_message_images")
+}
+
+/// MEAL-PHOTO-BE (20270502011300): the photo a client keeps with one food entry. The object is the `.sent.jpg`
+/// copy at storage_key in the private community-images bucket, under the client's `<uid>/` folder. Read by the
+/// client and their coach now (row rules as LoggedFoodEntry's); written only by the server.
+model FoodEntryPhoto {
+  entry_id    String          @id
+  entry       LoggedFoodEntry @relation(fields: [entry_id], references: [id], onDelete: Cascade)
+  user_id     String
+  storage_key String          @unique @db.Text
+  width       Int
+  height      Int
+  size_bytes  Int
+  mime        String          @db.VarChar(40)
+  created_at  DateTime        @default(now()) @db.Timestamptz(6)
+
+  @@index([user_id])
+  @@map("food_entry_photos")
 }

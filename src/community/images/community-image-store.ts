@@ -23,7 +23,7 @@
  * when the link's token expires: the upload object is erased then, sent or
  * not, so a replay after a delete or Hide never survives and never shows.
  */
-import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
+import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'crypto';
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { VoiceUploadProvider } from '../voice/voice-upload.provider';
 import { normalizesToItself, voiceKeySecret } from '../voice/voice-storage-key';
@@ -73,8 +73,14 @@ function sweepAfter(token: string | undefined, nowMs: number): Date {
   return new Date((Number.isFinite(exp) && exp > nowMs ? exp : nowMs + UPLOAD_LINK_FALLBACK_MS) + SWEEP_MARGIN_MS);
 }
 
-function macFor(secret: Buffer, owner: string, cohort: string, ts: string, nonce: string): string {
-  return createHmac('sha256', secret).update(`img1|${owner}|${cohort}|${ts}|${nonce}`).digest('hex').slice(0, 32);
+/**
+ * MEAL-PHOTO-BE: 'img1' signs a space photo key, 'meal1' a meal photo key (its uuid is random, not a space),
+ * so a key minted for one never verifies as the other.
+ */
+type KeyDomain = 'img1' | 'meal1';
+
+function macFor(secret: Buffer, owner: string, cohort: string, ts: string, nonce: string, domain: KeyDomain = 'img1'): string {
+  return createHmac('sha256', secret).update(`${domain}|${owner}|${cohort}|${ts}|${nonce}`).digest('hex').slice(0, 32);
 }
 
 /** Shape, owner and normalization only (sign, stat, erase); never proof the server minted it. */
@@ -83,25 +89,38 @@ export function isImageStoreKey(key: string, ownerId?: string): boolean {
   return !!m && (ownerId === undefined || m[1] === ownerId) && normalizesToItself(COMMUNITY_IMAGES_BUCKET, key);
 }
 
-export function mintImageKey(ownerId: string, cohortId: string, nowMs = Date.now()): string {
+export function mintImageKey(ownerId: string, cohortId: string, nowMs = Date.now(), domain: KeyDomain = 'img1'): string {
   const secret = voiceKeySecret();
   if (!secret) throw unavailable();
   const ts = String(nowMs).padStart(13, '0');
   const nonce = randomBytes(8).toString('hex');
-  const key = `${ownerId}/${cohortId}-${ts}-${nonce}-${macFor(secret, ownerId, cohortId, ts, nonce)}.jpg`;
+  const key = `${ownerId}/${cohortId}-${ts}-${nonce}-${macFor(secret, ownerId, cohortId, ts, nonce, domain)}.jpg`;
   if (!isImageStoreKey(key, ownerId)) throw new Error('image key: unsupported owner or space id');
   return key;
 }
 
-/** True only for an upload key this server minted for this uploader and this space, still inside its window. */
-export function isPublishableImageKey(key: string, ownerId: string, cohortId: string, nowMs = Date.now()): boolean {
+/** MEAL-PHOTO-BE: a meal photo upload key, the image key's shape with a fresh random uuid and the 'meal1' MAC. */
+export const mintMealImageKey = (ownerId: string, nowMs = Date.now()): string =>
+  mintImageKey(ownerId, randomUUID(), nowMs, 'meal1');
+
+function keyProof(key: string, ownerId: string, nowMs: number, domain: KeyDomain, cohortId?: string): boolean {
   const m = isImageStoreKey(key, ownerId) ? KEY_RE.exec(key) : null;
   const secret = voiceKeySecret();
-  if (!m || !secret || m[2] !== cohortId || m[6]) return false;
-  const want = Buffer.from(macFor(secret, ownerId, cohortId, m[3], m[4]), 'utf8');
+  if (!m || !secret || (cohortId !== undefined && m[2] !== cohortId) || m[6]) return false;
+  const want = Buffer.from(macFor(secret, ownerId, m[2], m[3], m[4], domain), 'utf8');
   const given = Buffer.from(m[5], 'utf8');
   const age = nowMs - Number(m[3]);
   return want.length === given.length && timingSafeEqual(want, given) && age > -300_000 && age <= IMAGE_UPLOAD_TTL_SEC * 1000;
+}
+
+/** True only for an upload key this server minted for this uploader and this space, still inside its window. */
+export function isPublishableImageKey(key: string, ownerId: string, cohortId: string, nowMs = Date.now()): boolean {
+  return keyProof(key, ownerId, nowMs, 'img1', cohortId);
+}
+
+/** MEAL-PHOTO-BE: true only for a meal upload key this server minted for this uploader, still inside its window. */
+export function isAttachableMealKey(key: string, ownerId: string, nowMs = Date.now()): boolean {
+  return keyProof(key, ownerId, nowMs, 'meal1');
 }
 
 /** PHOTO-GPS: 'has_location' = the photo carries a location (image-location.ts); send refuses it. */
@@ -126,7 +145,15 @@ export class CommunityImageStore extends VoiceUploadProvider {
     ownerId: string,
     cohortId: string,
   ): Promise<{ upload_url: string; key: string; expires_at: string; sweep_at: Date }> {
-    const key = mintImageKey(ownerId, cohortId);
+    return this.signKey(mintImageKey(ownerId, cohortId));
+  }
+
+  /** MEAL-PHOTO-BE: the same signed upload for a freshly minted meal photo key. */
+  async signMealUpload(ownerId: string): Promise<{ upload_url: string; key: string; expires_at: string; sweep_at: Date }> {
+    return this.signKey(mintMealImageKey(ownerId));
+  }
+
+  private async signKey(key: string): Promise<{ upload_url: string; key: string; expires_at: string; sweep_at: Date }> {
     try {
       const { data, error } = await this.supabase.getClient().storage.from(this.bucket()).createSignedUploadUrl(key);
       if (error || !data?.signedUrl) throw new Error(error?.message ?? 'no signed URL');

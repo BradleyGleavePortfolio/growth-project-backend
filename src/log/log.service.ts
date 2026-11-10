@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { FoodService } from '../food/food.service';
 import { LogFoodDto, UpdateLogEntryDto } from './log.dto';
@@ -7,6 +7,7 @@ import { Events } from '../analytics/events';
 import { PtmService } from '../ptm/ptm.service';
 import { ClientAIContextService } from '../ai/client-ai-context.service';
 import { resolveDisplayedTargets } from '../macros/macro-calculator';
+import { MealPhotoService } from './meal-photo.service';
 
 @Injectable()
 export class LogService {
@@ -17,6 +18,9 @@ export class LogService {
     private ptm: PtmService,
     // M2 — bust the AI context cache after food-log writes.
     private aiContext: ClientAIContextService,
+    // MEAL-PHOTO-BE: each entry's photo on GET /log/daily, and its erasure when the entry is deleted.
+    // Optional only for unit tests that build the service by hand; the module always wires it.
+    @Optional() private mealPhotos?: MealPhotoService,
   ) {}
 
   // `onResend` runs when the answer is this member's entry already stored
@@ -165,7 +169,7 @@ export class LogService {
 
     return {
       date,
-      entries,
+      entries: this.mealPhotos ? await this.mealPhotos.withPhotos(entries) : entries,
       total_calories: Math.round(total_calories),
       total_protein_g: Math.round(total_protein_g),
       total_carbs_g: Math.round(total_carbs_g),
@@ -208,7 +212,20 @@ export class LogService {
   async deleteEntry(userId: string, entryId: string) {
     const entry = await this.prisma.loggedFoodEntry.findUnique({ where: { id: entryId } });
     if (!entry || entry.user_id !== userId) throw new NotFoundException('Entry not found');
-    const deleted = await this.prisma.loggedFoodEntry.delete({ where: { id: entryId } });
+    // MEAL-PHOTO-BE: the photo's objects are recorded for erasure in the delete's transaction, before
+    // the entry (and, by cascade, its photo row) goes; tried after commit, retried by the erasure cron.
+    const photos = this.mealPhotos;
+    const deleted = photos
+      ? await this.prisma
+          .$transaction(async (tx) => {
+            const work = await photos.recordEntryErasure(tx, entryId);
+            return { row: await tx.loggedFoodEntry.delete({ where: { id: entryId } }), work };
+          })
+          .then(async ({ row, work }) => {
+            await photos.erase(work);
+            return row;
+          })
+      : await this.prisma.loggedFoodEntry.delete({ where: { id: entryId } });
     // M2 — bust AI context cache after deletion.
     this.aiContext.invalidateForUser(userId);
     return deleted;

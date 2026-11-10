@@ -154,6 +154,9 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'UserProfile', field: 'user_id', action: del },
   { model: 'UserPreferences', field: 'user_id', action: del },
   { model: 'NotificationPreferences', field: 'user_id', action: del },
+  // MEAL-PHOTO-BE: their meal photo rows (they also cascade with the entry; the objects go by the
+  // image_folder erasure, every meal photo key being under their `<uid>/` folder in community-images).
+  { model: 'FoodEntryPhoto', field: 'user_id', action: del },
   { model: 'LoggedFoodEntry', field: 'user_id', action: del },
   // UX-FOOD-PRIV-124: the user's custom foods are private to them, so they go
   // with the account; left in place (or detached) they would be served as
