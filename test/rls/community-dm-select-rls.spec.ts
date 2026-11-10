@@ -12,9 +12,13 @@
  * C. Messages in W: dAB (A to B), dKA (K to A), dAK (A to K), a Hall row (a comment on a workspace-wide post,
  * cohort_id NULL) and a row of S, both by B; dCL (C to L) in W2. Voice notes in W: vAB (A's DM note) and vAH
  * (A's Hall note). Every id differs from its supabase id. Every 0 or refusal follows a control of 1 on the
- * same row. Writes that would change a fixture row run in a transaction that is rolled back.
+ * same row. Writes that would change a fixture row run in a transaction that is rolled back. The suite runs
+ * down.sql (the text before) and migration.sql again (case 11), and proves three mutations of the new text
+ * fail their cases, each restored by migration.sql before the next.
  * Gate: TEST_DATABASE_URL. No URL -> skip, except under CI=true (hard failure).
  */
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { randomUUID } from 'crypto';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { liveTestDatabaseUrl } from '../utils/live-test-db';
@@ -23,6 +27,24 @@ const DB_URL = liveTestDatabaseUrl();
 if (!DB_URL && process.env.CI === 'true') {
   throw new Error('community-dm-select-rls: CI=true but no TEST_DATABASE_URL; refusing to skip.');
 }
+
+const DIR = join(__dirname, '..', '..', 'prisma', 'migrations', '20270502011400_community_dm_select_parties_only');
+// A migration file's statements; BEGIN/COMMIT become the one transaction apply() opens.
+const statements = (file: string) =>
+  readFileSync(join(DIR, file), 'utf8').replace(/^--.*$/gm, '').split(/;\s*$/m)
+    .map((s) => s.trim()).filter((s) => s && !/^(BEGIN|COMMIT)$/i.test(s));
+const TABLES = ['community_messages', 'community_voice_notes'];
+const MSG = 'community_messages.community_messages_select';
+const VOICE = 'community_voice_notes.community_voice_notes_coach_all';
+// The policy text as the deparser prints it, line breaks folded.
+const flat = (sql: string | null) => sql && sql.replace(/\s+/g, ' ');
+const COACH = 'app.is_community_workspace_coach(workspace_id)';
+const COHORT = `(scope = 'cohort'::"CommunityMessageScope")`;
+const DM_ARM = `((scope = 'dm'::"CommunityMessageScope") AND ((sender_id = app.current_user_id()) OR (recipient_user_id = app.current_user_id())))`;
+const MSG_NEW = `((${COACH} AND ${COHORT}) OR (${COHORT} AND app.shares_community_cohort(cohort_id)) OR ${DM_ARM})`;
+const MSG_OLD = `(${COACH} OR (${COHORT} AND app.shares_community_cohort(cohort_id)) OR ${DM_ARM})`;
+const VOICE_NEW = `(${COACH} AND (conversation_id IS NULL))`;
+const VOICE_OLD = COACH;
 
 type Key = 'K' | 'L' | 'A' | 'B' | 'C';
 type Who = { key: Key; guc: boolean };
@@ -115,6 +137,19 @@ const sqlState = (e: unknown) => {
       `INSERT INTO "community_voice_notes" ("id", "workspace_id", "cohort_id", "conversation_id", "author_id", "storage_key", "duration_ms", "bytes", "mime_type")
        VALUES ($1::uuid, $2::uuid, NULL, $3::uuid, $4, $5, 3000, 1000, 'audio/mp4')`,
       noteId, ws.K, conversation, id[author], `${id[author]}/1700000000000-${randomUUID().replace(/-/g, '').slice(0, 16)}.m4a`);
+  const apply = (file: string) =>
+    prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      for (const s of statements(file)) await tx.$executeRawUnsafe(s);
+    });
+  type Policy = { name: string; permissive: string; cmd: string; roles: string; qual: string | null; check: string | null };
+  const policies = () => prisma.$queryRaw<Policy[]>`
+    SELECT p."tablename" || '.' || p."policyname" AS "name", p."permissive", p."cmd", p."roles"::text AS "roles",
+           p."qual", p."with_check" AS "check"
+    FROM pg_policies p WHERE p."schemaname" = 'public' AND p."tablename"::text = ANY(${TABLES}::text[]) ORDER BY 1`
+    .then((list) => list.map((p) => ({ ...p, qual: flat(p.qual), check: flat(p.check) })));
+  const pick = (list: Policy[], name: string) => list.find((p) => p.name === name);
+  const others = (list: Policy[]) => list.filter((p) => p.name !== MSG && p.name !== VOICE);
+  let chain: Policy[] = [];
 
   beforeAll(async () => {
     for (const k of keys) {
@@ -140,6 +175,7 @@ const sqlState = (e: unknown) => {
     await say(row.dCL, ws.L, 'C', { scope: 'dm', to: 'L' });
     await note(voice.vAB, 'A', randomUUID());
     await note(voice.vAH, 'A', null);
+    chain = await policies();
   });
   afterAll(() => prisma.$disconnect());
 
@@ -247,6 +283,63 @@ const sqlState = (e: unknown) => {
     expect(await readsVoice(backend('K'), voice.vAB)).toBe(0);
     expect(await readsVoice(backend('B'), voice.vAB)).toBe(0);
     expect(await readsVoice(backend('L'), voice.vAB)).toBe(0);
+  });
+
+  it('case 11: the chain prints the new texts; down.sql restores the old ones exactly; migration.sql brings the new back', async () => {
+    expect(pick(chain, MSG)).toEqual({ name: MSG, permissive: 'PERMISSIVE', cmd: 'SELECT', roles: '{public}', qual: MSG_NEW, check: null });
+    expect(pick(chain, VOICE)).toEqual({ name: VOICE, permissive: 'PERMISSIVE', cmd: 'ALL', roles: '{public}', qual: VOICE_NEW, check: COACH });
+    expect(await reads(backend('K'), row.dAB)).toBe(0);
+    expect(await readsVoice(backend('K'), voice.vAB)).toBe(0);
+    await apply('down.sql');
+    try {
+      const down = await policies();
+      expect(pick(down, MSG)).toEqual({ ...pick(chain, MSG), qual: MSG_OLD });
+      expect(pick(down, VOICE)).toEqual({ ...pick(chain, VOICE), qual: VOICE_OLD });
+      expect(others(down)).toEqual(others(chain));
+      expect(await reads(backend('K'), row.dAB)).toBe(1); // case 1 under the old text
+      expect(await readsVoice(backend('K'), voice.vAB)).toBe(1); // case 13 under the old text
+    } finally {
+      await apply('migration.sql');
+    }
+    expect(await policies()).toEqual(chain);
+    expect(await reads(backend('K'), row.dAB)).toBe(0);
+    expect(await readsVoice(backend('K'), voice.vAB)).toBe(0);
+  });
+
+  describe('mutation proofs (each restored by migration.sql before the next)', () => {
+    const COACH_SQL = 'app.is_community_workspace_coach("workspace_id")';
+    const COHORT_ARM = `("scope" = 'cohort' AND app.shares_community_cohort("cohort_id"))`;
+    const DM_FULL = `("scope" = 'dm' AND ("sender_id"::text = app.current_user_id() OR "recipient_user_id"::text = app.current_user_id()))`;
+    const DM_SENDER = `("scope" = 'dm' AND "sender_id"::text = app.current_user_id())`;
+    const mutate = (using: string) =>
+      prisma.$executeRawUnsafe(`ALTER POLICY "community_messages_select" ON "community_messages" USING (${using})`);
+    afterEach(() => apply('migration.sql'));
+
+    it('the coach arm\'s scope test dropped: cases 1 to 3 would see the DM', async () => {
+      await mutate(`${COACH_SQL} OR ${COHORT_ARM} OR ${DM_FULL}`);
+      expect(await reads(backend('K'), row.dAB)).toBe(1);
+      expect(await idsOfW(backend('K'), true)).toContain(row.dAB);
+      expect(await idsOfW(backend('K'))).toEqual(await idsOfW(null));
+    });
+
+    it('the DM arm cut to the sender only: case 5 would lose the coach\'s read of dAK', async () => {
+      await mutate(`(${COACH_SQL} AND "scope" = 'cohort') OR ${COHORT_ARM} OR ${DM_SENDER}`);
+      expect(await reads(backend('A'), row.dAK)).toBe(1); // the sender still reads it
+      expect(await reads(backend('K'), row.dAK)).toBe(0);
+    });
+
+    it('the coach arm dropped altogether: case 6 would lose the Hall row', async () => {
+      await mutate(`${COHORT_ARM} OR ${DM_FULL}`);
+      expect(await reads(backend('K'), row.inS)).toBe(1); // the space row still reads (the coach passes the space rule)
+      expect(await reads(backend('K'), row.hall)).toBe(0);
+    });
+
+    it('restored: the chain\'s text, and cases 1, 5 and 6 hold again', async () => {
+      expect(await policies()).toEqual(chain);
+      expect(await reads(backend('K'), row.dAB)).toBe(0);
+      expect(await reads(backend('K'), row.dAK)).toBe(1);
+      expect(await reads(backend('K'), row.hall)).toBe(1);
+    });
   });
 
   it('case 9: the coach\'s UPDATE and DELETE by id of that DM touch nothing; its sender\'s do', async () => {
