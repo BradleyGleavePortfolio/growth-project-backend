@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AuditAction, AuditService } from '../audit/audit.service';
@@ -6,6 +6,7 @@ import { COACH_FITNESS_SCOPES, ConsentScope, ConsentService } from '../consent/c
 import { weightIfShared } from '../consent/coach-sharing-gate';
 import { resolveRecipientTimeZone } from '../notifications/recipient-timezone';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
+import { MealPhotoService } from '../log/meal-photo.service';
 import { clientWeek } from './client-week';
 import { ROMAN_SAFETY_ALERT_TYPES } from './coach-alerts.service';
 
@@ -104,6 +105,9 @@ export class CoachService {
     // unit-test reason as `consent` above — SubCoachModule is @Global,
     // so production DI always populates this.
     private subCoachScope?: SubCoachScopeService,
+    // MEAL-PHOTO-BE: the photo of each food entry this read already returns (flags.food); optional for
+    // the same unit-test reason. No gate of its own.
+    @Optional() private mealPhotos?: MealPhotoService,
   ) {}
 
   private async loadFitnessConsents(
@@ -492,7 +496,7 @@ export class CoachService {
     // timeline still renders. Owners bypass the check.
     const flags = await this.loadFitnessConsents(coachId, clientId, callerRole);
 
-    const [meals, workouts, weights, sharedCheckIns] = await Promise.all([
+    const [foodRows, workouts, weights, sharedCheckIns] = await Promise.all([
       flags.food
         ? this.prisma.loggedFoodEntry.findMany({
             // Use `date` (the actual eat date the user recorded) for timeline
@@ -540,6 +544,7 @@ export class CoachService {
           })
         : Promise.resolve<CheckInRow[]>([]),
     ]);
+    const meals = this.mealPhotos ? await this.mealPhotos.withPhotos(foodRows) : foodRows;
     // C8-S: a check-in's weight follows Weigh-ins, not Check-ins and habits (rows and events alike).
     const checkIns = sharedCheckIns.map((c) => weightIfShared(c, flags.bodyMetrics));
 
@@ -767,7 +772,7 @@ export class CoachService {
     // Per-scope consent gating, same shape as getClientTimeline.
     const flags = await this.loadFitnessConsents(coachId, clientId, callerRole);
 
-    const [todayEntries, weightLogs, recentWorkouts, recentAssignments, safetyAlert] = await Promise.all([
+    const [foodToday, weightLogs, recentWorkouts, recentAssignments, safetyAlert] = await Promise.all([
       flags.food
         ? this.prisma.loggedFoodEntry.findMany({
             // Filter by `date` (eat date) not `logged_at` (server sync time)
@@ -819,6 +824,7 @@ export class CoachService {
         : Promise.resolve(null),
     ]);
 
+    const todayEntries = this.mealPhotos ? await this.mealPhotos.withPhotos(foodToday) : foodToday;
     let total_calories = 0, total_protein_g = 0, total_carbs_g = 0, total_fat_g = 0;
     for (const entry of todayEntries) {
       const qty = entry.quantity_multiplier || 1;

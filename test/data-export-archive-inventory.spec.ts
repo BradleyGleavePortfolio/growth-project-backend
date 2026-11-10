@@ -413,6 +413,47 @@ describe('data export paging (F-EXPORT-TIE)', () => {
   });
 });
 
+// MEAL-PHOTO-BE (case 14): the user's meal photos are listed by their details only. The storage key and
+// any link never leave, and another person's photo is never in the archive. Paged by entry_id.
+describe('data export meal photos (MEAL-PHOTO-BE)', () => {
+  const photo = (entry_id: string, user_id: string, n: number) => ({
+    entry_id,
+    user_id,
+    storage_key: `${user_id}/00000000-0000-4000-8000-00000000000${n}-1700000000000-0123456789abcdef-0123456789abcdef0123456789abcdef.sent.jpg`,
+    width: 1200,
+    height: 900,
+    size_bytes: 4000 + n,
+    mime: 'image/jpeg',
+    created_at: t(n),
+  });
+
+  it('lists each own photo, oldest first: entry, size and date, never the key, a link or another person photo', async () => {
+    const archive = await build({
+      foodEntryPhoto: [photo('e2', U, 2), photo('e1', U, 1), photo('e-other', OTHER, 3)],
+    });
+    expect(archive.food_entry_photos).toEqual([
+      { entry_id: 'e1', width: 1200, height: 900, size_bytes: 4001, created_at: t(1).toISOString() },
+      { entry_id: 'e2', width: 1200, height: 900, size_bytes: 4002, created_at: t(2).toISOString() },
+    ]);
+    const text = JSON.stringify(archive);
+    expect(text).not.toContain('.sent.jpg');
+    expect(text).not.toContain('storage_key');
+    expect(text).not.toContain('e-other');
+  });
+
+  it('reads every photo exactly once across pages', async () => {
+    const many = Array.from({ length: 1203 }, (_, i) => ({ ...photo(`e${String(i).padStart(4, '0')}`, U, 1), created_at: t(i) }));
+    const archive = await build({ foodEntryPhoto: many });
+    const rows = stub<Array<{ entry_id: string }>>(archive.food_entry_photos);
+    expect(rows).toHaveLength(1203);
+    expect(new Set(rows.map((r) => r.entry_id)).size).toBe(1203);
+  });
+
+  it('account deletion erases the photo rows by user_id', () => {
+    expect(ERASURE_MANIFEST.some((s) => s.model === 'FoodEntryPhoto' && s.field === 'user_id' && s.action.op === 'delete')).toBe(true);
+  });
+});
+
 // W3-13 (B-DELETE-123): the export left out the data that went live on day 1
 // (community, broadcasts, coach codes, Roman adjustments, wearables), although
 // the privacy pages point people at the in-app export for a copy of it.

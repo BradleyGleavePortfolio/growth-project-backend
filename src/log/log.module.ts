@@ -6,6 +6,7 @@ import { SavedFoodsService } from './saved-foods.service';
 import { AuthModule } from '../auth/auth.module';
 import { FoodModule } from '../food/food.module';
 import { AiModule } from '../ai/ai.module';
+import { MealPhotoModule } from './meal-photo.module';
 
 // PrismaService provided globally via PrismaModule.
 // FoodModule exports FoodService — needed so LogService can resolve synthetic
@@ -15,7 +16,7 @@ import { AiModule } from '../ai/ai.module';
 // SavedFoodsController (FOODSAVED): /me/foods favourites and saved meals, which
 // log through the same entry table.
 @Module({
-  imports: [AuthModule, FoodModule, AiModule],
+  imports: [AuthModule, FoodModule, AiModule, MealPhotoModule],
   controllers: [LogController, SavedFoodsController],
   providers: [LogService, SavedFoodsService],
   exports: [LogService],
