@@ -161,6 +161,14 @@ GOOGLE_MEET_ENABLED | off | fly secrets unset -a backend-spring-lake-3890 GOOGLE
 ZOOM_ENABLED | off | fly secrets unset -a backend-spring-lake-3890 ZOOM_ENABLED | "ZOOM_ENABLED": "unset"
 FEATURE_SCOUT_INGEST | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_SCOUT_INGEST | "FEATURE_SCOUT_INGEST": "unset"
 FEATURE_EXTENSION_PAIRING | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_EXTENSION_PAIRING | "FEATURE_EXTENSION_PAIRING": "unset"
+FEATURE_PLAN_RENEWAL | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_PLAN_RENEWAL | "FEATURE_PLAN_RENEWAL": "unset"
+FEATURE_COACH_ACCOUNT_HOLD | on | fly secrets set -a backend-spring-lake-3890 FEATURE_COACH_ACCOUNT_HOLD=false (never unset: that turns it on) | "FEATURE_COACH_ACCOUNT_HOLD": "false"
+FEATURE_CONTRACTS_ENABLED | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_CONTRACTS_ENABLED | "FEATURE_CONTRACTS_ENABLED": "unset"
+FEATURE_CONTRACTS_DOCUSIGN_PROVIDER | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_CONTRACTS_DOCUSIGN_PROVIDER | "FEATURE_CONTRACTS_DOCUSIGN_PROVIDER": "unset"
+FEATURE_CONTRACTS_NATIVE_CANVAS | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_CONTRACTS_NATIVE_CANVAS | "FEATURE_CONTRACTS_NATIVE_CANVAS": "unset"
+FEATURE_ROMAN_CRISIS_ALERT | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_ROMAN_CRISIS_ALERT | "FEATURE_ROMAN_CRISIS_ALERT": "unset"
+FEATURE_SCOUT_RECONSTRUCT | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_SCOUT_RECONSTRUCT | "FEATURE_SCOUT_RECONSTRUCT": "unset"
+FEATURE_WEARABLES_CLOUD_CONNECTORS | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_WEARABLES_CLOUD_CONNECTORS | "FEATURE_WEARABLES_CLOUD_CONNECTORS": "unset"
 RECONCILIATION_DAILY_ENABLED | on | fly secrets set -a backend-spring-lake-3890 RECONCILIATION_DAILY_ENABLED=false (never unset: that turns it on) | "RECONCILIATION_DAILY_ENABLED": "false"
 ```
 

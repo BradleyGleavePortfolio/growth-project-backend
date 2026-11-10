@@ -2006,18 +2006,24 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'FEATURE_CONTRACTS_ENABLED',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
-    default: 'unset → on in development/test, off otherwise',
+    default: 'unset → off in production (on only in development or test)',
     reason: 'Not used in v1 / contracts module flag.',
   },
   {
     name: 'FEATURE_CONTRACTS_DOCUSIGN_PROVIDER',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only explicit true)',
     reason: 'Not used in v1 / DocuSign contracts provider flag.',
   },
   {
     name: 'FEATURE_CONTRACTS_NATIVE_CANVAS',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only explicit true)',
     reason: 'Not used in v1 / native signature canvas flag.',
@@ -2063,6 +2069,8 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'FEATURE_COACH_ACCOUNT_HOLD',
+    values: ['true', 'false'],
+    unsetIs: 'on',
     tier: 'optional',
     default: "on (unset = on; only exactly 'false' turns it off)",
     reason:
@@ -2070,6 +2078,8 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'FEATURE_PLAN_RENEWAL',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason:
@@ -2400,6 +2410,8 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'FEATURE_ROMAN_CRISIS_ALERT',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only explicit true)',
     reason:
@@ -2431,6 +2443,8 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'FEATURE_SCOUT_RECONSTRUCT',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → /api/scout/reconstruct 404 (only "true")',
     reason: 'Scout reconstruct route.',
@@ -2460,6 +2474,8 @@ export const ENV_RULES: EnvRule[] = [
   // --- CLOUD WEARABLES (not used in v1: Apple Health / Health Connect are live and need no server key) ---
   {
     name: 'FEATURE_WEARABLES_CLOUD_CONNECTORS',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off; OAuth start and the eight webhooks return 503',
     reason:
