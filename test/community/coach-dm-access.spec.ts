@@ -68,6 +68,8 @@ interface World extends AccessWorld {
 
 async function world(): Promise<World> {
   const w = await accessWorld();
+  // keyedWrite's advisory lock (message-idempotency.ts) is a no-op here, as in test/send-once.table.spec.ts.
+  Object.assign(w.db, { $executeRaw: async () => 0 });
   const prisma = stub<PrismaService>(w.db);
   const access = new CommunityAccessService(prisma);
   const pings: Ping[] = [];
