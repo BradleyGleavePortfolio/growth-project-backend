@@ -36,7 +36,7 @@ describe('splitRomanQuote: the phone\'s shape, on the raw text', () => {
 describe('quoteOpensReply: a prefix of the reply as the phone excerpts it', () => {
   it('proves every excerpt the phone makes', () => {
     expect(quoteOpensReply(romanQuoteExcerpt(LONG), LONG)).toBe(true); // cut, ends in U+2026
-    expect(quoteOpensReply(romanQuoteExcerpt(LONG, 37), LONG)).toBe(true); // a limit shrunk near the send cap
+    expect(quoteOpensReply(romanQuoteExcerpt(LONG, 37), LONG, 37)).toBe(true); // a limit shrunk near the send cap
     expect(quoteOpensReply(romanQuoteExcerpt(NEUTRAL_REPLY), NEUTRAL_REPLY)).toBe(true); // shorter than the limit
     const marked = LONG.replace('I am sorry', '**I am sorry**').replace(/\. /g, '.\n\n');
     expect(quoteOpensReply(romanQuoteExcerpt(marked), marked)).toBe(true); // ** and newlines
