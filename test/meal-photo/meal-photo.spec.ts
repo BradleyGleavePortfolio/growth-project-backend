@@ -403,13 +403,14 @@ describe('MEAL-PHOTO-BE: refused keys and objects', () => {
     expect(isAttachableMealKey(meal, A)).toBe(true);
   });
 
-  it.each([
+  const REFUSED: Array<[string, string, Partial<Obj> | null]> = [
     ['missing', 'missing', null],
     ['not JPEG by type', 'not_jpeg', { contentType: 'image/png' }],
     ['not JPEG by bytes', 'not_jpeg', { head: [0x89, 0x50, 0x4e, 0x47] }],
     ['over 10 MB', 'too_large', { size: 10 * MB + 1 }],
     ['carrying a location', 'has_location', { head: LOCATED['GPS in EXIF, little endian'], size: LOCATED['GPS in EXIF, little endian'].length }],
-  ] as const)('case 7: %s: 422 log.photo.%s and the upload erased now', async (_name, code, obj) => {
+  ];
+  it.each(REFUSED)('case 7: %s: 422 log.photo.%s and the upload erased now', async (_name, code, obj) => {
     const w = world();
     const key = await w.upload(A, obj ?? {});
     if (obj === null) w.objects.delete(key);
