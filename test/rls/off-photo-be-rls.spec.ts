@@ -160,8 +160,9 @@ const phonePayload = { name: 'Offbe live granola', brand_or_restaurant: 'Offbe F
 
   it("case 6: the coach's summary for A returns the same food_item.image_url", async () => {
     const summary = await coach.getClientSummary(K, A, DAY);
-    if (!('today' in summary)) throw new Error('summary refused');
-    const ours = stub<DayEntry[]>(summary.today.entries).filter((e) => e.food_item_id === rowId);
+    const today = 'today' in summary ? summary.today : undefined;
+    if (!today) throw new Error('summary refused');
+    const ours = stub<DayEntry[]>(today.entries).filter((e) => e.food_item_id === rowId);
     expect(ours).toHaveLength(2);
     expect(ours.map((e) => e.food_item.image_url)).toEqual([IMG, IMG]);
   });
