@@ -52,6 +52,12 @@ import { NotificationsService } from '../../src/notifications/notifications.serv
 import { liveDbUrl } from './_support/community-db';
 import { insertLiveUsers } from './_support/community-live-seed';
 import { CommunitySafetyService } from '../../src/community/safety/community-safety.service';
+import { AckService } from '../../src/community/ack/ack.service';
+import { AckRepository } from '../../src/community/ack/ack.repository';
+import { CommunityReactionsService } from '../../src/community/reactions/community-reactions.service';
+import { CommunityReactionsRepository } from '../../src/community/reactions/community-reactions.repository';
+import { CommunityMessagesRepository } from '../../src/community/messages/community-messages.repository';
+import { CommunityPostsRepository } from '../../src/community/posts/community-posts.repository';
 
 const itLive = liveDbUrl() ? describe : describe.skip;
 
@@ -71,6 +77,8 @@ itLive('community v1-3 direct messages (live DB)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let baseUrl: string;
+  let ack: AckService;
+  let reactions: CommunityReactionsService;
 
   const ids = {
     coachA: '',
@@ -157,6 +165,12 @@ itLive('community v1-3 direct messages (live DB)', () => {
         SupabaseService,
         AnalyticsService,
         NotificationsService,
+        AckService,
+        AckRepository,
+        CommunityReactionsService,
+        CommunityReactionsRepository,
+        CommunityMessagesRepository,
+        CommunityPostsRepository,
         Reflector,
         { provide: PrismaService, useValue: prismaForStub },
         { provide: APP_GUARD, useValue: new StubJwtAuthGuard(prismaForStub) },
@@ -183,6 +197,8 @@ itLive('community v1-3 direct messages (live DB)', () => {
     baseUrl = `http://127.0.0.1:${port}`;
 
     prisma = prismaForStub;
+    ack = moduleRef.get(AckService);
+    reactions = moduleRef.get(CommunityReactionsService);
     await seed();
   });
 
@@ -425,6 +441,68 @@ itLive('community v1-3 direct messages (live DB)', () => {
       } finally {
         delete process.env.FEATURE_COMMUNITY_DM;
       }
+    });
+  });
+
+  // COACH-DM-BE (agent 203), cases 1 to 5 on Postgres: the workspace coach (no membership row) and their own client.
+  describe('COACH-DM-BE: the workspace coach and their own client', () => {
+    beforeAll(async () => {
+      await prisma.communityWorkspace.update({ where: { id: ids.wsA }, data: { dm_enabled_default: true } });
+      process.env.FEATURE_COMMUNITY_DM = 'true';
+    });
+    afterAll(async () => {
+      delete process.env.FEATURE_COMMUNITY_DM;
+      await prisma.communityWorkspace.update({ where: { id: ids.wsA }, data: { dm_enabled_default: false } });
+    });
+    const dmBase = () => `/api/community/workspaces/${ids.wsA}/dms`;
+    let fromClient = '';
+    let fromCoach = '';
+
+    it('2. the coach opens the thread with their own client', async () => {
+      const res = await call('POST', dmBase(), asUser(ids.coachA), { recipient_user_id: ids.studentA });
+      expect([200, 201]).toContain(res.status);
+      expect(res.body.thread.other_user_id).toBe(ids.studentA);
+    });
+
+    it('3. the coach sends to that client', async () => {
+      const res = await call('POST', `${dmBase()}/${ids.studentA}/messages`, asUser(ids.coachA), { body: 'Glad it helps' });
+      expect([200, 201]).toContain(res.status);
+      expect(res.body.message.recipient_user_id).toBe(ids.studentA);
+      fromCoach = res.body.message.id;
+    });
+
+    it('4. the client sends to their own coach', async () => {
+      const res = await call('POST', `${dmBase()}/${ids.coachA}/messages`, asUser(ids.studentA), { body: 'Thanks for the plan' });
+      expect([200, 201]).toContain(res.status);
+      expect(res.body.message.recipient_user_id).toBe(ids.coachA);
+      fromClient = res.body.message.id;
+    });
+
+    it('2. both read the thread, both directions', async () => {
+      for (const [reader, other] of [[ids.coachA, ids.studentA], [ids.studentA, ids.coachA]]) {
+        const res = await call('GET', `${dmBase()}/${other}/messages`, asUser(reader));
+        expect(res.status).toBe(200);
+        expect(res.body.messages.map((m: any) => m.id).sort()).toEqual([fromClient, fromCoach].sort());
+      }
+    });
+
+    it('1. the coach lists their DMs: the client\'s thread, not the thread between two clients', async () => {
+      const res = await call('GET', dmBase(), asUser(ids.coachA));
+      expect(res.status).toBe(200);
+      expect(res.body.threads.map((t: any) => t.other_user_id)).toEqual([ids.studentA]);
+      expect(res.body.threads[0].last_message_at).not.toBeNull();
+    });
+
+    it('5. the coach acknowledges and reacts to the client\'s DM', async () => {
+      const coach = await prisma.user.findUniqueOrThrow({ where: { id: ids.coachA } });
+      expect((await ack.applyTransition(coach, fromClient, 'acked')).ack.state).toBe('acked');
+      const state = await reactions.react(coach, 'message', fromClient, '\u{1F44D}');
+      expect(state.target_id).toBe(fromClient);
+    });
+
+    it('guard: another coach passing this community\'s id is refused with 404', async () => {
+      const res = await call('POST', dmBase(), asUser(ids.coachB), { recipient_user_id: ids.studentA });
+      expect(res.status).toBe(404);
     });
   });
 });
