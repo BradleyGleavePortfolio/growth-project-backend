@@ -228,6 +228,8 @@ const EXPECTED_BASIC_FUNCTIONS_WHILE_LOCKED: readonly string[] = [
   'DELETE fasting/:id FastingController',
   'DELETE habits/:id HabitsController',
   'DELETE log/food/:id LogController',
+  // MEAL-PHOTO-BE: a meal photo kept with the client's own food entry (open, as food logging).
+  'DELETE log/food/:id/photo LogController',
   'DELETE nutrition/water/:id WaterController',
   'DELETE routines/:id WorkoutController',
   'DELETE weight/:id WeightController',
@@ -288,11 +290,13 @@ const EXPECTED_BASIC_FUNCTIONS_WHILE_LOCKED: readonly string[] = [
   'POST habits HabitsController',
   'POST habits/:id/log HabitsController',
   'POST log/food LogController',
+  'POST log/food/photo/upload-url LogController',
   'POST nutrition/water WaterController',
   'POST routines WorkoutController',
   'POST weight WeightController',
   'POST workouts WorkoutController',
   'PUT log/food/:id LogController',
+  'PUT log/food/:id/photo LogController',
   'PUT routines/:id WorkoutController',
   'PUT workouts/:id WorkoutController',
 ];
