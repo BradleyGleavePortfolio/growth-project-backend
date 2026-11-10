@@ -178,7 +178,7 @@ describe('ROMAN-QUOTE-SAFETY-BE: anything unproven is classified whole, as today
     other.store(OTHER_MEMBER_CHAT, 'roman', SELF_HARM);
     // The pre-check runs before the chat is checked as the caller's (roman.controller.ts getOwnedSession).
     await expect(other.svc.isSafetyShortCircuit(MEMBER_CALLER, OTHER_MEMBER_CHAT, sent)).resolves.toBe(true);
-    for (const call of other.romanReads()) expect(call[0].where).toMatchObject({ user_id: MEMBER_CALLER.id });
+    for (const call of other.romanReads()) expect(call[0]?.where).toMatchObject({ user_id: MEMBER_CALLER.id });
 
     const older = world();
     older.store(OLDER_CHAT, 'roman', SELF_HARM);
