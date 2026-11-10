@@ -37,6 +37,7 @@ import { PrismaService } from '../prisma.service';
 import { ReconciliationService } from '../connect/fees/reconciliation.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationKind } from '../notifications/notification-kind';
+import { MONEY_CHECK_ROW_TYPE } from '../notifications/current-coach-inbox';
 import { CronLeaseService } from './cron-lease.service';
 
 export const DAILY_JOB_NAME = 'reconciliation-daily';
@@ -249,7 +250,7 @@ export class ReconciliationDailyCron {
       const verdict = dailyVerdict(tally);
       // payload.title: the phone's inbox shows it as the row title (without it a coach_alert row reads "Update").
       const payload = {
-        type: 'money_check',
+        type: MONEY_CHECK_ROW_TYPE,
         title,
         verdict,
         checked: tally.checked,
@@ -271,7 +272,7 @@ export class ReconciliationDailyCron {
         owner.id,
         title,
         body,
-        { type: 'money_check', verdict },
+        { type: MONEY_CHECK_ROW_TYPE, verdict },
         undefined,
         // Money: passes Mute all (README note 1); one push per day, a rerun never posts twice.
         { kind: NotificationKind.COACH_ALERT, passesMuteAll: true, dedupeKey: `money_daily:${day}` },
