@@ -71,6 +71,21 @@ export const ROMAN_MAX_OUTPUT_TOKENS = 1024;
 /** Structured error codes (ENGINEERING_RULES §3 / AGENT_RULES #9 — no raw codes). */
 export const ROMAN_ERROR_RATE_LIMIT = 'ROMAN_RATE_LIMIT';
 export const ROMAN_ERROR_UNAVAILABLE = 'ROMAN_UNAVAILABLE';
+/** In-stream, on a same-key resend only: this turn's first send may still store its reply (SEND-ONCE-PENDING-BE). */
+export const ROMAN_ERROR_REPLY_PENDING = 'ROMAN_REPLY_PENDING';
+/**
+ * SEND-ONCE-PENDING-BE: the completion token count stored on a keyed user turn from its insert until its first send
+ * ends. A real count is never negative, and no reader of a user turn looks at that column.
+ */
+export const ROMAN_REPLY_PENDING_MARK = -1;
+/**
+ * SEND-ONCE-PENDING-BE: how long a mark means "still being written", from the turn's created_at, so a process that
+ * died mid-stream cannot hold a turn pending for ever. 600 s is Node 22 fetch's two 300 s undici defaults (waiting
+ * for headers, then silence after the last byte): the longest one stall can hold a live turn, since nothing else
+ * bounds the stream (the SDK's timer stops at the headers; a tools turn ends within 50 s). The last 60 s, for the
+ * reads before and the store after, is a planner's number. Too long only holds a crashed turn's key a little longer.
+ */
+export const ROMAN_REPLY_PENDING_MAX_MS = 660_000;
 /** 404: the session does not exist for this caller (never 403: no ID probing). */
 export const ROMAN_ERROR_SESSION_NOT_FOUND = 'ROMAN_SESSION_NOT_FOUND';
 /** 503: a delete could not finish; nothing of that chat was removed, retry is safe. */

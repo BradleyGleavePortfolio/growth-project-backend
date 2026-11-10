@@ -65,7 +65,8 @@ import { CommunityChallengesService } from '../src/community/challenges/communit
 import { CommunityChallengesRepository } from '../src/community/challenges/community-challenges.repository';
 import { RomanController } from '../src/roman/roman.controller';
 import { RomanService } from '../src/roman/roman.service';
-import { ROMAN_SSE_FALLBACK_ERROR } from '../src/roman/roman-sse-error';
+import { ROMAN_SSE_FALLBACK_ERROR, ROMAN_SSE_REPLY_PENDING_ERROR } from '../src/roman/roman-sse-error';
+import { ROMAN_REPLY_PENDING_MARK } from '../src/roman/roman.constants';
 import { keyedSendId } from '../src/community/messages/message-idempotency';
 import { AiConsentService } from '../src/ai-consent/ai-consent.service';
 import {
@@ -747,10 +748,12 @@ export const SEND_ONCE_TABLE: SendOnceRow[] = [
     ],
     rule: {
       kind: 'key',
-      says: 'Idempotency-Key -> the turn id and the reply id (romanTurnIds: caller + session + key) under the keyed-write lock; a resend is answered from what is stored before any check: no model call, no counted message, no spend; the stored reply as its done frame, or ROMAN_UNAVAILABLE while there is none; other words under the key: 409; a racing first send gives back what it counted',
+      says: 'Idempotency-Key -> the turn id and the reply id (romanTurnIds: caller + session + key) under the keyed-write lock; a resend is answered from what is stored before any check: no model call, no counted message, no spend; the stored reply as its done frame, ROMAN_REPLY_PENDING while the first send may still store one (the mark on the turn, younger than the bound), or ROMAN_UNAVAILABLE when there is none; other words under the key: 409; a racing first send gives back what it counted',
       server: [
         { file: 'src/roman/roman.controller.ts', holds: /const sentBefore = keyed \? await this\.roman\.findKeyedTurn\(caller, session\.id, keyed\) : null;\s*if \(sentBefore\) return this\.replayTurn\(/ },
         { file: 'src/roman/roman.controller.ts', holds: /if \(keyed && keyedTurn\?\.replayed\) \{[\s\S]*?await this\.roman\.giveBackTurn\(usageDebit\);/ },
+        { file: 'src/roman/roman.controller.ts', holds: /first\.pending \? ROMAN_SSE_REPLY_PENDING_ERROR : ROMAN_SSE_FALLBACK_ERROR/ },
+        { file: 'src/roman/roman.service.ts', holds: /role: 'user', content, id, completionTokens: ROMAN_REPLY_PENDING_MARK/ },
         { file: 'src/roman/roman.service.ts', holds: /keyedWrite\(tx, id, \(\) => this\.ownTurn\(tx, caller, sessionId, id\)/ },
         { file: 'src/roman/roman.service.ts', holds: /interrupted,\s*id: opts\.replyId,/ },
       ],
@@ -804,13 +807,17 @@ export const SEND_ONCE_TABLE: SendOnceRow[] = [
         expect(model).toHaveBeenCalledTimes(2);
         expect(f.rows('romanMessage')).toHaveLength(4);
 
-        // The first send stored the turn but no reply yet: the resend gets the coded frame, no model call.
+        // The first send stored the turn but no reply yet: while its mark says the reply may still come, the
+        // pending frame; a turn with no mark (it ended with no reply) the coded frame. No model call either way.
+        const writing = uuid();
+        f.seed('romanMessage', { id: keyedSendId('roman', USER, SESSION, writing), session_id: SESSION, user_id: USER, role: 'user', content: 'Still there?', completion_tokens: ROMAN_REPLY_PENDING_MARK, created_at: new Date() });
+        expect(await send(writing, 'Still there?')).toEqual([`event: error\ndata: ${JSON.stringify(ROMAN_SSE_REPLY_PENDING_ERROR)}\n\n`]);
         const open = uuid();
         f.seed('romanMessage', { id: keyedSendId('roman', USER, SESSION, open), session_id: SESSION, user_id: USER, role: 'user', content: 'Still there?' });
         const waiting = await send(open, 'Still there?');
         expect(waiting).toEqual([`event: error\ndata: ${JSON.stringify(ROMAN_SSE_FALLBACK_ERROR)}\n\n`]);
         expect(model).toHaveBeenCalledTimes(2);
-        expect(f.rows('romanMessage')).toHaveLength(5);
+        expect(f.rows('romanMessage')).toHaveLength(6);
       },
     },
   },

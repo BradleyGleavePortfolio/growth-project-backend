@@ -14,7 +14,7 @@
  * `X-Request-ID` response header, which RequestIdMiddleware sets before the
  * stream opens and the controller repeats in `writeHead`.
  */
-import { ROMAN_ERROR_UNAVAILABLE } from './roman.constants';
+import { ROMAN_ERROR_REPLY_PENDING, ROMAN_ERROR_UNAVAILABLE } from './roman.constants';
 
 /** Exactly the keys the mobile strict parser accepts, in wire order. */
 export const ROMAN_SSE_ERROR_KEYS = ['code', 'message'] as const;
@@ -28,6 +28,12 @@ export interface RomanSseErrorFrame {
 export const ROMAN_SSE_FALLBACK_ERROR: Readonly<RomanSseErrorFrame> = Object.freeze({
   code: ROMAN_ERROR_UNAVAILABLE,
   message: 'Roman is not available right now.',
+});
+
+/** SEND-ONCE-PENDING-BE: a same-key resend while the first send may still store its reply. Today's words, its own code. */
+export const ROMAN_SSE_REPLY_PENDING_ERROR: Readonly<RomanSseErrorFrame> = Object.freeze({
+  code: ROMAN_ERROR_REPLY_PENDING,
+  message: ROMAN_SSE_FALLBACK_ERROR.message,
 });
 
 function responseBodyOf(err: unknown): unknown {
