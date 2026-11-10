@@ -38,7 +38,8 @@ const codeless = { product_name: 'Offbe codeless crisps', nutriments };
 
 /** Open Food Facts as fetch sees it: search.pl lists `products`; /api/v2/product/<code>.json answers by code or _id. */
 function openFoodFacts(products: Row[], productStatus = 200) {
-  const byCode = new Map(products.map((p) => [String(p.code ?? p._id ?? ''), p]));
+  // Only a product with a code or an _id has a product route; /api/v2/product/.json answers 404.
+  const byCode = new Map(products.filter((p) => p.code || p._id).map((p) => [String(p.code || p._id), p]));
   const productFetches: string[] = [];
   const fetchMock = jest.spyOn(global, 'fetch').mockImplementation(async (url: RequestInfo | URL) => {
     const u = new URL(String(url));
