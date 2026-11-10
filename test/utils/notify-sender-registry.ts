@@ -12,7 +12,7 @@ import type { SendVia } from './notify-sender-scan';
  * The five rules (KT-4):
  * - Mute all (`NotificationPreferences.muted`, owner #171-3): stops every device push except money kinds
  *   (MONEY_NOTIFICATION_KINDS) and a push whose context passes (MUTE_ALL_PASS, or a safety alert key of
- *   SAFETY_ALERT_PUSH_BODY, owner #168-18). It never stops an in-app row. A renewal offer (RENEWAL_OFFER,
+ *   SAFETY_ALERT_PUSH_BODY but community_crisis_text, owner #168-18 and #203-E21). It never stops an in-app row. A renewal offer (RENEWAL_OFFER,
  *   STORE-B2) is not a money pass: Mute all stops it, and it is sent only after the person's yes in the app.
  * - Quiet hours (21:00 to 08:00 in the recipient's zone, OR-113-5): a push waits to 08:00 unless it is urgent
  *   (quietHoursFor in push-quiet-hours.ts, or the nudge QuietHoursPolicy for the senders that use it).

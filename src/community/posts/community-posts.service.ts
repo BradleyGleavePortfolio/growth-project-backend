@@ -263,6 +263,8 @@ export class CommunityPostsService {
       ? await this.posts.createKeyed(keyedId, params)
       : { row: await this.posts.create(params), replayed: false };
     if (replayed) return { ...(await this.replayPost(created, user, workspaceId, input)), ...crisisField(screen) };
+    // #200-S1 / FIX-1232R1 C1: staff are told right after the write, before any later step that can throw.
+    void this.safety.alertStaff(screen, created.id);
     // v1-4 post-write tail — best-effort realtime ping (IDs only, #24/#36) to
     // everyone who may read the Hall now (readablePost: canAccessWorkspace).
     void this.realtime.broadcastCommunityEvent(
@@ -276,7 +278,6 @@ export class CommunityPostsService {
       },
       { distinctId: created.author_id, channelKind: 'workspace' },
     );
-    void this.safety.alertStaff(screen, created.id);
     return { ...(await this.postResponse(user, created)), ...crisisField(screen) };
   }
 
@@ -390,6 +391,8 @@ export class CommunityPostsService {
       ...(input.title !== undefined ? { title: input.title } : {}),
       ...(input.body !== undefined ? { body: input.body } : {}),
     });
+    // #200-S1 / FIX-1232R1 C1: staff are told right after the write, before any later step that can throw.
+    void this.safety.alertStaff(screen, updated.id);
     void this.realtime.broadcastCommunityEvent(
       { workspaceId: updated.workspace_id, cohortId: updated.cohort_id ?? null }, // C6-BVIS: a space post pings its space
       COMMUNITY_BROADCAST_EVENTS.postUpdated,
@@ -400,7 +403,6 @@ export class CommunityPostsService {
       },
       { distinctId: updated.author_id, channelKind: 'workspace' },
     );
-    void this.safety.alertStaff(screen, updated.id);
     return { ...(await this.postResponse(user, updated)), ...crisisField(screen) };
   }
 
@@ -445,6 +447,8 @@ export class CommunityPostsService {
       ? await this.messages.createKeyedComment(keyedId, params)
       : { row: await this.messages.createComment(params), replayed: false };
     if (replayed) return { ...(await this.replayComment(created, user, post, body)), ...crisisField(screen) };
+    // #200-S1 / FIX-1232R1 C1: staff are told right after the write, before any later step that can throw.
+    void this.safety.alertStaff(screen, created.id);
     // v1-4 post-write tail — realtime ping to the post's readers: its space, or
     // the Hall (a comment is a CommunityMessage; the author refetches via REST).
     void this.realtime.broadcastCommunityEvent(
@@ -471,7 +475,6 @@ export class CommunityPostsService {
         workspaceId: post.workspace_id,
       });
     }
-    void this.safety.alertStaff(screen, created.id);
     const answer = CommunityCommentResponseSchema.parse({
       comment: (await this.commentViews(user, [created]))[0],
     });

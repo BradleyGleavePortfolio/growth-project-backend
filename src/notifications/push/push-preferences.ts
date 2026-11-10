@@ -8,7 +8,7 @@
 // (or "mute all", for a kind it mutes) while a push waits suppresses it.
 
 import { MONEY_NOTIFICATION_KINDS } from '../notification-kind';
-import { SAFETY_ALERT_PUSH_BODY } from './lock-screen-copy';
+import { COMMUNITY_CRISIS_ALERT_KEY, SAFETY_ALERT_PUSH_BODY } from './lock-screen-copy';
 
 // DUNNING-KIND-FIX: kinds with no column of their own keep their own name as the prefix, so only `muted`
 // stops them, and only their non-money pushes (muteAllStops; src/notifications/README.md defaults tables).
@@ -126,11 +126,15 @@ export function renewalOffersConsented(prefs: Record<string, unknown> | null | u
   return at instanceof Date || (typeof at === 'string' && at !== '');
 }
 
-/** Owner #168-18 (a Roman safety alert, any SAFETY_ALERT_PUSH_BODY type) and owner #171-3 (MUTE_ALL_PASS). */
+/**
+ * Owner #168-18 (a Roman safety alert, any SAFETY_ALERT_PUSH_BODY type) and owner #171-3 (MUTE_ALL_PASS).
+ * Owner #203-E21 ("Op 1: normal push"): the community crisis staff alert keeps its line but not the pass.
+ */
 function contextPassesMuteAll(context: unknown): boolean {
   const c = (context ?? {}) as { passesMuteAll?: unknown; safetyAlert?: unknown };
   if (c.passesMuteAll === true) return true;
   const safety = c.safetyAlert;
+  if (safety === COMMUNITY_CRISIS_ALERT_KEY) return false;
   return typeof safety === 'string' && Object.prototype.hasOwnProperty.call(SAFETY_ALERT_PUSH_BODY, safety);
 }
 

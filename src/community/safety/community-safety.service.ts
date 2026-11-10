@@ -8,7 +8,6 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
-import { randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma.service';
 import { NotificationKind } from '../../notifications/notification-kind';
 import { NotificationsService } from '../../notifications/notifications.service';
@@ -258,7 +257,8 @@ export class CommunitySafetyService {
    * text that matched keeps its 422, with crisis_flag beside CONTENT_REJECTED's
    * keys, and staff are told now, as nothing is written afterwards. A text
    * that passes is answered with the screen; the caller spreads crisisField
-   * on its own answer and calls alertStaff in its post-write tail.
+   * on its own answer and calls alertStaff right after its write (and its
+   * replayed return), before any later step that can throw.
    *
    * `edit`: the post or message as it will be stored and as it is now. An edit
    * pages staff only when the text before it did not match.
@@ -302,6 +302,15 @@ export class CommunitySafetyService {
    * code) except the poster gets one inbox row and one push: the approved
    * generic line, ids only, no text, class or name. Never throws and is never
    * awaited by a write; a failure is one log line by closed code.
+   *
+   * #203-E21 ("Op 1: normal push"): the row carries `type` (the alert's key),
+   * which the inbox rule lists it by (current-coach-inbox.ts), so the push's
+   * tap to the notification center finds it. The push is a normal one: Mute
+   * all stops it (push-preferences.ts) and quiet hours hold it, and its dedupe
+   * key is the poster and the UTC day, so each staff account gets at most one
+   * push per poster per day (a repeat is 'duplicate'). Every match still
+   * writes its rows. A match that reached nobody (no row written and no push
+   * queued, deferred or duplicate) is one warn line, by code and counts only.
    */
   async alertStaff(screen: CrisisScreen, rowId: string | null): Promise<void> {
     if (!screen.page) return;
@@ -319,15 +328,18 @@ export class CommunitySafetyService {
         this.logger.warn('community.crisis_alert outcome=no_recipient');
         return;
       }
-      const write = randomUUID();
+      const dedupeKey = `community_crisis:${screen.posterId}:${new Date().toISOString().slice(0, 10)}`;
       let failure: unknown;
+      let reached = 0;
       for (const { id } of staff) {
+        let got = false;
         try {
-          await notifications.createNotification({
+          const row = await notifications.createNotification({
             user_id: id,
             kind: NotificationKind.COACH_ALERT,
             body: SAFETY_ALERT_INBOX_BODY[COMMUNITY_CRISIS_ALERT_KEY],
             payload: {
+              type: COMMUNITY_CRISIS_ALERT_KEY,
               title: COMMUNITY_CRISIS_ALERT_TITLE,
               severity: 'critical',
               surface: screen.surface,
@@ -336,24 +348,27 @@ export class CommunitySafetyService {
             },
             channel: 'inapp',
           });
+          got = row !== null;
         } catch (err) {
           failure = err;
         }
         try {
-          await notifications.sendPush({
+          const push = await notifications.sendPush({
             user_id: id,
             kind: NotificationKind.COACH_ALERT,
             body: SAFETY_ALERT_PUSH_BODY[COMMUNITY_CRISIS_ALERT_KEY],
-            // No alertId: there is no CoachAlert row for a tap to open.
+            // No alertId: there is no CoachAlert row for a tap to open; the tap opens the inbox that lists the row.
             context: { safetyAlert: COMMUNITY_CRISIS_ALERT_KEY },
-            dedupe_key: `community_crisis:${write}`,
-            urgent: true,
+            dedupe_key: dedupeKey,
           });
+          got = got || push !== null;
         } catch (err) {
           failure = err;
         }
+        if (got) reached += 1;
       }
       if (failure) this.logger.warn(`community.crisis_alert outcome=send_failed ${describeFailure(failure)}`);
+      if (reached === 0) this.logger.warn(`community.crisis_alert outcome=none_delivered staff=${staff.length}`);
     } catch (err) {
       this.logger.warn(`community.crisis_alert outcome=failed ${describeFailure(err)}`);
     }

@@ -535,6 +535,8 @@ export class CommunityMessagesService {
         ? await this.repo.createKeyedCohortMessage(keyedId, data)
         : { row: await this.repo.createCohortMessage(data), replayed: false };
     if (replayed) return this.replay(created, user, cohort, body, parent, image, alert, screen);
+    // #200-S1 / FIX-1232R1 C1: staff are told right after the write, before any later step that can throw.
+    void this.safety.alertStaff(screen, created.id);
     if (alert) await this.spacePush?.markHighAlert(created.id);
     // v1-6 coach-inbox producer: a coach/owner message into the cohort answers
     // the cohort's outstanding client messages, so stamp coach_replied_at on
@@ -566,7 +568,6 @@ export class CommunityMessagesService {
     // C-S-PUSH-4: tell the other members about the new group message. Fire-and-
     // forget after the write; never blocks or fails the send.
     void this.pushCohortMessage(created, cohort.workspace_id, created.cohort_id ?? cohort.id);
-    void this.safety.alertStaff(screen, created.id);
     const sent = CommunityMessageResponseSchema.parse({ message: this.view(created, undefined, undefined, await this.imagesOf([created])) });
     return { ...sent, ...(alert ? { high_alert_reach: alert.reach } : {}), ...crisisField(screen) };
   }
@@ -734,6 +735,8 @@ export class CommunityMessagesService {
       );
     }
     const updated = await this.repo.updateBody(m, body);
+    // #200-S1 / FIX-1232R1 C1: staff are told right after the write, before any later step that can throw.
+    void this.safety.alertStaff(screen, updated.id);
     void this.realtime.broadcastCommunityEvent(
       { workspaceId: cohort.workspace_id, cohortId: cohort.id },
       COMMUNITY_BROADCAST_EVENTS.messageUpdated,
@@ -744,7 +747,6 @@ export class CommunityMessagesService {
       },
       { distinctId: updated.sender_id, channelKind: 'cohort' },
     );
-    void this.safety.alertStaff(screen, updated.id);
     // FX-1139 (C-2): a live photo keeps its `image` on the edit answer, as on GET.
     const edited = CommunityMessageResponseSchema.parse({ message: this.view(updated, undefined, undefined, await this.imagesOf([updated])) });
     return { ...edited, ...crisisField(screen) };

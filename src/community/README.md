@@ -27,9 +27,12 @@ where each lives. Code: `src/community/safety/` and
   edit), DMs, challenge comments, wins. It is the word list and Roman's crisis
   check together, so no surface can have one without the other (#200-S1 op 1).
   A text the crisis check marks emergency or self_harm, in any field, gives
-  the poster's own write answer (or its 422) `crisis_flag: true` and pages
-  every owner-role account once in generic words (`alertStaff`, ids only, no
-  text). Never in a row, list, realtime event or push to anyone else.
+  the poster's own write answer (or its 422) `crisis_flag: true` and tells
+  every owner-role account in generic words (`alertStaff`, ids only, no
+  text), right after the write: one inbox row per match, listed by the inbox
+  rule (payload.type), and a normal push (owner #203-E21: Mute all stops it,
+  quiet hours hold it, at most one per staff account per poster per UTC day).
+  The field is never in a row, list, realtime event or push to anyone else.
   COMMUNITY_CRISIS_CHECK_ENABLED: unset = on, only `false` turns it off.
 - Rejection: HTTP **422** `{ error: 'content_rejected', code:
 'community.content.rejected', message }`. Nothing is written. The app shows

@@ -196,6 +196,8 @@ export class CommunityDmsService {
       ? await this.dms.createKeyedDm(keyedId, params)
       : { row: await this.dms.createDm(params), replayed: false };
     if (replayed) return { ...this.replay(created, user, dmKey, body), ...crisisField(screen) };
+    // #200-S1 / FIX-1232R1 C1: staff are told right after the write, before any later step that can throw.
+    void this.safety.alertStaff(screen, created.id);
     // v1-4 post-write tail (after gateDmRead, inside authoriseDm). Best-effort
     // realtime refetch ping to the RECIPIENT's private topic only — IDs only,
     // never the DM body (#24/#36). DMs have no dedicated broadcast event in the
@@ -224,7 +226,6 @@ export class CommunityDmsService {
       otherUserId: created.sender_id,
       workspaceId,
     });
-    void this.safety.alertStaff(screen, created.id);
     const answer = CommunityDmMessageResponseSchema.parse({
       message: this.messageView(created),
     });

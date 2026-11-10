@@ -132,8 +132,9 @@ export const SAFETY_ALERT_PUSH_BODY: Readonly<Record<string, string>> = {
   roman_crisis_reply: 'Urgent safety alert for one of your clients. Open TGP to see details.',
   // FR-1152 (#172-5): the photo safety alert reuses the approved urgent line.
   community_photo_safety: 'Urgent safety alert for one of your clients. Open TGP to see details.',
-  // #200-S1 op 1: staff, not a coach; no "tap" or "see details" while the row opens nothing.
-  [COMMUNITY_CRISIS_ALERT_KEY]: 'Urgent safety alert in the community. Open TGP to see it.',
+  // #200-S1 op 1: staff, not a coach; no "tap" or "see details" while the row opens nothing. #203-E21: a normal
+  // push (Mute all and quiet hours apply), so no "Urgent" (operator ruling, approved #203-E15).
+  [COMMUNITY_CRISIS_ALERT_KEY]: 'Safety alert in the community. Open TGP to see it.',
 };
 
 // Owner 57d: the coach's inbox row for the same alerts (no name, no message).
