@@ -65,7 +65,7 @@ REVOKE ALL ON FUNCTION app.community_response_dm_party("CommunityResponseTargetT
 REVOKE ALL ON FUNCTION app.community_response_dm_party("CommunityResponseTargetType", uuid) FROM anon;
 GRANT EXECUTE ON FUNCTION app.community_response_dm_party("CommunityResponseTargetType", uuid) TO authenticated, service_role;
 COMMENT ON FUNCTION app.community_response_dm_party("CommunityResponseTargetType", uuid) IS
-  '20270502011400: false only for a reaction on a community DM (target_type message or comment, a community_messages row of scope dm, matched on id alone) that the caller neither sent nor received; true for every other reaction. DEFINER, so the caller''s row security on community_messages cannot hide a cohort row.';
+  '20270502011400: false only for a reaction on a community DM (target_type message or comment, a community_messages row of scope dm, matched on id alone) that the caller neither sent nor received, and true for every other reaction. DEFINER, so the caller''s row security on community_messages cannot hide a cohort row.';
 
 ALTER POLICY "community_responses_coach_all" ON "community_responses"
   USING (app.is_community_workspace_coach("workspace_id") AND app.community_response_dm_party("target_type", "target_id"));
