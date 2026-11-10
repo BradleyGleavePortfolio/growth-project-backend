@@ -9,8 +9,10 @@
 import { FEATURE_ROMAN_CHAT_ENABLED_ENV, FEATURE_ROMAN_CRISIS_ALERT_ENV } from '../../src/roman/roman.feature';
 import { ROMAN_SAFETY_TEMPLATES } from '../../src/roman/guardrails/safety-router';
 import * as router from '../../src/roman/guardrails/safety-router';
-import { romanQuoteExcerpt as srcExcerpt, quoteLimitFor } from '../../src/roman/guardrails/roman-quote';
-import { CHAT, MODEL_SAYS, NEUTRAL_BODY, NEUTRAL_REPLY, romanQuoteExcerpt, withRomanQuote, world } from './roman-quote-safety.harness';
+import { romanQuoteExcerpt as srcExcerpt } from '../../src/roman/guardrails/roman-quote';
+import {
+  CHAT, MODEL_SAYS, NEUTRAL_BODY, NEUTRAL_REPLY, ROMAN_MESSAGE_MAX_LENGTH, ROMAN_QUOTE_MAX, romanQuoteExcerpt, withRomanQuote, world,
+} from './roman-quote-safety.harness';
 
 jest.mock('../../src/ai/ai-crisis-router', () => {
   const actual = jest.requireActual('../../src/ai/ai-crisis-router');
@@ -27,6 +29,8 @@ jest.mock('../../src/roman/guardrails/safety-router', () => {
 });
 const classify = router.classifySafety as unknown as jest.Mock<router.SafetyRouteResult, [string, string?]>;
 const read = () => classify.mock.calls.map((c) => c[0]);
+/** The phone's limit for a body (withRomanQuote, harness copy); the behaviour cases use only the phone's copy. */
+const phoneLimit = (body: string) => Math.min(ROMAN_QUOTE_MAX, ROMAN_MESSAGE_MAX_LENGTH - body.length - 4);
 
 const FLAG = FEATURE_ROMAN_CHAT_ENABLED_ENV;
 const CRISIS = FEATURE_ROMAN_CRISIS_ALERT_ENV;
@@ -53,6 +57,19 @@ const ZORVEX_LONG = `Zorvex is the name of the stretch we did on Monday.${FILLER
 const ZORVEX_SHORT = 'Zorvex is the name of the stretch we did on Monday. Hold it for thirty seconds each side.';
 /** Neutral, longer than the cut. */
 const LONG_NEUTRAL = `Here is your plan for the week.${FILLER}${FILLER}`;
+const NEAR_CAP = 'Thanks, I will do that. '.repeat(325).trim(); // 7,799 characters: the phone's limit shrinks to 197
+/** Case 3: every form the phone makes. */
+const FORMS: Array<[string, string, string, unknown]> = [
+  ['a whole reply under the limit', NEUTRAL_REPLY, NEUTRAL_BODY, null],
+  ['a cut at 200', LONG_NEUTRAL, NEUTRAL_BODY, null],
+  ['a limit shrunk by a body near 7,800 characters', LONG_NEUTRAL, NEAR_CAP, null],
+  ['** and __', '**Squats** first, then __rest__ for two minutes and walk it off.', NEUTRAL_BODY, null],
+  ['newlines', 'Line one of the plan.\n\nLine two of the plan.\nLine three.', NEUTRAL_BODY, null],
+  ['whitespace runs', 'Warm   up\t\tfor  five minutes,   then  stretch.', NEUTRAL_BODY, null],
+  ['a Copilot row with [n]', 'Your protein is on track [1]. Keep the same breakfast [2].', NEUTRAL_BODY, { sources: [] }],
+  ['a reply that itself ends in U+2026', 'We can pick the rest of this up tomorrow…', NEUTRAL_BODY, null],
+  ['a long reply that itself ends in U+2026', `${LONG_NEUTRAL} More tomorrow…`, NEUTRAL_BODY, null],
+];
 
 describe('the made-up lists stand in for the real ones', () => {
   it('the two-token pattern matches only across both tokens; the long replies are longer than the cut', () => {
@@ -92,30 +109,22 @@ describe('ROMAN-QUOTE-READERS-BE: a quote proves only as the phone\'s exact exce
     expect(done?.text).toBe(ROMAN_SAFETY_TEMPLATES.emergency);
   });
 
-  const NEAR_CAP = 'Thanks, I will do that. '.repeat(325); // 7,800 characters
-  it.each([
-    ['a whole reply under the limit', NEUTRAL_REPLY, NEUTRAL_BODY, null],
-    ['a cut at 200', LONG_NEUTRAL, NEUTRAL_BODY, null],
-    ['a limit shrunk by a body near 7,800 characters', LONG_NEUTRAL, NEAR_CAP.trim(), null],
-    ['** and __', '**Squats** first, then __rest__ for two minutes and walk it off.', NEUTRAL_BODY, null],
-    ['newlines', 'Line one of the plan.\n\nLine two of the plan.\nLine three.', NEUTRAL_BODY, null],
-    ['whitespace runs', 'Warm   up\t\tfor  five minutes,   then  stretch.', NEUTRAL_BODY, null],
-    ['a Copilot row with [n]', 'Your protein is on track [1]. Keep the same breakfast [2].', NEUTRAL_BODY, { sources: [] }],
-    ['a reply that itself ends in U+2026', 'We can pick the rest of this up tomorrow…', NEUTRAL_BODY, null],
-    ['a long reply that itself ends in U+2026', `${LONG_NEUTRAL} More tomorrow…`, NEUTRAL_BODY, null],
-  ])('3: %s: proven, every check reads the body alone, and the src excerpt is the phone\'s', async (_name, reply, body, copilot) => {
+  it.each(FORMS)('3: %s: proven, every check reads the body alone', async (_name, reply, body, copilot) => {
     const w = world();
     w.store(CHAT, 'roman', reply, copilot);
     // The room's view of the reply (GET messages: a Copilot row without its [n]), quoted the phone's way.
     const view = (await w.list()).messages.find((m) => m.role === 'roman')!.content;
-    const limit = quoteLimitFor(body);
-    expect(srcExcerpt(view, limit)).toBe(romanQuoteExcerpt(view, limit));
     const sent = withRomanQuote(view, body);
     expect(sent.startsWith('> ')).toBe(true);
     const { done } = await w.send(sent);
     expect(read().length).toBeGreaterThan(0);
     expect(read().every((t) => t === body)).toBe(true);
     expect(done?.text).toBe(MODEL_SAYS);
+  });
+
+  it.each(FORMS)('3: the src excerpt equals the phone\'s copy for this form: %s', (_name, reply, body) => {
+    const view = reply.replace(/ ?\[\d+\]/g, ''); // the room's view of a Copilot row (withoutCites)
+    expect(srcExcerpt(view, phoneLimit(body))).toBe(romanQuoteExcerpt(view, phoneLimit(body)));
   });
 
   it('3: the src excerpt equals the phone\'s copy on every limit from 1 to 200 and past the reply\'s length', () => {
@@ -138,7 +147,7 @@ describe('ROMAN-QUOTE-READERS-BE: a quote proves only as the phone\'s exact exce
     const w = world();
     w.store(CHAT, 'roman', ZORVEX_LONG);
     const body = 'k'.repeat(n);
-    expect(quoteLimitFor(body)).toBeLessThan(1);
+    expect(phoneLimit(body)).toBeLessThan(1);
     // The phone sends no quote here; "…" is what an unguarded excerpt at that limit would be.
     expect(romanQuoteExcerpt(ZORVEX_LONG, 1)).toBe('…');
     const sent = `> …\n\n${body}`;
