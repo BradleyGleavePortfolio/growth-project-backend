@@ -34,6 +34,7 @@ import { CheckoutIdempotencyService } from './checkout-idempotency.service';
 import { ConnectPreflightService } from './connect-preflight.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationKind } from '../notifications/notification-kind';
+import { HELD_FOR_REFUND_EVENT } from '../notifications/current-coach-inbox';
 import { CheckoutService, chargeQuote } from '../checkout/checkout.service';
 import { FeePolicyService } from '../connect/fees/fee-policy.service';
 import { PurchaseFanoutService } from '../packages/purchase-fanout.service';
@@ -2371,7 +2372,7 @@ export class GuestCheckoutService {
         kind: NotificationKind.COACH_ALERT,
         body: `A buyer paid for ${checkout.package.name}, but their account already has another coach, so nothing was delivered. The payment needs a refund.`,
         payload: {
-          event: 'guest_purchase_held_for_refund',
+          event: HELD_FOR_REFUND_EVENT,
           reason: 'buyer_has_other_coach',
           guest_checkout_id: checkout.id,
           payment_intent_id: checkout.stripe_payment_intent_id,

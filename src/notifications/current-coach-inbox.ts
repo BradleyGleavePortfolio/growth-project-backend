@@ -27,6 +27,10 @@ import { publicSpacesLedBy } from '../community/space-safety-alerts';
  */
 export const CLIENT_LINKS = [COACH_CLIENT_LINK, 'tgp://messages/'];
 export const SESSION_LINKS = ['tgp://coach/sessions/', 'tgp://sessions/'];
+/** payload.type of the daily money-check row to the owner account (reconciliation-daily.cron.ts alertOwner). */
+export const MONEY_CHECK_ROW_TYPE = 'money_check';
+/** payload.event of a coach's held-for-refund notice (guest-checkout.service.ts holdForRefund). */
+export const HELD_FOR_REFUND_EVENT = 'guest_purchase_held_for_refund';
 
 // One pair per Prisma client (the process has one), like the DI singletons.
 const access = new WeakMap<PrismaService, [SubCoachScopeService, SchedulingAccessService]>();
@@ -78,6 +82,9 @@ export async function currentCoachInbox(db: PrismaService, userId: string): Prom
         deep_link: { not: null, notIn: SESSION_LINKS.flatMap((p) => left.map((id) => p + id)) },
         NOT: [...CLIENT_LINKS, COACH_SPACE_ALERT_LINK].map((p) => ({ deep_link: { startsWith: p } })),
       },
+      // MONEY-ROW-INBOX-BE: two link-free money notices that name no client; each is only its own recipient's row.
+      { deep_link: null, kind: NotificationKind.COACH_ALERT, payload: { path: ['type'], equals: MONEY_CHECK_ROW_TYPE } },
+      { deep_link: null, kind: NotificationKind.COACH_ALERT, payload: { path: ['event'], equals: HELD_FOR_REFUND_EVENT } },
       { deep_link: null, kind: { not: NotificationKind.COACH_ALERT } },
       ...mine.map((id) => ({ deep_link: null, payload: { path: ['client_id'], equals: id } })),
       { deep_link: null, kind: NotificationKind.COACH_ALERT, payload: { path: ['type'], equals: COMMUNITY_CRISIS_ALERT_KEY } },
