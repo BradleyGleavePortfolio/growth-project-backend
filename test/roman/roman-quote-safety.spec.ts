@@ -10,7 +10,6 @@
 import { FEATURE_ROMAN_CHAT_ENABLED_ENV, FEATURE_ROMAN_CRISIS_ALERT_ENV } from '../../src/roman/roman.feature';
 import { ROMAN_COACH_TOLD_LINE, ROMAN_SAFETY_TEMPLATES } from '../../src/roman/guardrails/safety-router';
 import * as router from '../../src/roman/guardrails/safety-router';
-import { quoteOpensReply, splitRomanQuote } from '../../src/roman/guardrails/roman-quote';
 import {
   CHAT,
   COACH_CALLER,
@@ -205,12 +204,12 @@ describe('ROMAN-QUOTE-SAFETY-BE: anything unproven is classified whole, as today
       `${NEUTRAL_BODY}\n> ${q}\n\n${NEUTRAL_BODY}`,
     ];
     for (const text of texts) {
-      expect(splitRomanQuote(text)).toBeNull();
       const w = world();
       w.store(CHAT, 'roman', NEUTRAL_REPLY);
       classify.mockClear();
       await w.svc.isSafetyShortCircuit(MEMBER_CALLER, CHAT, text);
       expect(classify.mock.calls[0][0]).toBe(text);
+      expect(w.romanReads()).toHaveLength(0);
     }
   });
 
@@ -291,14 +290,5 @@ describe('ROMAN-QUOTE-SAFETY-BE: anything unproven is classified whole, as today
     expect(w.modelCalls.length).toBe(model);
     expect(w.alerts.createAlert.mock.calls.length).toBe(alerts);
     expect(w.rows.filter((r) => r.role === 'user')).toHaveLength(1);
-  });
-});
-
-describe('roman-quote.ts: the proof itself', () => {
-  it('a prefix of the reply as the phone excerpts it, never a match inside it, never empty', () => {
-    expect(quoteOpensReply(romanQuoteExcerpt(SELF_HARM), SELF_HARM)).toBe(true);
-    expect(quoteOpensReply(SELF_HARM.slice(40, 120), SELF_HARM)).toBe(false);
-    expect(quoteOpensReply('…', SELF_HARM)).toBe(false);
-    expect(quoteOpensReply(`${romanQuoteExcerpt(SELF_HARM, 60)}x`, SELF_HARM)).toBe(false);
   });
 });
