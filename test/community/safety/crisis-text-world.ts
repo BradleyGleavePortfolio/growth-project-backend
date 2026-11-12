@@ -1,8 +1,8 @@
 /**
  * CRISIS-STAFF-OFF-BE (operator 203): the crisis table's world, moved here unchanged from
  * community-crisis-text.table.spec.ts (its world() and PATHS, the ROT13 samples, the ids and asSent) so that spec and
- * crisis-staff-off.spec.ts drive one copy. Only `export` was added. Samples stay ROT13-encoded and are described,
- * never quoted ([R22]).
+ * crisis-staff-off.spec.ts drive one copy. Only `export` and the type of `delivery` (so tsc can name world()'s type)
+ * were added. Samples stay ROT13-encoded and are described, never quoted ([R22]).
  */
 import { randomUUID } from 'crypto';
 import { Logger } from '@nestjs/common';
@@ -91,7 +91,8 @@ export function world(opts: WorldOptions = {}) {
       return new Date(clock.at.getTime());
     }
   }
-  const delivery = new Clocked(stub<ConstructorParameters<typeof PushDeliveryService>[0]>(db), {
+  // Typed as its base class (as staff-alert-world.ts does) so the exported world()'s type can be named (tsc TS4094).
+  const delivery: PushDeliveryService = new Clocked(stub<ConstructorParameters<typeof PushDeliveryService>[0]>(db), {
     send: jest.fn(async (m: unknown[]) => m.map(() => ({ status: 'ok' as const, id: 't' }))),
     getReceipts: jest.fn(async () => ({})),
   });
