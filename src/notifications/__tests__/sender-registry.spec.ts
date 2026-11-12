@@ -55,9 +55,6 @@
  * (src/nudges/coach-nudge-send.ts), registered; the CoachNudge row it also writes is not a send.
  * Never skip a case, loosen a check or add to FUNNEL_SITES to make this green; that is the trap KT-4 names.
  */
-// CRISIS-STAFF-OFF-BE: the community crisis staff alert is off for v1 (owner #203-E34). This file turns it on so
-// the off-for-v1 sender's code stays tested (the operator's choice, not an owner word).
-jest.mock('../push/community-crisis-staff-alert', () => ({ COMMUNITY_CRISIS_STAFF_ALERT_ON: true }));
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
