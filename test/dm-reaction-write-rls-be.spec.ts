@@ -56,6 +56,18 @@ type Matrix = Record<string, number | string>;
 const pinned = (t: Record<R, string>): Matrix =>
   Object.fromEntries(REACTIONS.flatMap((r) => READERS.map((k, i): [string, number] => [`${r}:${k}`, Number(t[r][i])])));
 
+const DIR = join(__dirname, '..', 'prisma', 'migrations', '20270502011500_community_reaction_writes_need_target');
+// A migration file's statements; BEGIN/COMMIT become the one transaction apply() opens.
+const statements = (file: string) =>
+  readFileSync(join(DIR, file), 'utf8').replace(/^--.*$/gm, '').split(/;\s*$/m)
+    .map((s) => s.trim()).filter((s) => s && !/^(BEGIN|COMMIT)$/i.test(s));
+const TABLES = ['community_responses', 'community_messages', 'community_posts'];
+const TARGET_OPEN = 'app.community_response_target_open(workspace_id, target_type, target_id, user_id)';
+// The two policies as the deparser prints them, line breaks folded.
+const INSERT_POLICY = { name: 'community_responses.community_responses_target_open_insert', permissive: 'RESTRICTIVE', cmd: 'INSERT',
+  roles: '{public}', qual: null, check: `((user_id = app.current_user_id()) AND ${TARGET_OPEN})` };
+const UPDATE_POLICY = { name: 'community_responses.community_responses_target_open_update', permissive: 'RESTRICTIVE', cmd: 'UPDATE',
+  roles: '{public}', qual: null, check: TARGET_OPEN };
 
 describe('DM-REACTION-WRITE-RLS-BE: a reaction row is written only where the API lets its reactor make it', () => {
   let db: Awaited<ReturnType<typeof ls1197Database>>;
@@ -136,6 +148,10 @@ describe('DM-REACTION-WRITE-RLS-BE: a reaction row is written only where the API
   const DELETE = `DELETE FROM "community_responses" WHERE "id" = $1::uuid`;
 
   const su = (sql: string, ...params: unknown[]) => prisma.$executeRawUnsafe(sql, ...params);
+  const apply = (file: string) =>
+    prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      for (const s of statements(file)) await tx.$executeRawUnsafe(s);
+    });
   const ban = (k: Key) => su(
     `INSERT INTO "community_workspace_bans" ("id", "workspace_id", "user_id", "banned_by_id") VALUES ($1::uuid, $2::uuid, $3, $4)
      ON CONFLICT ("workspace_id", "user_id") DO UPDATE SET "lifted_at" = NULL`, randomUUID(), ws.K, id[k], id.K);
@@ -513,5 +529,90 @@ describe('DM-REACTION-WRITE-RLS-BE: a reaction row is written only where the API
     }
     expect(banned).toEqual(pinned(READS_BANNED));
     expect(await matrix()).toEqual(pinned(READS));
+  });
+
+  describe('the round trip: HEAD, then down.sql as the superuser (BASE), then migration.sql (HEAD again)', () => {
+    type Policy = { name: string; permissive: string; cmd: string; roles: string; qual: string | null; check: string | null };
+    const flat = (sql: string | null) => sql && sql.replace(/\s+/g, ' ');
+    const policies = () => prisma.$queryRaw<Policy[]>`
+      SELECT p."tablename" || '.' || p."policyname" AS "name", p."permissive", p."cmd", p."roles"::text AS "roles",
+             p."qual", p."with_check" AS "check"
+      FROM pg_policies p WHERE p."schemaname" = 'public' AND p."tablename"::text = ANY(${TABLES}::text[]) ORDER BY 1`
+      .then((list) => list.map((p) => ({ ...p, qual: flat(p.qual), check: flat(p.check) })));
+    const NEW = [INSERT_POLICY, UPDATE_POLICY].map((p) => p.name);
+    const others = (list: Policy[]) => list.filter((p) => !NEW.includes(p.name));
+    type Fn = { definer: boolean; volatile: string; config: string[]; owner: string; authed: boolean; service: boolean; anon: boolean; pub: boolean };
+    const fnInfo = () => prisma.$queryRawUnsafe<Fn[]>(
+      `SELECT p."prosecdef" AS "definer", p."provolatile"::text AS "volatile", p."proconfig" AS "config",
+              pg_get_userbyid(p."proowner")::text AS "owner",
+              has_function_privilege('authenticated', p."oid", 'EXECUTE') AS "authed",
+              has_function_privilege('service_role', p."oid", 'EXECUTE') AS "service",
+              has_function_privilege('anon', p."oid", 'EXECUTE') AS "anon",
+              EXISTS (SELECT 1 FROM aclexplode(p."proacl") a WHERE a."grantee" = 0) AS "pub"
+       FROM pg_proc p JOIN pg_namespace n ON n."oid" = p."pronamespace"
+       WHERE n."nspname" = 'app' AND p."proname" = 'community_response_target_open'`);
+    const state = async () => {
+      const plain = await matrix();
+      await ban('B');
+      await block('A', 'M');
+      let banned: Matrix = {};
+      try {
+        banned = await matrix();
+      } finally {
+        await unblock('A', 'M');
+        await lift('B');
+      }
+      return {
+        policies: await policies(), fn: await fnInfo(), plain, banned, outsiders: await outsiders(),
+        writes: { MdAB: await react(backend('M'), 'message', msg.dAB), KasA: await react(backend('K'), 'message', msg.inS, { user: 'A' }),
+          KmovesRsToRandom: await dryRun(backend('K'), UPDATE_SET(`"target_id" = $2::uuid`), resp.rS, randomUUID()) },
+      };
+    };
+    const at: { head?: Awaited<ReturnType<typeof state>>; base?: Awaited<ReturnType<typeof state>>; again?: Awaited<ReturnType<typeof state>> } = {};
+    beforeAll(async () => {
+      at.head = await state();
+      await apply('down.sql');
+      try {
+        at.base = await state();
+      } finally {
+        await apply('migration.sql');
+      }
+      at.again = await state();
+      console.log(`DM-REACTION-WRITE-RLS-BE round trip ${JSON.stringify({ head: at.head.writes, base: at.base.writes, again: at.again.writes })}`);
+    });
+
+    it('F1: the chain prints both policies RESTRICTIVE, INSERT and UPDATE, no USING, WITH CHECK pinned; down.sql drops both; migration.sql brings both back', () => {
+      const pick = (list: Policy[], name: string) => list.find((p) => p.name === name);
+      for (const s of [at.head!, at.again!]) {
+        expect(pick(s.policies, INSERT_POLICY.name)).toEqual(INSERT_POLICY);
+        expect(pick(s.policies, UPDATE_POLICY.name)).toEqual(UPDATE_POLICY);
+      }
+      expect(at.base!.policies.filter((p) => NEW.includes(p.name))).toEqual([]);
+      expect(others(at.base!.policies)).toEqual(others(at.head!.policies));
+      expect(at.again!.policies).toEqual(at.head!.policies);
+    });
+
+    it('F1: at BASE the writes the fix refuses go in again (W1\'s M on dAB, W11, U2\'s random id); HEAD again refuses them', () => {
+      const refused = { MdAB: DENIED, KasA: DENIED, KmovesRsToRandom: DENIED };
+      expect(at.head!.writes).toEqual(refused);
+      expect(at.base!.writes).toEqual({ MdAB: 1, KasA: 1, KmovesRsToRandom: 1 });
+      expect(at.again!.writes).toEqual(refused);
+    });
+
+    it('R1 (round trip): every read cell at HEAD equals BASE and HEAD again, plain and with a ban and a block set', () => {
+      for (const s of [at.head!, at.base!, at.again!]) {
+        expect(s.plain).toEqual(pinned(READS));
+        expect(s.banned).toEqual(pinned(READS_BANNED));
+        expect(s.outsiders).toEqual(at.head!.outsiders);
+      }
+    });
+
+    it('F2: the function is SECURITY DEFINER, owned by postgres, search_path pinned, run by authenticated and service_role, not anon or PUBLIC; gone after down.sql, back after migration.sql', () => {
+      const want: Fn = { definer: true, volatile: 's', config: ['search_path=pg_catalog, public'], owner: 'postgres',
+        authed: true, service: true, anon: false, pub: false };
+      expect(at.head!.fn).toEqual([want]);
+      expect(at.base!.fn).toEqual([]);
+      expect(at.again!.fn).toEqual([want]);
+    });
   });
 });
