@@ -2366,18 +2366,27 @@ export class GuestCheckoutService {
     if (isGuestTrialIntent(checkout.stripe_payment_intent_id)) {
       await this.deliverOutcomeMail(checkout, 'trial-not-started', { opening: true });
     }
+    // HELD-ROW-WORDS-BE: a held web trial (a SetupIntent) charged nothing, so
+    // its coach is told the trial was not started, not that a refund is owed.
+    const trial = isGuestTrialIntent(checkout.stripe_payment_intent_id);
     await this.notifications
       .createNotification({
         user_id: checkout.package.coach_id,
         kind: NotificationKind.COACH_ALERT,
-        body: `A buyer paid for ${checkout.package.name}, but their account already has another coach, so nothing was delivered. The payment needs a refund.`,
+        body: trial
+          ? `A buyer tried to start a free trial of ${checkout.package.name}, but their account already has another coach, so the trial was not started and nothing was charged.`
+          : `A buyer paid for ${checkout.package.name}, but their account already has another coach, so nothing was delivered. The payment needs a refund.`,
         payload: {
           event: HELD_FOR_REFUND_EVENT,
           reason: 'buyer_has_other_coach',
           guest_checkout_id: checkout.id,
           payment_intent_id: checkout.stripe_payment_intent_id,
+          // The phone's row title (without it a coach_alert row reads "Update").
+          title: trial ? 'Free trial not started' : 'Refund needed',
         },
         channel: 'inapp',
+        // A package name runs to 120 characters: keep the closing words.
+        sender_words: true,
       })
       .catch((err) => {
         this.logger.warn(

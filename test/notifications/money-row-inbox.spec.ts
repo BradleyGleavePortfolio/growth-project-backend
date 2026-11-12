@@ -39,6 +39,9 @@ const REVIEW: DailyTally = { checked: 3, ok: 2, drift: 1, unknown: 0, failed: 0,
 const NOW = new Date('2026-11-09T11:00:00.000Z');
 const HELD_BODY =
   'A buyer paid for Strength 12, but their account already has another coach, so nothing was delivered. The payment needs a refund.';
+// HELD-ROW-WORDS-BE: a held web trial charged nothing, and its row says so (W4).
+const HELD_TRIAL_BODY =
+  'A buyer tried to start a free trial of Strength 12, but their account already has another coach, so the trial was not started and nothing was charged.';
 
 function world(opts: { blockedWith?: string[] } = {}) {
   const rows: Row[] = [];
@@ -139,20 +142,21 @@ describe('MONEY-ROW-INBOX-BE: the money-check row and the held-for-refund notice
   });
 
   it.each([
-    ['a paid checkout', 'pi_held_1'],
-    // HELD-ROW-WORDS-BE (Found, not fixed): a held web trial charged nothing, yet the body says it was paid.
-    ['a held web trial', 'seti_held_1'],
-  ])('3: the coach lists, counts and marks the held-for-refund row for %s (body as written)', async (_v, intent) => {
+    ['a paid checkout', 'pi_held_1', HELD_BODY, 'Refund needed'],
+    // HELD-ROW-WORDS-BE: a held web trial charged nothing; its row names itself and says so.
+    ['a held web trial', 'seti_held_1', HELD_TRIAL_BODY, 'Free trial not started'],
+  ])('3: the coach lists, counts and marks the held-for-refund row for %s (body and title as written)', async (_v, intent, body, title) => {
     const w = world();
     await w.holdForRefund(intent);
     const listed = await w.notifications.listNotifications(COACH, {});
     expect(listed.items).toHaveLength(1);
-    expect(listed.items[0]).toMatchObject({ user_id: COACH, kind: 'coach_alert', deep_link: null, body: HELD_BODY });
+    expect(listed.items[0]).toMatchObject({ user_id: COACH, kind: 'coach_alert', deep_link: null, body });
     expect(listed.items[0].payload).toEqual({
       event: 'guest_purchase_held_for_refund',
       reason: 'buyer_has_other_coach',
       guest_checkout_id: `gc-${intent}`,
       payment_intent_id: intent,
+      title,
     });
     expect(listed.unreadCount).toBe(1);
     expect(await w.notifications.getUnreadCount(COACH)).toBe(1);

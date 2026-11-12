@@ -170,7 +170,7 @@ endpoints take the user from the signed token instead.
 | `NotificationDigestLog`   | `id, user_id, digest_kind, window_date, status, sent_at, error, created_at` | Idempotency guard. Unique on `(user_id, digest_kind, window_date)`. Status is `sending`, then `sent` or `failed`. |
 | `NotificationPreferences` | `user_id, muted, milestone_push, …`                                         | Per-user settings: `_inapp`, `_push` and `_email` flags for most setting families (`workout_reminder` has only `_inapp` and `_push`, `plan_renewal` only `_push`), `muted` (Mute all), the older `*_enabled` reminder switches, `new_client_alerts`, `quiet_hours_start` / `quiet_hours_end` and the time zone. |
 
-`Notification.body` is capped to 160 chars by `NotificationsService.createNotification`, except when the sender passes `sender_words: true` (only the daily money check, `checkout/reconciliation-daily.cron.ts`, so the inbox row holds the same whole words as its push; the option is not stored). The emitters set `Notification.deep_link` with the `tgp://` scheme so the mobile app routes to the right screen.
+`Notification.body` is capped to 160 chars by `NotificationsService.createNotification`, except when the sender passes `sender_words: true` (only two senders: the daily money check, `checkout/reconciliation-daily.cron.ts`, so the inbox row holds the same whole words as its push; and a coach's held-for-refund notice, `storefront/guest-checkout.service.ts` holdForRefund, whose package name runs to 120 characters before its closing words; the option is not stored). The emitters set `Notification.deep_link` with the `tgp://` scheme so the mobile app routes to the right screen.
 
 ---
 
