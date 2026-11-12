@@ -6,6 +6,9 @@
  * Sample messages are stored ROT13-encoded (as community-content-filter.ts stores its terms) and are described,
  * never quoted. Rows run the real services, the real word list, the real classifier and the real notifications stack.
  */
+// CRISIS-STAFF-OFF-BE: the community crisis staff alert is off for v1 (owner #203-E34). This file turns it on so
+// the off-for-v1 sender's code stays tested (the operator's choice, not an owner word).
+jest.mock('../../../src/notifications/push/community-crisis-staff-alert', () => ({ COMMUNITY_CRISIS_STAFF_ALERT_ON: true }));
 import { randomUUID } from 'crypto';
 import { Logger, ServiceUnavailableException, UnprocessableEntityException } from '@nestjs/common';
 import type { User } from '@prisma/client';
