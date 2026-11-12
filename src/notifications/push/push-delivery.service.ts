@@ -12,7 +12,8 @@ import {
   FetchExpoPushClient,
   deadlineSignal,
 } from './expo-push-client';
-import { PushContext, SAFETY_ALERT_PUSH_BODY, lockScreenCopy } from './lock-screen-copy';
+import { COMMUNITY_CRISIS_ALERT_KEY, PushContext, SAFETY_ALERT_PUSH_BODY, lockScreenCopy } from './lock-screen-copy';
+import { COMMUNITY_CRISIS_STAFF_ALERT_ON } from './community-crisis-staff-alert';
 import { androidChannelFor } from './push-channels';
 import { quietHoursFor } from './push-quiet-hours';
 import { muteAllStops, pushAllowedByPreferences } from './push-preferences';
@@ -536,6 +537,8 @@ export class PushDeliveryService {
 
   /** Whether a due push is still owed by its sender's own check; 'unread' when a read fails (ruling R4). */
   private async stillOwed(row: OutboxRow, context: OutboxContext | null): Promise<'owed' | 'ended' | 'unread'> {
+    // CRISIS-STAFF-OFF-BE (#203-E34): the community crisis staff alert is off for v1; one queued before is not sent.
+    if (!COMMUNITY_CRISIS_STAFF_ALERT_ON && context?.safetyAlert === COMMUNITY_CRISIS_ALERT_KEY) return 'ended';
     if (row.kind === NotificationKind.PLAN_RENEWAL) {
       let due: boolean;
       try {
