@@ -239,6 +239,26 @@ describe('DM-REACTION-WRITE-RLS-BE: a reaction row is written only where the API
     }).toEqual({ CdCL: 1, CdAB: DENIED, LinS: DENIED });
   });
 
+  // Added for mutation (b): every W2 cell is also refused by another test (the party test, community_can_access or an
+  // author who does not stay in W2), so this is the row only the workspace match refuses: the reactor may open the
+  // target's place in W and is a coach of W2, and the author (a coach) stays anywhere.
+  it('W2b: another community, the workspace match alone: L (a helper row in S) on K\'s message in S refused as W2, written as W', async () => {
+    const inSK = randomUUID();
+    const helper = randomUUID();
+    const got: Record<string, number | string> = {};
+    await say(inSK, ws.K, 'K', { scope: 'cohort', cohort: space.S });
+    try {
+      await su(`INSERT INTO "community_memberships" ("id", "workspace_id", "cohort_id", "user_id", "role", "updated_at")
+        VALUES ($1::uuid, $2::uuid, $3::uuid, $4, 'assistant'::"CommunityMembershipRole", now())`, helper, ws.K, space.S, id.L);
+      got.LinSKasW = await react(backend('L'), 'message', inSK);
+      got.LinSKasW2 = await react(backend('L'), 'message', inSK, { ws: ws.L });
+    } finally {
+      await su(`DELETE FROM "community_memberships" WHERE "id" = $1::uuid`, helper);
+      await su(`DELETE FROM "community_messages" WHERE "id" = $1::uuid`, inSK);
+    }
+    expect(got).toEqual({ LinSKasW: 1, LinSKasW2: DENIED });
+  });
+
   it('W3: a space the reactor is not in: N on inS and pS refused; N on inS2, M on inS and pS written', async () => {
     expect({
       NinS2: await react(backend('N'), 'message', msg.inS2),
