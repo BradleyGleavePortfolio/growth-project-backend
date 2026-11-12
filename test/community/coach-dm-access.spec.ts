@@ -32,6 +32,7 @@ import type { PrismaService } from '../../src/prisma.service';
 import type { CommunityRealtimeService } from '../../src/community/realtime/community-realtime.service';
 import type { CommunityNotificationsService } from '../../src/community/notifications/community-notifications.service';
 import type { ExecutionContext } from '@nestjs/common';
+import { incomingLinkPath, resolveAppLink } from '../utils/phone-link-routes';
 
 const SWITCHES = ['FEATURE_COMMUNITY_DM', 'FEATURE_COMMUNITY_API', 'FEATURE_COMMUNITY_PUSH'] as const;
 const saved: Record<string, string | undefined> = {};
@@ -359,34 +360,16 @@ describe('COACH-DM-BE part 2: the Studio list row, no new field', () => {
 });
 
 /**
- * The phone's read of a push link, copied from growth-project-mobile src/navigation/incomingLinks.ts at
- * 93de2cbd8ddfda52865895d697fd51fb49ccc37d (mobile main on 11-09): incomingLinkPath (:5-17) as written, and from
- * resolveAppLink the segment split (:40) and the community dm test (:83-85). The phone opens the thread with
+ * The phone's read of a push link: incomingLinkPath and resolveAppLink as the phone has them (one copy,
+ * test/utils/phone-link-routes.ts, which names its mobile sha and lines). The phone opens the thread with
  * CommunityDmThread {recipientId}, the other person of the reader's thread.
  */
-function incomingLinkPath(url: string): string | null {
-  const match = /^([a-z][a-z0-9+.-]*):\/\/([^/?#]*)([^?#]*)([?#].*)?$/i.exec(url);
-  if (!match || /[\s\\]/.test(url)) return null;
-  const [, rawScheme, host, path, suffix = ''] = match;
-  const scheme = rawScheme.toLowerCase();
-  if (scheme === 'https') {
-    if (host.toLowerCase() !== 'app.trygrowthproject.com') return null;
-    return path.replace(/^\/+/, '') + suffix;
-  }
-  if (scheme !== 'tgp' && scheme !== 'com.growthproject.app') return null;
-  if (/[@:%]/.test(host)) return null;
-  return (host + path).replace(/^\/+/, '') + suffix;
-}
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function phoneDmTarget(url: string): { screen: string; params: { recipientId: string } } | null {
   const path = incomingLinkPath(url);
-  if (path === null) return null;
-  const segments = path.split(/[?#]/, 1)[0].replace(/\/$/, '').split('/').map(decodeURIComponent);
-  const [first, id] = segments;
-  if (segments.length === 3 && first === 'community' && UUID.test(segments[2]) && id === 'dm') {
-    return { screen: 'CommunityDmThread', params: { recipientId: segments[2] } };
-  }
-  return null;
+  const target = path === null ? null : resolveAppLink(path, 'student');
+  return target?.screen === 'CommunityDmThread' && target.params?.recipientId
+    ? { screen: target.screen, params: { recipientId: target.params.recipientId } }
+    : null;
 }
 
 describe('COACH-DM-BE part 3: the DM push link is the one the phone reads', () => {
