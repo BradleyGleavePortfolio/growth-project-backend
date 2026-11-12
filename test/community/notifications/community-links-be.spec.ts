@@ -271,7 +271,7 @@ describe('COMMUNITY-LINKS-BE: the post reply (F1, F3)', () => {
 const ID = () => randomUUID();
 function communityCalls(member: string, other: string, ws: string) {
   const challenge = ID();
-  const event = ID();
+  const eventId = ID();
   const cohort = ID();
   return [
     {
@@ -292,8 +292,8 @@ function communityCalls(member: string, other: string, ws: string) {
         recipientId: member,
         kind: NotificationKind.COMMUNITY_EVENT_STARTING_SOON,
         targetType: 'event',
-        targetId: event,
-        deepLink: `tgp://community/events/${event}`,
+        targetId: eventId,
+        deepLink: `tgp://community/events/${eventId}`,
         otherUserId: other,
         workspaceId: ws,
       },
