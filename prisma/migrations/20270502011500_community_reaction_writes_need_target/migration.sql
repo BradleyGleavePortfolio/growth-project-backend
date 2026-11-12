@@ -93,6 +93,6 @@ COMMENT ON POLICY "community_responses_target_open_insert" ON "community_respons
 CREATE POLICY "community_responses_target_open_update" ON "community_responses" AS RESTRICTIVE FOR UPDATE TO public
   WITH CHECK (app.community_response_target_open("workspace_id", "target_type", "target_id", "user_id"));
 COMMENT ON POLICY "community_responses_target_open_update" ON "community_responses" IS
-  '20270502011500: restrictive, WITH CHECK only. An updated reaction row may land only where its own reactor could make it; no USING, so it changes no row an UPDATE reaches.';
+  '20270502011500: restrictive, WITH CHECK only. An updated reaction row may land only where its own reactor could make it. No USING, so it changes no row an UPDATE reaches.';
 
 COMMIT;
