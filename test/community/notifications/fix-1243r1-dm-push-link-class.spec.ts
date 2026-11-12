@@ -2,12 +2,12 @@
  * FIX-1243R1 (b#1243, class-first): what must not change when the DM device push gains its deep link
  * (LS-1243R1 B1 = LO-1243R1 C1, server half).
  *
- * The promise: a push sent through sendCommunityPush carries deepLink in its device data exactly when its kind is
- * community_dm_received and the sender gave a link. These cases pin the two edges that stay as at main:
+ * The promise (widened by COMMUNITY-LINKS-BE F3 to every community kind): a push sent through sendCommunityPush
+ * carries deepLink in its device data exactly when the sender gave a link. These cases pin the two edges that stay as at main:
  *   a. a DM push given no link: the device data has no deepLink key and is the ids and the enum only;
  *   b. the coach's send-time re-check (pushStillCurrent, current-coach-inbox.ts) passes a DM push that now carries
  *      tgp://community/dm/<id> without reading anything, the same answer it gives today for data with no link.
- * The other community kinds keep their device data as it is (community-push-mute.spec.ts, a post reply with a link).
+ * The other community kinds carry their own link the same way (community-links-be.spec.ts, community-push-mute.spec.ts).
  *
  * Rig as test/community/notifications/ls-1243r1-dm-push-tap-link.spec.ts: the real NotificationsService gate over a
  * stubbed Prisma, only pushToUser spied.

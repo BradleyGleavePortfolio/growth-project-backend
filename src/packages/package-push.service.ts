@@ -751,6 +751,8 @@ export class PackagePushService {
           kind: NotificationKind.DRIP_RELEASED,
           body,
           deep_link: 'tgp://client/library',
+          // COMMUNITY-LINKS-BE (F2): the tap opens this purchase's Deliverables.
+          tap_purchase_id: drop.client_purchase_id,
         });
       } catch (err) {
         this.logger.warn(

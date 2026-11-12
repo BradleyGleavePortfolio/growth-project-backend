@@ -110,6 +110,8 @@ describe('B-S-PUSH-1 community push and "Mute all notifications"', () => {
       category: NotificationCategory.CLIENT_BOT,
       target_type: 'post',
       target_id: POST,
+      // COMMUNITY-LINKS-BE (F3): every community push carries its own link, this test's input.
+      deepLink: `tgp://community/posts/${POST}`,
     }, undefined, {
       // PF-3-BE: the one send path; Mute all is read again when it goes.
       kind: NotificationKind.COMMUNITY_POST_REPLIED,

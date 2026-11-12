@@ -470,7 +470,8 @@ export class CommunityPostsService {
         kind: NotificationKind.COMMUNITY_POST_REPLIED,
         targetType: 'post',
         targetId: post.id,
-        deepLink: `tgp://community/posts/${post.id}`,
+        // COMMUNITY-LINKS-BE (F1): the form the phone resolves (resolveAppLink: CommunityThread {postId}).
+        deepLink: `tgp://community/thread/${post.id}`,
         otherUserId: created.sender_id,
         workspaceId: post.workspace_id,
       });

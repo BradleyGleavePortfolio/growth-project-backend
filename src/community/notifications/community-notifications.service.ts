@@ -24,7 +24,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { NotificationsService } from '../../notifications/notifications.service';
-import { NotificationKind } from '../../notifications/notification-kind';
 import { AnalyticsService } from '../../analytics/analytics.service';
 import {
   COMMUNITY_TELEMETRY_EVENTS,
@@ -259,7 +258,10 @@ export class CommunityNotificationsService {
       }
 
       // 6) Deliver via the one send path (the push outbox). data carries IDs,
-      // the enum and, for a DM, the thread's link (a user id, no user text).
+      // the enum and the push's own link, the row's string (ids, no user
+      // text). No actionScreen or actionParams: the phone opens the kind's
+      // 'Community' screen and a phone half may follow the link
+      // (COMMUNITY-LINKS-BE F3, the FIX-1243R1 ruling for every community push).
       const result = await this.notifications.pushToUser(
         recipientId,
         title,
@@ -269,7 +271,7 @@ export class CommunityNotificationsService {
           category: defaults.category,
           target_type: targetType,
           target_id: targetId,
-          ...(kind === NotificationKind.COMMUNITY_DM_RECEIVED && input.deepLink ? { deepLink: input.deepLink } : {}),
+          ...(input.deepLink ? { deepLink: input.deepLink } : {}),
         },
         undefined,
         // PF-3-BE: the one send path. Mute all alone, read again when it goes
