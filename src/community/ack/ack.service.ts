@@ -186,8 +186,10 @@ export class AckService {
     // away writing in the Hall, a DM or a space that is not public). Every
     // refusal answers the same 404 as an absent message, before the idempotent
     // no-op below, so a retry on an already-stamped message hands back no
-    // timestamps either.
-    await this.safety.assertVisibleTo(user.id, m.sender_id, NOT_FOUND, placeOf(m));
+    // timestamps either. COMMUNITY-DM-RULES-BE (203-D12): a DM row's place test
+    // is the DM rule above (assertDmReadable keeps the coach's thread with a
+    // former client open), so for it the gate asks the block alone.
+    await this.safety.assertVisibleTo(user.id, m.sender_id, NOT_FOUND, m.scope === 'dm' ? undefined : placeOf(m));
     return m;
   }
 
