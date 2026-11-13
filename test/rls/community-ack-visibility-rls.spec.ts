@@ -144,13 +144,16 @@ type Route = (typeof ROUTES)[number];
     }
   });
 
-  it('a client who moves away: Hall-side words (private space, DM) refused, even a retry on a stamp; public-space words stay ackable', async () => {
+  // #203-E49 (203-D12, COMMUNITY-DM-RULES-BE): the owner's newer rule keeps a coach's DM thread with a former client
+  // who still holds a row in the community (M's in S) open, the coach's acknowledgement included, so dM, which this
+  // case refused after the move, now stays ackable; every other cell is as before.
+  it('a client who moves away: Hall-side words (private space) refused, even a retry on a stamp; public-space words and their DM thread with the coach stay ackable', async () => {
     expect((await mark('mM', 'seen')).ack.state).toBe('seen'); // control, before the move
     expect((await mark('dM', 'seen')).ack.state).toBe('seen');
     const before = await stamps('mM');
     await prisma.$executeRaw`UPDATE "User" SET "coach_id" = ${id.B} WHERE "id" = ${id.M}`;
     await expectRefused('mM'); // 'seen' here is the idempotent retry: no timestamp comes back
-    await expectRefused('dM');
+    expect((await mark('dM', 'acked')).ack.state).toBe('acked');
     expect(await stamps('mM')).toEqual(before);
     expect((await mark('pM', 'acked')).ack.state).toBe('acked');
   });

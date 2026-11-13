@@ -133,6 +133,16 @@ const SHAPES: Record<string, Shape> = {
     plain: () => [{ n: 0 }],
     ruled: () => [],
   },
+  // COMMUNITY-DM-RULES-BE: CommunityAccessService.formerClientsIn's shape. The function is the rule and reads none of
+  // RAW_SQL_ASKS; the author holds no DM thread with the coach, so whatever rule is applied the answer is none.
+  'app.community_dm_former_client': {
+    run: (w, a) => raw(w.db, [
+      `SELECT t."k" AS "id" FROM unnest(`, `::text[], `, `::text[]) AS t("c", "k")
+       WHERE app.community_dm_former_client(`, `::uuid, t."c", t."k")`,
+    ], [w.coach.id], [a.id], w.wsId),
+    plain: () => [],
+    ruled: () => [],
+  },
   'app.community_can_access': {
     run: (w, a, n) => raw(w.db, [
       `SELECT t."c"::text || ':' || t."u" AS "k" FROM unnest(`, `::uuid[], `, `::text[]) AS t("c", "u")
