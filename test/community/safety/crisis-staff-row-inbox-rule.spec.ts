@@ -4,6 +4,9 @@
  * listed. The row is written by the real alertStaff and createNotification; every inbox read is the real
  * NotificationsService method over rows filtered the way Postgres reads the where (test/utils/notification-where.ts).
  */
+// CRISIS-STAFF-OFF-BE: the community crisis staff alert is off for v1 (owner #203-E34). This file turns it on so
+// the off-for-v1 sender's code stays tested (the operator's choice, not an owner word).
+jest.mock('../../../src/notifications/push/community-crisis-staff-alert', () => ({ COMMUNITY_CRISIS_STAFF_ALERT_ON: true }));
 import type { ModuleRef } from '@nestjs/core';
 import { NotFoundException } from '@nestjs/common';
 import { CommunitySafetyService } from '../../../src/community/safety/community-safety.service';

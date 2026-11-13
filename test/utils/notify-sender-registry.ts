@@ -383,16 +383,20 @@ export const SENDERS: SenderRow[] = [
     fn: 'CommunitySafetyService.alertStaff',
     via: ['createNotification', 'sendPush'],
     kinds: ['coach_alert'],
-    sends: 'inapp + push',
+    // CRISIS-STAFF-OFF-BE (owner #203-E34): off for v1, so production sends nothing; the rules below are the code's
+    // when it is turned on. The funnel entry sends this push through sendPush itself (not through alertStaff) and
+    // counts a due outbox row as sent, so it runs as it did with the switch off; the registry has no outcome for
+    // "dropped at send", which crisis-staff-off.spec.ts O2 drives.
+    sends: 'nothing for v1 (#203-E34: COMMUNITY_CRISIS_STAFF_ALERT_ON is false, alertStaff returns at its first line and the push worker drops a queued one as obsolete); when on: inapp + push',
     muteAll: { does: 'stops', why: 'a normal push (owner #203-E21 "Op 1: normal push"): its safety key keeps the line but not the Mute all pass (push-preferences.ts); the inbox row stays' },
     quietHours: { does: 'held', why: 'not urgent: held to 08:00 in the recipient zone (quietHoursFor); at most one push per staff account per poster per UTC day' },
     mute: NO_MUTE,
     blockBan: { does: 'n/a', why: 'a safety alert about a member must reach TGP staff; it holds no text or name' },
-    recipient: 'every owner-role account (not deleted, not scheduled for deletion), minus the poster (#200-S1 op 1)',
+    recipient: 'nobody for v1 (#203-E34); when on: every owner-role account (not deleted, not scheduled for deletion), minus the poster (#200-S1 op 1)',
     funnel: [
       { kind: NotificationKind.COACH_ALERT, context: { safetyAlert: 'community_crisis_text' }, urgent: false, muteAll: 'stops', quietHours: 'held', note: 'community text that matched the crisis check' },
     ],
-    covered: 'funnel table here; test/community/safety/community-crisis-text.table.spec.ts drives every write path',
+    covered: 'funnel table here (sendPush with this context); test/community/safety/crisis-staff-off.spec.ts drives the off path (every caller, the queued push dropped at send); community-crisis-text.table.spec.ts drives every write path with it on',
   },
   {
     file: 'src/checkout/reconciliation-daily.cron.ts',
