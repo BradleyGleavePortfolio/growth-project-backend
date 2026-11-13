@@ -273,7 +273,7 @@ export class ReconciliationDailyCron {
         title,
         body,
         // MONEY-TAP-BE: the tap opens the owner's Notifications list, where this day's money row is.
-        { type: MONEY_CHECK_ROW_TYPE, verdict, ...pushTapData(NotificationKind.COACH_ALERT, undefined, undefined) },
+        { type: MONEY_CHECK_ROW_TYPE, verdict },
         undefined,
         // Money: passes Mute all (README note 1); one push per day, a rerun never posts twice.
         { kind: NotificationKind.COACH_ALERT, passesMuteAll: true, dedupeKey: `money_daily:${day}` },
