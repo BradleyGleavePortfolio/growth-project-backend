@@ -8,6 +8,9 @@
  * and NotificationsService.createNotification, then lists the inbox through the real listNotifications with a tiny
  * evaluator of the Prisma where it builds. A control row (a link-free row of another kind) proves the evaluator.
  */
+// CRISIS-STAFF-OFF-BE: the community crisis staff alert is off for v1 (owner #203-E34). This file turns it on so
+// the off-for-v1 sender's code stays tested (the operator's choice, not an owner word).
+jest.mock('../../../src/notifications/push/community-crisis-staff-alert', () => ({ COMMUNITY_CRISIS_STAFF_ALERT_ON: true }));
 import type { ModuleRef } from '@nestjs/core';
 import { CommunitySafetyService } from '../../../src/community/safety/community-safety.service';
 import { NotificationsService } from '../../../src/notifications/notifications.service';

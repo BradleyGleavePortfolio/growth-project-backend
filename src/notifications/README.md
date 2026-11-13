@@ -29,7 +29,8 @@ only `muted`. `NotificationsService.pushToCoach` has no caller outside its spec.
 | `coach_digest` | off | off | on | `digest_*` | email muted | Coach (after the email goes out, one inbox row on the `email` channel says the summary was sent) |
 | `workout_reminder` | on | on | n/a | `workout_reminder_*` | row kept, push muted (note 2) | Client (C05 item 7; the family has `workout_reminder_inapp` and `workout_reminder_push` only) |
 | `workout_assigned` | on | on | n/a | `workout_reminder_*` | row kept, push muted | Client (FU-WORKLOG-126: the workout reminder switches; one inbox row on the `push` channel, so `workout_reminder_push` gates the row too; the workout builder and the program library also queue the device push, the AI assign-workout path writes only the row) |
-| `meal_plan_assigned` | on | n/a | n/a | none | row kept | Client (one row from the AI assign-meal-plan path, written on the `push` channel; it shows in the inbox, and no device push is sent) |
+| `meal_plan_assigned` | on | on | n/a | none | row kept, push muted | Client (MEAL-PLAN-NOTICE-BE: the coach's own assign and the approved AI assign, through `tellMealPlanChange` in `real-meal-plans/meal-plan-notice.ts`: one in-app row and one push, at most one per client and link in 10 minutes) |
+| `meal_plan_updated` | on | on | n/a | none | row kept, push muted | Client (MEAL-PLAN-NOTICE-BE: a coach's edit, archive or end that changes what their meal plan shows today, through `tellMealPlanChange`; the coach's own clients only) |
 | `drip_released` | on | on | off | `drip_released_*` | row kept, push muted | Client (buyer) |
 | `coach_new_purchase` | on | on | off | `coach_new_purchase_*` | passes (money) | Coach |
 | `booking_requested`, `booking_confirmed`, `booking_declined`, `booking_cancelled`, `booking_rescheduled`, `booking_reminder_24h`, `booking_reminder_1h`, `booking_link_needed`, `booking_link_ready`, `booking_request_expired` | on | on | off | `booking_*` | row kept, push muted | Client + Coach |
@@ -67,7 +68,9 @@ Mute all (`muted`, owner ruling #171-3) never stops a row, since every row is li
 (`MONEY_NOTIFICATION_KINDS` in `notification-kind.ts`, "passes (money)") on any channel; no email sender reads it except the digests and the nudges (note 2).
 It mutes every other push, at enqueue and again at send time (`muteAllStops` in `push-preferences.ts`), except a push whose context
 passes Mute all: a safety alert (`context.safetyAlert`, any key of `SAFETY_ALERT_PUSH_BODY` but `community_crisis_text`, owner rulings
-#168-18 and #203-E21: the community crisis staff alert is a normal push, at most one per poster per UTC day) or a money notice
+#168-18 and #203-E21: the community crisis staff alert is a normal push, at most one per poster per UTC day; it is off for v1, owner
+#203-E34, CRISIS-STAFF-OFF-BE: `COMMUNITY_CRISIS_STAFF_ALERT_ON` is false, so it is never queued and the worker drops one still queued
+as obsolete; COACH-REPORT-TO-OWNER, v1.1, is a different sender) or a money notice
 sent on a kind that is not money (`context.passesMuteAll`, the `MUTE_ALL_PASS` flag). The Mute all column says what the core gate does;
 `test/dunning-kind-fix-notification-kinds.spec.ts` walks every kind through it and fails when a new kind is not classed money or not,
 and drives every safety key and every money sender with Mute all on.

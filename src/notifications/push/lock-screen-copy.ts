@@ -101,6 +101,11 @@ const TEMPLATES: Record<string, LockScreenCopy> = {
     title: 'New meal plan',
     body: `Your coach added a meal plan for you. ${OPEN}`,
   },
+  // MEAL-PLAN-NOTICE-BE: no plan, note or meal name (MPN-W1, MPN-W2).
+  [NotificationKind.MEAL_PLAN_UPDATED]: {
+    title: 'Meal plan updated',
+    body: `Your coach updated your meal plan. ${OPEN}`,
+  },
   // AUDIT-09-125: no content title, buyer name or amount on the lock screen.
   [NotificationKind.DRIP_RELEASED]: {
     title: 'New content',

@@ -17,6 +17,7 @@ import {
   SAFETY_ALERT_INBOX_BODY,
   SAFETY_ALERT_PUSH_BODY,
 } from '../../notifications/push/lock-screen-copy';
+import { COMMUNITY_CRISIS_STAFF_ALERT_ON } from '../../notifications/push/community-crisis-staff-alert';
 import { describeFailure } from '../../observability/log-pii';
 import { classifySafety } from '../../roman/guardrails/safety-router';
 import { checkCommunityText } from './community-content-filter';
@@ -313,7 +314,7 @@ export class CommunitySafetyService {
    * queued, deferred or duplicate) is one warn line, by code and counts only.
    */
   async alertStaff(screen: CrisisScreen, rowId: string | null): Promise<void> {
-    if (!screen.page) return;
+    if (!COMMUNITY_CRISIS_STAFF_ALERT_ON || !screen.page) return;
     try {
       const notifications = this.moduleRef?.get(NotificationsService, { strict: false });
       if (!notifications) {
