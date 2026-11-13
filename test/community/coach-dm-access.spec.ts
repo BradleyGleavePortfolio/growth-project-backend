@@ -367,6 +367,7 @@ describe('COACH-DM-BE part 2: the Studio list row, no new field', () => {
       other_user_id: w.viewer.id,
       created_at: null,
       last_message_at: at,
+      other_display_name: 'Viewer Member',
     }]);
   });
 });
@@ -392,13 +393,13 @@ describe('COACH-DM-BE part 3: the DM push link is the one the phone reads', () =
 
   it('3 (link). the coach\'s DM push to the client carries tgp://community/dm/<coach id>, never the thread key', async () => {
     await w.dms.send(w.coach, w.wsId, w.viewer.id, 'Glad it helps');
-    expect(w.pushes.map((p) => [p.recipientId, p.deepLink])).toEqual([[w.viewer.id, `tgp://community/dm/${w.coach.id}`]]);
+    expect(w.pushes.map((p) => [p.recipientId, p.deepLink])).toEqual([[w.viewer.id, `tgp://community/dm/${w.coach.id}?workspace=${w.wsId}`]]);
     expect(w.pushes[0].deepLink).not.toContain(CommunityDmsRepository.dmKey(w.wsId, w.coach.id, w.viewer.id));
   });
 
   it('4 (link). the client\'s DM push to their coach carries tgp://community/dm/<client id>', async () => {
     await w.dms.send(w.viewer, w.wsId, w.coach.id, 'Thanks for the plan');
-    expect(w.pushes.map((p) => [p.recipientId, p.deepLink])).toEqual([[w.coach.id, `tgp://community/dm/${w.viewer.id}`]]);
+    expect(w.pushes.map((p) => [p.recipientId, p.deepLink])).toEqual([[w.coach.id, `tgp://community/dm/${w.viewer.id}?workspace=${w.wsId}`]]);
   });
 
   it('6. a client recipient\'s link resolves through the copied phone parse to CommunityDmThread {recipientId: sender}', async () => {
