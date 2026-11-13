@@ -89,6 +89,12 @@ function makePrismaMock(store: MiniStore, opts: MockOpts = {}): any {
       findUnique: jest.fn(async ({ where }: any) =>
         store.users.get(where.id) ?? null,
       ),
+      // MEAL-PLAN-NOTICE-BE: the meal plan notice re-reads that the client is the coach's own (tellMealPlanChange).
+      findMany: jest.fn(async ({ where }: any) =>
+        [...store.users.values()].filter(
+          (u) => where.id.in.includes(u.id) && u.coach_id === where.coach_id && u.role === where.role,
+        ),
+      ),
     },
     workoutPlan: {
       findUnique: jest.fn(async ({ where }: any) => {
@@ -163,6 +169,10 @@ function makePrismaMock(store: MiniStore, opts: MockOpts = {}): any {
           ) ?? null
         );
       }),
+      // MEAL-PLAN-NOTICE-BE: which new assignment is in force today (its link); dates are not modelled here.
+      findMany: jest.fn(async ({ where }: any) =>
+        store.mealPlanAssignments.filter((a) => where.id.in.includes(a.id)),
+      ),
     },
     notification: {
       create: jest.fn(async ({ data }: any) => {
@@ -201,6 +211,7 @@ function makePrismaMock(store: MiniStore, opts: MockOpts = {}): any {
 function mockNotifications() {
   return {
     createNotification: jest.fn(async () => ({ id: 'notif_pushed_x' })),
+    sendPush: jest.fn(async () => null),
   } as any;
 }
 
@@ -437,6 +448,7 @@ describe('Stream 2 §4.2 — AssignMealPlanMaterializer', () => {
   function seedStore(): MiniStore {
     const store = newStore();
     store.users.set(COACH_ID, { id: COACH_ID, role: 'coach' });
+    store.users.set(CLIENT_ID, { id: CLIENT_ID, role: 'student', coach_id: COACH_ID });
     store.dailyMealPlans.set(MEAL_PLAN_ID, { id: MEAL_PLAN_ID, coach_id: COACH_ID });
     return store;
   }
@@ -467,6 +479,8 @@ describe('Stream 2 §4.2 — AssignMealPlanMaterializer', () => {
     await new Promise((res) => setImmediate(res));
     expect(notifications.createNotification).toHaveBeenCalledTimes(1);
     expect(notifications.createNotification.mock.calls[0][0].kind).toBe('meal_plan_assigned');
+    // MEAL-PLAN-NOTICE-BE: the client's phone is told too (sendPush), not only the inbox.
+    expect(notifications.sendPush).toHaveBeenCalledTimes(1);
   });
 
   it('idempotency → second call returns already_materialised', async () => {

@@ -185,6 +185,16 @@ export const IMPORTS_WITHOUT_SEND: ImportWithoutSend[] = [
     why: 'NUDGE-REACH-BE: hands it to sendCoachNudge (src/nudges/coach-nudge-send.ts, registered), which writes the inbox row and pushes',
   },
   {
+    file: 'src/ai/gateway/materialisers/assign-meal-plan.materialiser.ts',
+    name: 'NotificationsService',
+    why: 'MEAL-PLAN-NOTICE-BE: hands it to tellMealPlanChange (src/real-meal-plans/meal-plan-notice.ts, registered), which writes the inbox row and pushes',
+  },
+  {
+    file: 'src/real-meal-plans/real-meal-plans.service.ts',
+    name: 'NotificationsService',
+    why: 'MEAL-PLAN-NOTICE-BE: hands it to tellMealPlanChange (src/real-meal-plans/meal-plan-notice.ts, registered), which writes the inbox row and pushes',
+  },
+  {
     file: 'src/scheduling/scheduling.service.ts',
     name: 'BookingEmitter',
     why: 'hands its optional BookingEmitter to the SchedulingSessionLifecycleService it builds; the sends are in that service (registered)',
@@ -242,19 +252,6 @@ const COMMUNITY_VIA_RELAY = (fn: string, file: string, kind: string, recipient: 
 
 export const SENDERS: SenderRow[] = [
   // ── AI drafts (approved by the coach) ─────────────────────────────────────────────────────────
-  {
-    file: 'src/ai/gateway/materialisers/assign-meal-plan.materialiser.ts',
-    fn: 'AssignMealPlanMaterializer.materialize',
-    via: ['createNotification'],
-    kinds: ['meal_plan_assigned'],
-    sends: 'push row (no device push)',
-    muteAll: MUTE_NO_PUSH,
-    quietHours: QH_ROW,
-    mute: NO_MUTE,
-    blockBan: OWN_COACH,
-    recipient: 'the client on the coach roster the approved draft names',
-    covered: ROW_NOT_DRIVEN,
-  },
   {
     file: 'src/ai/gateway/materialisers/assign-workout.materialiser.ts',
     fn: 'AssignWorkoutMaterializer.materialize',
@@ -919,6 +916,26 @@ export const SENDERS: SenderRow[] = [
   ).map(([fn, recipient]) =>
     bookingRow('src/scheduling/scheduling-session-lifecycle.service.ts', `SchedulingSessionLifecycleService.${fn}`, recipient),
   ),
+  // ── Meal plans ────────────────────────────────────────────────────────────────────────────────
+  {
+    file: 'src/real-meal-plans/meal-plan-notice.ts',
+    fn: 'tellMealPlanChange',
+    via: ['createNotification', 'sendPush'],
+    kinds: ['meal_plan_updated', 'meal_plan_assigned'],
+    sends: 'inapp + push (at most one per client and link in 10 minutes)',
+    muteAll: MUTE_CORE,
+    quietHours: QH_CORE,
+    mute: NO_MUTE,
+    blockBan: OWN_COACH,
+    recipient:
+      "the coach's own clients (role student, coach_id the coach) whose plan the write changed for today, or who got a new assignment; callers: RealMealPlansService updatePlan, updateTemplate, archivePlan, endAssignment, assignPlan and AssignMealPlanMaterializer.materialize",
+    funnel: [
+      { kind: NotificationKind.MEAL_PLAN_UPDATED, muteAll: 'stops', quietHours: 'held', note: 'not money' },
+      { kind: NotificationKind.MEAL_PLAN_ASSIGNED, muteAll: 'stops', quietHours: 'held', note: 'not money' },
+    ],
+    dynamicKind: { code: 'change.kind', why: 'each caller passes meal_plan_updated (a change) or meal_plan_assigned (a new assignment); a funnel entry for each' },
+    covered: 'funnel table here; test/meal-plan-notice-be.spec.ts drives every caller',
+  },
   // ── Workout builder ───────────────────────────────────────────────────────────────────────────
   ...(
     [

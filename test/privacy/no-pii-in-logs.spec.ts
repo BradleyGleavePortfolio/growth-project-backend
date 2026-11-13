@@ -523,7 +523,8 @@ const LEGACY_EXCEPTION_TEXT: Readonly<Record<string, number>> = {
   'src/ai/coach/weekly-insight.cron.ts': 1,
   'src/ai/gateway/ai-approval.service.ts': 1,
   'src/ai/gateway/ai-gateway.service.ts': 2,
-  'src/ai/gateway/materialisers/assign-meal-plan.materialiser.ts': 2,
+  // MEAL-PLAN-NOTICE-BE: its push-failure log moved to src/real-meal-plans/meal-plan-notice.ts (the error's name only).
+  'src/ai/gateway/materialisers/assign-meal-plan.materialiser.ts': 1,
   'src/ai/gateway/materialisers/assign-workout.materialiser.ts': 2,
   'src/ai/gateway/materialisers/coach-message.materialiser.ts': 2,
   'src/ai/gateway/materialisers/coach-wearable-message.materialiser.ts': 2,

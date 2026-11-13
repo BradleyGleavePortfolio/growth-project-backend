@@ -203,6 +203,7 @@ const NOT_MONEY: NotificationKindValue[] = [
   NotificationKind.WORKOUT_ASSIGNED,
   NotificationKind.WORKOUT_REMINDER,
   NotificationKind.MEAL_PLAN_ASSIGNED,
+  NotificationKind.MEAL_PLAN_UPDATED,
   NotificationKind.DRIP_RELEASED,
   NotificationKind.COMMUNITY_MESSAGE_RECEIVED,
   NotificationKind.COMMUNITY_DM_RECEIVED,

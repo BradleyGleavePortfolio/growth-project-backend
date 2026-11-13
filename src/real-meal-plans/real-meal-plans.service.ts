@@ -4,11 +4,16 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import { isDeepStrictEqual } from 'util';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { resolveRecipientTimeZone } from '../notifications/recipient-timezone';
+import { NotificationKind } from '../notifications/notification-kind';
+import { NotificationsService } from '../notifications/notifications.service';
+import { coachStudent, inForceToday, inForceWhere, type MealPlanChange, planDay, tellMealPlanChange } from './meal-plan-notice';
 import { visibleRecipesWhere } from '../recipes/recipe-access';
 import { loadViewerAllergens } from '../recipes/allergens';
 import {
@@ -31,15 +36,31 @@ import {
   DailyPlanSlotInputDto,
 } from './real-meal-plans.dto';
 
+/**
+ * MEAL-PLAN-NOTICE-BE (question 4): the meal fields a client's phone draws from GET /me/meal-plan/today (the meal
+ * plan screen and the Food tab at mobile main 763c3cb5). Fiber, swaps and the recipe are drawn nowhere yet.
+ */
+const DRAWN_MEAL_FIELDS = ['name', 'description', 'calories_kcal', 'protein_g', 'carbs_g', 'fats_g', 'items'] as const;
+
 @Injectable()
 export class RealMealPlansService {
   private readonly logger = new Logger(RealMealPlansService.name);
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // MEAL-PLAN-NOTICE-BE: tells the client (tellMealPlanChange). @Optional, as in WorkoutBuilderService, so the
+    // specs that build this service with Prisma alone still do; without it nothing is read or sent.
+    @Optional() private readonly notifications?: NotificationsService,
+  ) {}
+
+  /** MEAL-PLAN-NOTICE-BE: after the write commits; never awaited, never throws. */
+  private tell(coachId: string, kind: MealPlanChange['kind'], reach: MealPlanChange['reach'], assignments: MealPlanChange['assignments']) {
+    void tellMealPlanChange(this.prisma, this.notifications, { coachId, kind, reach, assignments });
+  }
 
   // ─── Tenancy guards ──────────────────────────────────────────────────
   private async assertClientOfCoach(coachId: string, clientId: string) {
     const c = await this.prisma.user.findFirst({
-      where: { id: clientId, coach_id: coachId, role: 'student' },
+      where: { id: clientId, ...coachStudent(coachId) },
       select: { id: true },
     });
     if (!c) throw new NotFoundException('Client not found');
@@ -48,17 +69,20 @@ export class RealMealPlansService {
   private async assertTemplateOwnedBy(coachId: string, templateId: string) {
     const t = await this.prisma.mealTemplate.findFirst({
       where: { id: templateId, coach_id: coachId, archived_at: null },
-      select: { id: true },
+      // MEAL-PLAN-NOTICE-BE: the fields a client sees (DRAWN_MEAL_FIELDS), to tell a change from a same-value save.
+      select: { id: true, name: true, description: true, calories_kcal: true, protein_g: true, carbs_g: true, fats_g: true, items: true },
     });
     if (!t) throw new NotFoundException('Meal template not found');
+    return t;
   }
 
   private async assertPlanOwnedBy(coachId: string, planId: string) {
     const p = await this.prisma.dailyMealPlan.findFirst({
       where: { id: planId, coach_id: coachId, archived_at: null },
-      select: { id: true },
+      select: { id: true, name: true, notes: true },
     });
     if (!p) throw new NotFoundException('Daily meal plan not found');
+    return p;
   }
 
   // PLAN-SWAPS-BE: every swap is one of this coach's live templates and not the template itself; the
@@ -135,9 +159,9 @@ export class RealMealPlansService {
     templateId: string,
     dto: UpdateMealTemplateDto,
   ) {
-    await this.assertTemplateOwnedBy(coachId, templateId);
+    const before = await this.assertTemplateOwnedBy(coachId, templateId);
     await this.assertTemplateLinks(coachId, dto, templateId);
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       // FIX-1221R2 (LS-1221R2B B1): a plan depends on this meal through a slot or through a change that
       // names it (from or to), so a meal swapped out still freezes for a moved client's history first; the
       // database rule matches (app.caller_keeps_meal_template, 20270502011100).
@@ -170,6 +194,19 @@ export class RealMealPlansService {
         },
       });
     });
+    // MEAL-PLAN-NOTICE-BE: a change the client sees (DRAWN_MEAL_FIELDS) tells the clients of every plan with this meal.
+    const shown = DRAWN_MEAL_FIELDS.some(
+      (f) => dto[f] !== undefined && !isDeepStrictEqual(JSON.parse(JSON.stringify(dto[f])), JSON.parse(JSON.stringify(before[f] ?? null))),
+    );
+    if (shown) {
+      this.tell(coachId, NotificationKind.MEAL_PLAN_UPDATED, 'today', () =>
+        this.prisma.dailyMealPlanAssignment.findMany({
+          where: { daily_meal_plan: { coach_id: coachId, slots: { some: { meal_template_id: templateId } } } },
+          select: { id: true, client_id: true },
+        }),
+      );
+    }
+    return updated;
   }
 
   async archiveTemplate(coachId: string, templateId: string) {
@@ -279,10 +316,12 @@ export class RealMealPlansService {
     planId: string,
     dto: UpdateDailyMealPlanDto,
   ) {
-    await this.assertPlanOwnedBy(coachId, planId);
+    const before = await this.assertPlanOwnedBy(coachId, planId);
     if (dto.slots) await this.validateSlotTemplates(coachId, dto.slots, planId);
+    // MEAL-PLAN-NOTICE-BE: whether the client sees a change (the name, the note or a slot).
+    let shown = (dto.name !== undefined && dto.name !== before.name) || (dto.notes !== undefined && dto.notes !== before.notes);
 
-    return this.prisma.$transaction(async (tx) => {
+    const plan = await this.prisma.$transaction(async (tx) => {
       await this.freezeForMovedClients(tx, coachId, [planId]);
       await tx.dailyMealPlan.update({
         where: { id: planId },
@@ -311,11 +350,13 @@ export class RealMealPlansService {
         const goneRows = existing.filter((e) => !wanted.has(key(e)));
         const gone = goneRows.map((e) => e.id);
         if (gone.length > 0) {
+          shown = true;
           await tx.dailyMealPlanSlot.deleteMany({ where: { id: { in: gone } } });
         }
         for (const e of existing) {
           const w = wanted.get(key(e));
           if (w && (w.meal_template_id !== e.meal_template_id || w.time_of_day !== e.time_of_day)) {
+            shown = true;
             await tx.dailyMealPlanSlot.update({
               where: { id: e.id },
               data: { meal_template_id: w.meal_template_id, time_of_day: w.time_of_day },
@@ -327,6 +368,7 @@ export class RealMealPlansService {
         const freshKeys = new Set(fresh.map(key));
         let added: { id: string; slot_label: string; order: number; meal_template_id: string }[] = [];
         if (fresh.length > 0) {
+          shown = true;
           await tx.dailyMealPlanSlot.createMany({
             data: fresh.map((s) => ({ daily_meal_plan_id: planId, ...s })),
           });
@@ -362,14 +404,31 @@ export class RealMealPlansService {
         },
       });
     });
+    if (shown) {
+      this.tell(coachId, NotificationKind.MEAL_PLAN_UPDATED, 'today', () =>
+        this.prisma.dailyMealPlanAssignment.findMany({ where: { daily_meal_plan_id: planId }, select: { id: true, client_id: true } }),
+      );
+    }
+    return plan;
   }
 
   async archivePlan(coachId: string, planId: string) {
+    // MEAL-PLAN-NOTICE-BE: who sees this plan today, read before the archive takes it off their day.
+    const today = this.notifications
+      ? await inForceToday(
+          this.prisma,
+          await this.prisma.dailyMealPlanAssignment.findMany({
+            where: { daily_meal_plan_id: planId, client: coachStudent(coachId) },
+            select: { id: true, client_id: true },
+          }),
+        )
+      : [];
     const result = await this.prisma.dailyMealPlan.updateMany({
       where: { id: planId, coach_id: coachId, archived_at: null },
       data: { archived_at: new Date() },
     });
     if (result.count === 0) throw new NotFoundException('Daily meal plan not found');
+    this.tell(coachId, NotificationKind.MEAL_PLAN_UPDATED, 'gone', today);
     return { archived: result.count };
   }
 
@@ -504,7 +563,7 @@ export class RealMealPlansService {
       throw new BadRequestException('ends_on must not precede starts_on');
     }
 
-    return this.prisma.dailyMealPlanAssignment.create({
+    const created = await this.prisma.dailyMealPlanAssignment.create({
       data: {
         daily_meal_plan_id: planId,
         client_id: dto.client_id,
@@ -513,6 +572,8 @@ export class RealMealPlansService {
         ends_on: endsOn,
       },
     });
+    this.tell(coachId, NotificationKind.MEAL_PLAN_ASSIGNED, 'created', [created]);
+    return created;
   }
 
   // Owner 4: a client who moved to another coach leaves this list at once,
@@ -520,7 +581,7 @@ export class RealMealPlansService {
   async listAssignmentsForCoach(coachId: string, planId: string) {
     await this.assertPlanOwnedBy(coachId, planId);
     return this.prisma.dailyMealPlanAssignment.findMany({
-      where: { daily_meal_plan_id: planId, client: { coach_id: coachId, role: 'student' } },
+      where: { daily_meal_plan_id: planId, client: coachStudent(coachId) },
       orderBy: { starts_on: 'asc' },
     });
   }
@@ -533,37 +594,37 @@ export class RealMealPlansService {
     const where: Prisma.DailyMealPlanAssignmentWhereInput = {
       id: assignmentId,
       daily_meal_plan_id: planId,
-      client: { coach_id: coachId, role: 'student' },
+      client: coachStudent(coachId),
     };
-    if (!(await this.prisma.dailyMealPlanAssignment.findFirst({ where, select: { id: true } }))) {
-      throw new NotFoundException('Assignment not found');
-    }
+    const row = await this.prisma.dailyMealPlanAssignment.findFirst({ where, select: { id: true, client_id: true } });
+    if (!row) throw new NotFoundException('Assignment not found');
+    // MEAL-PLAN-NOTICE-BE: the client hears only when the end takes the plan off today.
+    const was = this.notifications ? await inForceToday(this.prisma, [row]) : [];
     // Each write re-checks its own rule in its WHERE, so two ends at once settle on the earlier day.
     const endsOn = new Date(dto.ends_on);
     const removed = await this.prisma.dailyMealPlanAssignment.deleteMany({
       where: { ...where, starts_on: { gt: endsOn } },
     });
-    if (removed.count) return;
+    if (removed.count) {
+      this.tell(coachId, NotificationKind.MEAL_PLAN_UPDATED, 'gone', was);
+      return;
+    }
     await this.prisma.dailyMealPlanAssignment.updateMany({
       where: { ...where, OR: [{ ends_on: null }, { ends_on: { gt: endsOn } }] },
       data: { ends_on: endsOn },
     });
+    this.tell(coachId, NotificationKind.MEAL_PLAN_UPDATED, 'gone', async () =>
+      was.length > 0 && (await inForceToday(this.prisma, was)).length === 0 ? was : [],
+    );
   }
 
   // Client-side: list "today's" plan(s). A plan applies on a given date
   // if starts_on <= date and (ends_on is null OR ends_on >= date).
   async getTodayForClient(clientId: string, dateIso?: string) {
-    const today = dateIso ? new Date(dateIso) : new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = planDay(dateIso);
     const assignments = await this.prisma.dailyMealPlanAssignment.findMany({
-      where: {
-        client_id: clientId,
-        starts_on: { lte: today },
-        OR: [{ ends_on: null }, { ends_on: { gte: today } }],
-        // MEALPLAN-END (OWN-1): an archive hides a plan from its own coach's client, as GET /meal-plans and
-        // Roman's context do; a moved client keeps an earlier coach's plan, frozen copy included (owner 4).
-        daily_meal_plan: { OR: [{ archived_at: null }, { coach: { students: { none: { id: clientId } } } }] },
-      },
+      // MEAL-PLAN-NOTICE-BE: the same where tells a client their plan changed (meal-plan-notice.ts).
+      where: inForceWhere(clientId, today),
       orderBy: { starts_on: 'desc' },
       include: {
         daily_meal_plan: {
