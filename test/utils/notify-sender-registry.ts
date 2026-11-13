@@ -185,6 +185,16 @@ export const IMPORTS_WITHOUT_SEND: ImportWithoutSend[] = [
     why: 'NUDGE-REACH-BE: hands it to sendCoachNudge (src/nudges/coach-nudge-send.ts, registered), which writes the inbox row and pushes',
   },
   {
+    file: 'src/ai/gateway/materialisers/assign-meal-plan.materialiser.ts',
+    name: 'NotificationsService',
+    why: 'MEAL-PLAN-NOTICE-BE: hands it to tellMealPlanChange (src/real-meal-plans/meal-plan-notice.ts, registered), which writes the inbox row and pushes',
+  },
+  {
+    file: 'src/real-meal-plans/real-meal-plans.service.ts',
+    name: 'NotificationsService',
+    why: 'MEAL-PLAN-NOTICE-BE: hands it to tellMealPlanChange (src/real-meal-plans/meal-plan-notice.ts, registered), which writes the inbox row and pushes',
+  },
+  {
     file: 'src/scheduling/scheduling.service.ts',
     name: 'BookingEmitter',
     why: 'hands its optional BookingEmitter to the SchedulingSessionLifecycleService it builds; the sends are in that service (registered)',
@@ -242,19 +252,6 @@ const COMMUNITY_VIA_RELAY = (fn: string, file: string, kind: string, recipient: 
 
 export const SENDERS: SenderRow[] = [
   // ── AI drafts (approved by the coach) ─────────────────────────────────────────────────────────
-  {
-    file: 'src/ai/gateway/materialisers/assign-meal-plan.materialiser.ts',
-    fn: 'AssignMealPlanMaterializer.materialize',
-    via: ['createNotification'],
-    kinds: ['meal_plan_assigned'],
-    sends: 'push row (no device push)',
-    muteAll: MUTE_NO_PUSH,
-    quietHours: QH_ROW,
-    mute: NO_MUTE,
-    blockBan: OWN_COACH,
-    recipient: 'the client on the coach roster the approved draft names',
-    covered: ROW_NOT_DRIVEN,
-  },
   {
     file: 'src/ai/gateway/materialisers/assign-workout.materialiser.ts',
     fn: 'AssignWorkoutMaterializer.materialize',
@@ -383,16 +380,20 @@ export const SENDERS: SenderRow[] = [
     fn: 'CommunitySafetyService.alertStaff',
     via: ['createNotification', 'sendPush'],
     kinds: ['coach_alert'],
-    sends: 'inapp + push',
+    // CRISIS-STAFF-OFF-BE (owner #203-E34): off for v1, so production sends nothing; the rules below are the code's
+    // when it is turned on. The funnel entry sends this push through sendPush itself (not through alertStaff) and
+    // counts a due outbox row as sent, so it runs as it did with the switch off; the registry has no outcome for
+    // "dropped at send", which crisis-staff-off.spec.ts O2 drives.
+    sends: 'nothing for v1 (#203-E34: COMMUNITY_CRISIS_STAFF_ALERT_ON is false, alertStaff returns at its first line and the push worker drops a queued one as obsolete); when on: inapp + push',
     muteAll: { does: 'stops', why: 'a normal push (owner #203-E21 "Op 1: normal push"): its safety key keeps the line but not the Mute all pass (push-preferences.ts); the inbox row stays' },
     quietHours: { does: 'held', why: 'not urgent: held to 08:00 in the recipient zone (quietHoursFor); at most one push per staff account per poster per UTC day' },
     mute: NO_MUTE,
     blockBan: { does: 'n/a', why: 'a safety alert about a member must reach TGP staff; it holds no text or name' },
-    recipient: 'every owner-role account (not deleted, not scheduled for deletion), minus the poster (#200-S1 op 1)',
+    recipient: 'nobody for v1 (#203-E34); when on: every owner-role account (not deleted, not scheduled for deletion), minus the poster (#200-S1 op 1)',
     funnel: [
       { kind: NotificationKind.COACH_ALERT, context: { safetyAlert: 'community_crisis_text' }, urgent: false, muteAll: 'stops', quietHours: 'held', note: 'community text that matched the crisis check' },
     ],
-    covered: 'funnel table here; test/community/safety/community-crisis-text.table.spec.ts drives every write path',
+    covered: 'funnel table here (sendPush with this context); test/community/safety/crisis-staff-off.spec.ts drives the off path (every caller, the queued push dropped at send); community-crisis-text.table.spec.ts drives every write path with it on',
   },
   {
     file: 'src/checkout/reconciliation-daily.cron.ts',
@@ -915,6 +916,26 @@ export const SENDERS: SenderRow[] = [
   ).map(([fn, recipient]) =>
     bookingRow('src/scheduling/scheduling-session-lifecycle.service.ts', `SchedulingSessionLifecycleService.${fn}`, recipient),
   ),
+  // ── Meal plans ────────────────────────────────────────────────────────────────────────────────
+  {
+    file: 'src/real-meal-plans/meal-plan-notice.ts',
+    fn: 'tellMealPlanChange',
+    via: ['createNotification', 'sendPush'],
+    kinds: ['meal_plan_updated', 'meal_plan_assigned'],
+    sends: 'inapp + push (at most one per client and link in 10 minutes)',
+    muteAll: MUTE_CORE,
+    quietHours: QH_CORE,
+    mute: NO_MUTE,
+    blockBan: OWN_COACH,
+    recipient:
+      "the coach's own clients (role student, coach_id the coach) whose plan the write changed for today, or who got a new assignment; callers: RealMealPlansService updatePlan, updateTemplate, archivePlan, endAssignment, assignPlan and AssignMealPlanMaterializer.materialize",
+    funnel: [
+      { kind: NotificationKind.MEAL_PLAN_UPDATED, muteAll: 'stops', quietHours: 'held', note: 'not money' },
+      { kind: NotificationKind.MEAL_PLAN_ASSIGNED, muteAll: 'stops', quietHours: 'held', note: 'not money' },
+    ],
+    dynamicKind: { code: 'change.kind', why: 'each caller passes meal_plan_updated (a change) or meal_plan_assigned (a new assignment); a funnel entry for each' },
+    covered: 'funnel table here; test/meal-plan-notice-be.spec.ts drives every caller',
+  },
   // ── Workout builder ───────────────────────────────────────────────────────────────────────────
   ...(
     [

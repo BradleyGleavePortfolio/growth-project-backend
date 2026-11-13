@@ -295,6 +295,15 @@ export class CommunityModerationService {
     // VOICE-BE: a space voice message shares its voice note's id; reporting it
     // reports the voice note, so Hide also erases the recording.
     if (msg.kind === 'voice') return this.resolveVoiceNoteTarget(user, msg.id);
+    // A DM can be reported only by one of its two participants, so a third
+    // member cannot pull someone else's DM into the coach's queue by id.
+    assertDmParticipantIfDm(msg, user.id, NOT_FOUND);
+    // COMMUNITY-DM-RULES-BE (203-D12, LS-1251R1 B1): the coach and a former client who keep their thread
+    // (app.community_dm_former_client, the rule its open, read, react and ack ask) report each other's
+    // messages there; the roster and author tests below would refuse them. Every other row keeps them.
+    if (msg.dm_key && (await this.isKeptDmPair(msg, user.id))) {
+      return { workspaceId: msg.workspace_id, targetType: 'message', targetId: msg.id };
+    }
     if (msg.cohort_id) {
       const cohort = await this.access.findCohort(msg.cohort_id);
       if (!cohort || !(await this.access.canAccessCohort(cohort, user))) {
@@ -303,9 +312,6 @@ export class CommunityModerationService {
     } else if (!(await this.access.canAccessWorkspace(msg.workspace_id, user))) {
       throw new NotFoundException(NOT_FOUND);
     }
-    // A DM can be reported only by one of its two participants, so a third
-    // member cannot pull someone else's DM into the coach's queue by id.
-    assertDmParticipantIfDm(msg, user.id, NOT_FOUND);
     if (!(await this.authorStays(user, msg, msg.sender_id))) throw new NotFoundException(NOT_FOUND);
     return {
       workspaceId: msg.workspace_id,
@@ -355,6 +361,13 @@ export class CommunityModerationService {
     }
     if (!(await this.authorStays(user, note, note.author_id))) throw new NotFoundException(NOT_FOUND);
     return { workspaceId: note.workspace_id, targetType: 'voice_note', targetId: note.id };
+  }
+
+  /** COMMUNITY-DM-RULES-BE: the caller (a participant) and the other person are the coach and a former client who keep this DM thread. */
+  private async isKeptDmPair(msg: { workspace_id: string; sender_id: string; recipient_user_id: string | null }, userId: string): Promise<boolean> {
+    const other = (msg.sender_id === userId ? msg.recipient_user_id : msg.sender_id) ?? userId;
+    if (other === userId) return false;
+    return (await this.access.formerClientsIn(msg.workspace_id, [[userId, other], [other, userId]])).size > 0;
   }
 
   /** C6-WINS-MOVE: a client who left the community is not reported into it (the reader no longer sees them). */

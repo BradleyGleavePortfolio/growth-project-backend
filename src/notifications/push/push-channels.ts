@@ -42,6 +42,7 @@ export function androidChannelFor(kind: string): AndroidPushChannel {
     kind === NotificationKind.BUILD_WEEK_DAY_UNLOCKED ||
     kind === NotificationKind.WORKOUT_ASSIGNED ||
     kind === NotificationKind.MEAL_PLAN_ASSIGNED ||
+    kind === NotificationKind.MEAL_PLAN_UPDATED ||
     kind === NotificationKind.DRIP_RELEASED
   ) {
     return ANDROID_PUSH_CHANNELS.CLIENT_BOT;
