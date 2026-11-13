@@ -166,6 +166,16 @@ export class CommunityAccessService {
     return rows.find((m) => m.dm_enabled === false) ?? rows.find((m) => m.dm_enabled === true) ?? rows[0] ?? null;
   }
 
+  /** COMMUNITY-DM-FORMER-REACH-BE: the distinct communities where the user holds an active row in a non-public space
+   *  (dmSettingRow's own rows), sorted: the places a former client's kept DM thread can be. */
+  async dmSettingWorkspaces(userId: string): Promise<string[]> {
+    const rows = await this.prisma.communityMembership.findMany({
+      where: { user_id: userId, status: 'active', cohort: { visibility: { not: 'public' } } },
+      select: { workspace_id: true },
+    });
+    return [...new Set(rows.map((r) => r.workspace_id))].sort();
+  }
+
   /** True when the user may read and write in a space: the rule, or the platform owner's override. */
   async canAccessCohort(
     cohort: Pick<CommunityCohort, 'id' | 'workspace_id'>,

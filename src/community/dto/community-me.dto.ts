@@ -42,6 +42,9 @@ export const CommunityMeResponseSchema = z
         community_telemetry: z.boolean(),
       })
       .strict(),
+    // COMMUNITY-DM-FORMER-REACH-BE: each community where the caller keeps a DM thread with its coach as a former
+    // client (formerClientArm 'open'), sorted by workspace_id; [] for coaches, the owner and with DMs switched off.
+    former_coach_dms: z.array(z.object({ workspace_id: z.guid(), coach_user_id: z.guid() }).strict()),
   })
   .strict();
 

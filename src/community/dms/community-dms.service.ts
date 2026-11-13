@@ -62,6 +62,20 @@ export async function assertDmOpen(access: CommunityAccessService, safety: Commu
   return Promise.all([a, b].map((p) => (former.has(p) ? access.dmSettingRow(workspaceId, p) : null)));
 }
 
+/** COMMUNITY-DM-FORMER-REACH-BE: the former-client arm of the DM rule for `userId` in `workspace`, in one place (listThreads
+ * and GET /community/me's former_coach_dms). 'none' when userId is the workspace's coach, holds a membership the rule
+ * opens (`membership`, membershipInWorkspace's row: the member arm), or formerClientsIn (b#1251) does not hold; 'off' when
+ * their DMs resolve off (gateDmRead's rule on dmSettingRow); 'blocked' when a block either way stands between them and
+ * the coach (listThreads drops the thread); else 'open'. Reads the rule, never changes it. */
+export async function formerClientArm(access: CommunityAccessService, safety: CommunitySafetyService,
+  workspace: Pick<CommunityWorkspace, 'id' | 'coach_id' | 'dm_enabled_default'>, userId: string,
+  membership: CommunityMembership | null): Promise<'none' | 'off' | 'blocked' | 'open'> {
+  if (workspace.coach_id === userId || membership) return 'none';
+  if (!(await access.formerClientsIn(workspace.id, [[workspace.coach_id, userId]])).has(userId)) return 'none';
+  if (!resolveDmEnabled(await access.dmSettingRow(workspace.id, userId), workspace)) return 'off';
+  return (await safety.filterBlocked(userId, [workspace.coach_id], (id) => id)).length > 0 ? 'open' : 'blocked';
+}
+
 /**
  * Single source of truth for the per-participant DM gate: a member whose
  * effective DM state (tri-state membership.dm_enabled → workspace
@@ -188,6 +202,7 @@ export class CommunityDmsService {
         thread_id: dmKey,
         workspace_id: workspaceId,
         other_user_id: recipientId,
+        other_display_name: null,
         created_at: null,
         last_message_at: null,
       },
@@ -239,7 +254,7 @@ export class CommunityDmsService {
       kind: NotificationKind.COMMUNITY_DM_RECEIVED,
       targetType: 'dm',
       targetId: created.id,
-      deepLink: `tgp://community/dm/${user.id}`,
+      deepLink: `tgp://community/dm/${user.id}?workspace=${workspaceId}`,
       otherUserId: created.sender_id,
       workspaceId,
     });
@@ -283,17 +298,20 @@ export class CommunityDmsService {
     // COACH-DM-BE: the workspace's coach holds no membership row; they list only their threads with their own
     // current clients (assertDmOpen's coach pair), kept before the page is cut. COMMUNITY-DM-RULES-BE (203-D12):
     // and with their former clients who keep a thread (formerClientsIn); such a former client lists that one thread.
+    // COMMUNITY-DM-FORMER-REACH-BE: the former-client arm is formerClientArm, which GET /community/me asks too.
     const coach = workspace?.coach_id === user.id;
-    const former = !workspace || membership || coach ? false
-      : (await this.access.formerClientsIn(workspaceId, [[workspace.coach_id, user.id]])).has(user.id);
+    const arm = workspace ? await formerClientArm(this.access, this.safety, workspace, user.id, membership) : 'none';
+    const former = arm !== 'none';
     if (!workspace || !(membership || coach || former)) {
       throw new NotFoundException(DM_NOT_FOUND);
     }
     // Reading thread metadata is a DM surface too: gate on the caller's
-    // effective DM state before returning any rows.
-    gateDmRead(former ? await this.access.dmSettingRow(workspaceId, user.id) : membership, workspace);
+    // effective DM state before returning any rows (the former-client arm's gate is its 'off').
+    if (arm === 'off') throw new ForbiddenException(DM_DISABLED);
+    if (!former) gateDmRead(membership, workspace);
     // The other people whose thread the coach and former-client arms keep: asked once, before the page is cut.
-    const kept = new Set<string>(former ? [workspace.coach_id] : []);
+    // A block between a former client and the coach ('blocked') keeps nobody, so that thread is not listed.
+    const kept = new Set<string>(arm === 'open' ? [workspace.coach_id] : []);
     const keep = coach
       ? async (others: string[]) => {
         const [clients, formers] = await Promise.all([this.dms.clientsAmong(user.id, others),
@@ -319,11 +337,15 @@ export class CommunityDmsService {
     ]);
     const shown = new Set([...placed, ...pairs]);
     const visible = rows.filter((m) => shown.has(m));
+    // COMMUNITY-DM-FORMER-REACH-BE: the workspace coach's own list names each row's other person (their stored name,
+    // trimmed; null when blank or absent), former clients included; nobody else's list carries a name.
+    const names = coach ? await this.dms.namesOf(visible.map((m) => other(m) ?? '')) : new Map<string, string>();
     return CommunityDmThreadListResponseSchema.parse({
       threads: visible.map((m) => ({
         thread_id: m.dm_key ?? '',
         workspace_id: m.workspace_id,
         other_user_id: m.sender_id === user.id ? (m.recipient_user_id ?? '') : m.sender_id,
+        other_display_name: names.get(other(m) ?? '') ?? null,
         created_at: null,
         last_message_at: m.created_at.toISOString(),
       })),
