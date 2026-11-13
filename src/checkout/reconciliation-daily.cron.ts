@@ -35,7 +35,7 @@ import { hostname } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma.service';
 import { ReconciliationService } from '../connect/fees/reconciliation.service';
-import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationsService, pushTapData } from '../notifications/notifications.service';
 import { NotificationKind } from '../notifications/notification-kind';
 import { MONEY_CHECK_ROW_TYPE } from '../notifications/current-coach-inbox';
 import { CronLeaseService } from './cron-lease.service';
@@ -272,7 +272,8 @@ export class ReconciliationDailyCron {
         owner.id,
         title,
         body,
-        { type: MONEY_CHECK_ROW_TYPE, verdict },
+        // MONEY-TAP-BE: the tap opens the owner's Notifications list, where this day's money row is.
+        { type: MONEY_CHECK_ROW_TYPE, verdict, ...pushTapData(NotificationKind.COACH_ALERT, undefined, undefined) },
         undefined,
         // Money: passes Mute all (README note 1); one push per day, a rerun never posts twice.
         { kind: NotificationKind.COACH_ALERT, passesMuteAll: true, dedupeKey: `money_daily:${day}` },
