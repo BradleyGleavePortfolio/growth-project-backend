@@ -13,8 +13,8 @@ import type { NotificationsService } from '../notifications/notifications.servic
  *  - Link: an assignment in force today (inForceWhere, getTodayForClient's own where) opens itself,
  *    tgp://meal-plan/<id>; anything else (a plan that starts later, one the write took off today, two at once)
  *    opens the day, tgp://plan.
- *  - One per burst: no notice while the client has a meal plan notice with the same link from the last
- *    MEAL_PLAN_NOTICE_WINDOW_MS (the first change tells; the tap reads the plan live).
+ *  - One per burst: no notice while the client has a meal plan notice with the same link, and on tgp://plan the
+ *    same kind, from the last MEAL_PLAN_NOTICE_WINDOW_MS (the first change tells; the tap reads the plan live).
  *  - One inbox row (the fixed title and ids only; the AI draft's own words stay its row body) and one push through
  *    sendPush (Mute all, quiet hours, the fixed lock-screen words). It never throws.
  */
@@ -38,6 +38,13 @@ export interface MealPlanChange {
 }
 
 const logger = new Logger('MealPlanNotice');
+
+/** The kind and the error's name only. */
+const skipped = (kind: MealPlanChange['kind'], err: unknown) =>
+  logger.warn(`meal plan notice skipped: kind=${kind} error=${err instanceof Error ? err.name : 'unknown'}`);
+
+const listOf = async (assignments: MealPlanChange['assignments']) =>
+  typeof assignments === 'function' ? assignments() : assignments;
 
 /** The coach's own client. */
 export const coachStudent = (coachId: string) => ({ coach_id: coachId, role: 'student' as const });
@@ -74,6 +81,26 @@ export async function inForceToday(prisma: PrismaService, assignments: Assignmen
   });
 }
 
+/**
+ * MEAL-NOTICE-EDGES-BE (R2): who sees these assignments today, read before a write takes them off the day. Awaited
+ * before the write and never throws: a failed read answers [] (nobody is told about that write) and the write goes on.
+ * Without a notifier nothing is read.
+ */
+export async function whoSeesToday(
+  prisma: PrismaService,
+  notifications: NotificationsService | undefined,
+  kind: MealPlanChange['kind'],
+  assignments: MealPlanChange['assignments'],
+): Promise<Assignment[]> {
+  if (!notifications) return [];
+  try {
+    return await inForceToday(prisma, await listOf(assignments));
+  } catch (err) {
+    skipped(kind, err);
+    return [];
+  }
+}
+
 export async function tellMealPlanChange(
   prisma: PrismaService,
   notifications: NotificationsService | undefined,
@@ -81,7 +108,7 @@ export async function tellMealPlanChange(
 ): Promise<void> {
   if (!notifications) return;
   try {
-    const all = typeof change.assignments === 'function' ? await change.assignments() : change.assignments;
+    const all = await listOf(change.assignments);
     if (all.length === 0) return;
     const theirs = new Set(
       (
@@ -102,27 +129,36 @@ export async function tellMealPlanChange(
     const words = WORDS[change.kind];
     for (const [clientId, set] of links) {
       const deepLink = set.size === 1 ? [...set][0] : 'tgp://plan';
-      const told = await prisma.notification.findFirst({
-        where: {
+      // MEAL-NOTICE-EDGES-BE (R3): one client's failure costs that client only; a failed row sends no push.
+      try {
+        const told = await prisma.notification.findFirst({
+          where: {
+            user_id: clientId,
+            // R1: unlike changes share tgp://plan, so there only the same kind folds; a plan's own link, either.
+            kind:
+              deepLink === 'tgp://plan'
+                ? change.kind
+                : { in: [NotificationKind.MEAL_PLAN_UPDATED, NotificationKind.MEAL_PLAN_ASSIGNED] },
+            deep_link: deepLink,
+            created_at: { gte: new Date(Date.now() - MEAL_PLAN_NOTICE_WINDOW_MS) },
+          },
+          select: { id: true },
+        });
+        if (told) continue;
+        await notifications.createNotification({
           user_id: clientId,
-          kind: { in: [NotificationKind.MEAL_PLAN_UPDATED, NotificationKind.MEAL_PLAN_ASSIGNED] },
+          kind: change.kind,
+          body: change.rowBody ?? words.body,
           deep_link: deepLink,
-          created_at: { gte: new Date(Date.now() - MEAL_PLAN_NOTICE_WINDOW_MS) },
-        },
-        select: { id: true },
-      });
-      if (told) continue;
-      await notifications.createNotification({
-        user_id: clientId,
-        kind: change.kind,
-        body: change.rowBody ?? words.body,
-        deep_link: deepLink,
-        channel: 'inapp',
-        payload: { title: words.title, ...change.payload },
-      });
-      await notifications.sendPush({ user_id: clientId, kind: change.kind, body: words.body, deep_link: deepLink });
+          channel: 'inapp',
+          payload: { title: words.title, ...change.payload },
+        });
+        await notifications.sendPush({ user_id: clientId, kind: change.kind, body: words.body, deep_link: deepLink });
+      } catch (err) {
+        skipped(change.kind, err);
+      }
     }
   } catch (err) {
-    logger.warn(`meal plan notice skipped: kind=${change.kind} error=${err instanceof Error ? err.name : 'unknown'}`);
+    skipped(change.kind, err);
   }
 }
