@@ -647,6 +647,8 @@ export class NotificationsService implements OnModuleInit {
       urgent?: boolean;
       /** COACH-ROW-CHAT-BE: the one client a coach's message push is about (its id only): `actionParams.clientId`. */
       tap_client_id?: string;
+      /** COMMUNITY-LINKS-BE (F2): the purchase a drip_released push is about (its id only): `actionParams.purchaseId`. */
+      tap_purchase_id?: string;
     },
     tx?: Prisma.TransactionClient,
   ): Promise<EnqueueResult | null> {
@@ -677,6 +679,7 @@ export class NotificationsService implements OnModuleInit {
                 input.context?.sessionId,
               ),
               input.tap_client_id,
+              input.tap_purchase_id,
             ),
             // Owner 57d: a Roman safety alert push opens that alert.
             ...(input.context?.safetyAlert && input.context.alertId
@@ -1113,6 +1116,8 @@ export const BOOKING_PUSH_SCREEN = { client: 'CalendarSession', coach: 'CoachBoo
  * notification center. `deepLink` and the top-level `sessionId` stay for
  * builds that read them. COACH-ROW-CHAT-BE: a coach's message push names its
  * client as `actionParams.clientId` (the deep link's id, no name).
+ * COMMUNITY-LINKS-BE (F2): a "New content" push (drip_released) opens that
+ * purchase's Deliverables (`actionParams.purchaseId`), as its inbox row does.
  */
 export function pushTapData(
   kind: string,
@@ -1120,6 +1125,7 @@ export function pushTapData(
   sessionId: string | undefined,
   bookingRole: 'client' | 'coach' | null = null,
   clientId?: string,
+  purchaseId?: string,
 ): Record<string, unknown> {
   const prefix = notificationPrefsPrefix(kind);
   const booking =
@@ -1130,20 +1136,25 @@ export function pushTapData(
   // FU-WORKLOG-126: a workout push (assigned or reminder) opens the client's
   // Workouts tab, where the coach's workout is, instead of the inbox.
   const workout = kind === 'workout_assigned' || kind === 'workout_reminder';
+  const drip = kind === 'drip_released' && !!purchaseId;
   const actionScreen = booking
     ? BOOKING_PUSH_SCREEN[bookingRole]
     : prefix === 'message'
       ? 'Messages'
       : workout
         ? 'WorkoutMain'
-        : 'NotificationCenter';
+        : drip
+          ? 'Deliverables'
+          : 'NotificationCenter';
   return {
     actionScreen,
     ...(booking
       ? { actionParams: { sessionId } }
       : actionScreen === 'Messages' && clientId
         ? { actionParams: { clientId } }
-        : {}),
+        : drip
+          ? { actionParams: { purchaseId } }
+          : {}),
     ...(deepLink ? { deepLink } : {}),
     ...(sessionId ? { sessionId } : {}),
   };
