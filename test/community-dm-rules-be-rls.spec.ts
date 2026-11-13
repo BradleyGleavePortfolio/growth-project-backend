@@ -170,7 +170,7 @@ describe('COMMUNITY-DM-RULES-BE: DMs on by default; the coach and a former clien
       [space.Pk, ws.K, 'package'], [space.W2, ws.L, 'members']];
     for (const [cohort, w, visibility] of spaces) {
       await su(`INSERT INTO "community_cohorts" ("id", "workspace_id", "name", "visibility", "updated_at")
-        VALUES ($1::uuid, $2::uuid, 'class space', $3::"CommunitySpaceVisibility", now())`, cohort, w, visibility);
+        VALUES ($1::uuid, $2::uuid, $3, $4::"CommunitySpaceVisibility", now())`, cohort, w, `class space ${visibility}`, visibility);
     }
     const rows: Array<[Key, string]> = [['A', space.S], ['B', space.S], ['X', space.S], ['Y', space.S], ['Z', space.S], ['V', space.S],
       ['U', space.P], ['Q', space.Pk]];
