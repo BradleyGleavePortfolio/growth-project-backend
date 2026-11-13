@@ -364,6 +364,8 @@ const P1_SLOTS = (breakfast: string): UpdateDailyMealPlanDto['slots'] => [
 ];
 const TAP_DAY = { root: 'MoreTab', screen: 'ClientDailyMealPlan' };
 const tapOne = (assignmentId: string) => ({ ...TAP_DAY, params: { assignmentId } });
+/** A stored row's tap for a student (the fields the phone reads off a row). */
+const tapRow = (r: Row) => rowTap('student', { kind: String(r.kind), deep_link: r.deep_link, payload: r.payload });
 
 beforeEach(() => {
   jest.useFakeTimers({
@@ -406,7 +408,7 @@ describe('MEAL-PLAN-NOTICE-BE: the client hears about a change to today\'s meal 
     expect(push[0].data).toEqual({ actionScreen: 'NotificationCenter', deepLink: link, kind: UPDATED });
     expect({ title: push[0].title, body: push[0].body }).toEqual(UPDATED_PUSH);
     expect(devicePushTap('student', push[0].data)).toEqual(tapOne(ASG.A1));
-    expect(rowTap('student', rows[0])).toEqual(tapOne(ASG.A1));
+    expect(tapRow(rows[0])).toEqual(tapOne(ASG.A1));
     // The plan the tap opens shows that assignment today, with the new meal.
     const today = await w.meals.getTodayForClient(A1);
     expect(today.assignments.map((a) => a.id)).toEqual([ASG.A1]);
@@ -519,7 +521,7 @@ describe('MEAL-PLAN-NOTICE-BE: the client hears about a change to today\'s meal 
       expect({ title: push.title, body: push.body }).toEqual(ASSIGNED_PUSH);
       expect(push.data).toEqual({ actionScreen: 'NotificationCenter', deepLink: link, kind: ASSIGNED });
       expect(devicePushTap('student', push.data)).toEqual(tapOne(created.id));
-      expect(rowTap('student', w.notes(FRESH)[0])).toEqual(tapOne(created.id));
+      expect(tapRow(w.notes(FRESH)[0])).toEqual(tapOne(created.id));
     });
 
     it('starting tomorrow: told, and the tap opens the day (tgp://plan)', async () => {
