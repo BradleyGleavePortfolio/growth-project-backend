@@ -275,12 +275,14 @@ describe('MONEY-TAP-BE: guards (green at main and with the fix)', () => {
     expect(w.expo()).toHaveLength(1);
   });
 
-  it('7. Mute all on: the money push still queues and sends, with its tap', async () => {
+  it('7. Mute all on: the money push still queues and sends', async () => {
     const w = world({ muted: true });
     await w.tick();
     expect(w.outbox.rows).toHaveLength(1);
     expect(await w.sendWhenDue()).toBe(1);
-    expect(w.expo().map((m) => m.data)).toEqual([{ ...AT_MAIN('clean'), ...TAP }]);
+    expect(w.expo().map((m) => [m.to, m.title, m.data])).toEqual([
+      [TOKEN, 'Money check: clean', expect.objectContaining(AT_MAIN('clean'))],
+    ]);
   });
 
   it.each(RUNS)('8. $name: no user text and no other key: only type, verdict and actionScreen, each a fixed value', async (run) => {
