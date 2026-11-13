@@ -267,7 +267,8 @@ describe('COMMUNITY-DM-RULES-BE D12: the coach and a former client keep their th
     const coCoach = w.user('coach', 'Co Coach', null);
     w.row(coCoach, w.space.S, 'coach');
     w.dm(coCoach, w.p.K, 'Quick question');
-    w.dm(w.p.Y, w.p.K, 'Quick question');
+    // T (no row) stays off the rule with a thread; a thread from Y would make Y a former client who keeps it.
+    w.dm(w.p.T, w.p.K, 'Quick question');
     expect(await listed(w, w.p.K, '2')).toEqual([w.p.X.id, w.p.A.id]);
   });
 
@@ -335,10 +336,11 @@ describe('COMMUNITY-DM-RULES-BE D12: the coach and a former client keep their th
     (w.p.X as { coach_id: string | null }).coach_id = w.p.L.id;
     const x = w.db.table('communityMembership').find((r) => r.user_id === w.p.X.id) as { dm_enabled: boolean | null };
     x.dm_enabled = false;
+    const pushed = w.pushes.length;
     expect(await refusal(w.dmsvc.send(w.p.K, w.wsId, w.p.X.id, 'Glad it helps'))).toEqual(DISABLED);
     expect(await refusal(w.dmsvc.send(w.p.X, w.wsId, w.p.K.id, 'Thanks'))).toEqual(DISABLED);
     expect(await refusal(w.dmsvc.listThreads(w.p.X, w.wsId, {}))).toEqual(DISABLED);
-    expect(w.pushes).toHaveLength(0);
+    expect(w.pushes).toHaveLength(pushed);
   });
 
   it('D12-5 (several rows). X with a second active row whose own dm_enabled is false: off for X wherever that row is', async () => {
