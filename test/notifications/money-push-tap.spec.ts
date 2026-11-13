@@ -22,6 +22,7 @@ import { NotificationKind } from '../../src/notifications/notification-kind';
 import { NotificationsService } from '../../src/notifications/notifications.service';
 import type { ExpoPushClient } from '../../src/notifications/push/expo-push-client';
 import { PushDeliveryService } from '../../src/notifications/push/push-delivery.service';
+import { MUTE_ALL_PASS } from '../../src/notifications/push/push-preferences';
 import type { PrismaService } from '../../src/prisma.service';
 import { pushOutboxWorld } from '../utils/push-outbox-fake';
 import { Table, asPrisma, type Row } from '../utils/settlement-fakes';
@@ -304,7 +305,8 @@ describe('MONEY-TAP-BE: guards (green at main and with the fix)', () => {
       title: 'Money check: clean',
       body: 'Checked 2 purchases against Stripe. Every one matches.',
       data: AT_MAIN('clean'),
-      context: { senderWords: true, passesMuteAll: true },
+      // As pushToUser stores it (notifications.service.ts:939-941).
+      context: { senderWords: true, ...MUTE_ALL_PASS },
       dedupeKey: `money_daily:${DAY}`,
       collapseKey: `money_daily:${DAY}`,
       timeZone: 'UTC',
