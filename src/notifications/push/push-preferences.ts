@@ -17,6 +17,7 @@ import { COMMUNITY_CRISIS_ALERT_KEY, SAFETY_ALERT_PUSH_BODY } from './lock-scree
 const NO_COLUMN_KINDS: ReadonlySet<string> = new Set([
   'dunning_blocker',
   'meal_plan_assigned',
+  'meal_plan_updated',
   'coach_client_moved',
   'community_dm_received',
   'community_post_replied',

@@ -8,6 +8,7 @@ import { Prisma, type AiActionDraft } from '@prisma/client';
 import { PrismaService } from '../../../prisma.service';
 import { NotificationsService } from '../../../notifications/notifications.service';
 import { NotificationKind } from '../../../notifications/notification-kind';
+import { tellMealPlanChange } from '../../../real-meal-plans/meal-plan-notice';
 import {
   CapabilityMaterializer,
   MaterializeResult,
@@ -19,8 +20,8 @@ import {
  * Same pattern as `AssignWorkoutMaterializer`. AI proposes assigning a
  * coach's existing `DailyMealPlan` to a client for a date range. Coach
  * approves. Materialiser inserts a single `DailyMealPlanAssignment` row
- * with `ai_draft_id = draft.id` (schema-level idempotency) and fires a
- * `meal_plan_assigned` push.
+ * with `ai_draft_id = draft.id` (schema-level idempotency) and tells the
+ * client through tellMealPlanChange (`meal_plan_assigned` row and push).
  *
  * Reversible? Hard-delete window ≤ 24h per spec §2.
  */
@@ -182,33 +183,16 @@ export class AssignMealPlanMaterializer implements CapabilityMaterializer {
       throw err;
     }
 
-    const body =
-      payload.notificationBody ?? 'Your coach assigned a new meal plan.';
-    void this.notifications
-      .createNotification({
-        user_id: payload.clientId,
-        kind: NotificationKind.MEAL_PLAN_ASSIGNED,
-        body,
-        deep_link: `tgp://meal-plan/${assignmentId}`,
-        channel: 'push',
-        payload: {
-          assignmentId,
-          dailyMealPlanId: payload.dailyMealPlanId,
-          aiDraftId: draft.id,
-        },
-      })
-      .catch((err) => {
-        this.logger.warn(
-          {
-            event: 'AI_MATERIALISER_PUSH_FAILED',
-            capability: this.capability,
-            draftId: draft.id,
-            assignmentId,
-            error: (err as Error).message,
-          },
-          'meal-plan-assigned push failed; assignment row is still authoritative',
-        );
-      });
+    // MEAL-PLAN-NOTICE-BE: told as for the coach's own assign, from the same function (the coach's own client
+    // only, one per burst, Mute all and quiet hours); the row keeps the draft's words, the push the fixed ones.
+    void tellMealPlanChange(this.prisma, this.notifications, {
+      coachId: draft.tenant_coach_id ?? requester.id,
+      kind: NotificationKind.MEAL_PLAN_ASSIGNED,
+      reach: 'created',
+      assignments: [{ id: assignmentId, client_id: payload.clientId }],
+      rowBody: payload.notificationBody,
+      payload: { assignmentId, dailyMealPlanId: payload.dailyMealPlanId, aiDraftId: draft.id },
+    });
 
     return { status: 'sent', ref: assignmentId };
   }

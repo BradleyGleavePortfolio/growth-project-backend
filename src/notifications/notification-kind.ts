@@ -73,6 +73,10 @@ export const NotificationKind = {
   // a plan day (WorkoutReminderService). Prefs: workout_reminder_push/_inapp.
   WORKOUT_REMINDER: 'workout_reminder',
   MEAL_PLAN_ASSIGNED: 'meal_plan_assigned',
+  // MEAL-PLAN-NOTICE-BE (owner #203-E45): to a client, when their coach changes what their meal plan shows today
+  // (a plan or meal edit, an archive, an end). Sent with meal_plan_assigned by tellMealPlanChange
+  // (src/real-meal-plans/meal-plan-notice.ts). No preference column: only Mute all stops its push.
+  MEAL_PLAN_UPDATED: 'meal_plan_updated',
 
   // PR-10 — Buyer: a scheduled package drop just unlocked. Decision #9
   // ("push + in-app every time content unlocks") emits this kind from the

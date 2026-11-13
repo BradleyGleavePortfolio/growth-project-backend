@@ -628,7 +628,9 @@ describe('COMMUNITY-LINKS-BE: guards', () => {
       ['src/engagement/workout-reminder.service.ts', 'tgp://workouts/${assignments[0].id}', `tgp://workouts/${u}`],
       ['src/workout-builder/workout-builder.service.ts', 'tgp://workouts/${assignmentId}', `tgp://workouts/${u}`],
       ['src/workout-builder/program-library.service.ts', "'tgp://workouts'", 'tgp://workouts'],
-      ['src/ai/gateway/materialisers/assign-meal-plan.materialiser.ts', 'tgp://meal-plan/${assignmentId}', `tgp://meal-plan/${u}`],
+      // MEAL-PLAN-NOTICE-BE: every meal plan notice (the AI assign included) takes its link from the one function.
+      ['src/real-meal-plans/meal-plan-notice.ts', 'tgp://meal-plan/${a.id}', `tgp://meal-plan/${u}`],
+      ['src/real-meal-plans/meal-plan-notice.ts', "'tgp://plan'", 'tgp://plan'],
       ['src/ai/gateway/materialisers/assign-workout.materialiser.ts', 'tgp://workouts/${assignmentId}', `tgp://workouts/${u}`],
     ];
     for (const [file, literal, link] of table) {
