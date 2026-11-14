@@ -662,3 +662,221 @@ describe('MEAL-PLAN-NOTICE-BE: the client hears about a change to today\'s meal 
     expect(w.t.dailyMealPlanAssignment.filter((a) => a.client_id === FRESH)).toHaveLength(1);
   });
 });
+
+/**
+ * MEAL-NOTICE-EDGES-BE (agent 203, LO-1250R1 C3 to C5, LS-1250R1 C3 and C4): three edges of the one sender.
+ *  E (R1): tgp://plan is shared by unlike changes, so a notice there is skipped only for the same kind in the window;
+ *    a plan's own link (tgp://meal-plan/<id>) still folds either kind (case 2b) and the window keeps its length.
+ *  F (R2): the reads archivePlan and endAssignment make before their write never fail the coach's archive or end.
+ *  G (R3): one client's failure costs that client only; a shared read before the loop still tells nobody, once.
+ * Red at backend main dda2ff72: E1, E2, E3, F1, F2, F3, G1, G2. Green at both: E4, E5, E6, F4, G3.
+ */
+describe('MEAL-NOTICE-EDGES-BE', () => {
+  type World = ReturnType<typeof world>;
+  type Step = [minute: number, write: () => Promise<unknown>];
+  const DAY = 'tgp://plan';
+  /** The one shared helper: each write at its minute of the burst (minutes()), then its notice settles. */
+  const burst = async (w: World, steps: Step[]) => {
+    for (const [minute, write] of steps) {
+      jest.setSystemTime(minutes(minute));
+      await write();
+      await w.settle();
+    }
+  };
+  // The bursts of E1 to E4 ('2026-06-03' is tomorrow: an assign that starts later opens the day).
+  const SEQ: Record<'E1' | 'E2' | 'E3' | 'E4 DUO' | 'E4 FRESH', (w: World) => Step[]> = {
+    E1: (w) => [
+      [0, () => w.meals.assignPlan(COACH, P3, { client_id: B1, starts_on: '2026-06-03' })],
+      [2, () => w.meals.archivePlan(COACH, P2)],
+    ],
+    E2: (w) => [
+      [0, () => w.meals.endAssignment(COACH, P1, ASG.A1, { ends_on: '2026-06-01' })],
+      [3, () => w.meals.assignPlan(COACH, P3, { client_id: A1, starts_on: '2026-06-03' })],
+    ],
+    E3: (w) => [
+      [0, () => w.meals.updateTemplate(COACH, OATS, { name: 'Oats amber' })],
+      [2, () => w.meals.assignPlan(COACH, P3, { client_id: DUO, starts_on: '2026-06-03' })],
+    ],
+    'E4 DUO': (w) => [
+      [0, () => w.meals.archivePlan(COACH, P2)],
+      [2, () => w.meals.endAssignment(COACH, P1, ASG.DUO1, { ends_on: '2026-06-01' })],
+    ],
+    'E4 FRESH': (w) => [
+      [0, () => w.meals.assignPlan(COACH, P3, { client_id: FRESH, starts_on: '2026-06-03' })],
+      [2, () => w.meals.assignPlan(COACH, P2, { client_id: FRESH, starts_on: '2026-06-03' })],
+    ],
+  };
+
+  it('E1. an assign starting later, then an archive of today\'s plan: both told on tgp://plan', async () => {
+    const w = world();
+    await burst(w, SEQ.E1(w));
+    expect(w.notes(B1).map((n) => [n.kind, n.deep_link])).toEqual([[ASSIGNED, DAY], [UPDATED, DAY]]);
+    expect(w.pushes(B1).map((p) => [p.kind, p.data.deepLink])).toEqual([[ASSIGNED, DAY], [UPDATED, DAY]]);
+    expect(w.notes(DUO).map((n) => [n.kind, n.deep_link])).toEqual([[UPDATED, DAY]]);
+    expect(w.pushes(DUO).map((p) => [p.kind, p.data.deepLink])).toEqual([[UPDATED, DAY]]);
+  });
+
+  it('E2. an end that takes today\'s plan off, then an assign starting later: both told', async () => {
+    const w = world();
+    await burst(w, SEQ.E2(w));
+    expect(w.notes(A1).map((n) => [n.kind, n.deep_link])).toEqual([[UPDATED, DAY], [ASSIGNED, DAY]]);
+    expect(w.pushes(A1).map((p) => [p.kind, p.data.deepLink])).toEqual([[UPDATED, DAY], [ASSIGNED, DAY]]);
+  });
+
+  it('E3. a meal edited in two of the client\'s plans, then an assign starting later: both told', async () => {
+    const w = world();
+    await burst(w, SEQ.E3(w));
+    expect(w.notes(DUO).map((n) => [n.kind, n.deep_link])).toEqual([[UPDATED, DAY], [ASSIGNED, DAY]]);
+    expect(w.pushes(DUO).map((p) => [p.kind, p.data.deepLink])).toEqual([[UPDATED, DAY], [ASSIGNED, DAY]]);
+  });
+
+  it('E4. the same kind twice on tgp://plan in the window stays one', async () => {
+    const duo = world();
+    await burst(duo, SEQ['E4 DUO'](duo));
+    expect(duo.notes(DUO).map((n) => [n.kind, n.deep_link])).toEqual([[UPDATED, DAY]]);
+    expect(duo.pushes(DUO)).toHaveLength(1);
+    const fresh = world();
+    await burst(fresh, SEQ['E4 FRESH'](fresh));
+    expect(fresh.notes(FRESH).map((n) => [n.kind, n.deep_link])).toEqual([[ASSIGNED, DAY]]);
+    expect(fresh.pushes(FRESH)).toHaveLength(1);
+  });
+
+  it('E5. after the window both are told; the two kinds on one plan\'s own link stay one (as case 2b)', async () => {
+    const w = world();
+    const [assign, [, archive]] = SEQ.E1(w);
+    await burst(w, [assign, [WINDOW_MS / 60_000 + 1, archive]]);
+    expect(w.notes(B1).map((n) => [n.kind, n.deep_link])).toEqual([[ASSIGNED, DAY], [UPDATED, DAY]]);
+    expect(w.pushes(B1)).toHaveLength(2);
+    // The AI assign in force today, then an edit of that plan: one, on the new assignment's own link.
+    const ai = world();
+    const first = await ai.ai.materialize(ai.draft(FRESH, P3, '2026-06-02'));
+    await ai.settle();
+    await burst(ai, [[2, () => ai.meals.updatePlan(COACH, P3, { name: 'Plan three amber' })]]);
+    expect(ai.notes(FRESH).map((n) => [n.kind, n.deep_link])).toEqual([[ASSIGNED, `tgp://meal-plan/${first.ref}`]]);
+    expect(ai.pushes(FRESH)).toHaveLength(1);
+  });
+
+  it('E6. in E1 to E4 nobody else hears: never an ended, later, moved or other coach\'s client, never a coach', async () => {
+    for (const [name, steps] of Object.entries(SEQ)) {
+      const w = world();
+      await burst(w, steps(w));
+      for (const id of [ENDED, LATER, MOVED, THEIRS, COACH, OTHER]) {
+        expect([name, id, w.notes(id).length, w.pushes(id).length]).toEqual([name, id, 0, 0]);
+      }
+    }
+  });
+
+  it('F1. archive: its assignment read failing still archives the plan, and nobody is told', async () => {
+    const w = world();
+    w.db.dailyMealPlanAssignment.findMany.mockRejectedValueOnce(new Error('read down'));
+    await expect(w.meals.archivePlan(COACH, P2)).resolves.toEqual({ archived: 1 });
+    await w.settle();
+    expect(w.t.dailyMealPlan.find((p) => p.id === P2)?.archived_at).toEqual(T0);
+    expect(w.t.notification.filter((n) => String(n.kind).startsWith('meal_plan'))).toEqual([]);
+    expect(w.outbox.rows.filter((r) => r.kind.startsWith('meal_plan'))).toEqual([]);
+  });
+
+  it('F2. archive: its in-force read (the second read) failing still archives the plan, and nobody is told', async () => {
+    const w = world();
+    const read = w.db.dailyMealPlanAssignment.findMany;
+    read.mockImplementationOnce(read.getMockImplementation()).mockRejectedValueOnce(new Error('read down'));
+    await expect(w.meals.archivePlan(COACH, P2)).resolves.toEqual({ archived: 1 });
+    await w.settle();
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(w.t.dailyMealPlan.find((p) => p.id === P2)?.archived_at).toEqual(T0);
+    expect(w.t.notification.filter((n) => String(n.kind).startsWith('meal_plan'))).toEqual([]);
+    expect(w.outbox.rows.filter((r) => r.kind.startsWith('meal_plan'))).toEqual([]);
+  });
+
+  it('F3. end: its in-force read failing still ends the assignment (a last day, or the row gone), and nobody is told', async () => {
+    const w = world();
+    const read = w.db.dailyMealPlanAssignment.findMany;
+    read.mockRejectedValueOnce(new Error('read down'));
+    await expect(w.meals.endAssignment(COACH, P1, ASG.A1, { ends_on: '2026-06-01' })).resolves.toBeUndefined();
+    read.mockRejectedValueOnce(new Error('read down'));
+    await expect(w.meals.endAssignment(COACH, P1, ASG.A2, { ends_on: '2026-05-20' })).resolves.toBeUndefined();
+    await w.settle();
+    expect(w.t.dailyMealPlanAssignment.find((a) => a.id === ASG.A1)?.ends_on).toEqual(YESTERDAY);
+    expect(w.t.dailyMealPlanAssignment.some((a) => a.id === ASG.A2)).toBe(false);
+    expect(w.t.notification.filter((n) => String(n.kind).startsWith('meal_plan'))).toEqual([]);
+    expect(w.outbox.rows.filter((r) => r.kind.startsWith('meal_plan'))).toEqual([]);
+  });
+
+  // No process 'unhandledRejection' listener here: under Jest 30 a spec's process is a copy that never receives the
+  // event (jest-util createProcessObject), and jest-circus already fails the running case on any unhandled rejection.
+  it('F4. the guards still refuse as at main: another coach\'s plan, a moved client\'s row, a failing guard read', async () => {
+    const w = world();
+    const THEIR_PLAN = uid(34);
+    w.t.dailyMealPlan.push({ id: THEIR_PLAN, coach_id: OTHER, name: 'Their plan', notes: null, archived_at: null, created_at: LAST_WEEK });
+    w.t.dailyMealPlanAssignment.push({ id: uid(60), daily_meal_plan_id: THEIR_PLAN, client_id: THEIRS, assigned_by_coach_id: OTHER, starts_on: YESTERDAY, ends_on: null, ai_draft_id: null, drip_drop_id: null, created_at: LAST_WEEK });
+    await expect(w.meals.archivePlan(COACH, THEIR_PLAN)).rejects.toThrow('Daily meal plan not found');
+    await expect(w.meals.endAssignment(COACH, P1, ASG.MOVED, { ends_on: '2026-06-01' })).rejects.toThrow('Assignment not found');
+    w.db.dailyMealPlanAssignment.findFirst.mockRejectedValueOnce(new Error('guard down'));
+    await expect(w.meals.endAssignment(COACH, P1, ASG.A1, { ends_on: '2026-06-01' })).rejects.toThrow('guard down');
+    await w.settle();
+    expect(w.t.dailyMealPlan.find((p) => p.id === THEIR_PLAN)?.archived_at).toBeNull();
+    expect(w.t.dailyMealPlanAssignment.find((a) => a.id === ASG.A1)?.ends_on).toBeNull();
+    expect(w.t.notification.filter((n) => String(n.kind).startsWith('meal_plan'))).toEqual([]);
+    expect(w.outbox.rows.filter((r) => r.kind.startsWith('meal_plan'))).toEqual([]);
+  });
+
+  it('G1. one client\'s row failing costs that client only: no row and no push for them, the rest told', async () => {
+    const w = world();
+    const create = w.notifications.createNotification.bind(w.notifications);
+    const spy = jest
+      .spyOn(w.notifications, 'createNotification')
+      .mockImplementation((input, tx) => (input.user_id === A1 ? Promise.reject(new Error('inbox down')) : create(input, tx)));
+    await w.meals.updatePlan(COACH, P1, { name: 'Plan one amber' });
+    await w.settle();
+    spy.mockRestore();
+    expect([w.notes(A1), w.pushes(A1)]).toEqual([[], []]);
+    for (const [id, asg] of [[A2, ASG.A2], [DUO, ASG.DUO1], [NIGHT, ASG.NIGHT]]) {
+      const link = `tgp://meal-plan/${asg}`;
+      expect([id, w.notes(id).map((n) => [n.kind, n.deep_link])]).toEqual([id, [[UPDATED, link]]]);
+      expect([id, w.pushes(id).map((p) => [p.kind, p.data.deepLink])]).toEqual([id, [[UPDATED, link]]]);
+    }
+    // NIGHT is in Bangkok: told, the push held for quiet hours (as case 9).
+    expect(w.pushes(NIGHT)[0]).toMatchObject({ status: 'pending', deferred_reason: 'quiet_hours' });
+  });
+
+  it('G2. one client\'s window read failing costs that client only', async () => {
+    const w = world();
+    const find = w.db.notification.findFirst;
+    const real = find.getMockImplementation();
+    find.mockImplementation((a: Row) => (a?.where?.user_id === A1 ? Promise.reject(new Error('read down')) : real(a)));
+    await w.meals.updatePlan(COACH, P1, { name: 'Plan one amber' });
+    await w.settle();
+    find.mockImplementation(real);
+    expect([w.notes(A1), w.pushes(A1)]).toEqual([[], []]);
+    for (const [id, asg] of [[A2, ASG.A2], [DUO, ASG.DUO1], [NIGHT, ASG.NIGHT]]) {
+      const link = `tgp://meal-plan/${asg}`;
+      expect([id, w.notes(id).map((n) => [n.kind, n.deep_link])]).toEqual([id, [[UPDATED, link]]]);
+      expect([id, w.pushes(id).map((p) => [p.kind, p.data.deepLink])]).toEqual([id, [[UPDATED, link]]]);
+    }
+  });
+
+  it('G3. a read shared by every client failing tells nobody about that write, and the coach\'s edit stands', async () => {
+    const shared: Array<[string, 'dailyMealPlanAssignment' | 'user', (where: Row) => boolean]> = [
+      ['the change\'s assignments', 'dailyMealPlanAssignment', (where) => where.daily_meal_plan_id === P1 && !where.NOT],
+      ['the recipients', 'user', (where) => where.role === 'student'],
+      ['who sees it today', 'dailyMealPlanAssignment', (where) => Boolean(where.id?.in)],
+    ];
+    for (const [read, table, hit] of shared) {
+      const w = world();
+      const fn = w.db[table].findMany;
+      const real = fn.getMockImplementation();
+      let failed = 0;
+      fn.mockImplementation((a: Row = {}) => {
+        if (failed > 0 || !hit(a.where ?? {})) return real(a);
+        failed += 1;
+        return Promise.reject(new Error('read down'));
+      });
+      await expect(w.meals.updatePlan(COACH, P1, { name: 'Plan one cobalt' })).resolves.toMatchObject({ id: P1, name: 'Plan one cobalt' });
+      await w.settle();
+      fn.mockImplementation(real);
+      expect([read, failed]).toEqual([read, 1]);
+      expect([read, w.t.dailyMealPlan.find((p) => p.id === P1)?.name]).toEqual([read, 'Plan one cobalt']);
+      expect([read, w.t.notification.length, w.outbox.rows.length]).toEqual([read, 0, 0]);
+    }
+  });
+});
