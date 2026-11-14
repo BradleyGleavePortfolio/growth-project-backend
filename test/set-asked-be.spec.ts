@@ -17,7 +17,7 @@ import type { ClientAIContextService } from '../src/ai/client-ai-context.service
 import { WorkoutController } from '../src/workout/workout.controller';
 import { WorkoutService } from '../src/workout/workout.service';
 import type { AuthedRequest } from '../src/auth/auth-request';
-import { CreateWorkoutDto, UpdateWorkoutDto } from '../src/workout/workout.dto';
+import { CreateWorkoutDto, ExerciseHistoryQueryDto, UpdateWorkoutDto } from '../src/workout/workout.dto';
 
 // R75: the repo's typed test double, in place of inline casts.
 function stub<T>(value: unknown): T {
@@ -49,8 +49,66 @@ function fakeStore() {
     return { ...NO_ASK, rpe: null, notes: null, video_url: null, exercise_external_id: null, ...e, id: `set-${n}`, workout_id };
   };
   const withSets = (s: Session | undefined) => (s ? { ...s, exercises: sets.filter((x) => x.workout_id === s.id) } : null);
+  // EXERCISE-HISTORY-UNIT-BE: GET /workouts/exercise-history's read (its where holds workout.user_id), as
+  // getExerciseHistory writes it. The where and orderBy are applied; only the keys the select names come back
+  // (a column left unwritten reads null, as Postgres returns it; the workout as { id, date, comments: [] });
+  // a where, orderBy, select or argument this fake does not model throws, so a column left out of the select
+  // is missing from the answer.
+  const unmodelled = (what: string): never => {
+    throw new Error(`fakeStore exerciseSet.findMany (history read): ${what} is not modelled`);
+  };
+  const HISTORY_ORDER = [{ workout: { date: 'asc' } }, { workout: { created_at: 'asc' } }, { id: 'asc' }];
+  const sessionOf = (x: SetRow) => sessions.find((s) => s.id === x.workout_id) ?? unmodelled(`a set of no workout (${x.id})`);
+  const historyMatch = (x: SetRow, where: Record<string, unknown>): boolean =>
+    Object.entries(where).every(([key, value]) => {
+      if (key === 'OR' && Array.isArray(value)) return value.some((w) => historyMatch(x, stub<Record<string, unknown>>(w)));
+      if (key === 'exercise_external_id' && (value === null || typeof value === 'string')) return (x.exercise_external_id ?? null) === value;
+      if (key === 'exercise_name') {
+        const { equals, mode, ...more } = stub<{ equals?: unknown; mode?: unknown }>(value);
+        if (typeof equals !== 'string' || mode !== 'insensitive' || Object.keys(more).length > 0) return unmodelled('where.exercise_name');
+        return String(x.exercise_name).toLowerCase() === equals.toLowerCase();
+      }
+      if (key === 'workout') {
+        const { user_id, ...more } = stub<{ user_id?: unknown }>(value);
+        if (typeof user_id !== 'string' || Object.keys(more).length > 0) return unmodelled('where.workout');
+        return sessionOf(x).user_id === user_id;
+      }
+      return unmodelled(`where.${key}`);
+    });
+  const historyRead = (args: Record<string, unknown>) => {
+    const { where, orderBy, select, ...more } = args;
+    if (Object.keys(more).length > 0) unmodelled(Object.keys(more).join(', '));
+    if (JSON.stringify(orderBy) !== JSON.stringify(HISTORY_ORDER)) unmodelled('this orderBy');
+    const { workout: workoutSelect, ...columns } = stub<Record<string, unknown> | undefined>(select) ?? unmodelled('a read with no select');
+    const workoutKeys = stub<{ select?: Record<string, unknown> } | undefined>(workoutSelect)?.select ?? unmodelled('a select with no workout');
+    const position = (x: SetRow) => [stub<Date>(sessionOf(x).date).getTime(), sessions.indexOf(sessionOf(x)), sets.indexOf(x)];
+    return sets
+      .filter((x) => historyMatch(x, stub<Record<string, unknown>>(where)))
+      .sort((a, b) => {
+        const [pa, pb] = [position(a), position(b)];
+        return pa[0] - pb[0] || pa[1] - pb[1] || pa[2] - pb[2];
+      })
+      .map((x) => {
+        const row: Record<string, unknown> = {};
+        for (const [key, on] of Object.entries(columns)) {
+          if (on !== true || !(key in x)) unmodelled(`select.${key}`);
+          row[key] = x[key] ?? null;
+        }
+        const s = sessionOf(x);
+        const workout: Record<string, unknown> = {};
+        for (const key of Object.keys(workoutKeys)) {
+          if (key === 'id') workout.id = s.id;
+          else if (key === 'date') workout.date = s.date;
+          else if (key === 'comments') workout.comments = [];
+          else unmodelled(`select.workout.${key}`);
+        }
+        return { ...row, workout };
+      });
+  };
   const exerciseSet = {
-    findMany: jest.fn(async ({ where }: { where: { workout_id: string; plan_assignment_id?: { not: null } } }) => {
+    findMany: jest.fn(async (args: { where: { workout_id: string; plan_assignment_id?: { not: null } } }) => {
+      if ('workout' in args.where) return historyRead(args);
+      const { where } = args;
       reads.push('exerciseSet.findMany');
       return sets
         .filter((x) => x.workout_id === where.workout_id && (!where.plan_assignment_id || x.plan_assignment_id !== null))
@@ -272,5 +330,188 @@ describe('SET-ASKED-BE: each logged set keeps what the plan asked that day', () 
     expect(asks(again.exercises)).toEqual([ask(A_FROZEN, 0, 4, 8, 'reps', 135)]);
     expect(store.reads.length).toBe(reads);
     expect(store.sessions).toHaveLength(1);
+  });
+});
+
+/**
+ * EXERCISE-HISTORY-UNIT-BE (agent 203): GET /workouts/exercise-history sends, on each session and inside each top
+ * set, the unit the server stored for that set ('reps' or 'seconds', ExerciseSet.asked_unit), or null where it stored
+ * none: never a guessed unit. Every key and value the answer sent before stays as it was. Each set is logged by the
+ * real POST and PUT above and read back by the real GET, through the real controller and service on the same store.
+ */
+type Unit = 'reps' | 'seconds' | null;
+type TopSetOut = { weight_lbs: number; reps: number; unit?: Unit };
+type PointOut = { date: string; top_set: TopSetOut | null };
+type SessionOut = Record<string, unknown> & { workout_id: string; date: string; top_set: TopSetOut | null; unit?: Unit };
+type HistoryOut = { best: PointOut | null; first: PointOut | null; sessions: SessionOut[] };
+
+describe('EXERCISE-HISTORY-UNIT-BE', () => {
+  function withHistory() {
+    const s = setup();
+    const controller = new WorkoutController(new WorkoutService(
+      stub<PrismaService>(s.store.prisma),
+      stub<PtmService>({ emit: jest.fn() }),
+      stub<ClientAIContextService>({ invalidateForUser: jest.fn() }),
+    ));
+    // The app's global pipe (main.ts) on the query, as GET runs it.
+    const pipe = new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true });
+    const history = async (userId: string, name: string): Promise<HistoryOut> => {
+      const q = await pipe.transform({ name }, stub<ArgumentMetadata>({ type: 'query', metatype: ExerciseHistoryQueryDto }));
+      return stub<HistoryOut>(await controller.getExerciseHistory(stub<AuthedRequest>({ user: { id: userId } }), q));
+    };
+    return { ...s, history };
+  }
+  type Logs = ReturnType<typeof withHistory>;
+
+  const on = (date: string, exercises: object[]) => ({ ...day(exercises), date });
+  const logged = (name: string, group: string, reps: number[], lbs: number[], r: Record<string, unknown> = {}) => ({
+    exercise_name: name, muscle_group: group, sets_completed: reps.length, reps_per_set: reps, weight_per_set: lbs, ...r,
+  });
+  /** One session as the code at f47013f4 builds it (its top set: the heaviest set of count 1 or more, more count on a tie). */
+  const session = (workout_id: string, date: string, reps: number[], lbs: number[], est_1rm_lbs: number | null, volume_lbs: number) => {
+    const counted = reps.map((r, i) => ({ weight_lbs: lbs[i], reps: r })).filter((t) => t.reps >= 1);
+    const top_set = counted.reduce<{ weight_lbs: number; reps: number } | null>(
+      (t, x) => (!t || x.weight_lbs > t.weight_lbs || (x.weight_lbs === t.weight_lbs && x.reps > t.reps) ? x : t), null);
+    return { workout_id, date, sets: reps.length, reps_per_set: reps, weight_per_set_lbs: lbs, rpe: null, top_set, est_1rm_lbs, volume_lbs, coach_comments: [] };
+  };
+  /** The answer with every unit key deleted. */
+  const withoutUnit = (v: unknown): unknown =>
+    Array.isArray(v) ? v.map(withoutUnit)
+      : v !== null && typeof v === 'object' && !(v instanceof Date)
+        ? Object.fromEntries(Object.entries(v).filter(([k]) => k !== 'unit').map(([k, x]) => [k, withoutUnit(x)]))
+        : v;
+  const units = (h: HistoryOut) => h.sessions.map((x) => [x.date, x.unit, x.top_set?.unit]);
+
+  // Each scenario logs her sets and reads them back; `before` is the answer the code at f47013f4 builds.
+  const scenarios: Record<string, () => Promise<{ h: HistoryOut; before: object; logs: Logs }>> = {
+    // A_LEGACY order 1 is a live plan row in seconds.
+    async U1() {
+      const logs = withHistory();
+      const w = await logs.post(HER, on('2026-11-02', [logged('Wall sit', 'legs', [60, 60], [0, 0], ref(A_LEGACY, 1))]));
+      const s = session(w.id, '2026-11-02', [60, 60], [0, 0], null, 0);
+      return { logs, h: await logs.history(HER, 'Wall sit'), before: { best: { date: s.date, top_set: s.top_set }, first: { date: s.date, top_set: s.top_set }, sessions: [s] } };
+    },
+    // A_FROZEN order 1 is a snapshot row whose note starts "SECONDS."; the live plan gets a reps row at that order.
+    async U2() {
+      const logs = withHistory();
+      logs.store.assignments.find((a) => a.id === A_FROZEN)!.workout_plan.exercises.push(liveRow(1, 3, 45, null, 'reps'));
+      const w = await logs.post(HER, on('2026-11-03', [logged('Plank', 'core', [45, 45, 45], [0, 0, 0], ref(A_FROZEN, 1))]));
+      const s = session(w.id, '2026-11-03', [45, 45, 45], [0, 0, 0], null, 0);
+      return { logs, h: await logs.history(HER, 'Plank'), before: { best: { date: s.date, top_set: s.top_set }, first: { date: s.date, top_set: s.top_set }, sessions: [s] } };
+    },
+    async U3() {
+      const logs = withHistory();
+      const w = await logs.post(HER, on('2026-11-04', [logged('Bench press', 'chest', [8, 8, 8], [135, 135, 135], ref(A_FROZEN, 0))]));
+      const s = session(w.id, '2026-11-04', [8, 8, 8], [135, 135, 135], 171, 3240);
+      return { logs, h: await logs.history(HER, 'Bench press'), before: { best: { date: s.date, top_set: s.top_set }, first: { date: s.date, top_set: s.top_set }, sessions: [s] } };
+    },
+    // No reference, a malformed one, another member's assignment, an order with no row.
+    async U4() {
+      const logs = withHistory();
+      const refs = [{}, ref('not-a-uuid', 0), ref(A_OTHERS, 0), ref(A_FROZEN, 7)];
+      const ids: string[] = [];
+      for (const [i, r] of refs.entries()) {
+        ids.push((await logs.post(HER, on(`2026-11-0${5 + i}`, [logged('Push-up', 'chest', [12, 10], [0, 0], r)]))).id);
+      }
+      const s = ids.map((id, i) => session(id, `2026-11-0${5 + i}`, [12, 10], [0, 0], null, 0));
+      return { logs, h: await logs.history(HER, 'Push-up'), before: { best: { date: s[0].date, top_set: s[0].top_set }, first: { date: s[0].date, top_set: s[0].top_set }, sessions: [...s].reverse() } };
+    },
+    // One name, oldest to newest: no reference, a plan row (the heaviest), no reference.
+    async U5() {
+      const logs = withHistory();
+      const a = await logs.post(HER, on('2026-11-09', [logged('Bench press', 'chest', [8, 8, 8], [135, 135, 135])]));
+      const b = await logs.post(HER, on('2026-11-10', [logged('Bench press', 'chest', [8, 8, 8], [145, 145, 145], ref(A_FROZEN, 0))]));
+      const c = await logs.post(HER, on('2026-11-11', [logged('Bench press', 'chest', [8, 8, 8], [135, 135, 135])]));
+      const [sa, sb, sc] = [
+        session(a.id, '2026-11-09', [8, 8, 8], [135, 135, 135], 171, 3240),
+        session(b.id, '2026-11-10', [8, 8, 8], [145, 145, 145], 183.7, 3480),
+        session(c.id, '2026-11-11', [8, 8, 8], [135, 135, 135], 171, 3240),
+      ];
+      return { logs, h: await logs.history(HER, 'bench PRESS'), before: { best: { date: sb.date, top_set: sb.top_set }, first: { date: sa.date, top_set: sa.top_set }, sessions: [sc, sb, sa] } };
+    },
+  };
+
+  it('U1: a wall sit from a live plan row in seconds reads seconds on its session, its top set, best and first', async () => {
+    const { h } = await scenarios.U1();
+    expect(h.sessions).toHaveLength(1);
+    expect(h.sessions[0].unit).toBe('seconds');
+    expect(h.sessions[0].top_set).toEqual({ weight_lbs: 0, reps: 60, unit: 'seconds' });
+    expect([h.best?.top_set?.unit, h.first?.top_set?.unit]).toEqual(['seconds', 'seconds']);
+  });
+
+  it('U2: a plank from a frozen day reads seconds from the snapshot she was shown, not the live plan row', async () => {
+    const { h } = await scenarios.U2();
+    expect(units(h)).toEqual([['2026-11-03', 'seconds', 'seconds']]);
+    expect([h.best?.top_set?.unit, h.first?.top_set?.unit]).toEqual(['seconds', 'seconds']);
+  });
+
+  it('U3: a bench from a reps plan row reads reps on its session and top set', async () => {
+    const { h } = await scenarios.U3();
+    expect(units(h)).toEqual([['2026-11-04', 'reps', 'reps']]);
+    expect(h.sessions[0].top_set).toEqual({ weight_lbs: 135, reps: 8, unit: 'reps' });
+  });
+
+  it('U4: a set with no stored unit (no, malformed or foreign reference, no row at that order) sends unit null, never reps', async () => {
+    const { h } = await scenarios.U4();
+    expect(h.sessions).toHaveLength(4);
+    for (const s of h.sessions) {
+      expect(s).toHaveProperty('unit');
+      expect(s.unit).toBeNull();
+      expect(s.top_set).toHaveProperty('unit');
+      expect(s.top_set?.unit).toBeNull();
+    }
+    expect([h.best?.top_set?.unit, h.first?.top_set?.unit]).toEqual([null, null]);
+  });
+
+  it("U5: one name with mixed rows: each session carries its own row's unit; best the best row's; first the first row's", async () => {
+    const { h } = await scenarios.U5();
+    expect(units(h)).toEqual([['2026-11-11', null, null], ['2026-11-10', 'reps', 'reps'], ['2026-11-09', null, null]]);
+    expect(h.best).toEqual({ date: '2026-11-10', top_set: { weight_lbs: 145, reps: 8, unit: 'reps' } });
+    expect(h.first).toEqual({ date: '2026-11-09', top_set: { weight_lbs: 135, reps: 8, unit: null } });
+  });
+
+  it('U6: PUT keeps the stored seconds after the plan changed; a PUT dropping the reference reads null', async () => {
+    const logs = withHistory();
+    const w = await logs.post(HER, on('2026-11-12', [logged('Plank', 'core', [45, 45, 45], [0, 0, 0], ref(A_FROZEN, 1))]));
+    // The coach changes the plan: order 1 is now a reps row.
+    logs.store.assignments.find((a) => a.id === A_FROZEN)!.snapshot = { exercises_json: [snapRow(0, 4, 8, 135), snapRow(1, 3, 20, null)] };
+    await logs.put(HER, w.id, day([logged('Plank', 'core', [50, 50, 50], [0, 0, 0], ref(A_FROZEN, 1))]));
+    expect(units(await logs.history(HER, 'Plank'))).toEqual([['2026-11-12', 'seconds', 'seconds']]);
+    await logs.put(HER, w.id, day([logged('Plank', 'core', [50, 50, 50], [0, 0, 0])]));
+    const h = await logs.history(HER, 'Plank');
+    expect(h.sessions[0]).toHaveProperty('unit');
+    expect(units(h)).toEqual([['2026-11-12', null, null]]);
+  });
+
+  it('U7: additive: with every unit key deleted, U1 to U5 answer exactly as before (keys, values, key order, session order)', async () => {
+    for (const name of ['U1', 'U2', 'U3', 'U4', 'U5']) {
+      const { h, before } = await scenarios[name]();
+      expect(withoutUnit(h)).toStrictEqual(before);
+      expect(JSON.stringify(withoutUnit(h))).toBe(JSON.stringify(before));
+    }
+  });
+
+  it("U8: tenancy and query unchanged: another member's plank never appears; the where and orderBy are as before", async () => {
+    const logs = withHistory();
+    await logs.post(OTHER, on('2026-11-01', [logged('Plank', 'core', [90], [0], ref(A_OTHERS, 0))]));
+    const w = await logs.post(HER, on('2026-11-02', [logged('Plank', 'core', [45], [0], ref(A_FROZEN, 1))]));
+    const h = await logs.history(HER, 'PLANK');
+    expect(h.sessions.map((s) => s.workout_id)).toEqual([w.id]);
+    expect(logs.store.prisma.exerciseSet.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { exercise_name: { equals: 'PLANK', mode: 'insensitive' }, workout: { user_id: HER } },
+      orderBy: [{ workout: { date: 'asc' } }, { workout: { created_at: 'asc' } }, { id: 'asc' }],
+    }));
+    expect((await logs.history(OTHER, 'Plank')).sessions.map((s) => s.reps_per_set)).toEqual([[90]]);
+  });
+
+  it('U9: a row with no set of count 1 or more: the session carries its stored unit (null here), top set and best stay null', async () => {
+    const logs = withHistory();
+    await logs.post(HER, on('2026-11-13', [logged('Dead hang', 'back', [0], [0])]));
+    const h = await logs.history(HER, 'Dead hang');
+    expect(h.sessions).toHaveLength(1);
+    expect(h.sessions[0]).toHaveProperty('unit');
+    expect(h.sessions[0].unit).toBeNull();
+    expect(h.sessions[0].top_set).toBeNull();
+    expect([h.best, h.first]).toEqual([null, { date: '2026-11-13', top_set: null }]);
   });
 });
