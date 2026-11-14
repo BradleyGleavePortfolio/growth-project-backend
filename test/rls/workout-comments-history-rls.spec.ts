@@ -172,13 +172,13 @@ describe('TRAIN-BE2 request shapes', () => {
     it("A's exercise history: by id and legacy name, all of A's workouts and only A's, every coach's comment", async () => {
       const h = await workouts.getExerciseHistory(u.A, { exercise_id: 'ex-bench', name: 'bench press' });
       expect(h.sessions.map((s) => [s.date, s.top_set, s.coach_comments])).toEqual([
-        ['2026-10-01', { weight_lbs: 155, reps: 6 }, [{ coach_name: 'Coach K', body: 'Heaviest yet.' }]],
-        ['2026-09-01', { weight_lbs: 135, reps: 5 }, [{ coach_name: 'Coach F', body: 'Bar speed looked good.' }]],
-        ['2026-08-01', { weight_lbs: 125, reps: 8 }, []],
+        ['2026-10-01', { weight_lbs: 155, reps: 6, unit: null }, [{ coach_name: 'Coach K', body: 'Heaviest yet.' }]],
+        ['2026-09-01', { weight_lbs: 135, reps: 5, unit: null }, [{ coach_name: 'Coach F', body: 'Bar speed looked good.' }]],
+        ['2026-08-01', { weight_lbs: 125, reps: 8, unit: null }, []],
       ]);
       expect(h.sessions[0]).toMatchObject({ workout_id: w.A2, sets: 2, reps_per_set: [6, 6], weight_per_set_lbs: [155, 150] });
       expect([h.best, h.first]).toEqual([
-        { date: '2026-10-01', top_set: { weight_lbs: 155, reps: 6 } }, { date: '2026-08-01', top_set: { weight_lbs: 125, reps: 8 } }]);
+        { date: '2026-10-01', top_set: { weight_lbs: 155, reps: 6, unit: null } }, { date: '2026-08-01', top_set: { weight_lbs: 125, reps: 8, unit: null } }]);
       expect((await workouts.getExerciseHistory(u.A, { exercise_id: 'ex-bench' })).sessions.map((s) => s.date))
         .toEqual(['2026-10-01', '2026-09-01']);
       // By name alone: every Bench press A logged, whatever id it carries; never the incline.
@@ -202,5 +202,20 @@ describe('TRAIN-BE2 request shapes', () => {
         { userId: u.F, email: `tb2-${u.F}@example.test`, tombstoneEmail: `${randomUUID()}@example.test`, now: new Date() }, steps));
       expect(await comments('A')).toEqual([[w.A2, 'Heaviest yet.']]);
     });
+  });
+
+  // EXERCISE-HISTORY-UNIT-BE L1: a set stored with its plan's ask, unit 'seconds' (the ask has no foreign key,
+  // schema.prisma ExerciseSet), reads 'seconds' on its session, top set, best and first; B never reads it.
+  it("EXERCISE-HISTORY-UNIT-BE L1: A's history sends a set's stored unit, seconds here, and only to A", async () => {
+    await prisma.exerciseSet.create({ data: {
+      workout_id: w.A0, exercise_name: 'Hold row', muscle_group: 'core', sets_completed: 2, reps_per_set: [45, 45], weight_per_set: [25, 25],
+      plan_assignment_id: randomUUID(), plan_order: 0, asked_sets: 2, asked_count: 45, asked_unit: 'seconds', asked_weight_lbs: 25,
+    } });
+    const h = await workouts.getExerciseHistory(u.A, { name: 'Hold row' });
+    const hold = { weight_lbs: 25, reps: 45, unit: 'seconds' };
+    expect(h.sessions.map((s) => [s.workout_id, s.date, s.reps_per_set, s.top_set])).toEqual([[w.A0, '2026-08-01', [45, 45], hold]]);
+    expect(h.sessions[0]).toMatchObject({ unit: 'seconds' });
+    expect([h.best, h.first]).toEqual([{ date: '2026-08-01', top_set: hold }, { date: '2026-08-01', top_set: hold }]);
+    expect((await workouts.getExerciseHistory(u.B, { name: 'Hold row' })).sessions).toEqual([]);
   });
 });

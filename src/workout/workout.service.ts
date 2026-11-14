@@ -252,14 +252,17 @@ export class WorkoutService {
       where: { ...match, workout: { user_id: userId } },
       orderBy: [{ workout: { date: 'asc' } }, { workout: { created_at: 'asc' } }, { id: 'asc' }],
       select: {
-        exercise_name: true, sets_completed: true, reps_per_set: true, weight_per_set: true, rpe: true,
+        exercise_name: true, sets_completed: true, reps_per_set: true, weight_per_set: true, rpe: true, asked_unit: true,
         workout: { select: { id: true, date: true, comments } },
       },
     });
     const sessions = rows.map((r) => {
       const { exercise: _name, ...set } = summarizeExerciseSet(r);
       const coach_comments = r.workout.comments.map((c) => ({ coach_name: c.coach.name, body: c.body }));
-      return { workout_id: r.workout.id, ...set, coach_comments };
+      // EXERCISE-HISTORY-UNIT-BE: the unit stored for this row's counts ('reps' | 'seconds'), null when none was (never guessed).
+      const unit = r.asked_unit ?? null;
+      const top_set = set.top_set && { ...set.top_set, unit };
+      return { workout_id: r.workout.id, ...set, top_set, unit, coach_comments };
     });
     type Session = (typeof sessions)[number];
     // Oldest first, so a tie keeps the day the best top set was first lifted.
