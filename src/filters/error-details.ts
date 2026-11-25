@@ -11,6 +11,7 @@
 // Envelope keys can never be overridden by a detail.
 
 import { LOCK_TOKEN_RE, type MwbHeadConflictCode } from '../workout-builder/workout-builder-autosave.dto';
+import { WORKOUT_REFUSALS } from '../workout/workout-refusal';
 
 type DetailCheck = (value: unknown) => boolean;
 
@@ -50,6 +51,11 @@ const MWB_HEAD_CONFLICT_DETAILS: Readonly<
 // CRISIS-TEXT-BE (#200-S1 op 1): a refused community text that matched Roman's
 // crisis check tells only its own poster, so the phone can show the 911/988 line.
 const COMMUNITY_CRISIS_REFUSAL: Readonly<Record<string, DetailCheck>> = { crisis_flag: (v) => v === true };
+
+// WORKOUT-REFUSAL-CODES-BE (203-P1): a refused workout's plain next step, one key per code, each passing
+// only its own sentence (the one copy lives in workout-refusal.ts).
+const WORKOUT_REFUSAL_DETAILS: Readonly<Record<string, Readonly<Record<string, DetailCheck>>>> =
+  Object.fromEntries(WORKOUT_REFUSALS.map((r) => [r.code, { next_step: oneOf(r.next_step) }]));
 
 /** code -> field name -> shape check. Extend only with client-safe facts. */
 export const ERROR_DETAIL_ALLOWLIST: Readonly<Record<string, Readonly<Record<string, DetailCheck>>>> =
@@ -92,6 +98,7 @@ export const ERROR_DETAIL_ALLOWLIST: Readonly<Record<string, Readonly<Record<str
     PHOTO_NOT_ALLOWED: COMMUNITY_CRISIS_REFUSAL,
     CAPTION_NOT_ALLOWED: COMMUNITY_CRISIS_REFUSAL,
     ...MWB_HEAD_CONFLICT_DETAILS,
+    ...WORKOUT_REFUSAL_DETAILS,
   };
 
 const ENVELOPE_KEYS = new Set([
