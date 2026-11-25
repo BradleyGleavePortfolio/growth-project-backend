@@ -129,9 +129,13 @@ notes? }` — `target_type` is `post | comment | message | voice_note | win`;
   report routes (a third member gets 404).
 - Guard rails: no self-block; only users who share a community workspace can
   be blocked (others get 404, so the endpoint does not reveal accounts); a
-  member cannot block their own workspace coach
+  current client cannot block their own coach in the coach's community, and
+  nor can a member who is not a student
   (`403 community.block.workspace_coach`) — they report the coach to the
-  platform contact instead. Every refusal carries a stable `code` and a human
+  platform contact instead. A former client can block their old coach (owner
+  203-D51; a student whose coach is no longer that coach, the relation of
+  `app.community_dm_former_client`), and the block closes the DM thread they
+  kept with that coach both ways. Every refusal carries a stable `code` and a human
   `message` with the next step (`community.block.self`,
   `community.block.not_found`, `community.block.workspace_coach`,
   `community.dm.blocked_by_you`).
