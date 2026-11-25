@@ -13,7 +13,7 @@ import { PrismaService } from '../prisma.service';
 import { resolveRecipientTimeZone } from '../notifications/recipient-timezone';
 import { NotificationKind } from '../notifications/notification-kind';
 import { NotificationsService } from '../notifications/notifications.service';
-import { coachStudent, inForceToday, inForceWhere, type MealPlanChange, planDay, tellMealPlanChange } from './meal-plan-notice';
+import { coachStudent, inForceToday, inForceWhere, type MealPlanChange, planDay, tellMealPlanChange, whoSeesToday } from './meal-plan-notice';
 import { visibleRecipesWhere } from '../recipes/recipe-access';
 import { loadViewerAllergens } from '../recipes/allergens';
 import {
@@ -414,15 +414,13 @@ export class RealMealPlansService {
 
   async archivePlan(coachId: string, planId: string) {
     // MEAL-PLAN-NOTICE-BE: who sees this plan today, read before the archive takes it off their day.
-    const today = this.notifications
-      ? await inForceToday(
-          this.prisma,
-          await this.prisma.dailyMealPlanAssignment.findMany({
-            where: { daily_meal_plan_id: planId, client: coachStudent(coachId) },
-            select: { id: true, client_id: true },
-          }),
-        )
-      : [];
+    // MEAL-NOTICE-EDGES-BE (R2): a failed read tells nobody and never fails the archive.
+    const today = await whoSeesToday(this.prisma, this.notifications, NotificationKind.MEAL_PLAN_UPDATED, () =>
+      this.prisma.dailyMealPlanAssignment.findMany({
+        where: { daily_meal_plan_id: planId, client: coachStudent(coachId) },
+        select: { id: true, client_id: true },
+      }),
+    );
     const result = await this.prisma.dailyMealPlan.updateMany({
       where: { id: planId, coach_id: coachId, archived_at: null },
       data: { archived_at: new Date() },
@@ -599,7 +597,8 @@ export class RealMealPlansService {
     const row = await this.prisma.dailyMealPlanAssignment.findFirst({ where, select: { id: true, client_id: true } });
     if (!row) throw new NotFoundException('Assignment not found');
     // MEAL-PLAN-NOTICE-BE: the client hears only when the end takes the plan off today.
-    const was = this.notifications ? await inForceToday(this.prisma, [row]) : [];
+    // MEAL-NOTICE-EDGES-BE (R2): a failed read tells nobody and never fails the end.
+    const was = await whoSeesToday(this.prisma, this.notifications, NotificationKind.MEAL_PLAN_UPDATED, [row]);
     // Each write re-checks its own rule in its WHERE, so two ends at once settle on the earlier day.
     const endsOn = new Date(dto.ends_on);
     const removed = await this.prisma.dailyMealPlanAssignment.deleteMany({

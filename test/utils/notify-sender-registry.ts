@@ -922,7 +922,7 @@ export const SENDERS: SenderRow[] = [
     fn: 'tellMealPlanChange',
     via: ['createNotification', 'sendPush'],
     kinds: ['meal_plan_updated', 'meal_plan_assigned'],
-    sends: 'inapp + push (at most one per client and link in 10 minutes)',
+    sends: 'inapp + push (at most one per client and link in 10 minutes; on tgp://plan, one per client and kind)',
     muteAll: MUTE_CORE,
     quietHours: QH_CORE,
     mute: NO_MUTE,
