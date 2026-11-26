@@ -7500,7 +7500,7 @@ model CommunityWorkspace {
   name               String    @db.VarChar(120)
   slug               String    @unique @db.VarChar(80)
   description        String?   @db.Text
-  dm_enabled_default Boolean   @default(false)
+  dm_enabled_default Boolean   @default(true)
   hall_enabled       Boolean   @default(true)
   events_enabled     Boolean   @default(false)
   challenges_enabled Boolean   @default(false)

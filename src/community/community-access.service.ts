@@ -143,6 +143,29 @@ export class CommunityAccessService {
     return (await clientsAmong(this.prisma, coachId, [clientId])).has(clientId);
   }
 
+  /** COMMUNITY-DM-RULES-BE (owner #203-E49, 203-D12): the clients of the [coach, client] pairs that keep their DM thread
+   *  in the workspace: the coach is its coach and the client that coach's former client who is still in the community and
+   *  already holds a thread with them. Asks app.community_dm_former_client (20270502011600), the function the row policies
+   *  ask, so the API and the row layer hold one rule (R-e). One round trip. */
+  async formerClientsIn(workspaceId: string, pairs: ReadonlyArray<readonly [string, string]>): Promise<Set<string>> {
+    if (pairs.length === 0) return new Set();
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT t."k" AS "id"
+      FROM unnest(${pairs.map((p) => p[0])}::text[], ${pairs.map((p) => p[1])}::text[]) AS t("c", "k")
+      WHERE app.community_dm_former_client(${workspaceId}::uuid, t."c", t."k")`;
+    return new Set(rows.map((r) => r.id));
+  }
+
+  /** COMMUNITY-DM-RULES-BE: the row whose dm_enabled a former client's kept thread reads (membershipInWorkspace's rows
+   *  without the space rule): an explicit false first, so their own off holds whichever row it is on, then an explicit
+   *  true, then the first. */
+  async dmSettingRow(workspaceId: string, userId: string): Promise<CommunityMembership | null> {
+    const rows = await this.prisma.communityMembership.findMany({
+      where: { workspace_id: workspaceId, user_id: userId, status: 'active', cohort: { visibility: { not: 'public' } } },
+    });
+    return rows.find((m) => m.dm_enabled === false) ?? rows.find((m) => m.dm_enabled === true) ?? rows[0] ?? null;
+  }
+
   /** True when the user may read and write in a space: the rule, or the platform owner's override. */
   async canAccessCohort(
     cohort: Pick<CommunityCohort, 'id' | 'workspace_id'>,

@@ -40,11 +40,14 @@ const DM_DISABLED = {
 /** C10RT: the DM rule, for reading a DM (authoriseDm) and for who hears a DM row's reaction pings.
  * Open when both people still hold a membership the rule opens (membershipInWorkspace), or, COACH-DM-BE,
  * when one of them is the workspace's coach (who holds no membership row) and the other is that coach's
- * current client (isCoachWithClient: clientOf) who still holds one. So a removal, a ban or a coach move
- * ends the DM for both at once; and neither may have blocked the other (Apple 1.2). Nobody else is let in:
- * a co-coach or assistant row, another coach, the platform owner role and a sub-coach need their own
+ * current client (isCoachWithClient: clientOf) who still holds one. COMMUNITY-DM-RULES-BE (owner #203-E49,
+ * 203-D12): or when one is the workspace's coach and the other that coach's former client who is still in
+ * the community and already holds a thread with them (formerClientsIn: app.community_dm_former_client, the
+ * row policies' own test), so a coach move alone no longer ends their thread; a removal, a ban or leaving
+ * the community still does. Neither may have blocked the other (Apple 1.2). Nobody else is let in: a
+ * co-coach or assistant row, another coach, the platform owner role and a sub-coach need their own
  * membership as before. Throws the refusal `a` gets; returns a's and b's memberships (null in the coach's
- * slot, which gateDmRead resolves to the workspace's default). */
+ * slot, which gateDmRead resolves to the workspace's default; a former client's dmSettingRow). */
 export async function assertDmOpen(access: CommunityAccessService, safety: CommunitySafetyService,
   workspaceId: string, a: string, b: string): Promise<Array<CommunityMembership | null>> {
   const [ma, mb] = await Promise.all([a, b].map((p) => access.membershipInWorkspace(workspaceId, p)));
@@ -52,15 +55,17 @@ export async function assertDmOpen(access: CommunityAccessService, safety: Commu
     : ma ? await access.isCoachWithClient(workspaceId, b, a)
     : mb ? await access.isCoachWithClient(workspaceId, a, b)
     : false;
-  if (!open) throw new NotFoundException(DM_NOT_FOUND);
+  const former = open ? new Set<string>() : await access.formerClientsIn(workspaceId, [[a, b], [b, a]]);
+  if (!open && former.size === 0) throw new NotFoundException(DM_NOT_FOUND);
   await safety.assertDmAllowed(a, b);
-  return [ma, mb];
+  if (open) return [ma, mb];
+  return Promise.all([a, b].map((p) => (former.has(p) ? access.dmSettingRow(workspaceId, p) : null)));
 }
 
 /**
  * Single source of truth for the per-participant DM gate: a member whose
  * effective DM state (tri-state membership.dm_enabled → workspace
- * dm_enabled_default, the secure default OFF) resolves false may neither send
+ * dm_enabled_default, on by default since 20270502011600, owner 203-D11) resolves false may neither send
  * NOR read DM data. Throws 403 DM_DISABLED. assertDmReadable (write/thread
  * reads, coach acks on a DM row) and listThreads (the thread-metadata read)
  * route through here so no DM surface can return data to a default-OFF caller.
@@ -100,9 +105,10 @@ export async function assertDmReadable(access: CommunityAccessService, safety: C
  * resolveDmEnabled above is a local mirror of the community.service.ts resolver,
  * kept byte-for-byte in sync; a future refactor will share a single
  * implementation. A membership's dm_enabled is nullable — null inherits the
- * workspace's dm_enabled_default, an explicit boolean overrides. The secure
- * default is OFF (dm_enabled_default defaults false), so DMs are workspace-gated
- * and opt-in.
+ * workspace's dm_enabled_default, an explicit boolean overrides. The default
+ * is ON (owner 203-D11, #203-E49: dm_enabled_default defaults true, and
+ * 20270502011600 set every existing community true); an explicit false on a
+ * membership is that person's own off, and a community set false is off.
  *
  * DEVIATION (surfaced as a blocker in the report): the brief specifies a
  * tri-state dm_policy (coach_only | members | disabled) on the workspace. No
@@ -275,29 +281,44 @@ export class CommunityDmsService {
     const workspace = await this.access.findWorkspace(workspaceId);
     const membership = await this.access.membershipInWorkspace(workspaceId, user.id);
     // COACH-DM-BE: the workspace's coach holds no membership row; they list only their threads with their own
-    // current clients (assertDmOpen's coach pair), kept before the page is cut.
+    // current clients (assertDmOpen's coach pair), kept before the page is cut. COMMUNITY-DM-RULES-BE (203-D12):
+    // and with their former clients who keep a thread (formerClientsIn); such a former client lists that one thread.
     const coach = workspace?.coach_id === user.id;
-    if (!workspace || !(membership || coach)) {
+    const former = !workspace || membership || coach ? false
+      : (await this.access.formerClientsIn(workspaceId, [[workspace.coach_id, user.id]])).has(user.id);
+    if (!workspace || !(membership || coach || former)) {
       throw new NotFoundException(DM_NOT_FOUND);
     }
     // Reading thread metadata is a DM surface too: gate on the caller's
     // effective DM state before returning any rows.
-    gateDmRead(membership, workspace);
+    gateDmRead(former ? await this.access.dmSettingRow(workspaceId, user.id) : membership, workspace);
+    // The other people whose thread the coach and former-client arms keep: asked once, before the page is cut.
+    const kept = new Set<string>(former ? [workspace.coach_id] : []);
+    const keep = coach
+      ? async (others: string[]) => {
+        const [clients, formers] = await Promise.all([this.dms.clientsAmong(user.id, others),
+          this.access.formerClientsIn(workspaceId, others.map((o) => [user.id, o] as const))]);
+        for (const o of formers) kept.add(o);
+        return new Set([...clients, ...formers]);
+      }
+      : former ? async () => kept : undefined;
     const rows = await this.dms.listThreadsForUser({
       workspaceId,
       userId: user.id,
       limit: this.parsePage(query.limit),
-      clientsOnly: coach,
+      keep,
     });
     // #168-4: the other member's place in this community too (left, or banned). Owner 10-23
     // "Dissapear": a block either way drops the thread from both lists (no row, no name, no time);
     // unblock brings it back. Opening it another way answers 403 blocked_by_you / blocked_by_them.
-    const visible = await this.safety.filterBlocked(
-      user.id,
-      rows,
-      (m) => (m.sender_id === user.id ? m.recipient_user_id : m.sender_id),
-      (m) => [m.workspace_id, null],
-    );
+    // A coach and former client's thread (203-D12) gets the block alone: their test already holds the rest.
+    const other = (m: CommunityMessage) => (m.sender_id === user.id ? m.recipient_user_id : m.sender_id);
+    const [placed, pairs] = await Promise.all([
+      this.safety.filterBlocked(user.id, rows.filter((m) => !kept.has(other(m) ?? '')), other, (m) => [m.workspace_id, null]),
+      this.safety.filterBlocked(user.id, rows.filter((m) => kept.has(other(m) ?? '')), other),
+    ]);
+    const shown = new Set([...placed, ...pairs]);
+    const visible = rows.filter((m) => shown.has(m));
     return CommunityDmThreadListResponseSchema.parse({
       threads: visible.map((m) => ({
         thread_id: m.dm_key ?? '',

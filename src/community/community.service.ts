@@ -86,6 +86,7 @@ export class CommunityService {
   /**
    * G3 — dm_enabled tri-state contract. A membership's dm_enabled is nullable:
    * null means "inherit the workspace default", an explicit boolean overrides.
+   * The workspace default is on (owner 203-D11; 20270502011600).
    */
   resolveDmEnabled(
     membership: Pick<CommunityMembership, 'dm_enabled'> | null,

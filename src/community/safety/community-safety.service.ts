@@ -25,6 +25,7 @@ import { memberFirstName } from '../member-display-name';
 import { SUPPORT_EMAIL } from '../../public-pages/trust-pages.html';
 import { winModerationWorkspaceId } from '../community-wins.policy';
 import { type RowPlace, rowsByAuthorsWhoStay } from '../community-space-access';
+import { clientsAmong } from '../community-public-row';
 import {
   COMMUNITY_MODERATION_NOTICE_KIND,
   type ModerationNoticeView,
@@ -474,9 +475,14 @@ export class CommunitySafetyService {
   }
 
   /**
-   * Block a user the caller shares a community workspace with. The caller's
-   * own workspace coach cannot be blocked (they run the space and its
-   * moderation; members report them to the platform contact instead).
+   * Block a user the caller shares a community workspace with. A current
+   * client cannot block their own coach in the coach's community (the coach
+   * runs the space and its moderation; they report the coach to the platform
+   * contact instead), and neither can a member who is not a student. A former
+   * client can (owner 203-D51 op 1): a student whose coach is no longer the
+   * target, the relation of app.community_dm_former_client (20270502011600
+   * migration.sql:71-72), read here as not clientOf (community-public-row.ts),
+   * so the block closes the DM thread they kept with that coach both ways.
    */
   async block(
     viewer: { id: string },
@@ -506,7 +512,13 @@ export class CommunitySafetyService {
       select: { id: true },
     });
     if (coachesViewer) {
-      throw new ForbiddenException(BLOCK_WORKSPACE_COACH);
+      const [caller, current] = await Promise.all([
+        this.prisma.user.findUnique({ where: { id: viewer.id }, select: { role: true } }),
+        clientsAmong(this.prisma, targetUserId, [viewer.id]),
+      ]);
+      if (caller?.role !== 'student' || current.has(viewer.id)) {
+        throw new ForbiddenException(BLOCK_WORKSPACE_COACH);
+      }
     }
     await this.prisma.userBlock.upsert({
       where: {

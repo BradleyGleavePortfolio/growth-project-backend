@@ -208,7 +208,10 @@ describe('COACH-DM-BE part 1: the workspace coach and their own client in commun
     expect(await refusal(w.reactions.react(w.coach, 'message', between, '\u{1F44D}'))).toEqual([404, 'community.reaction.target_not_found']);
   });
 
-  it('9. another coach\'s student with a row here, a co-coach row and an assistant row: never listed, 404 both ways', async () => {
+  // #203-E49 (203-D12, COMMUNITY-DM-RULES-BE): another coach's student who holds an active row here and a DM thread
+  // with this coach is, by operator ruling R-a, a former client who keeps that thread; the co-coach and assistant rows
+  // stay as before.
+  it('9. a co-coach row and an assistant row: never listed, 404 both ways; another coach\'s student with a row here and a thread keeps it', async () => {
     const theirStudent = w.user('student', 'Other Client', w.otherCoach.id);
     w.row(theirStudent, 'student');
     const coCoach = w.user('coach', 'Co Coach', null);
@@ -220,11 +223,14 @@ describe('COACH-DM-BE part 1: the workspace coach and their own client in commun
       w.dm(w.coach, p, 'Quick answer');
     }
     const list = await listed(w, w.coach);
-    for (const p of [theirStudent, coCoach, assistant]) {
+    for (const p of [coCoach, assistant]) {
       expect(list).not.toContain(p.id);
       await closedEveryWay(w, w.coach, p, NOT_FOUND);
       await closedEveryWay(w, p, w.coach, NOT_FOUND);
     }
+    expect(list).toContain(theirStudent.id);
+    await expect(w.dms.openThread(w.coach, w.wsId, theirStudent.id)).resolves.toBeDefined();
+    await expect(w.dms.openThread(theirStudent, w.wsId, w.coach.id)).resolves.toBeDefined();
   });
 
   it('10. another coach passing this community\'s id, with their own client holding an assistant row here: 404 everywhere', async () => {
@@ -241,13 +247,18 @@ describe('COACH-DM-BE part 1: the workspace coach and their own client in commun
     expect(await refusal(w.reactions.react(w.otherCoach, 'message', id, '\u{1F44D}'))).toEqual([404, 'community.reaction.target_not_found']);
   });
 
-  it('11. a client who moved to another coach: dropped from the coach\'s list; open, read and send 404', async () => {
+  // #203-E49 (203-D12, COMMUNITY-DM-RULES-BE): the owner's newer rule. A client who moved to another coach and still
+  // holds an active row here keeps the existing thread with this coach (test/community/community-dm-rules-be.spec.ts).
+  it('11. a client who moved to another coach, with an active row and their thread: still listed; open, read and send 200', async () => {
     const mover = w.member('Moving Client');
     w.dm(mover, w.coach, 'Thanks for everything');
     (mover as { coach_id: string | null }).coach_id = w.otherCoach.id;
-    expect(await listed(w, w.coach)).not.toContain(mover.id);
-    await closedEveryWay(w, w.coach, mover, NOT_FOUND);
-    await closedEveryWay(w, mover, w.coach, NOT_FOUND);
+    expect(await listed(w, w.coach)).toContain(mover.id);
+    for (const [a, b] of [[w.coach, mover], [mover, w.coach]] as const) {
+      await expect(w.dms.openThread(a, w.wsId, b.id)).resolves.toBeDefined();
+      await expect(w.dms.listThread(a, w.wsId, b.id, {})).resolves.toBeDefined();
+      await expect(w.dms.send(a, w.wsId, b.id, 'Checking in')).resolves.toBeDefined();
+    }
   });
 
   it('12. a roster client who is banned, removed, or never opened Community: open, read and send 404; banned off the list', async () => {
@@ -330,6 +341,7 @@ describe('COACH-DM-BE part 1: the workspace coach and their own client in commun
     await closedEveryWay(w, w.viewer, w.viewer, NOT_FOUND);
   });
 
+  // #203-E49 (203-D12): the mover keeps their thread, so the page is the mover's thread and the roster thread.
   it('17. page: with limit=2 and the two newest threads off the roster, the older roster thread is listed', async () => {
     w.dm(w.viewer, w.coach, 'Thanks for the plan');
     const coCoach = w.user('coach', 'Co Coach', null);
@@ -338,7 +350,7 @@ describe('COACH-DM-BE part 1: the workspace coach and their own client in commun
     const mover = w.member('Moving Client');
     w.dm(mover, w.coach, 'Thanks for everything');
     (mover as { coach_id: string | null }).coach_id = w.otherCoach.id;
-    expect(await listed(w, w.coach, '2')).toEqual([w.viewer.id]);
+    expect(await listed(w, w.coach, '2')).toEqual([mover.id, w.viewer.id]);
   });
 });
 

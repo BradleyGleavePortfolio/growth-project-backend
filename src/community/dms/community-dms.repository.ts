@@ -77,8 +77,9 @@ export class CommunityDmsRepository {
     workspaceId: string;
     userId: string;
     limit: number;
-    /** COACH-DM-BE: keep only threads whose other person is the user's current client (the workspace coach's list). */
-    clientsOnly?: boolean;
+    /** COACH-DM-BE, COMMUNITY-DM-RULES-BE: when given, keep only threads whose other person it returns (the workspace
+     *  coach's current clients and kept former clients; a former client's coach), asked once over every other person. */
+    keep?: (others: string[]) => Promise<Set<string>>;
   }): Promise<CommunityMessage[]> {
     const rows = await this.prisma.communityMessage.findMany({
       where: {
@@ -94,7 +95,7 @@ export class CommunityDmsRepository {
     });
     // Asked of every row before the page is cut, so threads off the roster never shorten page one (KT-10).
     const other = (r: CommunityMessage) => (r.sender_id === params.userId ? r.recipient_user_id : r.sender_id) ?? '';
-    const roster = params.clientsOnly ? await this.clientsAmong(params.userId, [...new Set(rows.map(other))]) : null;
+    const roster = params.keep ? await params.keep([...new Set(rows.map(other))]) : null;
     const seen = new Set<string>();
     const latest: CommunityMessage[] = [];
     for (const r of rows) {

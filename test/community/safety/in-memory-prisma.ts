@@ -187,6 +187,30 @@ export class InMemoryPrisma {
   }
 
   /**
+   * COMMUNITY-DM-RULES-BE app.community_dm_former_client (20270502011600, 203-D12): the workspace's coach and a student
+   * who is no longer that coach's client, still in the community (an active row in a space of it that is not public,
+   * not archived and active; a student's package space only with a live purchase, which this store never holds; no
+   * live ban) and with a DM thread between the two there (either direction, deleted or not). A space seeded without a
+   * visibility or status reads as the column defaults (members, active).
+   */
+  dmFormerClient(workspaceId: string, coachId: string, clientId: string): boolean {
+    const w = this.table('communityWorkspace').find((r) => r.id === workspaceId);
+    const u = this.table('user').find((r) => r.id === clientId);
+    if (!w || !u || !coachId || clientId === coachId || w.coach_id !== coachId) return false;
+    if (u.role !== 'student' || (u.coach_id ?? null) === w.coach_id || this.authorBanned(workspaceId, clientId)) return false;
+    const inCommunity = this.table('communityMembership').some((m) => {
+      const c = this.table('communityCohort').find((s) => s.id === m.cohort_id);
+      const visibility = (c?.visibility ?? 'members') as string;
+      return !!c && m.workspace_id === workspaceId && m.user_id === clientId && m.status === 'active' &&
+        c.workspace_id === workspaceId && visibility !== 'public' && c.archived_at == null && (c.status ?? 'active') === 'active' &&
+        (m.role !== 'student' || visibility !== 'package');
+    });
+    const thread = this.table('communityMessage').some((t) => t.workspace_id === workspaceId && t.scope === 'dm' &&
+      ((t.sender_id === coachId && t.recipient_user_id === clientId) || (t.sender_id === clientId && t.recipient_user_id === coachId)));
+    return inCommunity && thread;
+  }
+
+  /**
    * The raw SQL readers the community code runs, answered from the tables by RAW_SQL_BRANCHES: the first branch
    * whose marker the SQL holds answers it, and it is handed only the predicates it lists in `reads`, each true only
    * when the SQL names it (LO-1185 B2, LO-1185R2 B1). Both are read in the active SQL only (activeSql, LS-1185R3
@@ -587,6 +611,19 @@ export const RAW_SQL_BRANCHES: readonly RawSqlBranch[] = [
       const [ws, spaces, authors] = values as [string[], string[], string[]];
       return authors.flatMap((a, n) =>
         (asks.stays && db.authorLeft(ws[n], spaces[n] || null, a)) || (asks.unbanned && db.authorBanned(ws[n], a)) ? [] : [{ n }]);
+    },
+  },
+  {
+    // COMMUNITY-DM-RULES-BE (#203-E49, 203-D12): the coach and a former client who keep their DM thread. The function
+    // is the rule, so it is the marker (as app.community_can_access). Listed before that branch: a SQL text that
+    // names both is this reader's.
+    reader: 'CommunityAccessService.formerClientsIn (src/community/community-access.service.ts)',
+    marker: 'app.community_dm_former_client',
+    reads: [],
+    // The clients of the [coach, client] pairs the function lets keep their thread.
+    answer(db, _rules, values) {
+      const [coaches, clients, workspaceId] = values as [string[], string[], string];
+      return clients.flatMap((k, i) => (db.dmFormerClient(workspaceId, coaches[i], k) ? [{ id: k }] : []));
     },
   },
   {

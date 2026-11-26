@@ -78,7 +78,8 @@ describe('AckService', () => {
     isSpaceTeam: jest.Mock;
   };
   let access: { isWorkspaceCoach: jest.Mock; findCohort: jest.Mock; canAccessCohort: jest.Mock;
-    findWorkspace: jest.Mock; membershipInWorkspace: jest.Mock; isCoachWithClient: jest.Mock };
+    findWorkspace: jest.Mock; membershipInWorkspace: jest.Mock; isCoachWithClient: jest.Mock;
+    formerClientsIn: jest.Mock; dmSettingRow: jest.Mock };
   let analytics: { capture: jest.Mock };
   let safety: { assertVisibleTo: jest.Mock; assertDmAllowed: jest.Mock };
   let service: AckService;
@@ -104,6 +105,9 @@ describe('AckService', () => {
       membershipInWorkspace: jest.fn(async () => ({ dm_enabled: null })),
       // COACH-DM-BE: the workspace coach with their own client (no membership on the coach's side): no by default.
       isCoachWithClient: jest.fn(async () => false),
+      // COMMUNITY-DM-RULES-BE (#203-E49, 203-D12): the coach with a former client who keeps their thread: none by default.
+      formerClientsIn: jest.fn(async () => new Set<string>()),
+      dmSettingRow: jest.fn(async () => null),
     };
     analytics = { capture: jest.fn() };
     // Default: the coach can read the message (the gate passes).
@@ -230,13 +234,15 @@ describe('AckService', () => {
         { error: 'not_found', code: 'community.ack.message_not_found' }, [m.workspace_id, m.cohort_id]);
     });
 
-    it('a DM row is asked about with no space (the Hall/DM place)', async () => {
+    // #203-E49 (203-D12, COMMUNITY-DM-RULES-BE): a DM row's place test is the DM rule (assertDmReadable, which keeps
+    // the coach's thread with a former client open), so the gate asks it the block alone, with no place.
+    it('a DM row is asked about the block alone (no place: the DM rule is its place test)', async () => {
       const m = msg({ scope: 'dm', cohort_id: null, recipient_user_id: coach.id,
         dm_key: CommunityDmsRepository.dmKey(FIXTURE_IDS.workspace, coach.id, FIXTURE_IDS.clientSender) });
       repo.findById.mockResolvedValue(m);
       repo.stampAck.mockImplementation(stampAckFrom(m));
       await service.applyTransition(coach, MSG_ID, 'acked');
-      expect(safety.assertVisibleTo.mock.calls[0][3]).toEqual([m.workspace_id, null]);
+      expect(safety.assertVisibleTo.mock.calls[0][3]).toBeUndefined();
     });
 
     it.each(['seen', 'acked', 'replied'] as const)('%s on a hidden message: the same 404 as absent, nothing stamped, no telemetry', async (to) => {

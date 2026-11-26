@@ -40,6 +40,8 @@ interface ResolvedTarget {
   audience: CommunityAudience;
   /** The target's (community, space): where a reactor's ban or departure is read (count rule). */
   place: RowPlace;
+  /** A DM row's two people (COMMUNITY-DM-RULES-BE): their reactions count while the DM is open. */
+  dm?: readonly string[];
 }
 
 /**
@@ -128,27 +130,31 @@ export class CommunityReactionsService {
       throw new NotFoundException(NOT_FOUND);
     }
 
-    // Authorise via the owning cohort (cohort messages + comments are scoped to
-    // a cohort) or, when no cohort, the workspace.
-    if (msg.cohort_id) {
-      const cohort = await this.access.findCohort(msg.cohort_id);
-      if (!cohort || !(await this.access.canAccessCohort(cohort, user))) {
-        throw new NotFoundException(NOT_FOUND);
-      }
-    } else if (!(await this.access.canAccessWorkspace(msg.workspace_id, user))) {
-      throw new NotFoundException(NOT_FOUND);
-    }
-    // DM rows are only addressable by their two participants, and only while the DM is open to
-    // both (assertDmOpen, the DM read rule), so both may hear the ping.
-    assertDmParticipantIfDm(msg, user.id, NOT_FOUND);
     if (msg.dm_key) {
+      // DM rows are only addressable by their two participants, and only while the DM is open to
+      // both (assertDmOpen, the DM read rule, is their place test), so both may hear the ping.
+      // COMMUNITY-DM-RULES-BE (203-D12): the rule keeps the coach's thread with a former client
+      // open, so the author test here is the block alone (assertDmOpen already asked the rest).
+      assertDmParticipantIfDm(msg, user.id, NOT_FOUND);
       const other = (msg.sender_id === user.id ? msg.recipient_user_id : msg.sender_id) ?? '';
       await assertDmOpen(this.access, this.safety, msg.workspace_id, user.id, other).catch((e: unknown) => {
         throw e instanceof HttpException ? new NotFoundException(NOT_FOUND) : e;
       });
+      await this.safety.assertVisibleTo(user.id, msg.sender_id, NOT_FOUND);
+    } else {
+      // Authorise via the owning cohort (cohort messages + comments are scoped to
+      // a cohort) or, when no cohort, the workspace.
+      if (msg.cohort_id) {
+        const cohort = await this.access.findCohort(msg.cohort_id);
+        if (!cohort || !(await this.access.canAccessCohort(cohort, user))) {
+          throw new NotFoundException(NOT_FOUND);
+        }
+      } else if (!(await this.access.canAccessWorkspace(msg.workspace_id, user))) {
+        throw new NotFoundException(NOT_FOUND);
+      }
+      // Two-way block: content the caller cannot see cannot be reacted to.
+      await this.safety.assertVisibleTo(user.id, msg.sender_id, NOT_FOUND, placeOf(msg)); // #168-4: banned author too
     }
-    // Two-way block: content the caller cannot see cannot be reacted to.
-    await this.safety.assertVisibleTo(user.id, msg.sender_id, NOT_FOUND, placeOf(msg)); // #168-4: banned author too
 
     return {
       workspaceId: msg.workspace_id,
@@ -159,6 +165,7 @@ export class CommunityReactionsService {
         ? { people: [msg.sender_id, msg.recipient_user_id ?? msg.sender_id] }
         : { workspaceId: msg.workspace_id, cohortId: msg.cohort_id },
       place: placeOf(msg),
+      ...(msg.dm_key ? { dm: [msg.sender_id, msg.recipient_user_id ?? msg.sender_id] } : {}),
     };
   }
 
@@ -168,7 +175,16 @@ export class CommunityReactionsService {
    */
   private async visibleReactions(user: User, t: ResolvedTarget): Promise<CommunityResponse[]> {
     const rows = await this.reactions.listForTarget(t.targetType, t.targetId);
-    return countedReactions(this.safety, user.id, rows, () => t.place);
+    if (!t.dm) return countedReactions(this.safety, user.id, rows, () => t.place);
+    // COMMUNITY-DM-RULES-BE (203-D12): on a DM row its two people's reactions count while the DM is open
+    // (resolveTarget asked assertDmOpen); a block still drops them. Anyone else's keep the count rule.
+    const pair = t.dm;
+    const [placed, ofPair] = await Promise.all([
+      countedReactions(this.safety, user.id, rows.filter((r) => !pair.includes(r.user_id)), () => t.place),
+      this.safety.filterBlocked(user.id, rows.filter((r) => pair.includes(r.user_id)), (r) => r.user_id),
+    ]);
+    const counted = new Set([...placed, ...ofPair]);
+    return rows.filter((r) => counted.has(r));
   }
 
   private summarise(
