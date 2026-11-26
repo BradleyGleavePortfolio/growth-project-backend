@@ -595,6 +595,16 @@ itLive('community v1-3 direct messages (live DB)', () => {
       const coach = await call('GET', dmsAt(spelled), asUser(ids.coachA));
       expect(coach.status).toBe(200);
       expect(threadsOf(coach.body)).toEqual(coachList);
+
+      // Tenant guard under the same spelling: another community's coach and member are refused, as with the stored id.
+      const outsiders = await Promise.all([
+        call('POST', dmsAt(spelled), asUser(ids.coachB), { recipient_user_id: ids.studentA }),
+        call('POST', `${dmsAt(spelled)}/${ids.studentA}/messages`, asUser(ids.studentB), { body: 'Hello' }),
+        call('GET', `${dmsAt(spelled)}/${ids.studentA2}/messages`, asUser(ids.studentB)),
+        call('GET', dmsAt(spelled), asUser(ids.studentB)),
+        call('GET', dmsAt(spelled), asUser(ids.coachB)),
+      ]);
+      expect(outsiders.map((r) => [r.status, r.body?.code])).toEqual(Array(5).fill([404, 'community.dm.not_found']));
     });
 
     it('the pair has one thread: every row between them carries the stored key', async () => {
