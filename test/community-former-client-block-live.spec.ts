@@ -121,7 +121,7 @@ describe('FIX-1251-FORMER-BLOCK (live): a former client blocks the old coach; a 
     expect(await blockRows()).toBe(0);
     const sent = pushes.length;
     expect(await outcome(dms.send(u('K'), ws, id.X, 'Glad it helps'))).toBe('200');
-    expect(pushes.slice(sent).map((q) => [q.recipientId, q.deepLink])).toEqual([[id.X, `tgp://community/dm/${id.K}`]]);
+    expect(pushes.slice(sent).map((q) => [q.recipientId, q.deepLink])).toEqual([[id.X, `tgp://community/dm/${id.K}?workspace=${ws}`]]);
     expect({ XsendK: await outcome(dms.send(u('X'), ws, id.K, 'Thanks')), Klists: (await others('K')).includes(id.X), Xlists: await others('X') })
       .toEqual({ XsendK: '200', Klists: true, Xlists: [id.K] });
   });

@@ -396,8 +396,8 @@ describe('COMMUNITY-DM-RULES-BE D12: the coach and a former client keep their th
     await w.dmsvc.send(w.p.K, w.wsId, w.p.X.id, 'Glad it helps');
     await w.dmsvc.send(w.p.X, w.wsId, w.p.K.id, 'Thanks for the plan');
     expect(w.pushes.map((q) => [q.recipientId, q.deepLink, q.otherUserId, q.workspaceId])).toEqual([
-      [w.p.X.id, `tgp://community/dm/${w.p.K.id}`, w.p.K.id, w.wsId],
-      [w.p.K.id, `tgp://community/dm/${w.p.X.id}`, w.p.X.id, w.wsId],
+      [w.p.X.id, `tgp://community/dm/${w.p.K.id}?workspace=${w.wsId}`, w.p.K.id, w.wsId],
+      [w.p.K.id, `tgp://community/dm/${w.p.X.id}?workspace=${w.wsId}`, w.p.X.id, w.wsId],
     ]);
     const db = stub<PrismaService>(w.db);
     const held = (to: User, from: User) => heldPushDropReason(db, to.id, { otherUserId: from.id, community: { workspaceId: w.wsId } }, new Date());

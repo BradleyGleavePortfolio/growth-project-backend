@@ -27,6 +27,8 @@ export const CommunityDmThreadSchema = z
     thread_id: z.string(),
     workspace_id: z.guid(),
     other_user_id: z.guid(),
+    // COMMUNITY-DM-FORMER-REACH-BE: the other person's stored name on the workspace coach's own list; null elsewhere.
+    other_display_name: z.string().nullable(),
     created_at: z.string().datetime().nullable(),
     last_message_at: z.string().datetime().nullable(),
   })

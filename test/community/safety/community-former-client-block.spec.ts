@@ -210,7 +210,7 @@ describe('FIX-1251-FORMER-BLOCK: a former client blocks the old coach (203-D51 o
     expect(blocks(w, X, K)).toBe(0);
     const before = w.pushes.length;
     await w.dmsvc.send(K, w.wsId, X.id, 'Glad it helps');
-    expect(w.pushes.slice(before).map((q) => [q.recipientId, q.deepLink])).toEqual([[X.id, `tgp://community/dm/${K.id}`]]);
+    expect(w.pushes.slice(before).map((q) => [q.recipientId, q.deepLink])).toEqual([[X.id, `tgp://community/dm/${K.id}?workspace=${w.wsId}`]]);
     expect(await snapshot(w)).toEqual(OPEN);
   });
 

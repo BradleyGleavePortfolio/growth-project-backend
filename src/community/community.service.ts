@@ -1,8 +1,10 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import type { CommunityMembership, CommunityWorkspace, User } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { CommunityRepository } from './community.repository';
 import { CommunitySafetyService, crisisField } from './safety/community-safety.service';
+import { CommunityAccessService } from './community-access.service';
+import { formerClientArm } from './dms/community-dms.service';
 import { memberName } from './member-display-name';
 import { fullNamesFor, membersNow, placeOf } from './community-space-access';
 import { isBannedFromWorkspace } from './community-ban';
@@ -62,6 +64,7 @@ export class CommunityService {
     private prisma: PrismaService,
     private readonly repo: CommunityRepository,
     private readonly safety: CommunitySafetyService,
+    @Optional() private readonly access: CommunityAccessService = new CommunityAccessService(prisma),
   ) {}
 
   // ── Effective-role + tri-state helpers ────────────────────────────────────
@@ -129,6 +132,7 @@ export class CommunityService {
         membership: null,
         unread: { cohort_messages: 0, dm_messages: 0, mentions: 0 },
         flags,
+        former_coach_dms: [],
       });
     }
 
@@ -191,7 +195,24 @@ export class CommunityService {
         mentions: 0,
       },
       flags,
+      former_coach_dms: scope === 'student' && flags.community_dm ? await this.formerCoachDms(user.id) : [],
     });
+  }
+
+  /** COMMUNITY-DM-FORMER-REACH-BE: each community where the caller keeps a DM thread with its coach as a former client,
+   *  by the DM list's own arm (formerClientArm 'open'), sorted by workspace_id. The caller's own open community answers
+   *  through the member arm, so it is never listed. */
+  private async formerCoachDms(userId: string): Promise<Array<{ workspace_id: string; coach_user_id: string }>> {
+    const found: Array<{ workspace_id: string; coach_user_id: string }> = [];
+    for (const id of await this.access.dmSettingWorkspaces(userId)) {
+      const workspace = await this.access.findWorkspace(id);
+      if (!workspace) continue;
+      const membership = await this.access.membershipInWorkspace(id, userId);
+      if ((await formerClientArm(this.access, this.safety, workspace, userId, membership)) === 'open') {
+        found.push({ workspace_id: id, coach_user_id: workspace.coach_id });
+      }
+    }
+    return found;
   }
 
   // ── GET /community/today ────────────────────────────────────────────────────

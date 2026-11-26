@@ -43,6 +43,13 @@ export class CommunityDmsRepository {
     return clientsAmong(this.prisma, viewerId, ids);
   }
 
+  /** COMMUNITY-DM-FORMER-REACH-BE: the stored name of each of `ids` (User.name, trimmed); a blank or missing name is left out. */
+  async namesOf(ids: string[]): Promise<Map<string, string>> {
+    if (ids.length === 0) return new Map();
+    const users = await this.prisma.user.findMany({ where: { id: { in: [...new Set(ids)] } }, select: { id: true, name: true } });
+    return new Map(users.flatMap((u): Array<[string, string]> => (u.name?.trim() ? [[u.id, u.name.trim()]] : [])));
+  }
+
   async findById(messageId: string): Promise<CommunityMessage | null> {
     return this.prisma.communityMessage.findFirst({ where: { id: messageId } });
   }
