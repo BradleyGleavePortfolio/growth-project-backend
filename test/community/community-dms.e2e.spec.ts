@@ -79,6 +79,7 @@ itLive('community v1-3 direct messages (live DB)', () => {
   let baseUrl: string;
   let ack: AckService;
   let reactions: CommunityReactionsService;
+  let push: CommunityNotificationsService;
 
   const ids = {
     coachA: '',
@@ -199,6 +200,7 @@ itLive('community v1-3 direct messages (live DB)', () => {
     prisma = prismaForStub;
     ack = moduleRef.get(AckService);
     reactions = moduleRef.get(CommunityReactionsService);
+    push = moduleRef.get(CommunityNotificationsService);
     await seed();
   });
 
@@ -503,6 +505,110 @@ itLive('community v1-3 direct messages (live DB)', () => {
     it('guard: another coach passing this community\'s id is refused with 404', async () => {
       const res = await call('POST', dmBase(), asUser(ids.coachB), { recipient_user_id: ids.studentA });
       expect(res.status).toBe(404);
+    });
+  });
+
+  // DM-WS-ID-BE (LS-1253R1 C1, class-first): the database reads several spellings of a community id as the same
+  // uuid, so a hand-built request reaches the right community with any of them. Every DM route takes the id from the
+  // community row it looked up and uses only that after: the thread key (and the keyed resend's id built from it), the
+  // stored row, the open answer's workspace_id, the push link and its community, and the coach's list. One table, the
+  // five spellings; a thread written with the stored id before the fix is the same thread under every spelling.
+  describe('DM-WS-ID-BE: the stored community id, never the id as typed', () => {
+    const SPELLINGS: Array<[string, (id: string) => string]> = [
+      ['canonical', (id) => id],
+      ['upper case', (id) => id.toUpperCase()],
+      ['no hyphens', (id) => id.replace(/-/g, '')],
+      ['braces', (id) => `{${id}}`],
+      ['urn:uuid:', (id) => `urn:uuid:${id}`],
+    ];
+    // The thread key's format, written out (CommunityDmsRepository.dmKey is not asked): unchanged for the stored id.
+    const pairKey = (a: string, b: string) => `${ids.wsA}:${[a, b].sort().join(':')}`;
+    const dmsAt = (spelled: string) => `/api/community/workspaces/${encodeURIComponent(spelled)}/dms`;
+    const threadsOf = (body: any) => body.threads.map((t: any) => [t.thread_id, t.workspace_id, t.other_user_id]);
+    let pushSpy: jest.SpyInstance;
+    let existing = '';
+    let memberList: unknown[] = [];
+    let coachList: unknown[] = [];
+
+    beforeAll(async () => {
+      await prisma.communityWorkspace.update({ where: { id: ids.wsA }, data: { dm_enabled_default: true } });
+      process.env.FEATURE_COMMUNITY_DM = 'true';
+      pushSpy = jest.spyOn(push, 'sendCommunityPush').mockResolvedValue(undefined);
+      // A thread as it is stored before this fix, written with the stored id.
+      existing = (await prisma.communityMessage.create({
+        data: {
+          workspace_id: ids.wsA, scope: 'dm', kind: 'text', dm_key: pairKey(ids.studentA, ids.studentA2),
+          sender_id: ids.studentA2, recipient_user_id: ids.studentA, body: 'Before the fix', visibility: 'active',
+        },
+      })).id;
+      const member = await call('GET', dmsAt(ids.wsA), asUser(ids.studentA));
+      const coach = await call('GET', dmsAt(ids.wsA), asUser(ids.coachA));
+      expect([member.status, coach.status]).toEqual([200, 200]);
+      memberList = threadsOf(member.body);
+      coachList = threadsOf(coach.body);
+      expect(memberList).toContainEqual([pairKey(ids.studentA, ids.studentA2), ids.wsA, ids.studentA2]);
+      expect(coachList).toEqual([[pairKey(ids.coachA, ids.studentA), ids.wsA, ids.studentA]]);
+    });
+    afterAll(async () => {
+      pushSpy.mockRestore();
+      delete process.env.FEATURE_COMMUNITY_DM;
+      await prisma.communityWorkspace.update({ where: { id: ids.wsA }, data: { dm_enabled_default: false } });
+    });
+
+    it.each(SPELLINGS)('%s: open, send, resend, read and both lists use the stored id', async (name, spell) => {
+      const spelled = spell(ids.wsA);
+      const key = pairKey(ids.studentA, ids.studentA2);
+
+      const opened = await call('POST', dmsAt(spelled), asUser(ids.studentA), { recipient_user_id: ids.studentA2 });
+      expect(opened.status).toBe(201);
+      expect(opened.body.thread).toMatchObject({ thread_id: key, workspace_id: ids.wsA, other_user_id: ids.studentA2 });
+
+      pushSpy.mockClear();
+      const sendOnce = randomUUID();
+      const sent = await call('POST', `${dmsAt(spelled)}/${ids.studentA2}/messages`,
+        { ...asUser(ids.studentA), 'idempotency-key': sendOnce }, { body: `Spelled ${name}` });
+      expect(sent.status).toBe(201);
+      expect(sent.body.message.thread_id).toBe(key);
+      const row = await prisma.communityMessage.findFirstOrThrow({ where: { id: sent.body.message.id } });
+      expect([row.dm_key, row.workspace_id]).toEqual([key, ids.wsA]);
+      expect(pushSpy).toHaveBeenCalledTimes(1);
+      expect(pushSpy.mock.calls[0][0]).toMatchObject({
+        recipientId: ids.studentA2,
+        deepLink: `tgp://community/dm/${ids.studentA}?workspace=${ids.wsA}`,
+        workspaceId: ids.wsA,
+      });
+
+      // The same Idempotency-Key with the stored spelling is the same message: its id comes from the stored key.
+      const resent = await call('POST', `${dmsAt(ids.wsA)}/${ids.studentA2}/messages`,
+        { ...asUser(ids.studentA), 'idempotency-key': sendOnce }, { body: `Spelled ${name}` });
+      expect(resent.status).toBe(201);
+      expect(resent.body.message.id).toBe(sent.body.message.id);
+
+      const read = await call('GET', `${dmsAt(spelled)}/${ids.studentA}/messages?limit=100`, asUser(ids.studentA2));
+      expect(read.status).toBe(200);
+      expect(read.body.messages.map((m: any) => m.id)).toEqual(expect.arrayContaining([existing, sent.body.message.id]));
+      expect(new Set(read.body.messages.map((m: any) => m.thread_id))).toEqual(new Set([key]));
+
+      const member = await call('GET', dmsAt(spelled), asUser(ids.studentA));
+      expect(member.status).toBe(200);
+      expect(new Set(threadsOf(member.body))).toEqual(new Set(memberList));
+      const coach = await call('GET', dmsAt(spelled), asUser(ids.coachA));
+      expect(coach.status).toBe(200);
+      expect(threadsOf(coach.body)).toEqual(coachList);
+    });
+
+    it('the pair has one thread: every row between them carries the stored key', async () => {
+      const rows = await prisma.communityMessage.findMany({
+        where: {
+          workspace_id: ids.wsA, scope: 'dm',
+          OR: [
+            { sender_id: ids.studentA, recipient_user_id: ids.studentA2 },
+            { sender_id: ids.studentA2, recipient_user_id: ids.studentA },
+          ],
+        },
+      });
+      expect(rows.length).toBeGreaterThanOrEqual(SPELLINGS.length + 1);
+      expect(new Set(rows.map((r) => r.dm_key))).toEqual(new Set([pairKey(ids.studentA, ids.studentA2)]));
     });
   });
 });
