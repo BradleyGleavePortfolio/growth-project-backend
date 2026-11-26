@@ -545,28 +545,40 @@ liveDescribe('S-SCHED-2 live: no double booking (Postgres)', () => {
   it('S-SCHED-3 C-634-2: the range preflight names active rows that end before they start', async () => {
     const rangePreflight = statements.find((st) => st.includes('S-SCHED-2 range preflight'));
     expect(rangePreflight).toBeDefined();
-    await prisma.$executeRawUnsafe(
-      'ALTER TABLE "CoachingSession" DROP CONSTRAINT "CoachingSession_no_overlapping_active_booking"',
-    );
-    try {
-      const { start } = slot(9);
-      await prisma.coachingSession.create({
-        data: {
-          id: 'ssched3-inverted',
-          coach_id: COACH_ID,
-          status: 'scheduled',
-          start_at: start,
-          end_at: new Date(start.getTime() - 60_000),
-          title: 'inverted',
+    // One transaction that the preflight's own error rolls back: the dropped
+    // constraint comes back and the inverted row never commits, so nothing is
+    // deleted and no constraint is rebuilt. Deleting the row and rebuilding
+    // raced (SCHED3-FLAKE-BE): an older snapshot keeps the just-deleted row
+    // in the rebuilt index, and tsrange() on it raises 22000.
+    const { start } = slot(9);
+    await expect(
+      prisma.$transaction(
+        async (tx) => {
+          await tx.$executeRawUnsafe(
+            'ALTER TABLE "CoachingSession" DROP CONSTRAINT "CoachingSession_no_overlapping_active_booking"',
+          );
+          await tx.coachingSession.create({
+            data: {
+              id: 'ssched3-inverted',
+              coach_id: COACH_ID,
+              status: 'scheduled',
+              start_at: start,
+              end_at: new Date(start.getTime() - 60_000),
+              title: 'inverted',
+            },
+          });
+          await tx.$executeRawUnsafe(rangePreflight ?? '');
+          // Reached only if the preflight let the row through: still roll back.
+          throw new Error('range preflight passed an inverted active row');
         },
-      });
-      await expect(prisma.$executeRawUnsafe(rangePreflight ?? '')).rejects.toThrow(
-        /range preflight: 1 active CoachingSession row/,
-      );
-    } finally {
-      await prisma.coachingSession.deleteMany({ where: { id: 'ssched3-inverted' } });
-      for (const stmt of statements) await prisma.$executeRawUnsafe(stmt);
-    }
+        { timeout: 60_000, maxWait: 10_000 },
+      ),
+    ).rejects.toThrow(/range preflight: 1 active CoachingSession row/);
+    const kept = await prisma.$queryRaw<Array<{ conname: string }>>`
+      SELECT conname FROM pg_constraint
+      WHERE conname = 'CoachingSession_no_overlapping_active_booking'`;
+    expect(kept).toHaveLength(1);
+    expect(await prisma.coachingSession.count({ where: { id: 'ssched3-inverted' } })).toBe(0);
   });
 
   it('S-SCHED-3 B-634-5: restoring an archived former welcome type passes the real one-welcome index', async () => {
