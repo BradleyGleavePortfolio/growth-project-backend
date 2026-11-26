@@ -1,0 +1,14 @@
+test/community/
+test/community-former-client-block-live.spec.ts
+test/community.service.spec.ts
+test/send-once.table.spec.ts
+test/dependency-compatibility.spec.ts
+test/fr-1186r3-fail-closed.spec.ts
+test/lo-1186r2-b1-relay-aliases.spec.ts
+test/lo-1186r2-b2-renewal-offer.spec.ts
+test/lo-1186r3-b1-relay-getter.spec.ts
+test/lo-1195r2-b1-hold-notice-registered.spec.ts
+test/ls-1186r2-independent-contract.spec.ts
+test/ls-1186r2-main-renewal-contract.spec.ts
+test/ls-1186r3-bracket-notice.spec.ts
+test/ls-1186r3-inline-transport.spec.ts
