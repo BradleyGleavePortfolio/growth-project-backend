@@ -1,0 +1,121 @@
+# D7 migration test (agent 179's file, trigger set to ci/183-d7-** by agent 183; owner #178-5 op 1, SoT A1.6). Lives ONLY on a throwaway ci/183-d7-* branch; never merge.
+# Every migration production lacks, on a TEST database (a throwaway Postgres in this job, never production):
+#   1. production's schema (every migration except the ones listed in .d7-migrations)
+#   2. forward (prisma migrate deploy applies the listed ones)
+#   3. down, newest first (each down.sql)
+#   4. forward again (each migration.sql)
+# Schema dumps are compared: down must return production's schema (an enum value Postgres cannot drop is the only allowed
+# difference, and it is printed), and forward again must equal the first forward byte for byte.
+name: d7-migration-test
+on:
+  push:
+    branches: ['ci/183-d7-**']
+concurrency:
+  group: d7-migration-test-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  d7:
+    name: Forward, down, forward on a test database
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:15.18
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: d7_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGPASSWORD: postgres
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/d7_test?schema=public
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/d7_test?schema=public
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Ensure postgresql-client is available
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1 || ! command -v pg_dump >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y postgresql-client
+          fi
+          psql --version
+          pg_dump --version
+      - name: Forward, down, forward
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s .d7-migrations || { echo "missing .d7-migrations"; exit 2; }
+          mapfile -t NEW < <(grep -vE '^\s*(#|$)' .d7-migrations | LC_ALL=C sort)
+          echo "Migrations production lacks (${#NEW[@]}): ${NEW[*]}"
+          PSQL_URL="${DATABASE_URL%%\?*}"
+          PSQL="psql --no-psqlrc -v ON_ERROR_STOP=1 -X -q $PSQL_URL"
+          dump() { pg_dump --schema-only --no-owner --no-privileges "$PSQL_URL" | grep -Ev '^\\(restrict|unrestrict) '; }
+          for d in "${NEW[@]}"; do
+            test -f "prisma/migrations/$d/migration.sql" || { echo "FAIL: $d/migration.sql missing"; exit 1; }
+            test -f "prisma/migrations/$d/down.sql" || { echo "FAIL: $d/down.sql missing"; exit 1; }
+          done
+          $PSQL -f prisma/migrations/_supabase_bootstrap.sql >/dev/null
+
+          echo "== 1. Production's schema (every migration except the ${#NEW[@]} above)"
+          mkdir -p /tmp/held
+          for d in "${NEW[@]}"; do mv "prisma/migrations/$d" /tmp/held/; done
+          npx prisma migrate deploy 2>&1 | tail -4
+          dump > /tmp/prod.sql
+          for d in "${NEW[@]}"; do mv "/tmp/held/$d" prisma/migrations/; done
+          echo "production-like schema: $(wc -l < /tmp/prod.sql) lines"
+
+          echo "== 2. Forward"
+          npx prisma migrate deploy 2>&1 | tee /tmp/fwd1.log | tail -12
+          for d in "${NEW[@]}"; do grep -q "$d" /tmp/fwd1.log || { echo "FAIL: $d was not applied forward"; exit 1; }; done
+          dump > /tmp/fwd1.sql
+          echo "after forward: $(wc -l < /tmp/fwd1.sql) lines"
+
+          echo "== 3. Down, newest first"
+          for (( i=${#NEW[@]}-1; i>=0; i-- )); do
+            echo "down ${NEW[$i]}"
+            $PSQL -f "prisma/migrations/${NEW[$i]}/down.sql" >/dev/null
+          done
+          dump > /tmp/down.sql
+          if diff -u /tmp/prod.sql /tmp/down.sql > /tmp/down.diff; then
+            echo "OK: down returned the test database to production's schema exactly."
+          else
+            CHANGED=$(grep -E '^[+-]' /tmp/down.diff | grep -vE '^(\+\+\+|---) ' || true)
+            echo "Differences between production's schema and the schema after down:"
+            printf '%s\n' "$CHANGED"
+            if printf '%s\n' "$CHANGED" | grep -vqE "^[+-][[:space:]]+'[A-Za-z_]+',?$"; then
+              echo "FAIL: down left more than enum values behind."
+              exit 1
+            fi
+            echo "OK: the only difference is an enum value, which Postgres cannot drop (documented in the down.sql)."
+          fi
+
+          echo "== 4. Forward again"
+          for d in "${NEW[@]}"; do
+            echo "forward again $d"
+            $PSQL -f "prisma/migrations/$d/migration.sql" >/dev/null
+          done
+          dump > /tmp/fwd2.sql
+          if diff -u /tmp/fwd1.sql /tmp/fwd2.sql > /tmp/fwd.diff; then
+            echo "OK: forward again gives exactly the same schema as the first forward."
+          else
+            echo "FAIL: forward again differs from the first forward:"
+            cat /tmp/fwd.diff
+            exit 1
+          fi
+          npx prisma migrate status 2>&1 | tail -4
+          echo "D7 MIGRATION TEST PASS: ${NEW[*]}"
