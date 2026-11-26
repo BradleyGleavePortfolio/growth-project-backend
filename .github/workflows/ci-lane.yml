@@ -1,0 +1,88 @@
+# TGP CI lane with Postgres (SCHED3-FLAKE-BE, agent alm). Lives ONLY on ci/** branches; never merge it.
+# Same shape as operator-kit/tools/ci-lane/backend-ci-lane.yml plus the mwb-3-live-tests Postgres 15
+# service and env, so MWB3_TEST_DATABASE_URL live specs really run (the plain lane only skips them).
+# .ci-lane-specs: jest paths (one per line). .ci-lane-repeat: how many times to run them (default 1).
+# .ci-lane-probe: optional extra jest paths, run once after the repeats.
+name: ci-lane
+on:
+  push:
+    branches: ['ci/**']
+concurrency:
+  group: ci-lane-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  targeted:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      MWB3_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx prisma generate
+      - name: Install postgresql-client
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1; then
+            for i in 1 2 3; do
+              timeout 120 sudo apt-get update -o Acquire::Retries=3 && timeout 240 sudo apt-get install -y postgresql-client && break
+              sleep 10
+            done
+          fi
+          psql --version
+      - name: Provision the RLS-bound app_authenticated role (as mwb-3-live-tests)
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c \
+            "DO \$do\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_authenticated') THEN CREATE ROLE app_authenticated NOLOGIN NOINHERIT NOBYPASSRLS; END IF; END \$do\$;"
+      - name: Repeated live jest
+        shell: bash
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: |
+          set -uo pipefail
+          test -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }
+          mapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)
+          N=$(tr -dc '0-9' < .ci-lane-repeat 2>/dev/null || true); N=${N:-1}
+          echo "specs: ${SPECS[*]}  repeats: $N"
+          pass=0; fail=0; lines=()
+          for i in $(seq 1 "$N"); do
+            echo "::group::repeat $i of $N"
+            if npx jest --ci --runInBand --testTimeout=120000 "${SPECS[@]}" 2>&1 | tee "/tmp/repeat-$i.log"; then r=PASS; pass=$((pass+1)); else r=FAIL; fail=$((fail+1)); fi
+            echo "::endgroup::"
+            t=$(grep -E '^Tests:' "/tmp/repeat-$i.log" | tail -1)
+            echo "REPEAT $i of $N: $r  $t"; lines+=("REPEAT $i of $N: $r  $t")
+          done
+          { echo "### Repeated live jest: $pass passed, $fail failed of $N"; printf -- '- %s\n' "${lines[@]}"; } >> "$GITHUB_STEP_SUMMARY"
+          printf '%s\n' "${lines[@]}"
+          echo "TOTAL: $pass passed, $fail failed of $N"
+          [ "$fail" -eq 0 ]
+      - name: Probe (once)
+        if: ${{ always() && hashFiles('.ci-lane-probe') != '' }}
+        shell: bash
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: |
+          set -euo pipefail
+          mapfile -t PROBE < <(grep -vE '^\s*(#|$)' .ci-lane-probe)
+          npx jest --ci --runInBand --testTimeout=120000 "${PROBE[@]}"
