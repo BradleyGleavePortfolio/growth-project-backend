@@ -79,6 +79,30 @@ describe('locked dependency compatibility', () => {
     `);
   });
 
+  it('loads effect through the CommonJS entry the Prisma config consumer requires', () => {
+    // @prisma/config is CommonJS and require()s effect and effect/Function, so the
+    // default condition's dist/cjs files are the entries it loads; the decode runs
+    // through those entries on plain made-up values.
+    probe(`
+      const { createRequire } = require('node:module');
+      const local = createRequire(require.resolve('@prisma/config'));
+      assert.match(local.resolve('effect'), /effect[\\\\/]dist[\\\\/]cjs[\\\\/]index\\.js$/);
+      assert.match(local.resolve('effect/Function'), /effect[\\\\/]dist[\\\\/]cjs[\\\\/]Function\\.js$/);
+      const { Either, Schema } = local('effect');
+      const { pipe } = local('effect/Function');
+      const Shape = Schema.Struct({ schema: Schema.optional(Schema.String) });
+      const decode = input => pipe(
+        Schema.decodeUnknownEither(Shape, {})(input, { onExcessProperty: 'error' }),
+        Either.map(config => config.schema)
+      );
+      const accepted = decode({ schema: './schema.prisma' });
+      assert.equal(Either.isRight(accepted), true);
+      assert.equal(accepted.right, './schema.prisma');
+      assert.equal(Either.isLeft(decode({ schema: 1 })), true);
+      assert.equal(Either.isLeft(decode({ schema: './schema.prisma', extra: true })), true);
+    `);
+  });
+
   it('merges through the deepmerge ESM condition resolved from the Prisma consumer', () => {
     // @prisma/config imports deepmerge-ts by bare specifier, so its real entry is
     // dist/index.mjs, not the dist/index.cjs file `require` selects. The probe runs
@@ -306,6 +330,7 @@ describe('locked dependency compatibility', () => {
       // 'that major has no patched release'.
       const patchedByMajor = {
         'deepmerge-ts': { 8: '8.0.0' },
+        effect: { 3: '3.22.1' },
         multer: { 2: '2.5.0' },
         qs: { 6: '6.16.0' },
         'js-yaml': { 3: '3.15.2', 4: '4.3.2' },
@@ -320,6 +345,7 @@ describe('locked dependency compatibility', () => {
       // sibling of the first parent.
       const chains = [
         [['@prisma/config'], 'deepmerge-ts'],
+        [['@prisma/config'], 'effect'],
         [['@nestjs/platform-express'], 'multer'],
         [['@nestjs/platform-express', 'express'], 'qs'],
         [['@nestjs/platform-express', 'express', 'body-parser'], 'qs'],
@@ -366,12 +392,14 @@ describe('locked dependency compatibility', () => {
       // The override-pinned resolutions are exact, so any drift is a manifest change.
       assert.deepEqual({
         deepmerge: resolved['@prisma/config -> deepmerge-ts'],
+        effect: resolved['@prisma/config -> effect'],
         multer: resolved['@nestjs/platform-express -> multer'],
         expressQs: resolved['@nestjs/platform-express -> express -> qs'],
         bodyParserQs: resolved['@nestjs/platform-express -> express -> body-parser -> qs'],
         swaggerYaml: resolved['@nestjs/swagger/package.json -> js-yaml'],
         diff: resolved['ts-node -> diff']
       }, {
+        effect: '3.22.1',
         deepmerge: '8.0.0', multer: '2.5.0', expressQs: '6.16.0',
         bodyParserQs: '6.16.0', swaggerYaml: '4.3.2', diff: '9.0.0'
       });

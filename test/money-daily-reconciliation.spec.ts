@@ -251,7 +251,7 @@ describe('ReconciliationDailyCron: every purchase, every day', () => {
     expect(notes.pushToUser).toHaveBeenCalledTimes(1);
     const [uid, title, body, data, signal, route] = notes.pushToUser.mock.calls[0] as unknown as any[];
     expect([uid, title, body]).toEqual(['owner-1', 'Money check: clean', 'Checked 120 purchases against Stripe. Every one matches.']);
-    expect(data).toEqual({ type: 'money_check', verdict: 'clean' });
+    expect(data).toEqual({ type: 'money_check', verdict: 'clean', actionScreen: 'NotificationCenter' });
     expect(signal).toBeUndefined();
     expect(route).toEqual({
       kind: NotificationKind.COACH_ALERT,
