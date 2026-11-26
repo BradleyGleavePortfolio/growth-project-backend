@@ -583,6 +583,7 @@ itLive('community v1-3 direct messages (live DB)', () => {
         { ...asUser(ids.studentA), 'idempotency-key': sendOnce }, { body: `Spelled ${name}` });
       expect(resent.status).toBe(201);
       expect(resent.body.message.id).toBe(sent.body.message.id);
+      expect(pushSpy).toHaveBeenCalledTimes(1);
 
       const read = await call('GET', `${dmsAt(spelled)}/${ids.studentA}/messages?limit=100`, asUser(ids.studentA2));
       expect(read.status).toBe(200);
