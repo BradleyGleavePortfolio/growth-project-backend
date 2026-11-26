@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Put, Delete, Body, Param, Query, UseGuards, Request, Headers } from '@nestjs/common';
+import { Controller, Post, Get, Put, Delete, Body, Param, Query, UseFilters, UseGuards, Request, Headers } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { WorkoutService } from './workout.service';
@@ -8,6 +8,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { OpenToCoachlessClient } from '../common/decorators/open-to-coachless-client.decorator';
 import { keepRomanContextFor } from '../roman/context/roman-context-invalidation';
+import { WorkoutRefusalFilter } from './workout-refusal.filter';
 import {
   ExerciseHistoryQueryDto,
   CreateWorkoutDto,
@@ -29,6 +30,8 @@ export class WorkoutController {
   // WK-1-BE: an optional Idempotency-Key (the phone's queue key) makes a resend
   // after a lost answer return the stored workout instead of a second one; that
   // resend stores nothing new, so it keeps Roman's context.
+  // WORKOUT-REFUSAL-CODES-BE: a refusal the phone parks carries a code and a plain next step.
+  @UseFilters(WorkoutRefusalFilter)
   async createWorkout(
     @Request() req: AuthedRequest,
     @Body() body: CreateWorkoutDto,
@@ -58,6 +61,7 @@ export class WorkoutController {
   // QA P0-W1. Previously there was no way to correct or remove a logged
   // workout; both endpoints below are gated on WorkoutSession ownership.
   @Put('workouts/:id')
+  @UseFilters(WorkoutRefusalFilter)
   async updateWorkout(
     @Request() req: AuthedRequest,
     @Param('id') id: string,
