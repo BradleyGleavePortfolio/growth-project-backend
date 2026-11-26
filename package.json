@@ -95,7 +95,8 @@
     "qs": "6.16.0",
     "diff": "9.0.0",
     "@prisma/config@6.19.3": {
-      "deepmerge-ts": "8.0.0"
+      "deepmerge-ts": "8.0.0",
+      "effect": "3.22.1"
     },
     "@nestjs/platform-express@11.1.26": {
       "multer": "2.5.0"
