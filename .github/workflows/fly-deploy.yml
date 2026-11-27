@@ -14,10 +14,14 @@
 #
 # Hosted controls this workflow relies on but cannot create (see
 # docs/delivery-controls.md): branch protection on main, required PR checks,
-# required reviewers on the `production` environment, and required review for
+# the `production` environment with admin bypass off, and required review for
 # changes under .github/workflows/** and scripts/ci/**. The gate refuses to run
-# while the `production` environment lacks a required reviewer or allows admin
-# bypass; whether those settings exist is UNKNOWN until read back from GitHub.
+# while the `production` environment is missing or allows admin bypass. By the
+# owner's decision of 2026-11-26 it no longer demands a required reviewer there:
+# the owner removed the reviewer and gave a standing approval for every deploy
+# (decision ALM-D7 op 2, docs/delivery-controls.md §2.1), and the evidence
+# manifest records required_reviewers and reviewer_rule. Whether the other
+# hosted settings exist is UNKNOWN until read back from GitHub.
 #
 # Recovery: this path is forward-only (release_sha must be the current main
 # head). Rolling back = revert on main, let CI/CodeQL/SBOM run, dispatch again.
@@ -63,7 +67,7 @@ jobs:
     outputs:
       release_sha: ${{ steps.gate.outputs.release_sha }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
 
@@ -76,8 +80,9 @@ jobs:
           DISPATCH_SHA: ${{ github.sha }}
           TRUSTED_BRANCH: main
           # Must match the deploy job's `environment.name`; the gate refuses to
-          # proceed unless that environment already has required reviewers and
-          # no admin bypass (environments auto-create unprotected otherwise).
+          # proceed unless that environment exists with admin bypass off
+          # (environments auto-create unprotected otherwise). A required
+          # reviewer is not demanded (owner decision of 2026-11-26, ALM-D7 op 2).
           REQUIRED_ENVIRONMENT: production
           OUT_DIR: release-evidence
         run: |
@@ -85,7 +90,7 @@ jobs:
           echo "release_sha=${RELEASE_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Upload evidence manifest (pre-deploy)
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4  # v5.0.0
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: release-evidence-${{ github.event.inputs.release_sha }}
           path: release-evidence/
@@ -109,10 +114,10 @@ jobs:
       RELEASE_SHA: ${{ needs.evidence-gate.outputs.release_sha }}
       FLY_APP: backend-spring-lake-3890
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           ref: ${{ needs.evidence-gate.outputs.release_sha }}
-          fetch-depth: 0   # migration delta needs the previously deployed commit
+          fetch-depth: 0 # migration delta needs the previously deployed commit
           persist-credentials: false
 
       - name: Assert checked-out tree is the authorized commit
@@ -121,7 +126,7 @@ jobs:
           [ "$head" = "$RELEASE_SHA" ] || { echo "::error::checked out $head, expected $RELEASE_SHA"; exit 1; }
 
       - name: Download evidence manifest
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0  # v5.0.0 (same major as upload-artifact)
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0 (same major as upload-artifact)
         with:
           name: release-evidence-${{ needs.evidence-gate.outputs.release_sha }}
           path: release-evidence
@@ -152,7 +157,7 @@ jobs:
       # Pinned to a commit (resolved 2026-09-20 from refs/heads/master with
       # `git ls-remote`). The action installs flyctl from fly.io's release
       # channel; the binary itself is not pinned here — see docs/delivery-controls.md.
-      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1  # master 2026-09-20
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # master 2026-09-20
 
       # Record what is running BEFORE the release (rollback target + migration
       # baseline). Raw machine config stays in RUNNER_TEMP; only
@@ -238,7 +243,7 @@ jobs:
 
       - name: Upload release manifest (post-deploy)
         if: always()
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4  # v5.0.0
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: release-manifest-${{ needs.evidence-gate.outputs.release_sha }}-${{ job.status }}
           path: release-evidence/
