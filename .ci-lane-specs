@@ -1,0 +1,10 @@
+test/ci/secrets-environment-guard.spec.ts
+test/ci/production-secrets-workflows.spec.ts
+test/ci/delivery-artifact.spec.ts
+test/ci/fly-env-workflows.spec.ts
+test/ci/fly-env-sync-behavior.spec.ts
+test/ci/house-seed-workflow.spec.ts
+test/ci/fly-env-manifest.spec.ts
+test/ci/branch-protection-checks.spec.ts
+test/ci/release-evidence-gate.spec.ts
+test/ci/gate-docs.spec.ts
