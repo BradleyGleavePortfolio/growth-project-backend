@@ -92,7 +92,7 @@ type Json = Record<string, unknown>;
     beforeAll(async () => {
       for (const k of Object.keys(u)) {
         await prisma.$executeRaw`INSERT INTO "User" ("id", "supabase_id", "email", "name", "role", "coach_id")
-        VALUES (${u[k]}, ${supa[k]}, ${`rhu-${u[k]}@example.test`}, ${`Client ${k}`}, 'student'::"Role", ${null})`;
+        VALUES (${u[k]}, ${supa[k]}, ${`rhu-${u[k]}@example.test`}, ${`Client ${k}`}, 'student'::"Role", NULL)`;
       }
       const a = await workouts.createWorkout(u.A, {
         date: '2026-08-01',
