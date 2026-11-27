@@ -74,7 +74,9 @@ describe('codeql.yml — fail closed', () => {
     expect(yml).not.toMatch(/continue-on-error/);
     expect(yml).not.toMatch(/advanced_security/);
     expect(yml).not.toMatch(/\|\|\s*echo/);
-    expect(yml).toMatch(/uses: github\/codeql-action\/analyze@3ea06614dafe36dec890db3446326e0d40ce53d4/);
+    expect(yml).toMatch(
+      /uses: github\/codeql-action\/analyze@3ea06614dafe36dec890db3446326e0d40ce53d4/,
+    );
     expect(yml).toMatch(/security-events: write/);
   });
   it('still runs on PRs, pushes to main and a schedule', () => {
@@ -110,7 +112,7 @@ describe('sbom.yml — production closure, lifecycle-free install, proven artifa
 describe('r100-quality-gate.yml — generic volume quotas retired, concrete check kept', () => {
   const yml = read('.github/workflows/r100-quality-gate.yml');
   it('has only the banned-casts job', () => {
-    const jobIds = [...yml.matchAll(/^  ([a-z0-9-]+):$/gm)].map((m) => m[1]);
+    const jobIds = [...yml.matchAll(/^ {2}([a-z0-9-]+):$/gm)].map((m) => m[1]);
     expect(jobIds).toEqual(['banned-casts']);
     // No waiver logic left in executable steps (the header may mention the retired markers historically).
     const jobsSection = yml.slice(yml.indexOf('\njobs:'));
@@ -129,7 +131,9 @@ describe('setup-branch-protection.sh — required check list matches current wor
   });
   it('gate default REQUIRED_WORKFLOWS and the protection list both name the composed dependency-audit job (S2-B8)', () => {
     const gate = read('scripts/ci/release-evidence-gate.sh');
-    expect(gate).toMatch(/REQUIRED_WORKFLOWS="\$\{REQUIRED_WORKFLOWS:-[^\n]*dependency-audit\.yml=npm audit \(high\+critical, whole graph\)\}"/);
+    expect(gate).toMatch(
+      /REQUIRED_WORKFLOWS="\$\{REQUIRED_WORKFLOWS:-[^\n]*dependency-audit\.yml=npm audit \(high\+critical, whole graph\)\}"/,
+    );
     expect(list).toContain('"npm audit (high+critical, whole graph)"');
   });
   it('no longer recommends a second PAT as reviewer', () => {
@@ -156,7 +160,8 @@ describe('Dockerfile / .dockerignore — production artifact shape (structural o
     const runtime = df.slice(df.indexOf('AS runtime'));
     expect(runtime).toMatch(/require\.resolve\(p\)/);
     expect(runtime).toContain("'prisma/package.json'");
-    for (const tool of ['jest', '@nestjs/cli', 'eslint', 'lefthook', 'ts-node']) expect(runtime).toContain(tool);
+    for (const tool of ['jest', '@nestjs/cli', 'eslint', 'lefthook', 'ts-node'])
+      expect(runtime).toContain(tool);
     expect(runtime).toMatch(/test -f scripts\/release\.sh/);
     expect(runtime).toMatch(/test -f prisma\/seed-diagnostic\.json/);
   });
@@ -178,7 +183,16 @@ describe('Dockerfile / .dockerignore — production artifact shape (structural o
   });
 
   it('.dockerignore excludes VCS, CI, tests and docs from the build context', () => {
-    for (const entry of ['.git/', '.github/', 'test/', 'docs/', 'node_modules/', 'dist/', '.env', 'lefthook.yml']) {
+    for (const entry of [
+      '.git/',
+      '.github/',
+      'test/',
+      'docs/',
+      'node_modules/',
+      'dist/',
+      '.env',
+      'lefthook.yml',
+    ]) {
       expect(di.split('\n')).toContain(entry);
     }
     expect(di).not.toMatch(/^prisma\/?$/m);
@@ -187,7 +201,16 @@ describe('Dockerfile / .dockerignore — production artifact shape (structural o
 });
 
 describe('verify-fly-release.sh — running machines must be the authorized image', () => {
-  const machine = (o: Partial<{ id: string; state: string; tag: string; ghSha: string; digest: string; group: string }> = {}) => ({
+  const machine = (
+    o: Partial<{
+      id: string;
+      state: string;
+      tag: string;
+      ghSha: string;
+      digest: string;
+      group: string;
+    }> = {},
+  ) => ({
     id: o.id ?? '860311cee0d008',
     state: o.state ?? 'started',
     region: 'sjc',
@@ -205,7 +228,12 @@ describe('verify-fly-release.sh — running machines must be the authorized imag
     writeFileSync(f, JSON.stringify(list));
     return f;
   };
-  const env = (f: string, extra: Record<string, string> = {}) => ({ MACHINES_JSON: f, RELEASE_SHA: SHA, IMAGE_LABEL: `sha-${SHA}`, ...extra });
+  const env = (f: string, extra: Record<string, string> = {}) => ({
+    MACHINES_JSON: f,
+    RELEASE_SHA: SHA,
+    IMAGE_LABEL: `sha-${SHA}`,
+    ...extra,
+  });
 
   it('passes for a converged app and records the digest in the manifest', () => {
     const f = withMachines([machine(), machine({ id: 'e2' })]);
@@ -220,12 +248,27 @@ describe('verify-fly-release.sh — running machines must be the authorized imag
     expect(m.image.machines).toHaveLength(2);
   });
   it('fails when a machine still runs the previous image tag', () => {
-    const r = sh('verify-fly-release.sh', env(withMachines([machine(), machine({ id: 'old', tag: 'deployment-01KY69AH7K7RH6KTW6QKEHRXCE', ghSha: '5076a07a1e54b14e3db84d3aa128fb0bb44542d7' })])));
+    const r = sh(
+      'verify-fly-release.sh',
+      env(
+        withMachines([
+          machine(),
+          machine({
+            id: 'old',
+            tag: 'deployment-01KY69AH7K7RH6KTW6QKEHRXCE',
+            ghSha: '5076a07a1e54b14e3db84d3aa128fb0bb44542d7',
+          }),
+        ]),
+      ),
+    );
     expect(r.code).not.toBe(0);
     expect(r.out).toMatch(/not running the authorized image/);
   });
   it('fails when the image label GH_SHA does not match the release sha', () => {
-    const r = sh('verify-fly-release.sh', env(withMachines([machine({ ghSha: '5076a07a1e54b14e3db84d3aa128fb0bb44542d7' })])));
+    const r = sh(
+      'verify-fly-release.sh',
+      env(withMachines([machine({ ghSha: '5076a07a1e54b14e3db84d3aa128fb0bb44542d7' })])),
+    );
     expect(r.code).not.toBe(0);
   });
   it('fails when no machine is started', () => {
@@ -234,7 +277,10 @@ describe('verify-fly-release.sh — running machines must be the authorized imag
     expect(r.out).toMatch(/no started machines/);
   });
   it('fails when started machines run two different digests', () => {
-    const r = sh('verify-fly-release.sh', env(withMachines([machine(), machine({ id: 'b', digest: 'sha256:' + 'a'.repeat(64) })])));
+    const r = sh(
+      'verify-fly-release.sh',
+      env(withMachines([machine(), machine({ id: 'b', digest: 'sha256:' + 'a'.repeat(64) })])),
+    );
     expect(r.code).not.toBe(0);
     expect(r.out).toMatch(/distinct image digests/);
   });
@@ -262,7 +308,12 @@ describe('assert-prod-sbom.sh — production dependency proof', () => {
       'node_modules/some-dev-only-lib': { version: '2.0.0', dev: true },
     },
   };
-  const good = ['@nestjs/core@11.0.0', '@prisma/client@6.19.3', 'prisma@6.19.3', 'typescript@5.9.0'];
+  const good = [
+    '@nestjs/core@11.0.0',
+    '@prisma/client@6.19.3',
+    'prisma@6.19.3',
+    'typescript@5.9.0',
+  ];
   const sbom = (comps: string[], bomFormat = 'CycloneDX') => ({
     bomFormat,
     components: comps.map((c) => {
@@ -294,7 +345,11 @@ describe('assert-prod-sbom.sh — production dependency proof', () => {
     expect(r.out).toMatch(/build\/test tool 'eslint'/);
   });
   it('fails when the prisma CLI (release_command dependency) is missing', () => {
-    const r = sh('assert-prod-sbom.sh', {}, files(sbom(good.filter((c) => !c.startsWith('prisma@')))));
+    const r = sh(
+      'assert-prod-sbom.sh',
+      {},
+      files(sbom(good.filter((c) => !c.startsWith('prisma@')))),
+    );
     expect(r.code).not.toBe(0);
     expect(r.out).toMatch(/required runtime package 'prisma' missing/);
   });
@@ -325,14 +380,18 @@ describe('privileged action refs are pinned to full commit SHAs (S2-B1 / S2-A-07
   ];
   for (const f of files) {
     it(`${f}: every uses: is a 40-hex pin (no @master / @vN)`, () => {
-      const uses = read(f).split('\n').filter((l) => /^\s*-?\s*uses:/.test(l));
+      const uses = read(f)
+        .split('\n')
+        .filter((l) => /^\s*-?\s*uses:/.test(l));
       expect(uses.length).toBeGreaterThan(0);
       for (const line of uses) expect(line).toMatch(PINNED);
     });
   }
   it('download-artifact and upload-artifact are the same major (v5)', () => {
     const yml = read('.github/workflows/fly-deploy.yml');
-    expect(yml).toMatch(/actions\/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0\s+# v5/);
+    expect(yml).toMatch(
+      /actions\/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0\s+# v5/,
+    );
     expect(yml).toMatch(/actions\/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4\s+# v5/);
   });
 });
@@ -354,12 +413,18 @@ describe('fly-deploy.yml — recovery and migration evidence (S2-B6 / S2-B7 / S2
     expect(deploy).toMatch(/fetch-depth: 0/);
   });
   it('only filtered machine data reaches the uploaded evidence', () => {
-    expect(deploy).toMatch(/filter-machines\.sh "\$\{RUNNER_TEMP\}\/machines-before\.json" > release-evidence\/machines-before\.json/);
-    expect(deploy).toMatch(/filter-machines\.sh "\$\{RUNNER_TEMP\}\/machines-after\.json" > release-evidence\/machines-after\.json/);
+    expect(deploy).toMatch(
+      /filter-machines\.sh "\$\{RUNNER_TEMP\}\/machines-before\.json" > release-evidence\/machines-before\.json/,
+    );
+    expect(deploy).toMatch(
+      /filter-machines\.sh "\$\{RUNNER_TEMP\}\/machines-after\.json" > release-evidence\/machines-after\.json/,
+    );
     expect(deploy).not.toMatch(/--json > release-evidence\//);
   });
   it('manifest artifact name and body carry the job result; deploy waits bounded', () => {
-    expect(deploy).toMatch(/name: release-manifest-\$\{\{ needs\.evidence-gate\.outputs\.release_sha \}\}-\$\{\{ job\.status \}\}/);
+    expect(deploy).toMatch(
+      /name: release-manifest-\$\{\{ needs\.evidence-gate\.outputs\.release_sha \}\}-\$\{\{ job\.status \}\}/,
+    );
     expect(deploy).toMatch(/\.deploy_result = \$r/);
     expect(deploy).toMatch(/--wait-timeout \d+m/);
   });
@@ -378,7 +443,10 @@ describe('fly-deploy.yml — production logs never reach the public run log (OPS
   const runs = Object.values(doc.jobs).flatMap((j) => j.steps.map((s) => s.run ?? ''));
   it('no step reads Fly logs, dumps the environment or traces commands', () => {
     for (const r of runs) {
-      const cmds = r.split('\n').filter((l) => !/^\s*echo\b/.test(l)).join('\n');
+      const cmds = r
+        .split('\n')
+        .filter((l) => !/^\s*echo\b/.test(l))
+        .join('\n');
       expect(cmds).not.toMatch(/\bfly(ctl)?\s+logs\b/);
       expect(cmds).not.toMatch(/^\s*(env|printenv|set)\s*$|\bset -x\b/m);
     }
@@ -386,7 +454,10 @@ describe('fly-deploy.yml — production logs never reach the public run log (OPS
   it('flyctl deploy output goes to a runner-only file that is never printed or uploaded', () => {
     const dep = runs.find((r) => r.includes('flyctl deploy')) ?? '';
     expect(dep).toMatch(/--build-secret [^\n]*>\s*"\$\{RUNNER_TEMP\}\/flyctl-deploy\.log" 2>&1/);
-    const cmds = dep.split('\n').filter((l) => !/^\s*echo\b/.test(l)).join('\n');
+    const cmds = dep
+      .split('\n')
+      .filter((l) => !/^\s*echo\b/.test(l))
+      .join('\n');
     expect(cmds).not.toMatch(/release-evidence|\btee\b|\bcat\b|\btail\b|\bhead\b/);
     expect(dep).toMatch(/exit "\$\{?rc\}?"/);
     expect(dep).toContain('docs/deploy-runbook.md');
@@ -394,7 +465,14 @@ describe('fly-deploy.yml — production logs never reach the public run log (OPS
 });
 
 describe('production-mutating Fly operator workflows are bound to the production environment (S2-B10)', () => {
-  for (const f of ['fly-apple-signin-set', 'fly-db-secrets-set', 'fly-launch-env-set', 'fly-recent-auth-set', 'fly-secrets-set', 'house-seed']) {
+  for (const f of [
+    'fly-apple-signin-set',
+    'fly-db-secrets-set',
+    'fly-launch-env-set',
+    'fly-recent-auth-set',
+    'fly-secrets-set',
+    'house-seed',
+  ]) {
     it(`${f}.yml has environment: production`, () => {
       expect(read(`.github/workflows/${f}.yml`)).toMatch(/^\s+environment: production$/m);
     });
@@ -426,12 +504,38 @@ describe('filter-machines.sh — evidence excludes raw machine config (S2-A-06)'
   it('keeps id/state/image_ref/checks, drops config.env and services', () => {
     const dir = mkdtempSync(join(tmpdir(), 'fm-'));
     const f = join(dir, 'm.json');
-    writeFileSync(f, JSON.stringify([{
-      id: 'm1', name: 'app-1', region: 'sjc', state: 'started', updated_at: 'x',
-      image_ref: { registry: 'registry.fly.io', repository: 'app', tag: `sha-${SHA}`, digest: 'sha256:' + 'a'.repeat(64), labels: { GH_SHA: SHA } },
-      config: { env: { SECRETISH: 'value' }, services: [{ internal_port: 3000 }], metadata: { fly_process_group: 'app' } },
-      checks: [{ name: 'servicecheck-00-http-3000', status: 'passing', output: 'HTTP 200', updated_at: 'y' }],
-    }]));
+    writeFileSync(
+      f,
+      JSON.stringify([
+        {
+          id: 'm1',
+          name: 'app-1',
+          region: 'sjc',
+          state: 'started',
+          updated_at: 'x',
+          image_ref: {
+            registry: 'registry.fly.io',
+            repository: 'app',
+            tag: `sha-${SHA}`,
+            digest: 'sha256:' + 'a'.repeat(64),
+            labels: { GH_SHA: SHA },
+          },
+          config: {
+            env: { SECRETISH: 'value' },
+            services: [{ internal_port: 3000 }],
+            metadata: { fly_process_group: 'app' },
+          },
+          checks: [
+            {
+              name: 'servicecheck-00-http-3000',
+              status: 'passing',
+              output: 'HTTP 200',
+              updated_at: 'y',
+            },
+          ],
+        },
+      ]),
+    );
     const r = sh('filter-machines.sh', {}, [f]);
     expect(r.code).toBe(0);
     const out = JSON.parse(r.out.trim());
@@ -444,7 +548,17 @@ describe('filter-machines.sh — evidence excludes raw machine config (S2-A-06)'
 
 describe('migration-delta.sh — release_command migrations need an explicit acknowledgement (S2-B7 / S2-A-05)', () => {
   const git = (cwd: string, args: string[]) => {
-    const r = spawnSync('git', args, { cwd, encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } });
+    const r = spawnSync('git', args, {
+      cwd,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: 't',
+        GIT_AUTHOR_EMAIL: 't@t',
+        GIT_COMMITTER_NAME: 't',
+        GIT_COMMITTER_EMAIL: 't@t',
+      },
+    });
     if (r.status !== 0) throw new Error(r.stderr);
     return r.stdout.trim();
   };
@@ -452,19 +566,35 @@ describe('migration-delta.sh — release_command migrations need an explicit ack
   const repo = mkdtempSync(join(tmpdir(), 'md-repo-'));
   git(repo, ['init', '-q', '-b', 'main']);
   writeFileSync(join(repo, 'a.txt'), '1');
-  git(repo, ['add', '.']); git(repo, ['commit', '-q', '-m', 'c1']);
+  git(repo, ['add', '.']);
+  git(repo, ['commit', '-q', '-m', 'c1']);
   const c1 = git(repo, ['rev-parse', 'HEAD']);
   spawnSync('mkdir', ['-p', join(repo, 'prisma', 'migrations', '20260920_x')]);
-  writeFileSync(join(repo, 'prisma', 'migrations', '20260920_x', 'migration.sql'), 'ALTER TABLE t ADD c int;');
-  git(repo, ['add', '.']); git(repo, ['commit', '-q', '-m', 'c2']);
+  writeFileSync(
+    join(repo, 'prisma', 'migrations', '20260920_x', 'migration.sql'),
+    'ALTER TABLE t ADD c int;',
+  );
+  git(repo, ['add', '.']);
+  git(repo, ['commit', '-q', '-m', 'c2']);
   const c2 = git(repo, ['rev-parse', 'HEAD']);
   writeFileSync(join(repo, 'a.txt'), '2');
-  git(repo, ['add', '.']); git(repo, ['commit', '-q', '-m', 'c3']);
+  git(repo, ['add', '.']);
+  git(repo, ['commit', '-q', '-m', 'c3']);
   const c3 = git(repo, ['rev-parse', 'HEAD']);
 
   const machines = (label: string | undefined, state = 'started') => {
     const f = join(mkdtempSync(join(tmpdir(), 'md-m-')), 'm.json');
-    writeFileSync(f, JSON.stringify([{ id: 'm', state, image_ref: { labels: label === undefined ? {} : { GH_SHA: label } }, config: { metadata: { fly_process_group: 'app' } } }]));
+    writeFileSync(
+      f,
+      JSON.stringify([
+        {
+          id: 'm',
+          state,
+          image_ref: { labels: label === undefined ? {} : { GH_SHA: label } },
+          config: { metadata: { fly_process_group: 'app' } },
+        },
+      ]),
+    );
     return f;
   };
   const manifest = () => {
@@ -475,10 +605,22 @@ describe('migration-delta.sh — release_command migrations need an explicit ack
   const run = (prev: string | undefined, release: string, ack = '') => {
     const mf = manifest();
     const r = spawnSync('bash', [join(ROOT, 'scripts', 'ci', 'migration-delta.sh')], {
-      cwd: repo, encoding: 'utf8',
-      env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '/tmp', MACHINES_JSON: machines(prev), RELEASE_SHA: release, MIGRATIONS_ACK: ack, MANIFEST: mf },
+      cwd: repo,
+      encoding: 'utf8',
+      env: {
+        PATH: process.env.PATH ?? '',
+        HOME: process.env.HOME ?? '/tmp',
+        MACHINES_JSON: machines(prev),
+        RELEASE_SHA: release,
+        MIGRATIONS_ACK: ack,
+        MANIFEST: mf,
+      },
     });
-    return { code: r.status, out: `${r.stdout}\n${r.stderr}`, manifest: JSON.parse(readFileSync(mf, 'utf8')) };
+    return {
+      code: r.status,
+      out: `${r.stdout}\n${r.stderr}`,
+      manifest: JSON.parse(readFileSync(mf, 'utf8')),
+    };
   };
 
   it('empty delta, no ack → pass and manifest records status empty', () => {
@@ -506,7 +648,9 @@ describe('migration-delta.sh — release_command migrations need an explicit ack
     expect(run(c1, c3, 'yes').code).not.toBe(0);
   });
   it('running commit unknown (no GH_SHA label) → refused without ack, allowed with ack as status unknown', () => {
-    expect(run(undefined, c3).out).toMatch(/cannot compute migration delta \(unknown: running GH_SHA label is 'unknown'\)/);
+    expect(run(undefined, c3).out).toMatch(
+      /cannot compute migration delta \(unknown: running GH_SHA label is 'unknown'\)/,
+    );
     const ok = run(undefined, c3, 'apply-migrations');
     expect(ok.code).toBe(0);
     expect(ok.manifest.migrations.status).toMatch(/^unknown/);
@@ -517,7 +661,9 @@ describe('migration-delta.sh — release_command migrations need an explicit ack
     expect(r.out).toMatch(/not in this repository's history/);
   });
   it('release sha not a commit here → refused', () => {
-    expect(run(c1, '0'.repeat(40), 'apply-migrations').out).toMatch(/is not a commit in this checkout/);
+    expect(run(c1, '0'.repeat(40), 'apply-migrations').out).toMatch(
+      /is not a commit in this checkout/,
+    );
   });
 });
 
@@ -532,7 +678,9 @@ describe('release.sh — verifier contract preflight before DB contact, discover
     expect(step0).toBeLessThan(deploy);
     const preflight = s.slice(step0, s.indexOf('STEP 1'));
     expect(s.indexOf('STEP 1')).toBeGreaterThan(step0);
-    expect(preflight).toMatch(/-name verify\.sql -type f \| LC_ALL=C sort >"\$\{DISCOVERED_LIST\}"/);
+    expect(preflight).toMatch(
+      /-name verify\.sql -type f \| LC_ALL=C sort >"\$\{DISCOVERED_LIST\}"/,
+    );
     expect(preflight).toContain('REQUIRED_VERIFIERS_FILE="scripts/release-required-verifiers.txt"');
     expect(s).not.toMatch(/RELEASE_REQUIRED_VERIFIERS_FILE/); // pinned: env cannot swap the contract
     expect(preflight).toMatch(/REQUIRED_COUNT.*-lt 1/);
@@ -552,7 +700,9 @@ describe('release.sh — verifier contract preflight before DB contact, discover
     expect(s).toMatch(/npx prisma db execute --url "\$\{DIRECT_URL\}" --file "\$\{verifier\}"/);
     const block = s.slice(step4, s.indexOf('verifiers_passed = '));
     expect(block).toMatch(/done <"\$\{DISCOVERED_LIST\}"/);
-    expect(block).toMatch(/VERIFIER_COUNT\}" -ne "\$\{DISCOVERED_COUNT\}" \|\| "\$\{VERIFIER_COUNT\}" -lt "\$\{REQUIRED_COUNT\}" \|\| "\$\{VERIFIER_COUNT\}" -lt 1/);
+    expect(block).toMatch(
+      /VERIFIER_COUNT\}" -ne "\$\{DISCOVERED_COUNT\}" \|\| "\$\{VERIFIER_COUNT\}" -lt "\$\{REQUIRED_COUNT\}" \|\| "\$\{VERIFIER_COUNT\}" -lt 1/,
+    );
     expect(block).not.toMatch(/\|\|\s*true/);
     expect(block).toMatch(/exit 1/);
     expect(s).not.toMatch(/Zero verifiers is fine/);
@@ -571,7 +721,9 @@ describe('release.sh — verifier contract preflight before DB contact, discover
     const runtime = df.slice(df.indexOf('AS runtime'));
     expect(runtime).toMatch(/^COPY prisma \.\/prisma\/$/m);
     expect(runtime).toMatch(/^COPY scripts\/release\.sh \.\/scripts\/release\.sh$/m);
-    expect(runtime).toMatch(/^COPY scripts\/release-required-verifiers\.txt \.\/scripts\/release-required-verifiers\.txt$/m);
+    expect(runtime).toMatch(
+      /^COPY scripts\/release-required-verifiers\.txt \.\/scripts\/release-required-verifiers\.txt$/m,
+    );
     expect(runtime).toMatch(/test -f scripts\/release-required-verifiers\.txt/);
   });
 });
@@ -606,7 +758,10 @@ describe('release.sh — behaviour with a fake prisma runner (no database, no ne
     // step (logs its argv, prints the step's line, or fails when FAKE_FOODS_FAIL is set) and answers -v otherwise.
     mkdirSync(join(root, 'dist', 'food-seed', 'scripts'), { recursive: true });
     mkdirSync(join(root, 'prisma', 'data'), { recursive: true });
-    writeFileSync(join(root, 'dist', 'food-seed', 'scripts', 'seed-built-in-foods.js'), '// stub\n');
+    writeFileSync(
+      join(root, 'dist', 'food-seed', 'scripts', 'seed-built-in-foods.js'),
+      '// stub\n',
+    );
     writeFileSync(join(root, 'prisma', 'data', 'seed-foods.json'), '[]\n');
     // FOOD-USDA-BE: step 6's compiled loader and its data file; the fake `node` plays it too (FAKE_USDA_FAIL).
     writeFileSync(join(root, 'dist', 'food-seed', 'scripts', 'load-usda-foods.js'), '// stub\n');
@@ -674,23 +829,27 @@ describe('release.sh — behaviour with a fake prisma runner (no database, no ne
     expect(r.out).toMatch(/verifiers_passed = 1 \(discovered=1, required=1\)/);
   });
   it('step 1 counts the genuine Prisma 6.19.3 pending block as exactly 1 (single-line metric; S1S2-B-01)', () => {
-    const r = fixture((root) => verifier(root, REQUIRED), { FAKE_STATUS_PENDING: GENUINE_STATUS_PENDING });
+    const r = fixture((root) => verifier(root, REQUIRED), {
+      FAKE_STATUS_PENDING: GENUINE_STATUS_PENDING,
+    });
     expect(r.code).toBe(0);
     expect(r.deployed).toBe(true);
-    expect(r.out).toMatch(/^\[release\]   pending_migrations_detected = 1$/m);
-    expect(r.out).toMatch(/^\[release\]   pending_before=1$/m);
+    expect(r.out).toMatch(/^\[release\] {3}pending_migrations_detected = 1$/m);
+    expect(r.out).toMatch(/^\[release\] {3}pending_before=1$/m);
     expect(r.out).not.toMatch(/^0$/m); // the old `grep -c … || echo 0` double-print
   });
   it('up-to-date status → pending 0 as a single line', () => {
     const r = fixture((root) => verifier(root, REQUIRED));
-    expect(r.out).toMatch(/^\[release\]   pending_before=0$/m);
+    expect(r.out).toMatch(/^\[release\] {3}pending_before=0$/m);
     expect(r.out).not.toMatch(/^0$/m);
   });
   it('ALL_APPLIED without a real ledger degrades to `unknown` with the cause printed, never a fabricated count (S1S2-B-02)', () => {
     const r = fixture((root) => verifier(root, REQUIRED));
     expect(r.code).toBe(0);
-    expect(r.out).toMatch(/^\[release\]   ALL_APPLIED=unknown$/m);
-    expect(r.out).toContain('could not read finished, non-rolled-back count from _prisma_migrations via @prisma/client');
+    expect(r.out).toMatch(/^\[release\] {3}ALL_APPLIED=unknown$/m);
+    expect(r.out).toContain(
+      'could not read finished, non-rolled-back count from _prisma_migrations via @prisma/client',
+    );
     expect(r.out).not.toMatch(/ALL_APPLIED=\d/);
   });
   it('required verifier missing from the image → refused BEFORE migrate deploy', () => {
@@ -721,7 +880,12 @@ describe('release.sh — behaviour with a fake prisma runner (no database, no ne
     expect(empty.out).toContain('lists no verifiers');
   });
   it('contract entries with path separators, traversal or duplicates → refused', () => {
-    for (const body of ['../etc\n', `${REQUIRED}/verify.sql\n`, `${REQUIRED}\n${REQUIRED}\n`, `${REQUIRED}\r\n`]) {
+    for (const body of [
+      '../etc\n',
+      `${REQUIRED}/verify.sql\n`,
+      `${REQUIRED}\n${REQUIRED}\n`,
+      `${REQUIRED}\r\n`,
+    ]) {
       const r = fixture((root) => {
         verifier(root, REQUIRED);
         writeFileSync(join(root, 'scripts', 'release-required-verifiers.txt'), body);
@@ -740,7 +904,8 @@ describe('release.sh — behaviour with a fake prisma runner (no database, no ne
   });
   // FOOD-SEED-BE (F1/F2): step 5 runs the compiled built-in foods step once, after migrate deploy and every verifier,
   // on DIRECT_URL with the shipped seed file, and its failure fails the release before the success banner.
-  const foodCall = (calls: string[]) => calls.findIndex((c) => c.includes('seed-built-in-foods.js'));
+  const foodCall = (calls: string[]) =>
+    calls.findIndex((c) => c.includes('seed-built-in-foods.js'));
   it('step 5 runs the built-in foods step once, after deploy and the verifiers, on DIRECT_URL, and prints its line', () => {
     const r = fixture((root) => verifier(root, REQUIRED));
     expect(r.code).toBe(0);
@@ -751,20 +916,27 @@ describe('release.sh — behaviour with a fake prisma runner (no database, no ne
     expect(at).toBeGreaterThan(r.calls.indexOf('deploy-ran'));
     expect(at).toBeGreaterThan(r.calls.findIndex((c) => c.includes('db execute --url')));
     expect(r.out).toMatch(/^\[release\] built-in foods: 65 present, 0 added$/m);
-    expect(r.out.indexOf('built-in foods: 65 present')).toBeLessThan(r.out.indexOf('release_command completed successfully'));
+    expect(r.out.indexOf('built-in foods: 65 present')).toBeLessThan(
+      r.out.indexOf('release_command completed successfully'),
+    );
   });
   it('step 5 failing (foods still missing, or the insert refused) → exit 1, no success banner, abort banner printed', () => {
     const r = fixture((root) => verifier(root, REQUIRED), { FAKE_FOODS_FAIL: '1' });
     expect(r.code).toBe(1);
     expect(r.deployed).toBe(true);
-    expect(r.out).toContain('[release] built-in foods FAILED: 3 of 65 still missing from the shared catalog');
+    expect(r.out).toContain(
+      '[release] built-in foods FAILED: 3 of 65 still missing from the shared catalog',
+    );
     expect(r.out).toContain('built-in foods step FAILED');
     expect(r.calls.some((c) => c.includes('load-usda-foods.js'))).toBe(false); // FOOD-USDA-BE: step 6 never ran
     expect(r.out).toContain('Deploy ABORTED by release_command');
     expect(r.out).not.toContain('release_command completed successfully');
   });
   it('step 5 refuses an image without the compiled step or the seed file → exit 1, never a silent skip', () => {
-    for (const gone of [join('dist', 'food-seed', 'scripts', 'seed-built-in-foods.js'), join('prisma', 'data', 'seed-foods.json')]) {
+    for (const gone of [
+      join('dist', 'food-seed', 'scripts', 'seed-built-in-foods.js'),
+      join('prisma', 'data', 'seed-foods.json'),
+    ]) {
       const r = fixture((root) => {
         verifier(root, REQUIRED);
         spawnSync('rm', [join(root, gone)]);
@@ -786,20 +958,29 @@ describe('release.sh — behaviour with a fake prisma runner (no database, no ne
     ]);
     expect(usdaCall(r.calls)).toBeGreaterThan(foodCall(r.calls));
     expect(r.out).toMatch(/^\[release\] USDA foods: 7980 present, 0 added \(900 ms\)$/m);
-    expect(r.out.indexOf('USDA foods: 7980 present')).toBeGreaterThan(r.out.indexOf('built-in foods: 65 present'));
-    expect(r.out.indexOf('USDA foods: 7980 present')).toBeLessThan(r.out.indexOf('release_command completed successfully'));
+    expect(r.out.indexOf('USDA foods: 7980 present')).toBeGreaterThan(
+      r.out.indexOf('built-in foods: 65 present'),
+    );
+    expect(r.out.indexOf('USDA foods: 7980 present')).toBeLessThan(
+      r.out.indexOf('release_command completed successfully'),
+    );
   });
   it('step 6 failing (foods still missing, or the insert refused) → exit 1, no success banner, abort banner printed', () => {
     const r = fixture((root) => verifier(root, REQUIRED), { FAKE_USDA_FAIL: '1' });
     expect(r.code).toBe(1);
     expect(r.out).toContain('[release] built-in foods: 65 present, 0 added');
-    expect(r.out).toContain('[release] USDA foods FAILED: 12 of 7980 still missing from the shared catalog');
+    expect(r.out).toContain(
+      '[release] USDA foods FAILED: 12 of 7980 still missing from the shared catalog',
+    );
     expect(r.out).toContain('USDA foods step FAILED');
     expect(r.out).toContain('Deploy ABORTED by release_command');
     expect(r.out).not.toContain('release_command completed successfully');
   });
   it('step 6 refuses an image without the compiled loader or the data file → exit 1, never a silent skip', () => {
-    for (const gone of [join('dist', 'food-seed', 'scripts', 'load-usda-foods.js'), join('prisma', 'data', 'usda-foods.jsonl.gz')]) {
+    for (const gone of [
+      join('dist', 'food-seed', 'scripts', 'load-usda-foods.js'),
+      join('prisma', 'data', 'usda-foods.jsonl.gz'),
+    ]) {
       const r = fixture((root) => {
         verifier(root, REQUIRED);
         spawnSync('rm', [join(root, gone)]);
@@ -827,26 +1008,38 @@ describe('FOOD-SEED-BE — release step 5 and the image that carries it (F1, F2,
     const block = s.slice(step5, s.indexOf('STEP 6'));
     expect(block).toContain('FOOD_SEED_SCRIPT="dist/food-seed/scripts/seed-built-in-foods.js"');
     expect(block).toContain('FOOD_SEED_FILE="prisma/data/seed-foods.json"');
-    expect(block).toMatch(/if ! DIRECT_URL="\$\{DIRECT_URL\}" node "\$\{FOOD_SEED_SCRIPT\}" "\$\{FOOD_SEED_FILE\}"; then/);
+    expect(block).toMatch(
+      /if ! DIRECT_URL="\$\{DIRECT_URL\}" node "\$\{FOOD_SEED_SCRIPT\}" "\$\{FOOD_SEED_FILE\}"; then/,
+    );
     expect((block.match(/exit 1/g) ?? []).length).toBe(2);
     expect(block).not.toMatch(/\|\|\s*true/);
-    const code = block.split('\n').filter((l) => !l.trim().startsWith('#')).join('\n');
+    const code = block
+      .split('\n')
+      .filter((l) => !l.trim().startsWith('#'))
+      .join('\n');
     expect(code).not.toMatch(/ts-node|npx/);
   });
   it('the build stage compiles tsconfig.food-seed.json after nest build; the runtime check names both new files', () => {
-    expect(build.indexOf('RUN npx tsc -p tsconfig.food-seed.json')).toBeGreaterThan(build.indexOf('RUN npm run build'));
+    expect(build.indexOf('RUN npx tsc -p tsconfig.food-seed.json')).toBeGreaterThan(
+      build.indexOf('RUN npm run build'),
+    );
     expect(runtime).toContain('test -f dist/food-seed/scripts/seed-built-in-foods.js');
     expect(runtime).toContain('test -f prisma/data/seed-foods.json');
     expect(runtime).toMatch(/^COPY prisma \.\/prisma\/$/m);
     expect(runtime).toMatch(/COPY --from=build \/app\/dist \.\/dist/);
-    expect(runtime.indexOf('test -f prisma/data/seed-foods.json')).toBeLessThan(runtime.indexOf('artifact check OK'));
+    expect(runtime.indexOf('test -f prisma/data/seed-foods.json')).toBeLessThan(
+      runtime.indexOf('artifact check OK'),
+    );
     for (const entry of ['prisma/data/', 'prisma/data', 'prisma/data/seed-foods.json', '*.json']) {
       expect(read('.dockerignore').split('\n')).not.toContain(entry);
     }
   });
   it('the README seed:foods section says each deploy now adds the missing built-in foods', () => {
     const readme = read('README.md');
-    const section = readme.slice(readme.indexOf('### Seeded common foods'), readme.indexOf('### Required env'));
+    const section = readme.slice(
+      readme.indexOf('### Seeded common foods'),
+      readme.indexOf('### Required env'),
+    );
     expect(section).toContain('npm run seed:foods');
     expect(section).toContain('Every deploy now does the insert for you');
     expect(section).toContain('scripts/release.sh` step 5');
@@ -864,18 +1057,30 @@ describe('FOOD-USDA-BE — release step 6 and the image that carries it', () => 
     const block = s.slice(step6, s.indexOf('APPLIED_TMP=$(mktemp)'));
     expect(block).toContain('USDA_FOODS_SCRIPT="dist/food-seed/scripts/load-usda-foods.js"');
     expect(block).toContain('USDA_FOODS_FILE="prisma/data/usda-foods.jsonl.gz"');
-    expect(block).toMatch(/if ! DIRECT_URL="\$\{DIRECT_URL\}" node "\$\{USDA_FOODS_SCRIPT\}" "\$\{USDA_FOODS_FILE\}"; then/);
+    expect(block).toMatch(
+      /if ! DIRECT_URL="\$\{DIRECT_URL\}" node "\$\{USDA_FOODS_SCRIPT\}" "\$\{USDA_FOODS_FILE\}"; then/,
+    );
     expect((block.match(/exit 1/g) ?? []).length).toBe(2);
     expect(block).not.toMatch(/\|\|\s*true/);
-    const code = block.split('\n').filter((l) => !l.trim().startsWith('#')).join('\n');
+    const code = block
+      .split('\n')
+      .filter((l) => !l.trim().startsWith('#'))
+      .join('\n');
     expect(code).not.toMatch(/ts-node|npx/);
   });
   it('the food-seed compile builds the loader; the runtime check names the loader and the data file', () => {
-    const tsconfig = JSON.parse(read('tsconfig.food-seed.json').replace(/^\s*\/\/.*$/gm, '')) as { include: string[] };
-    expect(tsconfig.include).toEqual(['scripts/seed-built-in-foods.ts', 'scripts/load-usda-foods.ts']);
+    const tsconfig = JSON.parse(read('tsconfig.food-seed.json').replace(/^\s*\/\/.*$/gm, '')) as {
+      include: string[];
+    };
+    expect(tsconfig.include).toEqual([
+      'scripts/seed-built-in-foods.ts',
+      'scripts/load-usda-foods.ts',
+    ]);
     expect(runtime).toContain('test -f dist/food-seed/scripts/load-usda-foods.js');
     expect(runtime).toContain('test -f prisma/data/usda-foods.jsonl.gz');
-    expect(runtime.indexOf('test -f prisma/data/usda-foods.jsonl.gz')).toBeLessThan(runtime.indexOf('artifact check OK'));
+    expect(runtime.indexOf('test -f prisma/data/usda-foods.jsonl.gz')).toBeLessThan(
+      runtime.indexOf('artifact check OK'),
+    );
     for (const entry of ['prisma/data/usda-foods.jsonl.gz', '*.gz', '*.jsonl.gz']) {
       expect(read('.dockerignore').split('\n')).not.toContain(entry);
     }
@@ -892,12 +1097,17 @@ describe('operator workflows — dispatch inputs are data, never shell source (S
     'fly-secrets-set',
   ];
   type Step = { name?: string; run?: string; env?: Record<string, string> };
-  type Doc = { name?: string; on?: Record<string, unknown>; jobs?: Record<string, { steps?: Step[] }> };
+  type Doc = {
+    name?: string;
+    on?: Record<string, unknown>;
+    jobs?: Record<string, { steps?: Step[] }>;
+  };
   const load = (f: string) => parseYaml(read(`.github/workflows/${f}.yml`)) as Doc;
   const steps = (d: Doc) => Object.values(d.jobs ?? {}).flatMap((j) => j.steps ?? []);
   const INLINE = /\$\{\{\s*(github\.event\.)?inputs\./;
   it('these are all the fly-* operator workflows (fly-logs-dump.yml and fly-logs.yml are gone)', () => {
-    for (const f of OPERATOR) expect(existsSync(join(ROOT, `.github/workflows/${f}.yml`))).toBe(true);
+    for (const f of OPERATOR)
+      expect(existsSync(join(ROOT, `.github/workflows/${f}.yml`))).toBe(true);
     expect(existsSync(join(ROOT, '.github/workflows/fly-logs-dump.yml'))).toBe(false);
     // The repo is public, so production logs must never be printed into an Actions log.
     expect(existsSync(join(ROOT, '.github/workflows/fly-logs.yml'))).toBe(false);
@@ -910,7 +1120,9 @@ describe('operator workflows — dispatch inputs are data, never shell source (S
       for (const st of all) if (st.run) expect(st.run).not.toMatch(INLINE);
       // every input that reaches a shell step does so through env:, and the app value is consumed quoted
       for (const st of all) {
-        const appVar = Object.entries(st.env ?? {}).find(([, v]) => /inputs\.app\s*\}\}/.test(String(v)))?.[0];
+        const appVar = Object.entries(st.env ?? {}).find(([, v]) =>
+          /inputs\.app\s*\}\}/.test(String(v)),
+        )?.[0];
         if (!appVar || !st.run) continue;
         expect(st.run).toMatch(new RegExp(`"\\$\\{${appVar}\\}"`));
       }
@@ -922,16 +1134,23 @@ describe('operator workflows — dispatch inputs are data, never shell source (S
       expect(guardIdx).toBeGreaterThan(-1);
       const guard = all[guardIdx];
       expect(guard.env?.APP).toMatch(INLINE);
-      expect(guard.run).toMatch(/case "\$\{APP\}" in\s+backend-spring-lake-3890\) ;;\s+\*\)[\s\S]*exit 1/);
-      const firstFly = all.findIndex((st) => /flyctl|FLY_API_TOKEN/.test(st.run ?? '') || /FLY_API_TOKEN/.test(JSON.stringify(st.env ?? {})));
+      expect(guard.run).toMatch(
+        /case "\$\{APP\}" in\s+backend-spring-lake-3890\) ;;\s+\*\)[\s\S]*exit 1/,
+      );
+      const firstFly = all.findIndex(
+        (st) =>
+          /flyctl|FLY_API_TOKEN/.test(st.run ?? '') ||
+          /FLY_API_TOKEN/.test(JSON.stringify(st.env ?? {})),
+      );
       if (firstFly > -1) expect(guardIdx).toBeLessThan(firstFly);
     });
     it(`${f}.yml: has permissions: contents: read (no write scopes)`, () => {
-      expect(read(`.github/workflows/${f}.yml`)).toMatch(/^permissions:\n  contents: read$/m);
+      expect(read(`.github/workflows/${f}.yml`)).toMatch(/^permissions:\n {2}contents: read$/m);
     });
   }
   it('no operator workflow starts, stops, restarts, destroys, scales or deploys machines (S2-R2-A-02); only fly-deploy.yml deploys', () => {
     const MUTATE = /flyctl\s+(machines?\s+(start|stop|restart|destroy|kill|update)|deploy|scale)\b/;
-    for (const f of OPERATOR) for (const st of steps(load(f))) if (st.run) expect(st.run).not.toMatch(MUTATE);
+    for (const f of OPERATOR)
+      for (const st of steps(load(f))) if (st.run) expect(st.run).not.toMatch(MUTATE);
   });
 });
