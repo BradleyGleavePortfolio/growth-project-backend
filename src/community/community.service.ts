@@ -5,6 +5,7 @@ import { CommunityRepository } from './community.repository';
 import { CommunitySafetyService, crisisField } from './safety/community-safety.service';
 import { CommunityAccessService } from './community-access.service';
 import { formerClientArm } from './dms/community-dms.service';
+import { CommunityDmsRepository } from './dms/community-dms.repository';
 import { memberName } from './member-display-name';
 import { fullNamesFor, membersNow, placeOf } from './community-space-access';
 import { isBannedFromWorkspace } from './community-ban';
@@ -199,10 +200,12 @@ export class CommunityService {
     });
   }
 
-  /** COMMUNITY-DM-FORMER-REACH-BE: each community where the caller keeps a DM thread with its coach as a former client,
-   *  by the DM list's own arm (formerClientArm 'open'), sorted by workspace_id. The caller's own open community answers
-   *  through the member arm, so it is never listed. */
-  private async formerCoachDms(userId: string): Promise<Array<{ workspace_id: string; coach_user_id: string }>> {
+  /** COMMUNITY-DM-FORMER-REACH-BE: the communities where the caller keeps a DM thread with its coach as a former client,
+   *  by the DM list's own arm (formerClientArm 'open'). The caller's own open community answers through the member arm,
+   *  so it is never listed. DM-FORMER-COACH-BE (owner #ALM-E12, "cap at JUST the 1st most recent prior coach"): only the
+   *  one of them whose coach she moved away from last (lastLeft), with that coach's stored name (namesOf, b#1253's rule:
+   *  trimmed, null when blank). */
+  private async formerCoachDms(userId: string): Promise<CommunityMeResponse['former_coach_dms']> {
     const found: Array<{ workspace_id: string; coach_user_id: string }> = [];
     for (const id of await this.access.dmSettingWorkspaces(userId)) {
       const workspace = await this.access.findWorkspace(id);
@@ -212,7 +215,35 @@ export class CommunityService {
         found.push({ workspace_id: id, coach_user_id: workspace.coach_id });
       }
     }
-    return found;
+    const last = await this.lastLeft(userId, found);
+    if (!last) return [];
+    const names = await new CommunityDmsRepository(this.prisma).namesOf([last.coach_user_id]);
+    return [{ ...last, coach_display_name: names.get(last.coach_user_id) ?? null }];
+  }
+
+  /** DM-FORMER-COACH-BE: of `kept` (sorted by workspace_id), the one whose coach the caller moved away from last. No
+   *  table holds a client's coach history: User.coach_id is the current coach, coach_joined_at when she joined that one.
+   *  A move stamps ClientPurchase.moved_away_at on her plans from the coach she left (trg_user_coach_move_marks_plans,
+   *  20270502003200, every path that changes coach_id); a coach she never bought from has no stored move time, so her
+   *  newest active row in a non-public space of his community stands in (each one is made while she is his client: the
+   *  bootstrap, onboarding, his own add). She has one coach at a time, so the latest of these per community orders the
+   *  coaches as she left them; a tie keeps the lowest workspace_id. */
+  private async lastLeft<T extends { workspace_id: string; coach_user_id: string }>(userId: string, kept: T[]): Promise<T | null> {
+    if (kept.length < 2) return kept[0] ?? null;
+    const [stamps, rows] = await Promise.all([
+      this.prisma.clientPurchase.findMany({
+        where: { client_user_id: userId, coach_user_id: { in: kept.map((k) => k.coach_user_id) }, moved_away_at: { not: null } },
+        select: { coach_user_id: true, moved_away_at: true },
+      }),
+      this.prisma.communityMembership.findMany({
+        where: { user_id: userId, workspace_id: { in: kept.map((k) => k.workspace_id) }, status: 'active', cohort: { visibility: { not: 'public' } } },
+        select: { workspace_id: true, joined_at: true, created_at: true },
+      }),
+    ]);
+    const at = (k: T) => Math.max(0,
+      ...stamps.filter((s) => s.coach_user_id === k.coach_user_id).map((s) => s.moved_away_at?.getTime() ?? 0),
+      ...rows.filter((r) => r.workspace_id === k.workspace_id).map((r) => (r.joined_at ?? r.created_at).getTime()));
+    return kept.reduce((best, k) => (at(k) > at(best) ? k : best));
   }
 
   // ── GET /community/today ────────────────────────────────────────────────────

@@ -9,6 +9,10 @@
  *   C  each row of the workspace coach's own DM list carries the other person's stored name (other_display_name,
  *      trimmed, null when blank); null on every other caller's rows and in POST .../dms.
  * Every other field of every response and push is as at b#1251's head 09a99e06 (A8, the guard cases, B2, B3, C3).
+ *   D  DM-FORMER-COACH-BE (owner #ALM-E12, "cap at JUST the 1st most recent prior coach"): former_coach_dms holds at
+ *      most one of A's communities, the one whose coach the caller moved away from last (the newest
+ *      ClientPurchase.moved_away_at on her plans from that coach, else her newest active row in a non-public space
+ *      there), and names that coach (coach_display_name: his stored name, trimmed, null when blank).
  *
  * The world is b#1251's (test/community/community-dm-rules-be.spec.ts), copied here, not imported: the KT-2 fixture
  * (test/community/access/member-content-fixture.ts) on the in-memory Prisma double, which models
@@ -222,7 +226,8 @@ const DISABLED = 'refused 403 community.dm.disabled';
 async function formerDms(w: World, u: User): Promise<unknown> {
   return stub<Record<string, unknown>>(await w.me.getMe(u)).former_coach_dms;
 }
-const entry = (workspaceId: string, coach: User) => ({ workspace_id: workspaceId, coach_user_id: coach.id });
+const entry = (workspaceId: string, coach: User, name: string | null = coach.name) =>
+  ({ workspace_id: workspaceId, coach_user_id: coach.id, coach_display_name: name });
 
 /** True when the caller reads `workspaceId`'s DM list through the former-client arm: neither a member nor its coach. */
 async function throughFormerArm(w: World, u: User, workspaceId: string): Promise<boolean> {
@@ -385,12 +390,11 @@ describe('COMMUNITY-DM-FORMER-REACH-BE A: GET /community/me names the community 
     }
   });
 
-  it('A7. X with kept threads with K in W and K2 in W3: both, sorted by workspace_id', async () => {
+  it('A7. X with kept threads with K in W and K2 in W3: only one (DM-FORMER-COACH-BE), W3, her newer row', async () => {
     w.row(w.p.X, w.w3.space);
     w.dm(w.p.X, w.p.K2, w.w3.id, 'Thanks for the plan');
-    expect(await listed(w, w.p.X, w.w3.id)).toEqual([w.p.K2.id]);
-    const want = [entry(w.wsId, w.p.K), entry(w.w3.id, w.p.K2)].sort((a, b) => (a.workspace_id < b.workspace_id ? -1 : 1));
-    expect(await formerDms(w, w.p.X)).toEqual(want);
+    expect([await listed(w, w.p.X), await listed(w, w.p.X, w.w3.id)]).toEqual([[w.p.K.id], [w.p.K2.id]]);
+    expect(await formerDms(w, w.p.X)).toEqual([entry(w.w3.id, w.p.K2)]);
   });
 
   it('A8 (guard). Every other /me value of every caller in this world is as at 09a99e06, field by field', async () => {
@@ -431,6 +435,107 @@ describe('COMMUNITY-DM-FORMER-REACH-BE A: GET /community/me names the community 
         flags,
       }]);
     }
+  });
+});
+
+/** DM-FORMER-COACH-BE: the first of a month in 2026. */
+const day = (month: number) => new Date(Date.UTC(2026, month, 1));
+/** X (K's former client, a row in S and a thread with K) also keeps a thread with K2 in W3 (a row in S3); X's rows in S
+ *  and S3 joined on the given days. */
+const twoKept = (w: World, inW: number, inW3: number) => {
+  Object.assign(membershipOf(w, w.p.X), { joined_at: day(inW) });
+  w.row(w.p.X, w.w3.space, 'student', day(inW3));
+  w.dm(w.p.X, w.p.K2, w.w3.id, 'Thanks for the plan');
+};
+/** One of X's plans from `coach`, stamped moved_away_at as trg_user_coach_move_marks_plans stamps it (null: never). */
+const bought = (w: World, coach: User, movedAwayAt: Date | null) =>
+  w.db.seed('clientPurchase', { client_user_id: w.p.X.id, coach_user_id: coach.id, moved_away_at: movedAwayAt });
+
+interface Capped {
+  label: string;
+  /** Sets the case up on its own fresh world and returns the caller. */
+  caller: (w: World, x: Record<Extra, User>) => User;
+  want: (w: World) => unknown[];
+}
+const inW = (w: World) => [entry(w.wsId, w.p.K)];
+const inW3 = (w: World) => [entry(w.w3.id, w.p.K2)];
+const CAPPED: Capped[] = [
+  { label: 'D1 one former coach (X, K in W): that one, named', caller: (w) => w.p.X, want: inW },
+  { label: 'D1 the same with no coach now (coach_id null)', caller: (w) => Object.assign(w.p.X, { coach_id: null }), want: inW },
+  { label: 'D2 two former coaches, no plans: the community she joined last (W3)', caller: (w) => { twoKept(w, 0, 2); return w.p.X; }, want: inW3 },
+  { label: 'D2 the same, the other order (W)', caller: (w) => { twoKept(w, 4, 2); return w.p.X; }, want: inW },
+  {
+    label: 'D3 move stamps: she left K after K2, though her W3 row is newer (W)',
+    caller: (w) => { twoKept(w, 0, 2); bought(w, w.p.K, day(6)); bought(w, w.p.K2, day(3)); return w.p.X; },
+    want: inW,
+  },
+  {
+    label: 'D3 a stamp on K older than her W3 row (W3)',
+    caller: (w) => { twoKept(w, 0, 2); bought(w, w.p.K, day(1)); return w.p.X; },
+    want: inW3,
+  },
+  {
+    label: 'D3 K, then K2, then back to K and away: K\'s newest stamp (W)',
+    caller: (w) => { twoKept(w, 0, 2); bought(w, w.p.K, day(1)); bought(w, w.p.K2, day(3)); bought(w, w.p.K, day(5)); return w.p.X; },
+    want: inW,
+  },
+  {
+    label: 'D3 a plan never stamped (moved_away_at null) does not count (W3)',
+    caller: (w) => { twoKept(w, 0, 2); bought(w, w.p.K, null); return w.p.X; },
+    want: inW3,
+  },
+  {
+    label: 'D4 the same time: the lower workspace_id',
+    caller: (w) => { twoKept(w, 2, 2); return w.p.X; },
+    want: (w) => (w.wsId < w.w3.id ? inW(w) : inW3(w)),
+  },
+  { label: 'D5 X blocked K2 (203-D51): K2\'s thread is not kept, so K (W)', caller: (w) => { twoKept(w, 0, 2); block(w, w.p.X, w.p.K2); return w.p.X; }, want: inW },
+  { label: 'D5 K2 blocked X: K (W)', caller: (w) => { twoKept(w, 0, 2); block(w, w.p.K2, w.p.X); return w.p.X; }, want: inW },
+  {
+    label: 'D5 X banned in W3: K (W)',
+    caller: (w) => { twoKept(w, 0, 2); w.db.seed('communityWorkspaceBan', { workspace_id: w.w3.id, user_id: w.p.X.id, lifted_at: null }); return w.p.X; },
+    want: inW,
+  },
+  { label: 'D6 a blocked pair, the only one (X blocked K): none', caller: (w) => { block(w, w.p.X, w.p.K); return w.p.X; }, want: () => [] },
+  { label: 'D6 a blocked pair, the only one (K blocked X): none', caller: (w) => { block(w, w.p.K, w.p.X); return w.p.X; }, want: () => [] },
+  { label: 'D6 a banned client (V): none', caller: (w) => w.p.V, want: () => [] },
+  { label: 'D6 no former coach (A, K\'s current client): none', caller: (w) => w.p.A, want: () => [] },
+  {
+    label: 'D6 another coach\'s client (L\'s, a row in W2, a message to K, no row in W): none',
+    caller: (w) => {
+      const n = w.user('student', 'Other Client', w.p.L.id);
+      w.row(n, w.w2.space);
+      w.dm(n, w.p.K, w.wsId, 'Hello there');
+      return n;
+    },
+    want: () => [],
+  },
+  { label: 'D6 the platform owner (a thread with K): none', caller: (w, x) => x.O, want: () => [] },
+  { label: 'D6 K, the coach: none', caller: (w) => w.p.K, want: () => [] },
+  { label: 'D7 K\'s stored name padded: trimmed', caller: (w) => { Object.assign(w.p.K, { name: '  Coach One  ' }); return w.p.X; }, want: (w) => [entry(w.wsId, w.p.K, 'Coach One')] },
+  { label: 'D7 K\'s stored name blank: null', caller: (w) => { Object.assign(w.p.K, { name: '   ' }); return w.p.X; }, want: (w) => [entry(w.wsId, w.p.K, null)] },
+  { label: 'D7 K\'s stored name empty: null', caller: (w) => { Object.assign(w.p.K, { name: '' }); return w.p.X; }, want: (w) => [entry(w.wsId, w.p.K, null)] },
+];
+
+describe('DM-FORMER-COACH-BE D: GET /community/me keeps one former coach, the one she moved away from last, and names him', () => {
+  let w: World;
+  let x: Record<Extra, User>;
+  beforeEach(async () => {
+    w = await world();
+    x = w.extras();
+  });
+
+  it.each(CAPPED)('$label', async (c) => {
+    const u = c.caller(w, x);
+    expect(await formerDms(w, u)).toEqual(c.want(w));
+  });
+
+  it('D8. The one listed is always one b#1253 would list: its own GET W/dms answers through the former-client arm with that coach', async () => {
+    twoKept(w, 0, 2);
+    bought(w, w.p.K, day(6));
+    const [only] = (await formerDms(w, w.p.X)) as Array<{ workspace_id: string; coach_user_id: string }>;
+    expect(await throughFormerArm(w, w.p.X, only.workspace_id)).toBe(true);
+    expect(await listed(w, w.p.X, only.workspace_id)).toEqual([only.coach_user_id]);
   });
 });
 
