@@ -100,7 +100,7 @@ jobs:
           fi
           echo "FLY_API_TOKEN is configured."
 
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
 
@@ -124,7 +124,7 @@ jobs:
           echo "approved=${version}:${sha}" >> "${GITHUB_OUTPUT}"
           echo "Fixture ${version} sha256 ${sha} (main @ ${GITHUB_SHA})."
 
-      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1  # master 2026-09-20 (pinned)
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # master 2026-09-20 (pinned)
 
       - name: Check the running image carries the same fixture
         env:
