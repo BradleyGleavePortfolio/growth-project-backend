@@ -799,8 +799,8 @@ These are operator-only — the backend cannot do them on its own:
 
 - Provision the Fly app, region, and IPv4/IPv6 addresses.
 - **Add a `FLY_API_TOKEN` GitHub Actions secret** (a repository secret, and
-  it stays one: Fly Deploy, the operator workflows that run in
-  `production-secrets`, House Seed and Fly Secrets List all read it; see
+  it stays one: Fly Deploy, the eight operator workflows that run in
+  `production-secrets` and Fly Secrets List all read it; see
   `docs/delivery-controls.md` §2.2 and §6). Merging to `main` no longer deploys;
   `Fly Deploy` runs only on explicit dispatch and **fails red** if the
   token is missing — see §8.1 below. A red workflow is the intended
