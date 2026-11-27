@@ -6,6 +6,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# A new commit on a PR cancels that PR's older run. Every other event (push to
+# main, workflow_dispatch) gets a group of its own run id: never queued or cancelled.
+concurrency:
+  group: ci-pr-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
