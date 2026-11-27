@@ -767,7 +767,7 @@ export class RealMealPlansService {
     const [swapRows, recipeRows] = await Promise.all([
       swapIds.length > 0 && coachId
         ? this.prisma.mealTemplate.findMany({
-            where: { id: { in: swapIds }, coach_id: coachId, archived_at: null },
+            where: { id: { in: swapIds }, archived_at: null },
             select: {
               id: true,
               name: true,
