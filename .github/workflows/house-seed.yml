@@ -3,7 +3,7 @@ name: House Seed (operator)
 # Operator workflow (HOUSE-SEED-134, B14): seeds the platform's house program
 # set (ClinicProgramSet with is_house) in production so coachless clients get
 # a plan. Triggered manually via workflow_dispatch only, from main only, and
-# bound to the `production` environment so its required reviewers gate it.
+# bound to the `production-secrets` environment, whose required reviewer (the owner) approves each run (ALM-D11 op 1).
 #
 # How it runs: no new secret. The image built by fly-deploy.yml carries a
 # compiled copy of the EXISTING scripts (Dockerfile build stage,
@@ -62,11 +62,30 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  secrets-environment-guard:
+    name: Production-secrets environment guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Refuse unless production-secrets is protected
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REQUIRED_ENVIRONMENT: production-secrets
+        run: bash scripts/ci/secrets-environment-guard.sh
+
   house-seed:
     name: Seed the house program set
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-    environment: production
+    needs: secrets-environment-guard
+    if: github.ref == 'refs/heads/main' && needs.secrets-environment-guard.result == 'success'
+    environment: production-secrets
     timeout-minutes: 20
     steps:
       - name: Validate inputs
