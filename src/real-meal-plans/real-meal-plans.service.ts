@@ -790,7 +790,9 @@ export class RealMealPlansService {
           })
         : Promise.resolve([]),
     ]);
-    const swapById = new Map(swapRows.map((t) => [t.id, t]));
+    const swapById = new Map(
+      swapRows.map((t) => [t.id, { ...t, carbs_g: t.fats_g, fats_g: t.carbs_g }]),
+    );
     const openable = new Set(recipeRows.map((r) => r.id));
     const ownSlotIds = new Set(ownSlots.map((s) => s.id));
     const withSwaps = assignments.map((a) => ({
