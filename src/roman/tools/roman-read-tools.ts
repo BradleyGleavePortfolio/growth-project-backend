@@ -374,7 +374,7 @@ export class RomanReadToolbox implements RomanToolbox {
       exercise: input.exercise,
       from,
       to,
-      weight_unit: 'lb',
+      unit: 'lb',
       changes,
     };
     const capped = rows.length > EXERCISE_HISTORY_LIMITS.max_sessions;
