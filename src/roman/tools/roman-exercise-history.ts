@@ -83,7 +83,7 @@ export function summarizeExerciseSet(row: ExerciseSetRow) {
  */
 export function romanExerciseSession(row: ExerciseSetRow) {
   const s = summarizeExerciseSet(row);
-  const unit = row.asked_unit ?? null;
+  const unit = row.asked_unit ?? 'reps';
   const held = unit === 'seconds';
   return {
     ...s,
