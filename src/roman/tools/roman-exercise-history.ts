@@ -102,7 +102,7 @@ export function romanExerciseSession(row: ExerciseSetRow) {
 export function exerciseChanges(sessions: readonly RomanExerciseSession[]) {
   const groups = new Map<string, RomanExerciseSession[]>();
   for (const s of sessions) {
-    const k = `${s.unit === 'seconds' ? 's' : 'n'} ${s.exercise.toLowerCase().replace(/\s+/g, ' ')}`;
+    const k = s.exercise.toLowerCase().replace(/\s+/g, ' ');
     groups.set(k, [...(groups.get(k) ?? []), s]);
   }
   type N = number | null | undefined;
