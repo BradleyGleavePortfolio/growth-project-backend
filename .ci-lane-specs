@@ -1,0 +1,2 @@
+test/ci/release-evidence-gate.spec.ts
+test/ci/delivery-artifact.spec.ts
