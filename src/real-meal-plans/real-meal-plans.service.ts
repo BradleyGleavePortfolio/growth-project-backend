@@ -768,14 +768,6 @@ export class RealMealPlansService {
       swapIds.length > 0 && coachId
         ? this.prisma.mealTemplate.findMany({
             where: { id: { in: swapIds }, coach_id: coachId, archived_at: null },
-            select: {
-              id: true,
-              name: true,
-              calories_kcal: true,
-              protein_g: true,
-              carbs_g: true,
-              fats_g: true,
-            },
           })
         : Promise.resolve([]),
       recipeIds.length > 0 && viewer && coachId
