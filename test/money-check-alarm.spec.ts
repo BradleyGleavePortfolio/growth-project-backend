@@ -89,56 +89,53 @@ type SweepMode = 'ok' | 'error' | 'time_limit' | 'no_progress' | 'unread';
 
 /** The purchases; `fail` makes the batch throw; `runMs` moves the fake clock once, as the run's own time. */
 function purchases(clock: { at: Date }) {
-  const svc = {
-    fail: false,
-    mode: 'ok' as SweepMode,
-    runMs: 0,
-    runSweep: jest.fn(async () => {
-      if (svc.runMs > 0) {
-        clock.at = new Date(clock.at.getTime() + svc.runMs);
-        svc.runMs = 0;
-      }
-      if (svc.fail || svc.mode === 'error') throw new Error('batch read failed');
-      if (svc.mode === 'no_progress') {
-        return {
-          scanned: BATCH,
-          drifted: 0,
-          unknown: 0,
-          failed: BATCH,
-          outcomes: Array.from({ length: BATCH }, (_, i) => ({
-            purchase_id: `pu-${i}`,
-            status: 'failed' as const,
-          })),
-          timedOut: false,
-        };
-      }
-      if (svc.mode === 'unread') {
-        return {
-          scanned: 2,
-          drifted: 0,
-          unknown: 1,
-          failed: 1,
-          outcomes: [
-            { purchase_id: 'pu-1', status: 'unknown' as const },
-            { purchase_id: 'pu-2', status: 'failed' as const },
-          ],
-          timedOut: false,
-        };
-      }
+  const state: { fail: boolean; mode: SweepMode; runMs: number } = { fail: false, mode: 'ok', runMs: 0 };
+  const runSweep = jest.fn(async () => {
+    if (state.runMs > 0) {
+      clock.at = new Date(clock.at.getTime() + state.runMs);
+      state.runMs = 0;
+    }
+    if (state.fail || state.mode === 'error') throw new Error('batch read failed');
+    if (state.mode === 'no_progress') {
+      return {
+        scanned: BATCH,
+        drifted: 0,
+        unknown: 0,
+        failed: BATCH,
+        outcomes: Array.from({ length: BATCH }, (_, i) => ({
+          purchase_id: `pu-${i}`,
+          status: 'failed' as const,
+        })),
+        timedOut: false,
+      };
+    }
+    if (state.mode === 'unread') {
       return {
         scanned: 2,
         drifted: 0,
-        unknown: 0,
-        failed: 0,
+        unknown: 1,
+        failed: 1,
         outcomes: [
-          { purchase_id: 'pu-1', status: 'ok' as const },
-          { purchase_id: 'pu-2', status: 'ok' as const },
+          { purchase_id: 'pu-1', status: 'unknown' as const },
+          { purchase_id: 'pu-2', status: 'failed' as const },
         ],
-        timedOut: svc.mode === 'time_limit',
+        timedOut: false,
       };
-    }),
-  };
-  return svc;
+    }
+    return {
+      scanned: 2,
+      drifted: 0,
+      unknown: 0,
+      failed: 0,
+      outcomes: [
+        { purchase_id: 'pu-1', status: 'ok' as const },
+        { purchase_id: 'pu-2', status: 'ok' as const },
+      ],
+      timedOut: state.mode === 'time_limit',
+    };
+  });
+  // One object: the cases set fail, mode and runMs on it, and the cron calls its runSweep.
+  return Object.assign(state, { runSweep });
 }
 
 function world() {
