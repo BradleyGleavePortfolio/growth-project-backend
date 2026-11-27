@@ -527,7 +527,7 @@ const CAPPED: Capped[] = [
     want: inW3,
   },
   {
-    label: 'D3 K, then K2, then back to K and away: K\'s newest stamp (W)',
+    label: 'D3 K, then K2, then back to K with a new plan from K and away: that plan\'s stamp, the newest (W); without a new plan or a new add the order is wrong (C, a coach-history table, v1.1)',
     caller: (w) => { twoKept(w, 0, 2); bought(w, w.p.K, day(1)); bought(w, w.p.K2, day(3)); bought(w, w.p.K, day(5)); return w.p.X; },
     want: inW,
   },
