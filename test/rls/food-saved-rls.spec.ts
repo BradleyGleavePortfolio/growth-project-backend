@@ -24,6 +24,7 @@ import { SavedFoodsService } from '../../src/log/saved-foods.service';
 import { DataExportService } from '../../src/data-export/data-export.service';
 import { ERASURE_MANIFEST, executeErasureManifest } from '../../src/account-deletion/account-deletion.manifest';
 import { CreateSavedMealDto, FAVORITES_MAX, SAVED_MEALS_MAX } from '../../src/log/saved-foods.dto';
+import type { StoredFoodTruth } from '../../src/food/food-truth';
 import type { AnalyticsService } from '../../src/analytics/analytics.service';
 import type { PtmService } from '../../src/ptm/ptm.service';
 import type { ClientAIContextService } from '../../src/ai/client-ai-context.service';
@@ -317,5 +318,46 @@ function stub<T>(value: unknown): T {
     expect(await rowsOf(a)).toEqual({ favs: [], meals: [], items: [] });
     expect(exported(await download(a))).toEqual({ favs: [], meals: [], items: [] });
     expect(await rowsOf(b)).toEqual(bRows);
+  });
+
+  it('SAVED-FOODS-TRUTH-BE: both lists mark each food as POST /log/food reads it; a deleted food leaves; the row rules hide another client', async () => {
+    // Fresh clients d and e (the cases above count a's and b's rows). The rows are written straight to the tables, as
+    // rows saved before FIX-1222 were (addFavorite would read the food's source first).
+    const [d, e] = [randomUUID(), randomUUID()];
+    for (const id of [d, e]) {
+      supa[id] = randomUUID();
+      await prisma.user.create({ data: { id, supabase_id: supa[id], email: `${id}@example.test`, name: 'RLS person', role: 'student' } });
+    }
+    type Over = { calories?: number; carbs_g?: number; fat_g?: number; tags?: string[]; created_by_user_id?: string };
+    const stored = (name: string, over: Over = {}) => prisma.foodItem.create({ data: { name, serving_description: '100 g',
+      serving_size_grams: 100, calories: 200, protein_g: 0, carbs_g: carbsFor(200), fat_g: fatFor(200), ...over } }).then((f) => f.id);
+    // food id | food_truth on both lists (good, her own, held, legacy-zero), then one food deleted from the catalog.
+    const table: Array<[string, StoredFoodTruth]> = [
+      [await stored('Truth good'), 'ok'],
+      [await stored('Truth own', { created_by_user_id: d, calories: 5000 }), 'ok'],
+      [await stored('Truth held', { calories: 500, carbs_g: 1, fat_g: 1 }), 'held'],
+      [await stored('Truth zero', { tags: ['off:5901234123457'] }), 'legacy_zero'],
+    ];
+    const gone = await stored('Truth gone');
+    const ids = [...table.map(([id]) => id), gone];
+    await prisma.foodFavorite.createMany({ data: ids.map((food_item_id) => ({ user_id: d, food_item_id })) });
+    const meal = await prisma.savedMeal.create({ data: { user_id: d, name: 'Truth meal',
+      items: { create: ids.map((food_item_id, position) => ({ food_item_id, position })) } } });
+    await prisma.foodFavorite.create({ data: { user_id: e, food_item_id: table[0][0] } });
+    const eMeal = await prisma.savedMeal.create({ data: { user_id: e, name: 'Other meal',
+      items: { create: [{ food_item_id: table[2][0], position: 0 }] } } });
+    // A food deleted from the catalog takes its favourite and saved-meal item with it (ON DELETE CASCADE).
+    await prisma.foodItem.delete({ where: { id: gone } });
+    const lists = async (svc: SavedFoodsService, who: string) => ({
+      favorites: (await svc.listFavorites(who)).map((f) => [f.food_item_id, f.food_truth]).sort(),
+      meals: (await svc.listSavedMeals(who)).map((m) => [m.id, m.items.map((i) => [i.food_item_id, i.food_truth])]),
+    });
+    const expected = { favorites: [...table].sort(), meals: [[meal.id, table]] };
+    expect(await lists(saved, d)).toEqual(expected);
+    expect(await lists(saved, e)).toEqual({ favorites: [[table[0][0], 'ok']], meals: [[eMeal.id, [[table[2][0], 'held']]]] });
+    // The row rules (the API role, each person's JWT and app context): e asking for d's rows reads none; d reads them all.
+    const scoped = (tx: Prisma.TransactionClient) => new SavedFoodsService(stub<PrismaService>(tx), food, ...deps);
+    expect(await asUser(e, (tx) => lists(scoped(tx), d))).toEqual({ favorites: [], meals: [] });
+    expect(await asUser(d, (tx) => lists(scoped(tx), d))).toEqual(expected);
   });
 });
