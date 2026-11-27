@@ -159,7 +159,6 @@ export function readExerciseSets(
       reps_per_set: true,
       weight_per_set: true,
       rpe: true,
-      asked_unit: true,
       workout: { select: { date: true } },
     },
   });
