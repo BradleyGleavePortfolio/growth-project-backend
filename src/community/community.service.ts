@@ -5,6 +5,7 @@ import { CommunityRepository } from './community.repository';
 import { CommunitySafetyService, crisisField } from './safety/community-safety.service';
 import { CommunityAccessService } from './community-access.service';
 import { formerClientArm } from './dms/community-dms.service';
+import { CommunityDmsRepository } from './dms/community-dms.repository';
 import { memberName } from './member-display-name';
 import { fullNamesFor, membersNow, placeOf } from './community-space-access';
 import { isBannedFromWorkspace } from './community-ban';
@@ -45,6 +46,12 @@ const COHORT_NOT_FOUND = {
   error: 'not_found',
   code: 'community.cohort.not_found',
 } as const;
+
+/** DM-FORMER-COACH-BE: a coach the caller has left, with his community (null when he has none). */
+type FormerCoach = { coachId: string; workspace: CommunityWorkspace | null };
+
+/** DM-FORMER-COACH-BE: a coach the caller has left: neither herself nor her current coach. */
+const hasLeft = (user: Pick<User, 'id' | 'coach_id'>, coachId: string) => coachId !== user.id && coachId !== user.coach_id;
 
 /**
  * Community v1-2 foundation service.
@@ -195,24 +202,79 @@ export class CommunityService {
         mentions: 0,
       },
       flags,
-      former_coach_dms: scope === 'student' && flags.community_dm ? await this.formerCoachDms(user.id) : [],
+      former_coach_dms: scope === 'student' && flags.community_dm ? await this.formerCoachDms(user) : [],
     });
   }
 
-  /** COMMUNITY-DM-FORMER-REACH-BE: each community where the caller keeps a DM thread with its coach as a former client,
-   *  by the DM list's own arm (formerClientArm 'open'), sorted by workspace_id. The caller's own open community answers
-   *  through the member arm, so it is never listed. */
-  private async formerCoachDms(userId: string): Promise<Array<{ workspace_id: string; coach_user_id: string }>> {
-    const found: Array<{ workspace_id: string; coach_user_id: string }> = [];
-    for (const id of await this.access.dmSettingWorkspaces(userId)) {
+  /** COMMUNITY-DM-FORMER-REACH-BE: a community where the caller keeps a DM thread with its coach as a former client, by
+   *  the DM list's own arm (formerClientArm 'open'); the caller's own open community answers through the member arm, so
+   *  it is never listed. DM-FORMER-COACH-BE (owner #ALM-E12, "cap at JUST the 1st most recent prior coach"; OPERATOR
+   *  RULING 7209184240): the one place is the coach she moved away from last (lastLeft, over every coach she has left,
+   *  kept or not), listed only when his thread is kept: his community not archived (the purge's archive), his account's
+   *  deletion not finalized (User.deleted_at, set by both erasure paths with the tombstone name) and the arm 'open'.
+   *  Otherwise nothing: an older coach never takes the place. Named by namesOf (b#1253's rule: trimmed, null when blank).
+   *  First the rule's own floor (inLeftCommunity): with no place a thread can be kept in, nothing more is read. */
+  private async formerCoachDms(user: Pick<User, 'id' | 'coach_id'>): Promise<CommunityMeResponse['former_coach_dms']> {
+    if (!(await this.inLeftCommunity(user))) return [];
+    const workspace = (await this.lastLeft(user))?.workspace;
+    if (!workspace || workspace.archived_at) return [];
+    const coach = await this.prisma.user.findUnique({ where: { id: workspace.coach_id }, select: { deleted_at: true } });
+    if (!coach || coach.deleted_at) return [];
+    const membership = await this.access.membershipInWorkspace(workspace.id, user.id);
+    if ((await formerClientArm(this.access, this.safety, workspace, user.id, membership)) !== 'open') return [];
+    const names = await new CommunityDmsRepository(this.prisma).namesOf([workspace.coach_id]);
+    return [{ workspace_id: workspace.id, coach_user_id: workspace.coach_id, coach_display_name: names.get(workspace.coach_id) ?? null }];
+  }
+
+  /** DM-FORMER-COACH-BE (FIX-DMFC-1, OPERATOR NOTE 7209460757): the rule keeps a thread only in a community where she
+   *  still holds an active row in a space that is not public (app.community_dm_former_client, R-a; dmSettingWorkspaces
+   *  is that set, the read /me made here before this PR). True when one of those communities is a coach's she has left.
+   *  When none is (every client who never moved), the list is empty whoever she left last, so /me reads what it read
+   *  before this PR and nothing more: no plan, no community list. */
+  private async inLeftCommunity(user: Pick<User, 'id' | 'coach_id'>): Promise<boolean> {
+    for (const id of await this.access.dmSettingWorkspaces(user.id)) {
       const workspace = await this.access.findWorkspace(id);
-      if (!workspace) continue;
-      const membership = await this.access.membershipInWorkspace(id, userId);
-      if ((await formerClientArm(this.access, this.safety, workspace, userId, membership)) === 'open') {
-        found.push({ workspace_id: id, coach_user_id: workspace.coach_id });
-      }
+      if (workspace && hasLeft(user, workspace.coach_id)) return true;
     }
-    return found;
+    return false;
+  }
+
+  /** DM-FORMER-COACH-BE: the coach the caller moved away from last, with his community (null when he has none). No table
+   *  holds a client's coach history: User.coach_id is the current coach, coach_joined_at when she joined that one. A move
+   *  stamps ClientPurchase.moved_away_at on her plans from the coach she left (trg_user_coach_move_marks_plans,
+   *  20270502003200); a coach she never bought from has no stored move time, so her rows in spaces of his community that
+   *  are not public stand in (each made while she was his client: the bootstrap, onboarding, his own add), whatever their
+   *  status now (a removal, a ban or an archived space keeps the row as 'removed'). Every coach she holds such a row or a
+   *  stamped plan from counts, never her current coach. Per coach the later of the newest moved_away_at and the newest
+   *  joined_at (else created_at) of those rows; she has one coach at a time, so this orders the coaches as she left them.
+   *  A tie keeps the lowest workspace_id. */
+  private async lastLeft(user: Pick<User, 'id' | 'coach_id'>): Promise<FormerCoach | null> {
+    const [rows, stamps] = await Promise.all([
+      this.prisma.communityMembership.findMany({
+        where: { user_id: user.id, cohort: { visibility: { not: 'public' } } },
+        select: { workspace_id: true, joined_at: true, created_at: true },
+      }),
+      this.prisma.clientPurchase.findMany({
+        where: { client_user_id: user.id, moved_away_at: { not: null } },
+        select: { coach_user_id: true, moved_away_at: true },
+      }),
+    ]);
+    if (rows.length === 0 && stamps.length === 0) return null;
+    const workspaces = await this.prisma.communityWorkspace.findMany({
+      where: { OR: [{ id: { in: rows.map((r) => r.workspace_id) } }, { coach_id: { in: stamps.map((s) => s.coach_user_id) } }] },
+      orderBy: { id: 'asc' },
+    });
+    const left = (coachId: string) => hasLeft(user, coachId);
+    const coaches: FormerCoach[] = [
+      ...workspaces.filter((w) => left(w.coach_id)).map((w) => ({ coachId: w.coach_id, workspace: w })),
+      ...[...new Set(stamps.map((s) => s.coach_user_id))]
+        .filter((c) => left(c) && !workspaces.some((w) => w.coach_id === c))
+        .map((coachId) => ({ coachId, workspace: null })),
+    ];
+    const at = (c: FormerCoach) => Math.max(0,
+      ...stamps.filter((s) => s.coach_user_id === c.coachId).map((s) => s.moved_away_at?.getTime() ?? 0),
+      ...rows.filter((r) => r.workspace_id === c.workspace?.id).map((r) => (r.joined_at ?? r.created_at).getTime()));
+    return coaches.reduce<FormerCoach | null>((best, c) => (!best || at(c) > at(best) ? c : best), null);
   }
 
   // ── GET /community/today ────────────────────────────────────────────────────

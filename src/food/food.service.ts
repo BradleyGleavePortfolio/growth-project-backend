@@ -5,8 +5,8 @@ import { PrismaService } from '../prisma.service';
 import { volumeWeightsFor } from './food-density';
 import { parseFoodQuery } from './food-query-parser';
 import {
-  SourceEvidence, TRUTH_TAG_PREFIX, evidenceTags, heldRowConfirmed, legacyPackagedZero, numbersCanBeTrue,
-  storedNumbersCanBeTrue, withinHardCaps,
+  SourceEvidence, StoredFoodTruth, TRUTH_TAG_PREFIX, evidenceTags, heldRowConfirmed, legacyPackagedZero,
+  numbersCanBeTrue, storedFoodTruth, storedNumbersCanBeTrue, withinHardCaps,
 } from './food-truth';
 
 export interface FoodSearchResponse {
@@ -1082,11 +1082,19 @@ export class FoodService implements OnModuleInit {
    */
   private async heldUsable(row: FoodItem, source: HeldSource | null): Promise<boolean> {
     if (row.created_by_user_id !== null) return true;
-    const numbersPass = storedNumbersCanBeTrue(row);
-    if (numbersPass && !legacyPackagedZero(row, BASIC_TAG)) return true;
-    if (source === null || (!numbersPass && !(source.listsAlcohol && withinHardCaps(row)))) return false;
+    const truth = this.storedTruth(row);
+    if (truth === 'ok') return true;
+    if (source === null || (truth === 'held' && !(source.listsAlcohol && withinHardCaps(row)))) return false;
     const listed = await source.read();
     return listed !== null && heldRowConfirmed(row, listed, BASIC_TAG);
+  }
+
+  /**
+   * SAVED-FOODS-TRUTH-BE: heldUsable's first step, what the stored row says before its source is read. The saved
+   * food lists show it on each item (they never ask USDA or Open Food Facts).
+   */
+  storedTruth(row: FoodItem): StoredFoodTruth {
+    return storedFoodTruth(row, BASIC_TAG);
   }
 
   /** The source a stored row came from: its USDA id, else its Open Food Facts code or barcode. */
