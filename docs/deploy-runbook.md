@@ -852,8 +852,11 @@ store and in `fly tokens`.
    # add -f migrations=apply-migrations ONLY when prisma/migrations or schema changed
    ```
 
-   The `Release evidence gate` job must pass and the `production`
-   environment reviewer must approve before anything reaches Fly.
+   The `Release evidence gate` job must pass before anything reaches Fly.
+   The `production` environment has had no required reviewer since
+   2026-11-26 (the owner's decision ALM-D7 op 2, `docs/delivery-controls.md`
+   §2.1), so this dispatch is the only human step: nobody approves the
+   deploy job after it.
 
 4. **Watch the run go green.** The `Verify FLY_API_TOKEN is configured`
    step prints the token _length_ (not the value) and the deploy

@@ -14,10 +14,14 @@
 #
 # Hosted controls this workflow relies on but cannot create (see
 # docs/delivery-controls.md): branch protection on main, required PR checks,
-# required reviewers on the `production` environment, and required review for
+# the `production` environment with admin bypass off, and required review for
 # changes under .github/workflows/** and scripts/ci/**. The gate refuses to run
-# while the `production` environment lacks a required reviewer or allows admin
-# bypass; whether those settings exist is UNKNOWN until read back from GitHub.
+# while the `production` environment is missing or allows admin bypass. By the
+# owner's decision of 2026-11-26 it no longer demands a required reviewer there:
+# the owner removed the reviewer and gave a standing approval for every deploy
+# (decision ALM-D7 op 2, docs/delivery-controls.md §2.1), and the evidence
+# manifest records required_reviewers and reviewer_rule. Whether the other
+# hosted settings exist is UNKNOWN until read back from GitHub.
 #
 # Recovery: this path is forward-only (release_sha must be the current main
 # head). Rolling back = revert on main, let CI/CodeQL/SBOM run, dispatch again.
@@ -76,8 +80,9 @@ jobs:
           DISPATCH_SHA: ${{ github.sha }}
           TRUSTED_BRANCH: main
           # Must match the deploy job's `environment.name`; the gate refuses to
-          # proceed unless that environment already has required reviewers and
-          # no admin bypass (environments auto-create unprotected otherwise).
+          # proceed unless that environment exists with admin bypass off
+          # (environments auto-create unprotected otherwise). A required
+          # reviewer is not demanded (owner decision of 2026-11-26, ALM-D7 op 2).
           REQUIRED_ENVIRONMENT: production
           OUT_DIR: release-evidence
         run: |
