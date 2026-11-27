@@ -639,24 +639,26 @@ describe('ROMAN-HISTORY-UNIT-BE: each session carries its stored unit; a timed h
     const empty = await t.body({ exercise: 'plank', from: '2026-09-01', to: '2026-09-30' });
     expect(empty.r).toMatchObject({ ok: true, rows: 0, truncated: false });
     expect([empty.body.sessions, empty.body.changes]).toEqual([[], []]);
+    // The 60-session cap alone: 61 one-set sessions short enough that all 60 fit under the 12,000-character clamp
+    // at main and with the unit key (no unit stored, so unit null), so truncated comes from the 61st row.
     const many = world(
       Array.from(
         { length: 61 },
         (_, i): Logged => ({
           user: 'client-a',
           date: new Date(+D('2026-10-06') - i * 86_400_000).toISOString().slice(0, 10),
-          name: 'Push-up',
+          name: 'Dip',
           lbs: [0],
-          counts: [10],
-          unit: 'reps',
+          counts: [9],
         }),
       ),
     );
-    const capped = await many.body({ exercise: 'push' });
+    const capped = await many.body({ exercise: 'dip' });
+    expect(capped.r.content.length).toBeLessThan(11_800);
     expect(capped.r).toMatchObject({ ok: true, rows: 60, truncated: true });
     expect(capped.body.sessions).toHaveLength(60);
     expect(capped.body.changes).toEqual([
-      expect.objectContaining({ exercise: 'Push-up', sessions: 60 }),
+      expect.objectContaining({ exercise: 'Dip', sessions: 60 }),
     ]);
   });
 });
