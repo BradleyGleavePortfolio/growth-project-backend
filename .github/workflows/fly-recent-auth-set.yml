@@ -25,12 +25,34 @@ permissions:
   contents: read
 
 jobs:
+  secrets-environment-guard:
+    name: Production-secrets environment guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Refuse unless production-secrets is protected
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REQUIRED_ENVIRONMENT: production-secrets
+        run: bash scripts/ci/secrets-environment-guard.sh
+
   set-secrets:
     name: Push recent-auth secrets to Fly
     runs-on: ubuntu-latest
-    # Production-mutating: bound to the same `production` environment as Fly Deploy
-    # so required reviewers (once configured) gate this too, not only image deploys.
-    environment: production
+    needs: secrets-environment-guard
+    if: needs.secrets-environment-guard.result == 'success'
+    # Production-mutating: runs only in the `production-secrets` environment, whose
+    # required reviewer (the owner) approves each run (decision ALM-D11 op 1). The
+    # secrets-environment-guard job above refuses to start it unless that environment
+    # has a reviewer, admin bypass off and deployments from main only.
+    environment: production-secrets
     concurrency: fly-secrets-${{ inputs.app }}
     steps:
       - name: Confirm operator intent

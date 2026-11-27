@@ -83,10 +83,34 @@ permissions:
   contents: read
 
 jobs:
+  secrets-environment-guard:
+    name: Production-secrets environment guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Refuse unless production-secrets is protected
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REQUIRED_ENVIRONMENT: production-secrets
+        run: bash scripts/ci/secrets-environment-guard.sh
+
   fly-env-sync:
     name: Reconcile Fly with the desired-state manifest
     runs-on: ubuntu-latest
-    environment: production
+    needs: secrets-environment-guard
+    if: needs.secrets-environment-guard.result == 'success'
+    # Production-mutating: runs only in the `production-secrets` environment, whose
+    # required reviewer (the owner) approves each run (decision ALM-D11 op 1). The
+    # secrets-environment-guard job above refuses to start it unless that environment
+    # has a reviewer, admin bypass off and deployments from main only.
+    environment: production-secrets
     concurrency: fly-secrets-${{ inputs.app }}
     steps:
       - name: Validate Fly app target
@@ -136,7 +160,7 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           if [ -z "${FLY_API_TOKEN}" ]; then
-            echo "::error::The FLY_API_TOKEN secret is empty or not set, so flyctl cannot read or manage secrets and nothing was changed. Fix: create a deploy token with 'fly tokens create deploy -a backend-spring-lake-3890', save it as the FLY_API_TOKEN secret available to the production environment, then re-run."
+            echo "::error::The FLY_API_TOKEN secret is empty or not set, so flyctl cannot read or manage secrets and nothing was changed. Fix: create a deploy token with 'fly tokens create deploy -a backend-spring-lake-3890', save it as the FLY_API_TOKEN secret available to the production-secrets environment, then re-run."
             exit 1
           fi
           echo "FLY_API_TOKEN is configured."
@@ -223,7 +247,7 @@ jobs:
           }
           fly_error_hint() {
             case "$1" in
-              auth) echo "Fix: flyctl reported an authorization error; check that FLY_API_TOKEN is a valid token for ${APP} (create one with 'fly tokens create deploy -a ${APP}' and save it as the FLY_API_TOKEN secret available to the production environment), then re-run." ;;
+              auth) echo "Fix: flyctl reported an authorization error; check that FLY_API_TOKEN is a valid token for ${APP} (create one with 'fly tokens create deploy -a ${APP}' and save it as the FLY_API_TOKEN secret available to the production-secrets environment), then re-run." ;;
               app_not_found) echo "Fix: flyctl could not find ${APP}; check that FLY_API_TOKEN is a valid token for ${APP} and belongs to the organization that owns it ('fly apps list'), then re-run." ;;
               rate_limited) echo "Fix: the Fly API is rate limiting this token; wait a few minutes, then re-run." ;;
               machine_health) echo "Fix: check machine health with 'fly status -a ${APP}' and 'fly logs -a ${APP}', fix the failing machine, then re-run." ;;
@@ -352,7 +376,7 @@ jobs:
           }
           fly_error_hint() {
             case "$1" in
-              auth) echo "Fix: flyctl reported an authorization error; check that FLY_API_TOKEN is a valid token for ${APP} (create one with 'fly tokens create deploy -a ${APP}' and save it as the FLY_API_TOKEN secret available to the production environment), then re-run." ;;
+              auth) echo "Fix: flyctl reported an authorization error; check that FLY_API_TOKEN is a valid token for ${APP} (create one with 'fly tokens create deploy -a ${APP}' and save it as the FLY_API_TOKEN secret available to the production-secrets environment), then re-run." ;;
               app_not_found) echo "Fix: flyctl could not find ${APP}; check that FLY_API_TOKEN is a valid token for ${APP} and belongs to the organization that owns it ('fly apps list'), then re-run." ;;
               rate_limited) echo "Fix: the Fly API is rate limiting this token; wait a few minutes, then re-run." ;;
               machine_health) echo "Fix: check machine health with 'fly status -a ${APP}' and 'fly logs -a ${APP}', fix the failing machine, then re-run." ;;
@@ -461,7 +485,7 @@ jobs:
           }
           fly_error_hint() {
             case "$1" in
-              auth) echo "Fix: flyctl reported an authorization error; check that FLY_API_TOKEN is a valid token for ${APP} (create one with 'fly tokens create deploy -a ${APP}' and save it as the FLY_API_TOKEN secret available to the production environment), then re-run." ;;
+              auth) echo "Fix: flyctl reported an authorization error; check that FLY_API_TOKEN is a valid token for ${APP} (create one with 'fly tokens create deploy -a ${APP}' and save it as the FLY_API_TOKEN secret available to the production-secrets environment), then re-run." ;;
               app_not_found) echo "Fix: flyctl could not find ${APP}; check that FLY_API_TOKEN is a valid token for ${APP} and belongs to the organization that owns it ('fly apps list'), then re-run." ;;
               rate_limited) echo "Fix: the Fly API is rate limiting this token; wait a few minutes, then re-run." ;;
               machine_health) echo "Fix: check machine health with 'fly status -a ${APP}' and 'fly logs -a ${APP}', fix the failing machine, then re-run." ;;
@@ -553,7 +577,7 @@ jobs:
           }
           fly_error_hint() {
             case "$1" in
-              auth) echo "Fix: flyctl reported an authorization error; check that FLY_API_TOKEN is a valid token for ${APP} (create one with 'fly tokens create deploy -a ${APP}' and save it as the FLY_API_TOKEN secret available to the production environment), then re-run." ;;
+              auth) echo "Fix: flyctl reported an authorization error; check that FLY_API_TOKEN is a valid token for ${APP} (create one with 'fly tokens create deploy -a ${APP}' and save it as the FLY_API_TOKEN secret available to the production-secrets environment), then re-run." ;;
               app_not_found) echo "Fix: flyctl could not find ${APP}; check that FLY_API_TOKEN is a valid token for ${APP} and belongs to the organization that owns it ('fly apps list'), then re-run." ;;
               rate_limited) echo "Fix: the Fly API is rate limiting this token; wait a few minutes, then re-run." ;;
               machine_health) echo "Fix: check machine health with 'fly status -a ${APP}' and 'fly logs -a ${APP}', fix the failing machine, then re-run." ;;
