@@ -71,7 +71,7 @@ Putting the reviewer back takes two steps: (1) in GitHub, Settings >
 Environments > `production` > Required reviewers, add at least one real
 person and keep "Allow administrators to bypass configured protection
 rules" off (the gate accepts this at once and logs the reviewer line);
-(2) revert #1261 (its merge commit on `main`), the PR that made this
+(2) revert #1261 (merge commit `430cdb60`), the PR that made this
 change, together with #1264, the docs follow-up that describes it, so the
 gate again refuses a deploy when the environment has no reviewer.
 
