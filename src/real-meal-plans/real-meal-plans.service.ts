@@ -754,9 +754,7 @@ export class RealMealPlansService {
       select: { id: true, role: true, coach_id: true },
     });
     const coachId = viewer?.coach_id ?? null;
-    const ownSlots = assignments
-      .filter((a) => coachId !== null && a.daily_meal_plan.coach_id === coachId)
-      .flatMap((a) => a.daily_meal_plan.slots);
+    const ownSlots = assignments.flatMap((a) => a.daily_meal_plan.slots);
     const swapIds = [...new Set(ownSlots.flatMap((s) => s.meal_template.swap_template_ids ?? []))];
     const recipeIds = [
       ...new Set(
