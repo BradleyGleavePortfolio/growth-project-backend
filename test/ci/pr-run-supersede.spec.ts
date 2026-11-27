@@ -28,6 +28,9 @@
 // blocks use (context paths, 'strings', ==, !=, !, &&, ||, parentheses), with
 // GitHub's rules: && and || return an operand, a missing property is null, and
 // strings compare without case.
+//
+// Seen live on b#1267: its body names an older head's cancelled ci.yml run and
+// the newer head's run that went on to completion.
 
 import { readdirSync, readFileSync } from 'fs';
 import { load as parseYaml } from 'js-yaml';
