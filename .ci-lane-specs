@@ -1,0 +1,12 @@
+test/ci/pr-run-supersede.spec.ts
+test/ci/branch-protection-checks.spec.ts
+test/ci/release-evidence-gate.spec.ts
+test/ci/dependency-audit.spec.ts
+test/ci/jest-typecheck-gate.spec.ts
+test/ci/jest-typecheck-gate-probes.spec.ts
+test/ci/r100-pathspec.spec.ts
+test/ci/r75-wiring.spec.ts
+test/ci/r75-enforcement.spec.ts
+test/ci/migration-order.spec.ts
+test/ci/schema-parity-gate.spec.ts
+test/ci/delivery-artifact.spec.ts
