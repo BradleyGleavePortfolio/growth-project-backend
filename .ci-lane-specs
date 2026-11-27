@@ -1,0 +1,11 @@
+test/roman/tools/roman-exercise-history-unit.spec.ts
+test/roman/tools/roman-read-tools.spec.ts
+test/roman/tools/roman-extra-history.spec.ts
+test/roman/tools/roman-extra-history-quote.spec.ts
+test/roman/tools/roman-baselines.spec.ts
+test/roman/eval/roman-golden.eval.spec.ts
+test/roman/r11-tool-loop.spec.ts
+test/roman/r11-tool-loop-deadline.spec.ts
+test/set-asked-be.spec.ts
+test/timed-sets-context-be.spec.ts
+test/aib3-workout-context.spec.ts
