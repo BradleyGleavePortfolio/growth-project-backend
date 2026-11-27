@@ -24,7 +24,12 @@ import { RomanTimelineError, type RomanTimelineEvent } from '../memory/roman-tim
 import type { RomanTimelineKind } from '../memory/roman-timeline.types';
 import { romanErrorTag } from '../roman-error-tag';
 import { ROMAN_TOOL_LIMITS, type RomanToolbox, type RomanToolCaller } from './roman-tool.types';
-import type { RomanToolDefinition, RomanToolFacts, RomanToolGrams, RomanToolResult } from './roman-tool.types';
+import type {
+  RomanToolDefinition,
+  RomanToolFacts,
+  RomanToolGrams,
+  RomanToolResult,
+} from './roman-tool.types';
 import { EXERCISE_HISTORY_LIMITS, exerciseChanges } from './roman-exercise-history';
 import { readExerciseSets, summarizeExerciseSet } from './roman-exercise-history';
 import { ROMAN_EXTRA_HISTORY_KINDS, RomanExtraHistory } from './roman-extra-history';
@@ -37,23 +42,47 @@ const FOOD_MAX_AGE_DAYS = 365;
 const FOOD_MAX_ENTRIES = 200;
 
 /** Timeline kinds the tools may read: never 'activity' or 'adjustment'. */
-export const ROMAN_READ_TIMELINE_KINDS = ['food_day', 'workout_done', 'workout_missed', 'weight',
-  'water', 'habit', 'check_in', 'wearable_day', 'message', 'booking',
+export const ROMAN_READ_TIMELINE_KINDS = [
+  'food_day',
+  'workout_done',
+  'workout_missed',
+  'weight',
+  'water',
+  'habit',
+  'check_in',
+  'wearable_day',
+  'message',
+  'booking',
 ] as const satisfies readonly RomanTimelineKind[];
-export const ROMAN_READ_HISTORY_KINDS = [...ROMAN_READ_TIMELINE_KINDS, ...ROMAN_EXTRA_HISTORY_KINDS] as const;
+export const ROMAN_READ_HISTORY_KINDS = [
+  ...ROMAN_READ_TIMELINE_KINDS,
+  ...ROMAN_EXTRA_HISTORY_KINDS,
+] as const;
 const TIMELINE_KINDS = new Set<string>(ROMAN_READ_TIMELINE_KINDS);
 
 const realDay = (s: string) => {
   const t = Date.parse(`${s}T00:00:00.000Z`);
   return Number.isFinite(t) && new Date(t).toISOString().startsWith(s);
 };
-const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(realDay);
+const ymd = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine(realDay);
 const kindList = z.array(z.enum(ROMAN_READ_HISTORY_KINDS)).min(1).max(20);
 // Letters, digits and plain punctuation: no LIKE wildcards or escapes.
-const exerciseName = z.string().trim().min(2).max(60).regex(/^[\p{L}\p{N} .,'()&+/-]+$/u);
+const exerciseName = z
+  .string()
+  .trim()
+  .min(2)
+  .max(60)
+  .regex(/^[\p{L}\p{N} .,'()&+/-]+$/u);
 const SCHEMAS = {
   read_history: z.strictObject({ kinds: kindList.optional(), from: ymd, to: ymd }),
-  exercise_history: z.strictObject({ exercise: exerciseName, from: ymd.optional(), to: ymd.optional() }),
+  exercise_history: z.strictObject({
+    exercise: exerciseName,
+    from: ymd.optional(),
+    to: ymd.optional(),
+  }),
   food_day: z.strictObject({ date: ymd }),
   personal_baselines: z.strictObject({}),
 };
@@ -67,7 +96,11 @@ export const ROMAN_READ_TOOL_DEFINITIONS: readonly RomanToolDefinition[] = Objec
       "The client's own logs between two dates in their time zone (inclusive, at most 31 days): daily food totals, workouts done and missed, weight, water, habits, check-ins, daily wearable totals, messages with their coach and coaching sessions; health_day is the rest of their connected-device data per day (sleep stages, bedtime and wake time, body weight and body fat, blood pressure, VO2 max, workout minutes and distance, strain, temperature, respiratory rate, SpO2); fasting windows; roman_chat is their own earlier chats with Roman; community_post is the posts they wrote. Numbers are computed by the app; quote them as given.",
     input_schema: {
       type: 'object',
-      properties: { kinds: { type: 'array', items: { enum: [...ROMAN_READ_HISTORY_KINDS] } }, from: DAY, to: DAY },
+      properties: {
+        kinds: { type: 'array', items: { enum: [...ROMAN_READ_HISTORY_KINDS] } },
+        from: DAY,
+        to: DAY,
+      },
       required: ['from', 'to'],
     },
   },
@@ -123,7 +156,10 @@ export function fitToolJson(
   return { content: JSON.stringify({ [key]: [], truncated: true }), kept: 0, truncated: true };
 }
 
-const okResult = (fit: ReturnType<typeof fitToolJson>, facts?: RomanToolFacts): RomanToolResult => ({
+const okResult = (
+  fit: ReturnType<typeof fitToolJson>,
+  facts?: RomanToolFacts,
+): RomanToolResult => ({
   ok: true,
   content: fit.content,
   rows: fit.kept,
@@ -167,7 +203,10 @@ export function foodDayOf(rows: readonly FoodEntryRow[], tz: string) {
   });
   const r = Math.round;
   const totals = { kcal: r(sum.kcal), protein_g: r(sum.protein_g), carbs_g: r(sum.carbs_g) };
-  return { totals: { ...totals, fat_g: r(sum.fat_g), entries: rows.length, meals: meals.size }, entries };
+  return {
+    totals: { ...totals, fat_g: r(sum.fat_g), entries: rows.length, meals: meals.size },
+    entries,
+  };
 }
 
 type Grams = Record<'protein_g' | 'carbs_g' | 'fat_g', number>;
@@ -179,7 +218,12 @@ const gramsOf = (rows: readonly Grams[]): RomanToolGrams => ({
 });
 
 const days = (a: string, b: string) => Math.round((+dateOnly(b) - +dateOnly(a)) / DAY_MS) + 1;
-const INSTANT_TABLES = new Set(['WaterLog', 'CoachMessage', 'CoachingSession', 'ClientWorkoutAssignment']);
+const INSTANT_TABLES = new Set([
+  'WaterLog',
+  'CoachMessage',
+  'CoachingSession',
+  'ClientWorkoutAssignment',
+]);
 
 function compactEvent(e: RomanTimelineEvent, tz: string): Record<string, unknown> {
   const out: Record<string, unknown> = { date: e.local_date };
@@ -198,7 +242,10 @@ export class RomanReadToolbox implements RomanToolbox {
 
   private readonly extra: RomanExtraHistory;
 
-  constructor(private readonly prisma: PrismaService, private readonly timeline: RomanTimelineReader) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly timeline: RomanTimelineReader,
+  ) {
     this.extra = new RomanExtraHistory(prisma);
   }
 
@@ -206,7 +253,12 @@ export class RomanReadToolbox implements RomanToolbox {
     return ROMAN_READ_TOOL_DEFINITIONS;
   }
 
-  async run(caller: RomanToolCaller, name: string, input: unknown, opts: { readonly now: Date }): Promise<RomanToolResult> {
+  async run(
+    caller: RomanToolCaller,
+    name: string,
+    input: unknown,
+    opts: { readonly now: Date },
+  ): Promise<RomanToolResult> {
     if (caller.role !== 'student' || !caller.id) return toolFailure('not_allowed', NOT_A_CLIENT);
     type Run<S extends z.ZodType> = (at: At, data: z.output<S>) => Promise<RomanToolResult>;
     const call = async <S extends z.ZodType>(schema: S, fn: Run<S>): Promise<RomanToolResult> => {
@@ -266,14 +318,21 @@ export class RomanReadToolbox implements RomanToolbox {
     // Never an empty kinds list: the reader reads every kind (activity, adjustment) when none is given.
     const [page, extra] = await Promise.all([
       kinds.length > 0 ? this.timeline.read(at.id, window) : null,
-      this.extra.read(at.id, { from, to: window.to, firstDay: input.from, lastDay: input.to, tz: at.tz }, asked),
+      this.extra.read(
+        at.id,
+        { from, to: window.to, firstDay: input.from, lastDay: input.to, tz: at.tz },
+        asked,
+      ),
     ]);
-    const events = (page?.events ?? []).filter((e) => TIMELINE_KINDS.has(e.kind) && asked.has(e.kind));
+    const events = (page?.events ?? []).filter(
+      (e) => TIMELINE_KINDS.has(e.kind) && asked.has(e.kind),
+    );
     const rows = [
       ...events.map((e) => ({ out: compactEvent(e, at.tz), src: e })),
       ...extra.events.map((out) => ({ out, src: null })),
     ];
-    const key = (o: Record<string, unknown>) => `${String(o.date)} ${typeof o.time === 'string' ? o.time : ''}`;
+    const key = (o: Record<string, unknown>) =>
+      `${String(o.date)} ${typeof o.time === 'string' ? o.time : ''}`;
     rows.sort((a, b) => (key(a.out) < key(b.out) ? -1 : key(a.out) > key(b.out) ? 1 : 0));
     const fit = fitToolJson(
       { tool: 'read_history', from: input.from, to: input.to, timezone: at.tz },
@@ -295,7 +354,10 @@ export class RomanReadToolbox implements RomanToolbox {
     return okResult(fit, { ...facts, burned_past_kcal: pick('wearable_day', 'active_kcal') });
   }
 
-  private async exerciseHistory(at: At, input: Input<'exercise_history'>): Promise<RomanToolResult> {
+  private async exerciseHistory(
+    at: At,
+    input: Input<'exercise_history'>,
+  ): Promise<RomanToolResult> {
     const to = input.to ?? at.today;
     const from = input.from ?? addDays(to, 1 - EXERCISE_HISTORY_LIMITS.default_days);
     const n = days(from, to);
@@ -307,7 +369,14 @@ export class RomanReadToolbox implements RomanToolbox {
     // Newest first, so a clamp drops the oldest sessions.
     const sessions = rows.slice(0, EXERCISE_HISTORY_LIMITS.max_sessions).map(summarizeExerciseSet);
     const changes = exerciseChanges([...sessions].reverse());
-    const head = { tool: 'exercise_history', exercise: input.exercise, from, to, unit: 'lb', changes };
+    const head = {
+      tool: 'exercise_history',
+      exercise: input.exercise,
+      from,
+      to,
+      unit: 'lb',
+      changes,
+    };
     const capped = rows.length > EXERCISE_HISTORY_LIMITS.max_sessions;
     return okResult(fitToolJson(head, 'sessions', sessions, capped));
   }
@@ -321,8 +390,14 @@ export class RomanReadToolbox implements RomanToolbox {
       where: { user_id: at.id, date: dateOnly(input.date) },
       orderBy: { logged_at: 'asc' },
       take: FOOD_MAX_ENTRIES + 1,
-      select: { meal_type: true, quantity_multiplier: true, logged_at: true,
-        food_item: { select: { name: true, calories: true, protein_g: true, carbs_g: true, fat_g: true } } },
+      select: {
+        meal_type: true,
+        quantity_multiplier: true,
+        logged_at: true,
+        food_item: {
+          select: { name: true, calories: true, protein_g: true, carbs_g: true, fat_g: true },
+        },
+      },
     });
     const day = foodDayOf(rows.slice(0, FOOD_MAX_ENTRIES), at.tz);
     const head = { tool: 'food_day', date: input.date, totals: day.totals };
@@ -331,7 +406,10 @@ export class RomanReadToolbox implements RomanToolbox {
     const shown = day.entries.slice(0, fit.kept).map((e) => e.kcal);
     const past = input.date < at.today && rows.length > 0;
     const intake_past_g = past ? gramsOf([day.totals, ...day.entries.slice(0, fit.kept)]) : {};
-    return okResult(fit, { intake_past_kcal: past ? [day.totals.kcal, ...shown] : [], intake_past_g });
+    return okResult(fit, {
+      intake_past_kcal: past ? [day.totals.kcal, ...shown] : [],
+      intake_past_g,
+    });
   }
 
   private async personalBaselines(at: At): Promise<RomanToolResult> {
@@ -342,4 +420,9 @@ export class RomanReadToolbox implements RomanToolbox {
   }
 }
 
-interface At { id: string; tz: string; today: string; now: Date }
+interface At {
+  id: string;
+  tz: string;
+  today: string;
+  now: Date;
+}

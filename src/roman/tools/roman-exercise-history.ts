@@ -10,7 +10,12 @@ import { PrismaService } from '../../prisma.service';
 import { sanitizePromptInput } from '../../ai/utils/sanitize-prompt-input';
 import { dateOnly } from '../context/roman-client-context.service';
 
-export const EXERCISE_HISTORY_LIMITS = Object.freeze({ max_sessions: 60, default_days: 90, max_days: 180, max_changes: 8 });
+export const EXERCISE_HISTORY_LIMITS = Object.freeze({
+  max_sessions: 60,
+  default_days: 90,
+  max_days: 180,
+  max_changes: 8,
+});
 
 export interface ExerciseSetRow {
   exercise_name: string;
@@ -119,7 +124,13 @@ export function readExerciseSets(
     },
     orderBy: [{ workout: { date: 'desc' } }, { workout: { created_at: 'desc' } }, { id: 'asc' }],
     take: EXERCISE_HISTORY_LIMITS.max_sessions + 1,
-    select: { exercise_name: true, sets_completed: true, reps_per_set: true, weight_per_set: true,
-      rpe: true, workout: { select: { date: true } } },
+    select: {
+      exercise_name: true,
+      sets_completed: true,
+      reps_per_set: true,
+      weight_per_set: true,
+      rpe: true,
+      workout: { select: { date: true } },
+    },
   });
 }
