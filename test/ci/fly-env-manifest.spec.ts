@@ -194,13 +194,15 @@ describe('emergency kill per flag (B-637-2): defaults-on switches are killed by 
         isWorkoutRemindersEnabled: () => boolean;
       };
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { reconciliationDailyEnabled } = require('../../src/checkout/reconciliation-daily.cron') as {
-      reconciliationDailyEnabled: () => boolean;
-    };
+    const { reconciliationDailyEnabled } =
+      require('../../src/checkout/reconciliation-daily.cron') as {
+        reconciliationDailyEnabled: () => boolean;
+      };
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { isCoachAccountHoldEnabled } = require('../../src/checkout/dunning-v2/coach-account-hold') as {
-      isCoachAccountHoldEnabled: () => boolean;
-    };
+    const { isCoachAccountHoldEnabled } =
+      require('../../src/checkout/dunning-v2/coach-account-hold') as {
+        isCoachAccountHoldEnabled: () => boolean;
+      };
     const readers: Record<string, () => boolean> = {
       COACH_WELCOME_SCHEDULER_ENABLED: isCoachWelcomeSchedulerEnabled,
       // The hold rides on Dunning v2, which is on in the manifest.
@@ -237,7 +239,8 @@ describe('emergency kill per flag (B-637-2): defaults-on switches are killed by 
         .isCoachReviewedAtEnabled,
       FEATURE_ROMAN_THREE_ARC_COUNTS: require('../../src/coach/home/three-arc-counts.feature')
         .isThreeArcCountsEnabled,
-      FEATURE_ROMAN_COPY_V2: require('../../src/roman/voice/voice-policy.feature').isRomanCopyV2Enabled,
+      FEATURE_ROMAN_COPY_V2: require('../../src/roman/voice/voice-policy.feature')
+        .isRomanCopyV2Enabled,
     };
     /* eslint-enable @typescript-eslint/no-require-imports */
     for (const [n, read] of Object.entries(readers)) {
@@ -246,7 +249,9 @@ describe('emergency kill per flag (B-637-2): defaults-on switches are killed by 
     }
     // The Stripe webhook reads FEATURE_ROMAN_FIRST_PAYMENT inline: each read is on only for "true".
     const webhookFile = join(ROOT, 'src/checkout/checkout-webhook-handler.service.ts');
-    const reads = readFileSync(webhookFile, 'utf8').match(/process\.env\.FEATURE_ROMAN_FIRST_PAYMENT.*/g);
+    const reads = readFileSync(webhookFile, 'utf8').match(
+      /process\.env\.FEATURE_ROMAN_FIRST_PAYMENT.*/g,
+    );
     expect(reads?.length).toBeGreaterThan(0);
     for (const r of reads ?? [])
       expect(r).toBe("process.env.FEATURE_ROMAN_FIRST_PAYMENT !== 'true') return;");
@@ -275,14 +280,17 @@ describe('emergency kill per flag (B-637-2): defaults-on switches are killed by 
       FEATURE_CONTRACTS_ENABLED: contracts.isContractsEnabled,
       FEATURE_CONTRACTS_DOCUSIGN_PROVIDER: contracts.isDocuSignProviderEnabled,
       FEATURE_CONTRACTS_NATIVE_CANVAS: contracts.isNativeCanvasProviderEnabled,
-      FEATURE_ROMAN_CRISIS_ALERT: require('../../src/roman/roman.feature').isRomanCrisisAlertEnabled,
+      FEATURE_ROMAN_CRISIS_ALERT: require('../../src/roman/roman.feature')
+        .isRomanCrisisAlertEnabled,
     };
-    const { isCoachAccountHoldEnabled } = require('../../src/checkout/dunning-v2/coach-account-hold') as {
-      isCoachAccountHoldEnabled: () => boolean;
-    };
-    const { isWearablesCloudConnectorsEnabled } = require('../../src/wearables/cloud-connectors.feature') as {
-      isWearablesCloudConnectorsEnabled: () => boolean;
-    };
+    const { isCoachAccountHoldEnabled } =
+      require('../../src/checkout/dunning-v2/coach-account-hold') as {
+        isCoachAccountHoldEnabled: () => boolean;
+      };
+    const { isWearablesCloudConnectorsEnabled } =
+      require('../../src/wearables/cloud-connectors.feature') as {
+        isWearablesCloudConnectorsEnabled: () => boolean;
+      };
     const { FEATURE_GATED_ROUTES } =
       require('../../src/common/feature-flag/feature-flag-not-found.middleware') as {
         FEATURE_GATED_ROUTES: ReadonlyArray<{ pattern: string; envVar: string }>;
@@ -353,7 +361,12 @@ describe('emergency kill per flag (B-637-2): defaults-on switches are killed by 
 
   it('launch switches: a name found on Fly may not be declared unset, the apply would remove it', () => {
     const n = 'FEATURE_PLAN_RENEWAL';
-    const p = fem.planChanges(base(), new Map([[n, 'Deployed']]), { results: { [n]: 'present' } }, {});
+    const p = fem.planChanges(
+      base(),
+      new Map([[n, 'Deployed']]),
+      { results: { [n]: 'present' } },
+      {},
+    );
     expect(p.rows.find((r) => r.name === n)?.action).toBe('unset');
     expect(p.unset).toContain(n);
   });
@@ -555,13 +568,15 @@ describe('manifest parsing is strict', () => {
 describe('validation errors are specific and carry a Fix', () => {
   const errs = (m: FlyEnvManifest) => fem.validateManifest(m, rules);
   it.each<[string, (m: FlyEnvManifest) => FlyEnvManifest, RegExp]>([
-    ...['*', 'wearable_insight.client,wearable_insight.coach', `${WEAR_AI_CAPS},community_ai_triage`].map(
-      (v): [string, (m: FlyEnvManifest) => FlyEnvManifest, RegExp] => [
-        `the AI allow-list outside its two values: ${v}`,
-        (m) => edit(m, { flags: { AI_GATEWAY_CAPABILITIES: v } }),
-        /flags\.AI_GATEWAY_CAPABILITIES is ".*Fix: /,
-      ],
-    ),
+    ...[
+      '*',
+      'wearable_insight.client,wearable_insight.coach',
+      `${WEAR_AI_CAPS},community_ai_triage`,
+    ].map((v): [string, (m: FlyEnvManifest) => FlyEnvManifest, RegExp] => [
+      `the AI allow-list outside its two values: ${v}`,
+      (m) => edit(m, { flags: { AI_GATEWAY_CAPABILITIES: v } }),
+      /flags\.AI_GATEWAY_CAPABILITIES is ".*Fix: /,
+    ]),
     [
       'an unregistered flag',
       (m) => ({

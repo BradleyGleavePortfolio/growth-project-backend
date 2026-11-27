@@ -197,11 +197,11 @@ onboarding instead of the consultation (S-REVENUE-124 B-REV-1).
 
 ### Program set resolution and the house set (CONSULT-ALL-BE-133)
 
-| client                      | set used                         | clone owner / tenant (`owner_user_id` / `coach_id`) | spaces | coach alert | `coach` in the result |
-| --------------------------- | -------------------------------- | --------------------------------------------------- | ------ | ----------- | --------------------- |
-| coach with an active set    | the coach's own set (unchanged)  | coach / INT-607-1 tenant                             | joined | the coach   | the coach             |
-| coach without a usable set  | the house set                    | coach / INT-607-1 tenant                             | none   | the coach   | the coach             |
-| no coach (coachless)        | the house set                    | the client / the client                              | none   | none        | `null`                |
+| client                     | set used                        | clone owner / tenant (`owner_user_id` / `coach_id`) | spaces | coach alert | `coach` in the result |
+| -------------------------- | ------------------------------- | --------------------------------------------------- | ------ | ----------- | --------------------- |
+| coach with an active set   | the coach's own set (unchanged) | coach / INT-607-1 tenant                            | joined | the coach   | the coach             |
+| coach without a usable set | the house set                   | coach / INT-607-1 tenant                            | none   | the coach   | the coach             |
+| no coach (coachless)       | the house set                   | the client / the client                             | none   | none        | `null`                |
 
 The house set is the newest active `ClinicProgramSet` with `is_house = true`
 whose owner is a live coach or owner account (seeded with `--house`, below).
