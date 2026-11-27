@@ -473,15 +473,12 @@ describe('production-mutating Fly operator workflows are bound to the production
     'fly-secrets-set',
     'fly-env-sync',
     'fly-env-truth',
+    'house-seed',
   ]) {
     it(`${f}.yml has environment: production-secrets`, () => {
       expect(read(`.github/workflows/${f}.yml`)).toMatch(/^\s+environment: production-secrets$/m);
     });
   }
-  // house-seed.yml is held on `production` until HOUSE-SEED-ENV-BE moves it (DECISIONS ALM-D13).
-  it('house-seed.yml has environment: production (held for HOUSE-SEED-ENV-BE)', () => {
-    expect(read('.github/workflows/house-seed.yml')).toMatch(/^\s+environment: production$/m);
-  });
 });
 
 describe('Dockerfile — runtime residue (S2-B9)', () => {

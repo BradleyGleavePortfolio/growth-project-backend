@@ -23,11 +23,6 @@ const STALE: RegExp[] = [
   /its\s+required\s+reviewers\s+gate/i,
 ];
 
-// Still bound to `production` with its old comment: house-seed.yml moves to `production-secrets` in
-// HOUSE-SEED-ENV-BE (DECISIONS ALM-D13), which removes it from this list. The other seven moved in
-// PRODUCTION-SECRETS-ENV-BE (ALM-D11 op 1) and are swept like every other workflow.
-const AWAITING_HOUSE_SEED_ENV = new Set(['.github/workflows/house-seed.yml']);
-
 // ALM-D11 op 1: each moved workflow names its environment and the decision.
 const MOVED_TO_SECRETS_ENV = [
   'fly-secrets-set',
@@ -37,6 +32,7 @@ const MOVED_TO_SECRETS_ENV = [
   'fly-recent-auth-set',
   'fly-env-sync',
   'fly-env-truth',
+  'house-seed',
 ].map((f) => ({
   file: `.github/workflows/${f}.yml`,
   present: [/production-secrets/, /ALM-D11\s+op\s+1/],
@@ -61,6 +57,11 @@ const ROWS: { file: string; present: RegExp[]; absent?: RegExp[] }[] = [
     absent: [/approves\s+every\s+deploy\s+himself/],
   },
   ...MOVED_TO_SECRETS_ENV,
+  {
+    file: 'test/ci/house-seed-workflow.spec.ts',
+    present: [/production-secrets/],
+    absent: [/required\s+reviewers\s+gate\s+it/],
+  },
 ];
 
 describe('GATE-DOCS-BE: the deploy docs say what the release gate does since #1261', () => {
@@ -75,7 +76,7 @@ describe('GATE-DOCS-BE: the deploy docs say what the release gate does since #12
       ...walk('docs', (p) => p.endsWith('.md')),
       ...walk('.github/workflows', (p) => /\.ya?ml$/.test(p)),
       ...walk('scripts', (p) => p.endsWith('.sh')),
-    ].filter((p) => !AWAITING_HOUSE_SEED_ENV.has(p));
+    ];
     const hits = files.flatMap((p) =>
       STALE.filter((re) => re.test(read(p))).map((re) => `${p} ${re}`),
     );

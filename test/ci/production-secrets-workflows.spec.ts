@@ -36,11 +36,12 @@ const MOVED: Record<string, string> = {
   'fly-recent-auth-set.yml': 'set-secrets',
   'fly-env-sync.yml': 'fly-env-sync',
   'fly-env-truth.yml': 'fly-env-truth',
+  'house-seed.yml': 'house-seed',
 };
-// house-seed.yml is the eighth workflow of ALM-D11. It stays on `production` in this PR: moving
-// it means re-formatting test/ci/house-seed-workflow.spec.ts, which this PR does not do (DECISIONS
-// ALM-D13). The job HOUSE-SEED-ENV-BE moves it and deletes this entry.
-const HELD: Record<string, string> = { 'house-seed.yml': 'house-seed' };
+// The bound job's exact if. house-seed.yml keeps its own main-only condition in front of the guard's.
+const BOUND_IF: Record<string, string> = {
+  'house-seed.yml': `github.ref == 'refs/heads/main' && ${SUCCESS}`,
+};
 
 const GUARD_JOB = {
   name: 'Production-secrets environment guard',
@@ -87,7 +88,7 @@ describe('the production secrets, flag and shell workflows wait for the owner in
       (wf.jobs[GUARD_ID].steps?.[1].env as Record<string, string>).REQUIRED_ENVIRONMENT,
     );
     expect(job.needs).toBe(GUARD_ID);
-    expect(job.if).toBe(SUCCESS);
+    expect(job.if).toBe(BOUND_IF[file] ?? SUCCESS);
 
     expect(wf.permissions).toEqual({ contents: 'read' });
     expect(read(file)).not.toContain('secrets.GITHUB_TOKEN');
@@ -101,11 +102,9 @@ describe('class: who can reach production credentials without the owner (every w
   );
   const key = (x: { file: string; id: string }) => `${x.file}#${x.id}`;
 
-  it('only Fly Deploy (and the held house-seed) bind to production', () => {
+  it('only Fly Deploy binds to production', () => {
     const bound = jobs.filter((x) => envName(x.job) === 'production').map(key);
-    expect(bound.sort()).toEqual(
-      ['fly-deploy.yml#deploy', ...Object.entries(HELD).map(([f, id]) => `${f}#${id}`)].sort(),
-    );
+    expect(bound).toEqual(['fly-deploy.yml#deploy']);
   });
 
   it('every job in production-secrets needs the guard job of its own file and runs only on its success', () => {
@@ -122,9 +121,10 @@ describe('class: who can reach production credentials without the owner (every w
     }
   });
 
-  it('every job that reads a secret the eight read is Fly Deploy, Fly Secrets List, held, or behind the guard', () => {
+  it('every job that reads a secret the eight read is Fly Deploy, Fly Secrets List or behind the guard', () => {
     // The names the eight workflows read, from their own text.
-    const eight = [...Object.keys(MOVED), ...Object.keys(HELD)];
+    const eight = Object.keys(MOVED);
+    expect(eight).toHaveLength(8);
     const names = new Set(
       eight.flatMap((f) => [...read(f).matchAll(/secrets\.([A-Z0-9_]+)/g)].map((m) => m[1])),
     );
@@ -135,7 +135,6 @@ describe('class: who can reach production credentials without the owner (every w
     const allowed = new Set([
       'fly-deploy.yml#deploy', // FLY_API_TOKEN and SENTRY_DSN: the code deploy, automatic (ALM-D7 op 2)
       'fly-secrets-list.yml#list', // FLY_API_TOKEN: names and digests only, no environment (Found, not fixed)
-      ...Object.entries(HELD).map(([f, id]) => `${f}#${id}`),
     ]);
     for (const x of readers) {
       if (allowed.has(key(x))) continue;

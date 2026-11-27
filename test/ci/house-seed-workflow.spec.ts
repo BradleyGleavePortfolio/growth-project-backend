@@ -58,9 +58,11 @@ describe('house-seed.yml — operator only, production-gated, inputs are data', 
     expect(inputs.exercise_catalog).toMatchObject({ default: 'skip', options: ['skip', 'upsert'] });
   });
 
-  it('runs only from main, inside the production environment (required reviewers gate it)', () => {
-    expect(job.if).toBe("github.ref == 'refs/heads/main'");
-    expect(job.environment).toBe('production');
+  it('runs only from main, after the guard job, inside production-secrets (the owner approves each run)', () => {
+    expect(job.if).toBe(
+      "github.ref == 'refs/heads/main' && needs.secrets-environment-guard.result == 'success'",
+    );
+    expect(job.environment).toBe('production-secrets');
   });
 
   it('no run block interpolates expressions; every action is pinned to a 40-hex sha', () => {
