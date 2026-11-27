@@ -730,7 +730,7 @@ export class RealMealPlansService {
 
   /**
    * PLAN-SWAPS-BE (C2 S2): on a plan from the client's current coach, each slot gets that coach's live swaps
-   * (name, kcal, protein) and the meal's recipe when the client can open it (visibleRecipesWhere, with the
+   * (name, kcal, protein, carbs, fat) and the meal's recipe when the client can open it (visibleRecipesWhere, with the
    * client's allergens, so the link never opens onto RECIPE_NOT_FOUND or RECIPE_HIDDEN_FOR_ALLERGENS); a plan
    * kept from an earlier coach gets none (owner 4). `changes_today` lists the meal changes to these plans
    * since the client's local midnight (resolveRecipientTimeZone; UTC when no zone is known), and is empty
@@ -768,7 +768,14 @@ export class RealMealPlansService {
       swapIds.length > 0 && coachId
         ? this.prisma.mealTemplate.findMany({
             where: { id: { in: swapIds }, coach_id: coachId, archived_at: null },
-            select: { id: true, name: true, calories_kcal: true, protein_g: true },
+            select: {
+              id: true,
+              name: true,
+              calories_kcal: true,
+              protein_g: true,
+              carbs_g: true,
+              fats_g: true,
+            },
           })
         : Promise.resolve([]),
       recipeIds.length > 0 && viewer && coachId
