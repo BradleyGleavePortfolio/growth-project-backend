@@ -659,6 +659,8 @@ Prerequisites:
    - `SENTRY_DSN` — server DSN from the production Sentry project.
      The workflow fails with a list of missing names if any of these
      are absent.
+3. Each run of the workflow waits for the owner's approval in the
+   `production-secrets` environment (`docs/delivery-controls.md` section 2.2).
 
 To run:
 
@@ -718,8 +720,8 @@ defaults to `com.growthproject.app` (`DEFAULT_APPLE_SIGNIN_CLIENT_ID`); set it
 only if the bundle id changes. It is no longer derived from `APPLE_AUDIENCES`.
 Without the key id and private key the outcome stays `not_configured`.
 
-The workflow is `workflow_dispatch` only, bound to the `production`
-environment, accepts only `app=backend-spring-lake-3890` and `confirm=SET`,
+The workflow is `workflow_dispatch` only, runs in the `production-secrets`
+environment (each run waits for the owner's approval), accepts only `app=backend-spring-lake-3890` and `confirm=SET`,
 passes inputs through `env:` only, runs with `set +x`, fails if either secret
 is missing or the key is not a PEM, and sets both names in one
 `flyctl secrets import` call with the PEM on stdin (never on a command line,
@@ -796,9 +798,10 @@ two-app dance.
 These are operator-only — the backend cannot do them on its own:
 
 - Provision the Fly app, region, and IPv4/IPv6 addresses.
-- **Add a `FLY_API_TOKEN` GitHub Actions secret** (repository-level today;
-  the intended home is the `production` environment, see
-  `docs/delivery-controls.md`). Merging to `main` no longer deploys;
+- **Add a `FLY_API_TOKEN` GitHub Actions secret** (a repository secret, and
+  it stays one: Fly Deploy, the operator workflows that run in
+  `production-secrets`, House Seed and Fly Secrets List all read it; see
+  `docs/delivery-controls.md` §2.2 and §6). Merging to `main` no longer deploys;
   `Fly Deploy` runs only on explicit dispatch and **fails red** if the
   token is missing — see §8.1 below. A red workflow is the intended
   signal; a silently green-skipping workflow is a release-blocker.

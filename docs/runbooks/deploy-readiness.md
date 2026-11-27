@@ -94,7 +94,7 @@ After any fix, re-run the board until the exit line reads ALL CLEAR.
 
 ## Checking and filling the real Fly environment (S-ENVTRUTH)
 
-The board checks the code. Two operator workflows check and fill the real production machine. Both are manual (`workflow_dispatch`), both are restricted to the `backend-spring-lake-3890` app, and both are bound to the `production` GitHub environment. Neither ever prints a secret value.
+The board checks the code. Two operator workflows check and fill the real production machine. Both are manual (`workflow_dispatch`), both are restricted to the `backend-spring-lake-3890` app, and both run in the `production-secrets` GitHub environment, and each run waits for the owner's approval. Neither ever prints a secret value.
 
 ### 1. Fly Env Truth (read-only): what is actually set
 
