@@ -63,7 +63,7 @@ jobs:
     outputs:
       release_sha: ${{ steps.gate.outputs.release_sha }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
 
@@ -85,7 +85,7 @@ jobs:
           echo "release_sha=${RELEASE_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Upload evidence manifest (pre-deploy)
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4  # v5.0.0
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: release-evidence-${{ github.event.inputs.release_sha }}
           path: release-evidence/
@@ -109,10 +109,10 @@ jobs:
       RELEASE_SHA: ${{ needs.evidence-gate.outputs.release_sha }}
       FLY_APP: backend-spring-lake-3890
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           ref: ${{ needs.evidence-gate.outputs.release_sha }}
-          fetch-depth: 0   # migration delta needs the previously deployed commit
+          fetch-depth: 0 # migration delta needs the previously deployed commit
           persist-credentials: false
 
       - name: Assert checked-out tree is the authorized commit
@@ -121,7 +121,7 @@ jobs:
           [ "$head" = "$RELEASE_SHA" ] || { echo "::error::checked out $head, expected $RELEASE_SHA"; exit 1; }
 
       - name: Download evidence manifest
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0  # v5.0.0 (same major as upload-artifact)
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0 (same major as upload-artifact)
         with:
           name: release-evidence-${{ needs.evidence-gate.outputs.release_sha }}
           path: release-evidence
@@ -152,7 +152,7 @@ jobs:
       # Pinned to a commit (resolved 2026-09-20 from refs/heads/master with
       # `git ls-remote`). The action installs flyctl from fly.io's release
       # channel; the binary itself is not pinned here — see docs/delivery-controls.md.
-      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1  # master 2026-09-20
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # master 2026-09-20
 
       # Record what is running BEFORE the release (rollback target + migration
       # baseline). Raw machine config stays in RUNNER_TEMP; only
@@ -238,7 +238,7 @@ jobs:
 
       - name: Upload release manifest (post-deploy)
         if: always()
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4  # v5.0.0
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: release-manifest-${{ needs.evidence-gate.outputs.release_sha }}-${{ job.status }}
           path: release-evidence/

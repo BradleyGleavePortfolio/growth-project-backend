@@ -274,7 +274,6 @@ deploy` creates the schema and seeds `_prisma_migrations` itself.
    it over every directory fabricates history and a later
    `migrate deploy` would then skip migrations the database never
    received. The established route is:
-
    1. prove equivalence first — `prisma migrate diff --from-url
 "$DIRECT_URL" --to-migrations prisma/migrations --shadow-database-url
 <disposable DB>` must report no difference (or every difference must
@@ -412,7 +411,6 @@ includes the OWNER role + CoachProfile migration (PR #52):
 
 3. **Feature flag rollout order.** Toggle in this sequence so the system
    never enters a state that locks users out:
-
    1. `COACH_CODE_GATE_ENABLED` stays **unset** during onboarding —
       lets the team sign up without an invite. Flip to `true` only after
       every intended coach has a CoachProfile row with an `invite_code`.
@@ -557,7 +555,6 @@ Full setup lives in `docs/stripe-setup.md`. Operational summary:
   production.
 - **Console live-mode switch.** When ready to flip the coach console
   from test to live:
-
   1. Confirm every CoachProfile has a Stripe Customer in live mode (the
      mirror creates one on the first portal-session call; OWNER can
      trigger this manually).
@@ -709,9 +706,9 @@ still completes, the outcome `not_configured` is logged and recorded in
 `deletion_audit`, and the app tells the person they can also remove the app
 from their Apple ID settings. It never claims revocation happened.
 
-| Variable | Source |
-| --- | --- |
-| `APPLE_SIGNIN_KEY_ID` | GitHub Actions secret of the same name (10-character key id from Apple Developer → Keys) |
+| Variable                   | Source                                                                                                                                                           |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `APPLE_SIGNIN_KEY_ID`      | GitHub Actions secret of the same name (10-character key id from Apple Developer → Keys)                                                                         |
 | `APPLE_SIGNIN_PRIVATE_KEY` | GitHub Actions secret of the same name: the full `.p8` file contents, pasted as-is (multi-line PEM, `-----BEGIN PRIVATE KEY-----` … `-----END PRIVATE KEY-----`) |
 
 `APPLE_TEAM_ID` must already be set; it is not touched here.
@@ -834,7 +831,6 @@ store and in `fly tokens`.
    Copy the token from the command output. It is shown only once.
 
 2. **Add the token as a repository secret.** GitHub UI path:
-
    - Repository → **Settings** → **Secrets and variables** → **Actions**
    - **New repository secret**
    - Name: `FLY_API_TOKEN` (exact, case-sensitive)
@@ -862,7 +858,6 @@ store and in `fly tokens`.
 4. **Watch the run go green.** The `Verify FLY_API_TOKEN is configured`
    step prints the token _length_ (not the value) and the deploy
    proceeds. If the run still fails red, check the step log for one of:
-
    - `FLY_API_TOKEN GitHub Actions secret is not set` — the secret was
      not saved against this repository (check org-level vs repo-level).
    - `looks like a placeholder value` — the secret was saved with

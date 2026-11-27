@@ -6,10 +6,10 @@ it in `docs/deploy-runbook.md` is stale and should be fixed there.
 
 ## 1. Two separate authorizations
 
-| Authorization | Mechanism | Who/what decides |
-| --- | --- | --- |
-| **Merge to `main`** | Branch protection / ruleset: 11 required checks (exactly the live list, read back 2026-10-02 after 16:41 PDT) `build-and-test`, `rls-floor-guard`, `rls-live-tests`, `mwb-3-live-tests`, `npm audit (high+critical, whole graph)`, `CodeQL JS/TS (javascript-typescript)`, `Banned cast tokens (R75 / R100.A2)`, `build-sbom`, `danger`, `Schema parity (migrations match schema.prisma)`, `community-live-tests` (owner 2026-10-02 16:38), all bound to the GitHub Actions app; strict up-to-date; enforce admins; linear history OFF (changing it needs the owner's explicit words); conversation resolution OFF (audits are issue comments); operator 2026-10-02. | `scripts/setup-branch-protection.sh` (NOT yet run — see §6). |
-| **Deploy to Fly** | `Fly Deploy` (`.github/workflows/fly-deploy.yml`): `workflow_dispatch` only, `release_sha` + `confirm=deploy` inputs, job `Release evidence gate` (`scripts/ci/release-evidence-gate.sh`) then job `deploy` bound to environment `production`. | A human dispatch. Since 2026-11-26 the `production` environment has **no required reviewer**: the owner removed it and approves every deploy himself (decision ALM-D7 op 2, see §2.1). |
+| Authorization       | Mechanism                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Who/what decides                                                                                                                                                                       |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Merge to `main`** | Branch protection / ruleset: 11 required checks (exactly the live list, read back 2026-10-02 after 16:41 PDT) `build-and-test`, `rls-floor-guard`, `rls-live-tests`, `mwb-3-live-tests`, `npm audit (high+critical, whole graph)`, `CodeQL JS/TS (javascript-typescript)`, `Banned cast tokens (R75 / R100.A2)`, `build-sbom`, `danger`, `Schema parity (migrations match schema.prisma)`, `community-live-tests` (owner 2026-10-02 16:38), all bound to the GitHub Actions app; strict up-to-date; enforce admins; linear history OFF (changing it needs the owner's explicit words); conversation resolution OFF (audits are issue comments); operator 2026-10-02. | `scripts/setup-branch-protection.sh` (NOT yet run — see §6).                                                                                                                           |
+| **Deploy to Fly**   | `Fly Deploy` (`.github/workflows/fly-deploy.yml`): `workflow_dispatch` only, `release_sha` + `confirm=deploy` inputs, job `Release evidence gate` (`scripts/ci/release-evidence-gate.sh`) then job `deploy` bound to environment `production`.                                                                                                                                                                                                                                                                                                                                                                                                                       | A human dispatch. Since 2026-11-26 the `production` environment has **no required reviewer**: the owner removed it and approves every deploy himself (decision ALM-D7 op 2, see §2.1). |
 
 A green merge is **not** a deploy authorization. Nothing deploys on `push`.
 
@@ -22,9 +22,9 @@ and refuses the release unless, for the **exact** `release_sha`:
    branch tip), and equals the checked-out `github.sha`;
 2. every required workflow job (`REQUIRED_WORKFLOWS`, default
    `ci.yml=build-and-test|rls-floor-guard|rls-live-tests|mwb-3-live-tests;
-   codeql.yml=CodeQL JS/TS (javascript-typescript); sbom.yml=build-sbom;
-   dependency-audit.yml=npm audit (high+critical, whole graph)`)
-   has a run **on that head sha** whose *newest* attempt is
+codeql.yml=CodeQL JS/TS (javascript-typescript); sbom.yml=build-sbom;
+dependency-audit.yml=npm audit (high+critical, whole graph)`)
+   has a run **on that head sha** whose _newest_ attempt is
    `completed/success`; a newer failed run beats an older success; a
    missing, skipped, cancelled, in-progress or duplicate-name-with-one-failure
    job fails the gate;
@@ -35,13 +35,13 @@ and refuses the release unless, for the **exact** `release_sha`:
    re-proves it against the checked-out lockfile (no dev-only packages,
    production set present);
 5. the `production` environment exists **and** `can_admins_bypass ==
-   false` (`REQUIRED_ENVIRONMENT`). A required reviewer is no longer
+false` (`REQUIRED_ENVIRONMENT`). A required reviewer is no longer
    demanded (§2.1): with no reviewer the gate logs `has no required
-   reviewer: deploys are auto-approved by the owner (ALM-D7 op 2, ...)`,
+reviewer: deploys are auto-approved by the owner (ALM-D7 op 2, ...)`,
    with ≥1 reviewer it logs `has required reviewers and no admin bypass`,
    and the manifest records `required_reviewers` (the count) and
    `reviewer_rule` (`owner standing approval (ALM-D7 op 2)` or `required
-   human reviewer, no admin bypass`). Admin bypass is a hard requirement,
+human reviewer, no admin bypass`). Admin bypass is a hard requirement,
    not a recorded observation: the manifest does not carry the bypass flag;
    a bypass-enabled environment fails the gate, with or without a reviewer,
    and so does an unknown flag.
@@ -98,7 +98,7 @@ Negatives are covered by `test/ci/release-evidence-gate.spec.ts`
   migration content remain S1-owned; this only forces the operator to say
   so.
 - `flyctl deploy --remote-only --image-label sha-<release_sha>
-  --build-arg GIT_SHA=... --wait-timeout 5m`, then
+--build-arg GIT_SHA=... --wait-timeout 5m`, then
   `scripts/ci/verify-fly-release.sh` requires every started machine in the
   `app` process group to run image tag `sha-<release_sha>` with label
   `GH_SHA=<release_sha>` and one converged digest. It does **not** read
@@ -171,11 +171,11 @@ and nothing here should be described as enforced.
 A `Fly Deploy` run has three distinct failure stages with different
 database consequences. Recovery text that does not name the stage is wrong.
 
-| Stage | What has changed | Recovery |
-|---|---|---|
-| **A. Before `release_command` step 2** — gate refused, image build failed, `release.sh` step 0 (verifier contract) or step 1 refused | Nothing: no image rolled out, no migration applied. | Fix forward on `main`; re-dispatch. No production action. |
-| **B. `release_command` failed at/after step 2** — `prisma migrate deploy` ran (fully or partially), then a later step (status, catalog verifier, accounting) refused | Machines still run the previous image (Fly does not roll out on a non-zero release_command). The **database may be ahead of the running code**: applied migrations stay applied. | Do **not** delete or edit an applied migration directory (a later `migrate deploy` would then refuse with a history mismatch — that fails closed, it does not roll back). Read `_prisma_migrations`, decide forward-fix vs. manual transactional reverse (S1-owned content, separate production authorization), then re-dispatch. See `docs/deploy-runbook.md` §11.4. |
-| **C. After rollout** — `verify-fly-release.sh` or `/readyz` failed, or a defect is found later | New image is serving; schema is at `release_sha`. | Code rollback is a forward deploy of a revert commit through the gated path (revert code only — never revert a migration by deleting its directory). The previous image is recorded in `machines-before.json` of the last manifest (`image_ref.tag`; for the first gated release that tag is a Fly `deployment-*` tag, not `sha-*`, because the current production image was not built by this workflow). The direct `fly deploy --image registry.fly.io/<app>:<previous-tag>` route (`deploy-runbook.md` §3) is **ungated** and must be recorded as an emergency action. |
+| Stage                                                                                                                                                                | What has changed                                                                                                                                                                 | Recovery                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A. Before `release_command` step 2** — gate refused, image build failed, `release.sh` step 0 (verifier contract) or step 1 refused                                 | Nothing: no image rolled out, no migration applied.                                                                                                                              | Fix forward on `main`; re-dispatch. No production action.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| **B. `release_command` failed at/after step 2** — `prisma migrate deploy` ran (fully or partially), then a later step (status, catalog verifier, accounting) refused | Machines still run the previous image (Fly does not roll out on a non-zero release_command). The **database may be ahead of the running code**: applied migrations stay applied. | Do **not** delete or edit an applied migration directory (a later `migrate deploy` would then refuse with a history mismatch — that fails closed, it does not roll back). Read `_prisma_migrations`, decide forward-fix vs. manual transactional reverse (S1-owned content, separate production authorization), then re-dispatch. See `docs/deploy-runbook.md` §11.4.                                                                                                                                                                                                     |
+| **C. After rollout** — `verify-fly-release.sh` or `/readyz` failed, or a defect is found later                                                                       | New image is serving; schema is at `release_sha`.                                                                                                                                | Code rollback is a forward deploy of a revert commit through the gated path (revert code only — never revert a migration by deleting its directory). The previous image is recorded in `machines-before.json` of the last manifest (`image_ref.tag`; for the first gated release that tag is a Fly `deployment-*` tag, not `sha-*`, because the current production image was not built by this workflow). The direct `fly deploy --image registry.fly.io/<app>:<previous-tag>` route (`deploy-runbook.md` §3) is **ungated** and must be recorded as an emergency action. |
 
 Reading a `release.sh` failure: the banner says `FAIL at line N`; lines in
 step 0/1 are stage A, anything from step 2 onward is stage B. A process
@@ -227,7 +227,7 @@ gate, and interpolated its `app` input directly into shell.
   missing afterwards, a refused insert or a missing/bad data file fails the
   release_command with a `[release] USDA foods FAILED: …` line.
 
-Ownership: the contract *file* and runner are S2's; the verifier *content*
+Ownership: the contract _file_ and runner are S2's; the verifier _content_
 (role/grant/RLS postconditions) is S1's. When a migration ships a
 `verify.sql`, its directory name is added to the contract in the same
 change. The contract currently names
@@ -244,7 +244,7 @@ log contains `verifiers_passed = 1 (discovered=1, required=1)` but **not**
 the verifier's own `VERIFY OK …` NOTICE — `prisma db execute` surfaces
 failures (the RAISE text) but discards notices (S1S2-B-06); do not search
 production logs for the "relations protected" line. Do **not** use `prisma migrate resolve --rolled-back` after a
-*successful* migration was reversed out-of-band (it refuses with P3012, or
+_successful_ migration was reversed out-of-band (it refuses with P3012, or
 silently no-ops if an earlier failed row exists). Recovery is a
 transactional manual forward (`psql --single-transaction -v
 ON_ERROR_STOP=1 -f migration.sql`) followed by `verify.sql`, under separate
