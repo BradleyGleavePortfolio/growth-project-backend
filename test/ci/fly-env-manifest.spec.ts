@@ -514,7 +514,7 @@ describe('the checked-in manifest', () => {
     ) as {
       jobs: Record<string, { steps: Step[] }>;
     };
-    const s = Object.values(wf.jobs)[0].steps;
+    const s = wf.jobs['fly-env-sync'].steps; // by id: the guard job runs first (ALM-D11 op 1)
     const names = Object.keys(base().secrets).sort();
     for (const re of [/^Plan /, /^Stage the planned changes/]) {
       const env = s.find((x) => re.test(x.name ?? ''))?.env ?? {};

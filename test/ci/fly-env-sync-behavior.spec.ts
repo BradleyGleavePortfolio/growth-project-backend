@@ -65,9 +65,10 @@ interface Workflow {
   jobs: Record<string, { steps: Step[] }>;
 }
 
-const steps: Step[] = Object.values(
-  (parseYaml(fs.readFileSync(WORKFLOW, 'utf8')) as Workflow).jobs,
-)[0].steps;
+// By id: since ALM-D11 op 1 the first job is the production-secrets guard.
+const steps: Step[] = (parseYaml(fs.readFileSync(WORKFLOW, 'utf8')) as Workflow).jobs[
+  'fly-env-sync'
+].steps;
 
 const FAKE_FLYCTL = `#!/usr/bin/env node
 // Fake flyctl for fly-env-sync-behavior.spec.ts. Logs argv NAMES only.

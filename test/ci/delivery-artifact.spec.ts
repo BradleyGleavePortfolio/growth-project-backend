@@ -464,19 +464,24 @@ describe('fly-deploy.yml — production logs never reach the public run log (OPS
   });
 });
 
-describe('production-mutating Fly operator workflows are bound to the production environment (S2-B10)', () => {
+describe('production-mutating Fly operator workflows are bound to the production-secrets environment (S2-B10, ALM-D11 op 1)', () => {
   for (const f of [
     'fly-apple-signin-set',
     'fly-db-secrets-set',
     'fly-launch-env-set',
     'fly-recent-auth-set',
     'fly-secrets-set',
-    'house-seed',
+    'fly-env-sync',
+    'fly-env-truth',
   ]) {
-    it(`${f}.yml has environment: production`, () => {
-      expect(read(`.github/workflows/${f}.yml`)).toMatch(/^\s+environment: production$/m);
+    it(`${f}.yml has environment: production-secrets`, () => {
+      expect(read(`.github/workflows/${f}.yml`)).toMatch(/^\s+environment: production-secrets$/m);
     });
   }
+  // house-seed.yml is held on `production` until HOUSE-SEED-ENV-BE moves it (DECISIONS ALM-D13).
+  it('house-seed.yml has environment: production (held for HOUSE-SEED-ENV-BE)', () => {
+    expect(read('.github/workflows/house-seed.yml')).toMatch(/^\s+environment: production$/m);
+  });
 });
 
 describe('Dockerfile — runtime residue (S2-B9)', () => {
