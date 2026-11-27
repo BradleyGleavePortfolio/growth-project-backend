@@ -31,7 +31,7 @@ import type {
   RomanToolResult,
 } from './roman-tool.types';
 import { EXERCISE_HISTORY_LIMITS, exerciseChanges } from './roman-exercise-history';
-import { readExerciseSets, summarizeExerciseSet } from './roman-exercise-history';
+import { readExerciseSets, romanExerciseSession } from './roman-exercise-history';
 import { ROMAN_EXTRA_HISTORY_KINDS, RomanExtraHistory } from './roman-extra-history';
 import { burnedFacts, readBaselines } from './roman-baselines';
 
@@ -107,7 +107,7 @@ export const ROMAN_READ_TOOL_DEFINITIONS: readonly RomanToolDefinition[] = Objec
   {
     name: 'exercise_history',
     description:
-      "The client's own logged sets for one exercise (name contains, any case): per session the date, sets, reps, weights in lb, RPE, top set, estimated 1RM (Epley) and volume, and the first-vs-last change per exercise, computed by the app. Default window the last 90 days, at most 180.",
+      "The client's own logged sets for one exercise (name contains, any case): per session the date, sets, reps per set, weights in lb, RPE, top set, estimated 1RM (Epley) and volume, and the first-vs-last change per exercise, computed by the app. Each session's unit says what its counts are: 'reps'; 'seconds' for a timed hold, where reps_per_set and top_set.reps are seconds held, never reps, with no estimated 1RM or volume; or null when the app stored no unit. A change carries the unit its sessions share, null when they differ. Default window the last 90 days, at most 180.",
     input_schema: {
       type: 'object',
       properties: { exercise: { type: 'string', minLength: 2, maxLength: 60 }, from: DAY, to: DAY },
@@ -367,14 +367,14 @@ export class RomanReadToolbox implements RomanToolbox {
     }
     const rows = await readExerciseSets(this.prisma, at.id, { exercise: input.exercise, from, to });
     // Newest first, so a clamp drops the oldest sessions.
-    const sessions = rows.slice(0, EXERCISE_HISTORY_LIMITS.max_sessions).map(summarizeExerciseSet);
+    const sessions = rows.slice(0, EXERCISE_HISTORY_LIMITS.max_sessions).map(romanExerciseSession);
     const changes = exerciseChanges([...sessions].reverse());
     const head = {
       tool: 'exercise_history',
       exercise: input.exercise,
       from,
       to,
-      unit: 'lb',
+      weight_unit: 'lb',
       changes,
     };
     const capped = rows.length > EXERCISE_HISTORY_LIMITS.max_sessions;

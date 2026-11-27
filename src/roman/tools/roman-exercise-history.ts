@@ -3,9 +3,12 @@
  * scoped through the workout (`workout.user_id = callerId`; ExerciseSet has no
  * owner column). Numbers are computed here: weights in lb as logged (0 = a
  * bodyweight set); est. 1RM is Epley, w * (1 + reps / 30), with the valid-set
- * filter of src/ai/context/workout-context.service.ts:57.
+ * filter of src/ai/context/workout-context.service.ts:57. ROMAN-HISTORY-UNIT-BE:
+ * each session carries the unit stored on its set (asked_unit), null when none
+ * was; a 'seconds' session (a timed hold) gets no 1RM or volume.
  */
 
+import type { PlanExerciseUnit } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { sanitizePromptInput } from '../../ai/utils/sanitize-prompt-input';
 import { dateOnly } from '../context/roman-client-context.service';
@@ -24,9 +27,12 @@ export interface ExerciseSetRow {
   weight_per_set: number[];
   rpe: number | null;
   workout: { date: Date };
+  /** The plan's stored unit for the counts; readExerciseSets selects it, GET /workouts/exercise-history reads its own. */
+  asked_unit?: PlanExerciseUnit | null;
 }
 
 export type ExerciseSession = ReturnType<typeof summarizeExerciseSet>;
+export type RomanExerciseSession = ReturnType<typeof romanExerciseSession>;
 
 const round1 = (n: number): number => Math.round(n * 10) / 10;
 const finite = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n);
@@ -70,21 +76,40 @@ export function summarizeExerciseSet(row: ExerciseSetRow) {
 }
 
 /**
- * First-vs-last change per exercise name, never mixing two exercises one
- * search matched ("bench" -> Bench Press, Incline Bench Press). `sessions`
- * oldest first; an exercise logged once has no change.
+ * ROMAN-HISTORY-UNIT-BE: a session as Roman's tool sends it. unit is the set's
+ * stored asked_unit, null when none was stored (never guessed). A 'seconds'
+ * session counts seconds held, so no rep math: no Epley 1RM and no weight x
+ * count volume. The shared summarizeExerciseSet stays as it is.
  */
-export function exerciseChanges(sessions: readonly ExerciseSession[]) {
-  const groups = new Map<string, ExerciseSession[]>();
+export function romanExerciseSession(row: ExerciseSetRow) {
+  const s = summarizeExerciseSet(row);
+  const unit = row.asked_unit ?? null;
+  const held = unit === 'seconds';
+  return {
+    ...s,
+    est_1rm_lbs: held ? null : s.est_1rm_lbs,
+    volume_lbs: held ? null : s.volume_lbs,
+    unit,
+  };
+}
+
+/**
+ * First-vs-last change per exercise name, never mixing two exercises one
+ * search matched ("bench" -> Bench Press, Incline Bench Press), nor a timed
+ * hold ('seconds') with any other session. `sessions` oldest first; an
+ * exercise logged once has no change. unit: the one its sessions share, else null.
+ */
+export function exerciseChanges(sessions: readonly RomanExerciseSession[]) {
+  const groups = new Map<string, RomanExerciseSession[]>();
   for (const s of sessions) {
-    const k = s.exercise.toLowerCase().replace(/\s+/g, ' ');
+    const k = `${s.unit === 'seconds' ? 's' : 'n'} ${s.exercise.toLowerCase().replace(/\s+/g, ' ')}`;
     groups.set(k, [...(groups.get(k) ?? []), s]);
   }
   type N = number | null | undefined;
   const diff = (a: N, b: N) => (finite(a) && finite(b) ? round1(b - a) : null);
   const pct = (a: N, b: N) =>
     finite(a) && finite(b) && a > 0 ? round1(((b - a) / a) * 100) : null;
-  const point = (s: ExerciseSession) => ({
+  const point = (s: RomanExerciseSession) => ({
     date: s.date,
     top_set: s.top_set,
     est_1rm_lbs: s.est_1rm_lbs,
@@ -105,8 +130,12 @@ export function exerciseChanges(sessions: readonly ExerciseSession[]) {
           top_weight_lbs: diff(first.top_set?.weight_lbs, last.top_set?.weight_lbs),
           est_1rm_lbs: diff(first.est_1rm_lbs, last.est_1rm_lbs),
           est_1rm_pct: pct(first.est_1rm_lbs, last.est_1rm_lbs),
-          volume_lbs: last.volume_lbs - first.volume_lbs,
+          volume_lbs:
+            finite(first.volume_lbs) && finite(last.volume_lbs)
+              ? last.volume_lbs - first.volume_lbs
+              : null,
         },
+        unit: g.every((s) => s.unit === last.unit) ? last.unit : null,
       };
     });
 }
@@ -130,6 +159,7 @@ export function readExerciseSets(
       reps_per_set: true,
       weight_per_set: true,
       rpe: true,
+      asked_unit: true,
       workout: { select: { date: true } },
     },
   });
