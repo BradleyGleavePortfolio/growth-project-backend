@@ -28,9 +28,12 @@
 #      "sbom-cyclonedx-<RELEASE_SHA>"; it is downloaded, must parse as
 #      CycloneDX with >0 components, and its sha256 is recorded.
 #   5. The deployment environment (REQUIRED_ENVIRONMENT, default "production")
-#      exists with a required_reviewers protection rule and no admin bypass,
-#      so the human authorization step cannot be skipped by dispatching before
-#      the hosted settings are in place (environments auto-create unprotected).
+#      exists and does not let admins bypass its protection rules. A required
+#      human reviewer is NOT demanded since 2026-11-26: the owner removed it and
+#      approves every deploy himself (decision ALM-D7 op 2). With zero reviewers
+#      the gate says so in its log and the manifest records required_reviewers
+#      0 and reviewer_rule "owner standing approval (ALM-D7 op 2)". A reviewer
+#      that admins can bypass is still refused, and so is a missing environment.
 #
 # Output: $OUT_DIR/release-evidence-<sha>.json (the evidence manifest the deploy
 # step attaches to the release) and the downloaded SBOM.
@@ -177,14 +180,26 @@ GITHUB_OUTPUT=/dev/null bash "$SBOM_ASSERT" "$SBOM_FILE" "$LOCKFILE" || fail "do
 sbom_components=$(jq '.components | length' "$SBOM_FILE")
 echo "release-evidence-gate: OK SBOM artifact ${artifact_id} (${sbom_components} components, sha256 ${sbom_sha256}, sidecar match, denylist/sentinel check re-run)"
 
-# --- 5. deployment environment is actually protected -------------------------
+# --- 5. deployment environment exists and admins cannot bypass it ------------
+# Since 2026-11-26 a required human reviewer is no longer demanded: the owner
+# removed it and approves every deploy himself (decision ALM-D7 op 2, owner
+# words #ALM-E7 and #ALM-E16). Admin bypass must still be off, so a reviewer
+# that is configured but skippable is refused, and the manifest records which
+# rule let the deploy through.
 ENV_JSON=$(api "repos/${GH_REPO}/environments/${REQUIRED_ENVIRONMENT}")
 env_ok=$(printf '%s' "$ENV_JSON" | jq -r '
   ( [ .protection_rules[]? | select(.type == "required_reviewers") | (.reviewers // []) | length ] | add // 0 ) as $reviewers
-  | if ($reviewers > 0) and (.can_admins_bypass == false) then "ok"
+  | if (.can_admins_bypass == false) then "ok reviewers=\($reviewers)"
     else "reviewers=\($reviewers) can_admins_bypass=\(.can_admins_bypass)" end')
-[[ "$env_ok" == "ok" ]] || fail "environment '${REQUIRED_ENVIRONMENT}' is not protected (${env_ok}); a deploy without a required human reviewer and with admin bypass is refused"
-echo "release-evidence-gate: OK environment ${REQUIRED_ENVIRONMENT} has required reviewers and no admin bypass"
+[[ "$env_ok" =~ ^ok\ reviewers=(0|[1-9][0-9]*)$ ]] || fail "environment '${REQUIRED_ENVIRONMENT}' is not protected (${env_ok}); a deploy environment whose rules admins can bypass is refused, even with a required reviewer"
+required_reviewers=${BASH_REMATCH[1]}
+if [[ "$required_reviewers" == 0 ]]; then
+  reviewer_rule="owner standing approval (ALM-D7 op 2)"
+  echo "release-evidence-gate: OK environment ${REQUIRED_ENVIRONMENT} has no required reviewer: deploys are auto-approved by the owner (ALM-D7 op 2, owner words #ALM-E7 and #ALM-E16)"
+else
+  reviewer_rule="required human reviewer, no admin bypass"
+  echo "release-evidence-gate: OK environment ${REQUIRED_ENVIRONMENT} has required reviewers and no admin bypass"
+fi
 
 # --- manifest ----------------------------------------------------------------
 MANIFEST="$OUT_DIR/release-evidence-${RELEASE_SHA}.json"
@@ -194,10 +209,12 @@ jq -n \
   --argjson runs "$MANIFEST_RUNS" --argjson analysis "$analysis" \
   --argjson artifact_id "$artifact_id" --arg sbom_sha256 "$sbom_sha256" --argjson sbom_components "$sbom_components" \
   --arg environment "$REQUIRED_ENVIRONMENT" \
+  --argjson required_reviewers "$required_reviewers" --arg reviewer_rule "$reviewer_rule" \
   '{
     schema: "tgp.release-evidence.v1",
     repository: $repo, release_sha: $sha, trusted_branch: $branch, generated_at: $generated_at,
     environment: $environment,
+    required_reviewers: $required_reviewers, reviewer_rule: $reviewer_rule,
     required_runs: $runs,
     codeql_analysis: {id: $analysis.id, commit_sha: $analysis.commit_sha, created_at: $analysis.created_at, url: $analysis.url,
                       rules_count: $analysis.rules_count, results_count: $analysis.results_count},

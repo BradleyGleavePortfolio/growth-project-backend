@@ -9,7 +9,7 @@ it in `docs/deploy-runbook.md` is stale and should be fixed there.
 | Authorization | Mechanism | Who/what decides |
 | --- | --- | --- |
 | **Merge to `main`** | Branch protection / ruleset: 11 required checks (exactly the live list, read back 2026-10-02 after 16:41 PDT) `build-and-test`, `rls-floor-guard`, `rls-live-tests`, `mwb-3-live-tests`, `npm audit (high+critical, whole graph)`, `CodeQL JS/TS (javascript-typescript)`, `Banned cast tokens (R75 / R100.A2)`, `build-sbom`, `danger`, `Schema parity (migrations match schema.prisma)`, `community-live-tests` (owner 2026-10-02 16:38), all bound to the GitHub Actions app; strict up-to-date; enforce admins; linear history OFF (changing it needs the owner's explicit words); conversation resolution OFF (audits are issue comments); operator 2026-10-02. | `scripts/setup-branch-protection.sh` (NOT yet run — see §6). |
-| **Deploy to Fly** | `Fly Deploy` (`.github/workflows/fly-deploy.yml`): `workflow_dispatch` only, `release_sha` + `confirm=deploy` inputs, job `Release evidence gate` (`scripts/ci/release-evidence-gate.sh`) then job `deploy` bound to environment `production`. | A human dispatch **and** the environment's required reviewers (once configured). |
+| **Deploy to Fly** | `Fly Deploy` (`.github/workflows/fly-deploy.yml`): `workflow_dispatch` only, `release_sha` + `confirm=deploy` inputs, job `Release evidence gate` (`scripts/ci/release-evidence-gate.sh`) then job `deploy` bound to environment `production`. | A human dispatch. Since 2026-11-26 the `production` environment has **no required reviewer**: the owner removed it and approves every deploy himself (decision ALM-D7 op 2, see §2.1). |
 
 A green merge is **not** a deploy authorization. Nothing deploys on `push`.
 
@@ -34,11 +34,45 @@ and refuses the release unless, for the **exact** `release_sha`:
    matching `sbom.cdx.json.sha256`, and `scripts/ci/assert-prod-sbom.sh`
    re-proves it against the checked-out lockfile (no dev-only packages,
    production set present);
-5. the `production` environment exists, has at least one protection
-   rule of type `required_reviewers` with ≥1 reviewer, **and**
-   `can_admins_bypass == false` (`REQUIRED_ENVIRONMENT`). Admin bypass is
-   a hard requirement, not a recorded observation: the manifest does not
-   carry the bypass flag; a bypass-enabled environment fails the gate.
+5. the `production` environment exists **and** `can_admins_bypass ==
+   false` (`REQUIRED_ENVIRONMENT`). A required reviewer is no longer
+   demanded (§2.1): with no reviewer the gate logs `has no required
+   reviewer: deploys are auto-approved by the owner (ALM-D7 op 2, ...)`,
+   with ≥1 reviewer it logs `has required reviewers and no admin bypass`,
+   and the manifest records `required_reviewers` (the count) and
+   `reviewer_rule` (`owner standing approval (ALM-D7 op 2)` or `required
+   human reviewer, no admin bypass`). Admin bypass is a hard requirement,
+   not a recorded observation: the manifest does not carry the bypass flag;
+   a bypass-enabled environment fails the gate, with or without a reviewer,
+   and so does an unknown flag.
+
+### 2.1 Required reviewer removed on the owner's word (2026-11-26)
+
+On 2026-11-26 the owner removed the required reviewer from the `production`
+environment ("I auto approve all deploys from now on", #ALM-E7; "done now
+you can deploy", #ALM-E9) and chose decision ALM-D7 option 2 (#ALM-E16):
+the gate accepts a `production` environment with no required human
+reviewer. Admin bypass is still off.
+
+What the gate still proves before any deploy: checks 1-4 above, unchanged
+(the exact commit, every required workflow green on it, an uploaded CodeQL
+analysis, the SBOM and its production-closure proof), that the
+`production` environment exists with admin bypass off, and the manifest
+names the rule that let the deploy through. The deploy job still runs in
+that environment (`fly-deploy.yml`), so its other rules, such as a
+deployment branch policy, still apply.
+
+What is gone: the second human step. The person who dispatches `Fly
+Deploy` on `main` with `confirm=deploy` and the exact sha is now the only
+human decision; once the evidence is green, nobody else approves the
+deploy job.
+
+Putting the reviewer back takes two steps: (1) in GitHub, Settings >
+Environments > `production` > Required reviewers, add at least one real
+person and keep "Allow administrators to bypass configured protection
+rules" off (the gate accepts this at once and logs the reviewer line);
+(2) revert the PR that made this change, so the gate again refuses a
+deploy when the environment has no reviewer.
 
 Everything read is written to
 `release-evidence/release-evidence-<release_sha>.json`
@@ -116,11 +150,13 @@ creates that environment, unprotected, on first dispatch — so the gate
 **fails closed today** (step 5 above) until an authorized operator
 configures:
 
-1. environment `production`: required reviewers (≥1 real human account;
-   never a second account of the same person — G05), deployment branch
-   policy `main` only, admins bypass off; move `FLY_API_TOKEN` from the
-   repository secret store into this environment (the other `fly-*-set`
-   workflows are bound to the same environment for that reason);
+1. environment `production`: admins bypass off (the gate refuses without
+   it); required reviewers (≥1 real human account; never a second account
+   of the same person — G05) are optional since 2026-11-26, when the owner
+   removed them (§2.1); deployment branch policy `main` only; move
+   `FLY_API_TOKEN` from the repository secret store into this environment
+   (the other `fly-*-set` workflows are bound to the same environment for
+   that reason);
 2. branch protection / ruleset for `main` as in §1, run via
    `scripts/setup-branch-protection.sh` with an **explicit**
    `REQUIRED_APPROVING_REVIEW_COUNT` (0 = recorded single-maintainer

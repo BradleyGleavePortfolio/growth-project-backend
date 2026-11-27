@@ -336,36 +336,123 @@ describe('release-evidence-gate.sh — required run negatives (one mutation each
   });
 });
 
-describe('release-evidence-gate.sh — deployment environment must already be protected', () => {
-  it('environment without a required_reviewers rule fails (auto-created unprotected env)', () => {
-    const w = World.passing().api(ENV_PATH, protectedEnv({ protection_rules: [] }));
-    expectFail(w.exec(), /environment 'production' is not protected \(reviewers=0/);
-  });
+// Section 5 since the owner's decision ALM-D7 op 2 (2026-11-26, owner words
+// #ALM-E7 "I auto approve all deploys from now on" and #ALM-E16): the
+// environment must exist and must not let admins bypass its rules, but a
+// required human reviewer is no longer demanded. The manifest records which
+// rule let the deploy through.
+const AUTO_APPROVED_LINE =
+  'release-evidence-gate: OK environment production has no required reviewer: deploys are auto-approved by the owner (ALM-D7 op 2, owner words #ALM-E7 and #ALM-E16)';
+const REVIEWED_LINE = 'release-evidence-gate: OK environment production has required reviewers and no admin bypass';
+const OWNER_RULE = 'owner standing approval (ALM-D7 op 2)';
+const REVIEWER_RULE = 'required human reviewer, no admin bypass';
+const reviewer = (login: string): Json => ({ type: 'User', reviewer: { login } });
+// The live production environment since 2026-11-26: no protection rule, admin bypass off.
+const unreviewedEnv = (over: Json = {}): Json => protectedEnv({ protection_rules: [], ...over });
 
-  it('required_reviewers rule with an empty reviewer list fails', () => {
-    const w = World.passing().api(ENV_PATH, protectedEnv({ protection_rules: [{ id: 1, type: 'required_reviewers', reviewers: [] }] }));
-    expectFail(w.exec(), /reviewers=0/);
-  });
+type EnvCase =
+  | { name: string; env: Json | null; refused: RegExp }
+  | { name: string; env: Json; line: string; reviewers: number; rule: string };
 
-  it('only a wait_timer rule is not a human authorization', () => {
-    const w = World.passing().api(ENV_PATH, protectedEnv({ protection_rules: [{ id: 2, type: 'wait_timer', wait_timer: 30 }] }));
-    expectFail(w.exec(), /reviewers=0/);
-  });
+const ENV_CASES: EnvCase[] = [
+  { name: 'environment missing (404) is refused', env: null, refused: /GitHub API read failed for repos\/.*environments\/production/ },
+  { name: 'no protection rule, bypass off (live production) is accepted on the owner standing approval', env: unreviewedEnv(), line: AUTO_APPROVED_LINE, reviewers: 0, rule: OWNER_RULE },
+  {
+    name: 'required_reviewers rule with an empty reviewer list, bypass off is accepted on the owner standing approval',
+    env: protectedEnv({ protection_rules: [{ id: 1, type: 'required_reviewers', reviewers: [] }] }),
+    line: AUTO_APPROVED_LINE, reviewers: 0, rule: OWNER_RULE,
+  },
+  {
+    name: 'only a wait_timer rule, bypass off is accepted on the owner standing approval',
+    env: protectedEnv({ protection_rules: [{ id: 2, type: 'wait_timer', wait_timer: 30 }] }),
+    line: AUTO_APPROVED_LINE, reviewers: 0, rule: OWNER_RULE,
+  },
+  { name: 'one reviewer, bypass off is accepted (unchanged)', env: protectedEnv(), line: REVIEWED_LINE, reviewers: 1, rule: REVIEWER_RULE },
+  {
+    name: 'two reviewers, bypass off is accepted (unchanged)',
+    env: protectedEnv({ protection_rules: [{ id: 1, type: 'required_reviewers', reviewers: [reviewer('a'), reviewer('b')] }] }),
+    line: REVIEWED_LINE, reviewers: 2, rule: REVIEWER_RULE,
+  },
+  { name: 'one reviewer, bypass ON is still refused (a reviewer admins can skip)', env: protectedEnv({ can_admins_bypass: true }), refused: /reviewers=1 can_admins_bypass=true/ },
+  { name: 'no reviewer, bypass ON is refused (bypass is still never allowed)', env: unreviewedEnv({ can_admins_bypass: true }), refused: /reviewers=0 can_admins_bypass=true/ },
+  { name: 'one reviewer, bypass flag missing is refused (unknown is not off)', env: protectedEnv({ can_admins_bypass: undefined }), refused: /reviewers=1 can_admins_bypass=null/ },
+  { name: 'no reviewer, bypass flag missing is refused (unknown is not off)', env: unreviewedEnv({ can_admins_bypass: undefined }), refused: /reviewers=0 can_admins_bypass=null/ },
+];
 
-  it('admin bypass enabled fails even with reviewers', () => {
-    const w = World.passing().api(ENV_PATH, protectedEnv({ can_admins_bypass: true }));
-    expectFail(w.exec(), /can_admins_bypass=true/);
-  });
-
-  it('environment missing (404) fails', () => {
-    const w = World.passing().remove(ENV_PATH);
-    expectFail(w.exec(), /GitHub API read failed for repos\/.*environments\/production/);
+describe('release-evidence-gate.sh — deployment environment (section 5, owner ALM-D7 op 2)', () => {
+  it.each<EnvCase>(ENV_CASES)('$name', (c) => {
+    const w = World.passing();
+    if (c.env === null) w.remove(ENV_PATH);
+    else w.api(ENV_PATH, c.env);
+    const r = w.exec();
+    if ('refused' in c) {
+      expectFail(r, c.refused);
+      expect(r.out).not.toContain('PASS');
+      return;
+    }
+    expect(r.code).toBe(0);
+    expect(r.out.split('\n')).toContain(c.line);
+    const manifest = JSON.parse(readFileSync(join(w.out, `release-evidence-${SHA}.json`), 'utf8'));
+    expect(manifest.environment).toBe('production');
+    expect(manifest.required_reviewers).toBe(c.reviewers);
+    expect(manifest.reviewer_rule).toBe(c.rule);
   });
 
   it('REQUIRED_ENVIRONMENT selects which environment is checked', () => {
     const w = World.passing().api(`repos/${REPO}/environments/staging`, protectedEnv({ name: 'staging' }));
     expect(w.exec({ REQUIRED_ENVIRONMENT: 'staging' }).code).toBe(0);
     expectFail(World.passing().exec({ REQUIRED_ENVIRONMENT: 'staging' }), /environments\/staging/);
+  });
+});
+
+// The owner's standing approval replaces only the human reviewer. With the live
+// production environment (no reviewer, bypass off), one failure from each
+// evidence check (sections 1-4) is still refused before section 5 is reached.
+interface EvidenceFailure {
+  name: string;
+  mutate: (w: World) => World;
+  env?: Record<string, string>;
+  refused: RegExp;
+}
+
+const ANALYSES_PATH = `repos/${REPO}/code-scanning/analyses?ref=refs/heads/main&per_page=100`;
+const EVIDENCE_FAILURES: EvidenceFailure[] = [
+  { name: 'release sha is not the dispatched head', mutate: (w) => w, env: { DISPATCH_SHA: OTHER_SHA }, refused: /refusing to deploy a commit other than the exact head/ },
+  { name: 'no CI run for the sha', mutate: (w) => w.runsList([run({ id: 12, path: CODEQL }), run({ id: 13, path: SBOM }), run({ id: 14, path: DEP })]), refused: /no trusted run of \.github\/workflows\/ci\.yml/ },
+  {
+    name: 'newest CI run failed',
+    mutate: (w) => w.runsList([run({ id: 11, path: CI, conclusion: 'failure' }), run({ id: 12, path: CODEQL }), run({ id: 13, path: SBOM }), run({ id: 14, path: DEP })]),
+    refused: /concluded 'failure'/,
+  },
+  { name: 'a required CI job was skipped', mutate: (w) => w.api(`repos/${REPO}/actions/runs/11/jobs?per_page=100`, jobs(CI_JOBS, { 'rls-live-tests': { conclusion: 'skipped' } })), refused: /job 'rls-live-tests' .* is 'completed\/skipped'/ },
+  { name: 'dependency audit failed', mutate: (w) => w.api(`repos/${REPO}/actions/runs/14/jobs?per_page=100`, jobs([DEP_JOB], { [DEP_JOB]: { conclusion: 'failure' } })), refused: /npm audit \(high\+critical, whole graph\)/ },
+  { name: 'no CodeQL analysis for the sha', mutate: (w) => w.api(ANALYSES_PATH, []), refused: /no CodeQL code-scanning analysis recorded/ },
+  {
+    name: 'CodeQL analysis analysed nothing',
+    mutate: (w) => w.api(ANALYSES_PATH, [{ id: 902, commit_sha: SHA, created_at: '2026-09-20T00:00:00Z', tool: { name: 'CodeQL' }, rules_count: 0, results_count: 0, error: '' }]),
+    refused: /analysed nothing \(rules_count=0\)/,
+  },
+  { name: 'SBOM artifact missing', mutate: (w) => w.api(`repos/${REPO}/actions/runs/13/artifacts?per_page=100`, { artifacts: [] }), refused: /SBOM artifact 'sbom-cyclonedx-.*' missing or expired/ },
+  {
+    name: 'SBOM fails the production-closure proof',
+    mutate: (w) => w.api(`repos/${REPO}/actions/artifacts/700/zip`, sbomZip({ ...PROD_SBOM, components: [...(PROD_SBOM.components as Json[]), { name: 'jest', version: '30.0.0' }] })),
+    refused: /failed the production-closure proof/,
+  },
+  { name: 'SBOM sha256 sidecar mismatch', mutate: (w) => w.api(`repos/${REPO}/actions/artifacts/700/zip`, sbomZip(PROD_SBOM, { sidecar: 'mismatch' })), refused: /sidecar .* does not match/ },
+];
+
+describe('release-evidence-gate.sh — no required reviewer still refuses every evidence failure (ALM-D7 op 2)', () => {
+  it('control: the live production environment with all evidence green passes', () => {
+    const r = World.passing().api(ENV_PATH, unreviewedEnv()).exec();
+    expect(r.code).toBe(0);
+    expect(r.out).toContain(AUTO_APPROVED_LINE);
+  });
+
+  it.each<EvidenceFailure>(EVIDENCE_FAILURES)('$name is refused', (c) => {
+    const r = c.mutate(World.passing().api(ENV_PATH, unreviewedEnv())).exec(c.env);
+    expectFail(r, c.refused);
+    expect(r.out).not.toContain('auto-approved');
+    expect(r.out).not.toContain('PASS');
   });
 });
 
