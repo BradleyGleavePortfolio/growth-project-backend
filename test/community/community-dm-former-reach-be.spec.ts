@@ -9,10 +9,12 @@
  *   C  each row of the workspace coach's own DM list carries the other person's stored name (other_display_name,
  *      trimmed, null when blank); null on every other caller's rows and in POST .../dms.
  * Every other field of every response and push is as at b#1251's head 09a99e06 (A8, the guard cases, B2, B3, C3).
- *   D  DM-FORMER-COACH-BE (owner #ALM-E12, "cap at JUST the 1st most recent prior coach"): former_coach_dms holds at
- *      most one of A's communities, the one whose coach the caller moved away from last (the newest
- *      ClientPurchase.moved_away_at on her plans from that coach, else her newest active row in a non-public space
- *      there), and names that coach (coach_display_name: his stored name, trimmed, null when blank).
+ *   D  DM-FORMER-COACH-BE (owner #ALM-E12, "cap at JUST the 1st most recent prior coach"; OPERATOR RULING 7209184240):
+ *      former_coach_dms holds at most one item: the community of the coach the caller moved away from last, of every
+ *      coach she has left (the newest ClientPurchase.moved_away_at on her plans from that coach, else her newest row in
+ *      a non-public space there, whatever its status), named (coach_display_name: his stored name, trimmed, null when
+ *      blank), and only when his thread is kept (A's rule, his community not archived, his deletion not finalized).
+ *      When it is not kept, nothing: never an older coach (the D5 class table, each case with a live older coach).
  *
  * The world is b#1251's (test/community/community-dm-rules-be.spec.ts), copied here, not imported: the KT-2 fixture
  * (test/community/access/member-content-fixture.ts) on the in-memory Prisma double, which models
@@ -323,6 +325,10 @@ describe('COMMUNITY-DM-FORMER-REACH-BE A: GET /community/me names the community 
   it('EQ. W is in former_coach_dms exactly when the caller\'s GET W/dms answers 200 through the former-client arm with K\'s thread', async () => {
     const got: Record<string, [boolean, boolean]> = {};
     for (const s of STATES) {
+      // Each state on its own fresh world, as the $label rows: on one shared world an earlier state's /me makes X's
+      // row in L's community (the bootstrap), so L would be the coach X left last once a later state clears her coach.
+      w = await world();
+      x = w.extras();
       const u = person(w, x, s.who);
       const undo = s.set?.(w, x);
       try {
@@ -340,7 +346,7 @@ describe('COMMUNITY-DM-FORMER-REACH-BE A: GET /community/me names the community 
     expect(got).toEqual(Object.fromEntries(STATES.map((s) => [s.label, [s.me, s.me]])));
   });
 
-  it('A1. X: /me\'s workspace_id is W2 (the bootstrap, as at 09a99e06), former_coach_dms names W and K, X\'s GET W/dms is that thread; with no coach: workspace_id null, the same list', async () => {
+  it('A1. X: /me\'s workspace_id is W2 (the bootstrap, as at 09a99e06), former_coach_dms names W and K, X\'s GET W/dms is that thread; then with no coach: workspace_id null and none (she left L last: the bootstrap\'s row in W2, no thread with L; OPERATOR RULING 7209184240)', async () => {
     expect(await listed(w, w.p.X)).toEqual([w.p.K.id]);
     const mine = await w.me.getMe(w.p.X);
     expect(mine.workspace_id).toBe(w.w2.id);
@@ -348,7 +354,8 @@ describe('COMMUNITY-DM-FORMER-REACH-BE A: GET /community/me names the community 
     const undo = setField(w.p.X, { coach_id: null });
     try {
       const none = await w.me.getMe(w.p.X);
-      expect([none.workspace_id, stub<Record<string, unknown>>(none).former_coach_dms]).toEqual([null, [entry(w.wsId, w.p.K)]]);
+      expect([none.workspace_id, stub<Record<string, unknown>>(none).former_coach_dms]).toEqual([null, []]);
+      expect(await listed(w, w.p.X)).toEqual([w.p.K.id]);
     } finally {
       undo();
     }
@@ -450,15 +457,60 @@ const twoKept = (w: World, inW: number, inW3: number) => {
 /** One of X's plans from `coach`, stamped moved_away_at as trg_user_coach_move_marks_plans stamps it (null: never). */
 const bought = (w: World, coach: User, movedAwayAt: Date | null) =>
   w.db.seed('clientPurchase', { client_user_id: w.p.X.id, coach_user_id: coach.id, moved_away_at: movedAwayAt });
+/** X's rows in a community. */
+const rowsIn = (w: World, workspaceId: string) =>
+  w.db.table('communityMembership').filter((m) => m.user_id === w.p.X.id && m.workspace_id === workspaceId);
+/** A space of `workspaceId` with the given visibility. */
+const spaceIn = (w: World, workspaceId: string, visibility: string) =>
+  w.db.seed('communityCohort', { workspace_id: workspaceId, name: `${visibility} room`, visibility, status: 'active', archived_at: null, sort_order: 1 }).id as string;
+/** X keeps a thread with K in W (her S row joined day 0) and K2, whom she left later, is her newer former coach in W3,
+ *  as twoKept(w, 0, 2) but with X's W3 row in `cohortId` (S3 by default) and a thread only when `thread`. */
+const newerK2 = (w: World, cohortId = w.w3.space, thread = true, role = 'student') => {
+  Object.assign(membershipOf(w, w.p.X), { joined_at: day(0) });
+  w.row(w.p.X, cohortId, role, day(2));
+  if (thread) w.dm(w.p.X, w.p.K2, w.w3.id, 'Thanks for the plan');
+  return w.p.X;
+};
+/** LS-DMFC-1's C1 probe: a coach's account deletion as it finalizes (account-deletion.service.ts and its manifest): the
+ *  tombstone name, deleted_at, his community archived, the DM rows both ways soft-deleted, his clients detached. */
+const purge = (w: World, c: User, wsId: string) => {
+  const now = new Date();
+  Object.assign(c, { name: 'Deleted user', deleted_at: now, archived_at: now, coach_id: null });
+  Object.assign(w.db.table('communityWorkspace').find((r) => r.id === wsId) as Row, { name: 'Archived community', archived_at: now });
+  for (const m of w.db.table('communityMessage')) {
+    if (m.sender_id === c.id || m.recipient_user_id === c.id) Object.assign(m, { body: null, visibility: 'removed', deleted_at: now });
+  }
+  for (const u of w.db.table('user')) if (u.coach_id === c.id) Object.assign(u, { coach_id: null });
+};
+/** A third former coach K3 ('Coach Four') with his community W4 and space S4. */
+const fourth = (w: World) => {
+  const K3 = w.user('coach', 'Coach Four', null);
+  const id = w.db.seed('communityWorkspace', { coach_id: K3.id, name: 'Fourth', dm_enabled_default: true, archived_at: null }).id as string;
+  return { K3, id, space: spaceIn(w, id, 'clients') };
+};
+const coachNamed = (w: World, name: string) => w.db.table('user').find((u) => u.name === name) as unknown as User;
+const communityOf = (w: World, coach: User) => (w.db.table('communityWorkspace').find((r) => r.coach_id === coach.id) as Row).id as string;
+/** Three former coaches: K in W (day 0), K2 in W3 (day 2) and K3 in W4 (`inW4`), a thread with each. */
+const threeKept = (w: World, inW4: number) => {
+  twoKept(w, 0, 2);
+  const k3 = fourth(w);
+  w.row(w.p.X, k3.space, 'student', day(inW4));
+  w.dm(w.p.X, k3.K3, k3.id, 'Thanks for the plan');
+  return w.p.X;
+};
 
 interface Capped {
   label: string;
   /** Sets the case up on its own fresh world and returns the caller. */
   caller: (w: World, x: Record<Extra, User>) => User;
   want: (w: World) => unknown[];
+  /** D5: the older former coaches whose thread stays kept in this case ([community, coach]): her GET of that
+   *  community's DMs lists him through the former-client arm, yet former_coach_dms is empty. */
+  kept?: (w: World) => Array<[string, User]>;
 }
 const inW = (w: World) => [entry(w.wsId, w.p.K)];
 const inW3 = (w: World) => [entry(w.w3.id, w.p.K2)];
+const keptK = (w: World): Array<[string, User]> => [[w.wsId, w.p.K]];
 const CAPPED: Capped[] = [
   { label: 'D1 one former coach (X, K in W): that one, named', caller: (w) => w.p.X, want: inW },
   { label: 'D1 the same with no coach now (coach_id null)', caller: (w) => Object.assign(w.p.X, { coach_id: null }), want: inW },
@@ -489,11 +541,101 @@ const CAPPED: Capped[] = [
     caller: (w) => { twoKept(w, 2, 2); return w.p.X; },
     want: (w) => (w.wsId < w.w3.id ? inW(w) : inW3(w)),
   },
-  { label: 'D5 X blocked K2 (203-D51): K2\'s thread is not kept, so K (W)', caller: (w) => { twoKept(w, 0, 2); block(w, w.p.X, w.p.K2); return w.p.X; }, want: inW },
-  { label: 'D5 K2 blocked X: K (W)', caller: (w) => { twoKept(w, 0, 2); block(w, w.p.K2, w.p.X); return w.p.X; }, want: inW },
+  // D5, OPERATOR RULING 7209184240: the one place is K2's (she left him after K); when K2's thread is not kept, for any
+  // reason, nothing, though K's thread in W is kept (D5. checks that every row's W thread is still open).
+  { label: 'D5 X blocked K2 (203-D51): none, not K', caller: (w) => { twoKept(w, 0, 2); block(w, w.p.X, w.p.K2); return w.p.X; }, want: () => [], kept: keptK },
+  { label: 'D5 K2 blocked X: none, not K', caller: (w) => { twoKept(w, 0, 2); block(w, w.p.K2, w.p.X); return w.p.X; }, want: () => [], kept: keptK },
   {
-    label: 'D5 X banned in W3: K (W)',
+    label: 'D5 X banned in W3 (the ban row): none, not K',
     caller: (w) => { twoKept(w, 0, 2); w.db.seed('communityWorkspaceBan', { workspace_id: w.w3.id, user_id: w.p.X.id, lifted_at: null }); return w.p.X; },
+    want: () => [], kept: keptK,
+  },
+  {
+    label: 'D5 X banned in W3 as banAuthor writes it (the ban row, her W3 rows removed): none, not K',
+    caller: (w) => {
+      twoKept(w, 0, 2);
+      w.db.seed('communityWorkspaceBan', { workspace_id: w.w3.id, user_id: w.p.X.id, lifted_at: null });
+      for (const m of rowsIn(w, w.w3.id)) Object.assign(m, { status: 'removed', removed_at: day(3) });
+      return w.p.X;
+    },
+    want: () => [], kept: keptK,
+  },
+  {
+    label: 'D5 she left K2\'s community (her W3 row removed, the coach\'s Remove): none, not K',
+    caller: (w) => { twoKept(w, 0, 2); for (const m of rowsIn(w, w.w3.id)) Object.assign(m, { status: 'removed', removed_at: day(3) }); return w.p.X; },
+    want: () => [], kept: keptK,
+  },
+  {
+    label: 'D5 K2 archived her space (the space archived, her row removed, as archive() writes it): none, not K',
+    caller: (w) => {
+      twoKept(w, 0, 2);
+      Object.assign(w.db.table('communityCohort').find((c) => c.id === w.w3.space) as Row, { status: 'archived', archived_at: day(3) });
+      for (const m of rowsIn(w, w.w3.id)) Object.assign(m, { status: 'removed', removed_at: day(3) });
+      return w.p.X;
+    },
+    want: () => [], kept: keptK,
+  },
+  { label: 'D5 no thread with K2 (a row in S3, no message): none, not K', caller: (w) => newerK2(w, w.w3.space, false), want: () => [], kept: keptK },
+  {
+    label: 'D5 her DMs off in W3 (her own dm_enabled false): none, not K',
+    caller: (w) => { newerK2(w); for (const m of rowsIn(w, w.w3.id)) Object.assign(m, { dm_enabled: false }); return w.p.X; },
+    want: () => [], kept: keptK,
+  },
+  {
+    label: 'D5 her DMs off in W3 (W3\'s default off, her own setting unset): none, not K',
+    caller: (w) => { newerK2(w); Object.assign(w.db.table('communityWorkspace').find((r) => r.id === w.w3.id) as Row, { dm_enabled_default: false }); return w.p.X; },
+    want: () => [], kept: keptK,
+  },
+  { label: 'D5 her only W3 row in a package space with no live plan: none, not K', caller: (w) => newerK2(w, spaceIn(w, w.w3.id, 'package')), want: () => [], kept: keptK },
+  {
+    label: 'D5 her W3 row opens the member arm (an assistant row): W3 is not a former-client place, none, not K',
+    caller: (w) => newerK2(w, w.w3.space, true, 'assistant'),
+    want: () => [], kept: keptK,
+  },
+  {
+    label: 'D5 K2 deleted his account (finalized, LS-DMFC-1 C1 probe): none, not K, never "Deleted user"',
+    caller: (w) => { twoKept(w, 0, 2); purge(w, w.p.K2, w.w3.id); return w.p.X; },
+    want: () => [], kept: keptK,
+  },
+  {
+    label: 'D5 the probe\'s own order (LS-DMFC-1 P2): K, whom she left last, deleted his account; K2 older and kept: none, not K2',
+    caller: (w) => { twoKept(w, 4, 2); purge(w, w.p.K, w.wsId); return w.p.X; },
+    want: () => [], kept: (w) => [[w.w3.id, w.p.K2]],
+  },
+  {
+    label: 'D5 K2\'s community archived (archived_at set, nothing else): none, not K',
+    caller: (w) => { twoKept(w, 0, 2); Object.assign(w.db.table('communityWorkspace').find((r) => r.id === w.w3.id) as Row, { archived_at: day(3) }); return w.p.X; },
+    want: () => [], kept: keptK,
+  },
+  {
+    label: 'D5 her plan from K2 stamped last and her only W3 row in a public space: none, not K',
+    caller: (w) => { newerK2(w, spaceIn(w, w.w3.id, 'public')); bought(w, w.p.K2, day(6)); return w.p.X; },
+    want: () => [], kept: keptK,
+  },
+  {
+    label: 'D5 her plan from K4 stamped last, a coach with no community: none, not K',
+    caller: (w) => { Object.assign(membershipOf(w, w.p.X), { joined_at: day(0) }); bought(w, w.user('coach', 'Coach Five', null), day(6)); return w.p.X; },
+    want: () => [], kept: keptK,
+  },
+  {
+    label: 'D5 she left L last (no coach now; her row in L\'s community W2 is newer, no thread with L): none, not K',
+    caller: (w) => {
+      Object.assign(membershipOf(w, w.p.X), { joined_at: day(0) });
+      w.row(w.p.X, w.w2.space, 'student', day(3));
+      return Object.assign(w.p.X, { coach_id: null });
+    },
+    want: () => [], kept: keptK,
+  },
+  // Boundaries of the class: K2 is not a coach she has left, or his deletion is not final yet.
+  { label: 'D5 K2 is her coach again: not a former coach, so K (W)', caller: (w) => { twoKept(w, 0, 2); return Object.assign(w.p.X, { coach_id: w.p.K2.id }); }, want: inW },
+  {
+    label: 'D5 K2 asked to delete his account, still in the grace period (deleted_at unset): K2 (W3)',
+    caller: (w) => { twoKept(w, 0, 2); Object.assign(w.p.K2, { deletion_requested_at: day(5), deletion_confirmed_at: day(5), deletion_scheduled_at: day(8) }); return w.p.X; },
+    want: inW3,
+  },
+  {
+    label: 'D5 her only W3 row in a public space and no plan from K2: a public row never dated a coach, so K (W)',
+    caller: (w) => newerK2(w, spaceIn(w, w.w3.id, 'public')),
     want: inW,
   },
   { label: 'D6 a blocked pair, the only one (X blocked K): none', caller: (w) => { block(w, w.p.X, w.p.K); return w.p.X; }, want: () => [] },
@@ -512,6 +654,23 @@ const CAPPED: Capped[] = [
   },
   { label: 'D6 the platform owner (a thread with K): none', caller: (w, x) => x.O, want: () => [] },
   { label: 'D6 K, the coach: none', caller: (w) => w.p.K, want: () => [] },
+  {
+    label: 'D6 a coach who left: K, her only former coach, deleted his account (LS-DMFC-1 P1): none, never "Deleted user"',
+    caller: (w) => { purge(w, w.p.K, w.wsId); return w.p.X; },
+    want: () => [],
+  },
+  { label: 'D9 three former coaches by her rows (W, W3, then W4): the newest, K3 (W4)', caller: (w) => threeKept(w, 4), want: (w) => [entry(communityOf(w, coachNamed(w, 'Coach Four')), coachNamed(w, 'Coach Four'))] },
+  { label: 'D9 three former coaches, K3\'s row the oldest: K2 (W3)', caller: (w) => threeKept(w, 1), want: inW3 },
+  {
+    label: 'D9 three former coaches, her plan from K stamped last: K (W)',
+    caller: (w) => { threeKept(w, 4); bought(w, w.p.K, day(6)); return w.p.X; },
+    want: inW,
+  },
+  {
+    label: 'D9 three former coaches, the newest (K3) blocked: none, not K2 or K',
+    caller: (w) => { threeKept(w, 4); block(w, w.p.X, coachNamed(w, 'Coach Four')); return w.p.X; },
+    want: () => [], kept: (w) => [[w.wsId, w.p.K], [w.w3.id, w.p.K2]],
+  },
   { label: 'D7 K\'s stored name padded: trimmed', caller: (w) => { Object.assign(w.p.K, { name: '  Coach One  ' }); return w.p.X; }, want: (w) => [entry(w.wsId, w.p.K, 'Coach One')] },
   { label: 'D7 K\'s stored name blank: null', caller: (w) => { Object.assign(w.p.K, { name: '   ' }); return w.p.X; }, want: (w) => [entry(w.wsId, w.p.K, null)] },
   { label: 'D7 K\'s stored name empty: null', caller: (w) => { Object.assign(w.p.K, { name: '' }); return w.p.X; }, want: (w) => [entry(w.wsId, w.p.K, null)] },
@@ -528,6 +687,19 @@ describe('DM-FORMER-COACH-BE D: GET /community/me keeps one former coach, the on
   it.each(CAPPED)('$label', async (c) => {
     const u = c.caller(w, x);
     expect(await formerDms(w, u)).toEqual(c.want(w));
+  });
+
+  it.each(CAPPED.filter((c) => c.kept))('$label (the older coach\'s thread is still kept)', async (c) => {
+    const u = c.caller(w, x);
+    for (const [wsId, coach] of c.kept?.(w) ?? []) {
+      expect([wsId, await throughFormerArm(w, u, wsId), await listed(w, u, wsId)]).toEqual([wsId, true, [coach.id]]);
+    }
+    expect(await formerDms(w, u)).toEqual([]);
+  });
+
+  it('D6. A coach who left (LS-DMFC-1 P1): her GET W/dms lists no thread, and /me lists nothing', async () => {
+    purge(w, w.p.K, w.wsId);
+    expect([await listed(w, w.p.X), await formerDms(w, w.p.X)]).toEqual([[], []]);
   });
 
   it('D8. The one listed is always one b#1253 would list: its own GET W/dms answers through the former-client arm with that coach', async () => {
