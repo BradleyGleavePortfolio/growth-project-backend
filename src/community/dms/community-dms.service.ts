@@ -178,25 +178,27 @@ export class CommunityDmsService {
   /**
    * Authorise a DM between the caller and a recipient in a workspace. Throws 404
    * when assertDmOpen does not open the pair (non-leak), 403 if either side has
-   * DMs disabled. Returns the deterministic thread key.
+   * DMs disabled. Returns the stored id and the deterministic thread key.
+   * DM-WS-ID-BE (LS-1253R1 C1): the route's id is only the lookup; the database reads other spellings of a uuid
+   * (upper case, no hyphens, braces, urn:uuid:) as the same community, so everything after uses the stored row's id.
    */
   private async authoriseDm(
     workspaceId: string,
     sender: User,
     recipientId: string,
-  ): Promise<string> {
+  ): Promise<{ workspaceId: string; dmKey: string }> {
     const workspace = await this.access.findWorkspace(workspaceId);
     if (!workspace) throw new NotFoundException(DM_NOT_FOUND);
     await assertDmReadable(this.access, this.safety, workspace, sender.id, recipientId);
-    return CommunityDmsRepository.dmKey(workspaceId, sender.id, recipientId);
+    return { workspaceId: workspace.id, dmKey: CommunityDmsRepository.dmKey(workspace.id, sender.id, recipientId) };
   }
 
   async openThread(
     user: User,
-    workspaceId: string,
+    typedWorkspaceId: string,
     recipientId: string,
   ): Promise<CommunityDmThreadResponse> {
-    const dmKey = await this.authoriseDm(workspaceId, user, recipientId);
+    const { workspaceId, dmKey } = await this.authoriseDm(typedWorkspaceId, user, recipientId);
     return CommunityDmThreadResponseSchema.parse({
       thread: {
         thread_id: dmKey,
@@ -211,12 +213,12 @@ export class CommunityDmsService {
 
   async send(
     user: User,
-    workspaceId: string,
+    typedWorkspaceId: string,
     recipientId: string,
     body: string,
     idempotencyKey?: string | null,
   ): Promise<CommunityDmMessageResponse & { crisis_flag?: true }> {
-    const dmKey = await this.authoriseDm(workspaceId, user, recipientId);
+    const { workspaceId, dmKey } = await this.authoriseDm(typedWorkspaceId, user, recipientId);
     const screen = this.safety.screenText('dm', user.id, [body]);
     // SEND-ONCE-SERVER: a resend with the same Idempotency-Key (same author, same thread) answers with the first
     // message and repeats neither the realtime ping nor the push; the same key on other words is refused (409).
@@ -273,11 +275,11 @@ export class CommunityDmsService {
 
   async listThread(
     user: User,
-    workspaceId: string,
+    typedWorkspaceId: string,
     recipientId: string,
     query: { before?: string; limit?: string },
   ): Promise<CommunityDmMessageListResponse> {
-    const dmKey = await this.authoriseDm(workspaceId, user, recipientId);
+    const { dmKey } = await this.authoriseDm(typedWorkspaceId, user, recipientId);
     const rows = await this.dms.listThread({
       dmKey,
       before: this.parseBefore(query.before),
@@ -290,19 +292,22 @@ export class CommunityDmsService {
 
   async listThreads(
     user: User,
-    workspaceId: string,
+    typedWorkspaceId: string,
     query: { limit?: string },
   ): Promise<CommunityDmThreadListResponse> {
-    const workspace = await this.access.findWorkspace(workspaceId);
+    // DM-WS-ID-BE: the route's id is only the lookup; every read below takes the stored id (authoriseDm's rule).
+    const workspace = await this.access.findWorkspace(typedWorkspaceId);
+    if (!workspace) throw new NotFoundException(DM_NOT_FOUND);
+    const workspaceId = workspace.id;
     const membership = await this.access.membershipInWorkspace(workspaceId, user.id);
     // COACH-DM-BE: the workspace's coach holds no membership row; they list only their threads with their own
     // current clients (assertDmOpen's coach pair), kept before the page is cut. COMMUNITY-DM-RULES-BE (203-D12):
     // and with their former clients who keep a thread (formerClientsIn); such a former client lists that one thread.
     // COMMUNITY-DM-FORMER-REACH-BE: the former-client arm is formerClientArm, which GET /community/me asks too.
-    const coach = workspace?.coach_id === user.id;
-    const arm = workspace ? await formerClientArm(this.access, this.safety, workspace, user.id, membership) : 'none';
+    const coach = workspace.coach_id === user.id;
+    const arm = await formerClientArm(this.access, this.safety, workspace, user.id, membership);
     const former = arm !== 'none';
-    if (!workspace || !(membership || coach || former)) {
+    if (!(membership || coach || former)) {
       throw new NotFoundException(DM_NOT_FOUND);
     }
     // Reading thread metadata is a DM surface too: gate on the caller's
