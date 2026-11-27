@@ -70,8 +70,8 @@ export function summarizeExerciseSet(row: ExerciseSetRow) {
     weight_per_set_lbs: weights,
     rpe: finite(row.rpe) ? round1(row.rpe) : null,
     top_set: top,
-    est_1rm_lbs: best,
-    volume_lbs: Math.round(volume),
+    est_1rm_lbs: row.asked_unit === 'seconds' ? null : best,
+    volume_lbs: row.asked_unit === 'seconds' ? null : Math.round(volume),
   };
 }
 
