@@ -773,7 +773,6 @@ export class RealMealPlansService {
               name: true,
               calories_kcal: true,
               protein_g: true,
-              carbs_g: true,
               fats_g: true,
             },
           })
