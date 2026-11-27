@@ -177,7 +177,9 @@ describe('money check alarm script', () => {
     expect(body).toMatch(/- Checked: \S+Z, twice, 60 seconds apart/);
     expect(body).toContain(`- Status: ${STATUS_URL}`);
     expect(body).toContain(`- Run: ${RUN_URL}`);
-    expect(body).toContain('This alarm counts a day only when that push was queued.');
+    expect(body).toContain(
+      'This alarm counts a day only when the run reached every purchase and could read at least one of them, and its result was saved to your inbox in the app (or, if your in-app alerts are off, queued as a push).',
+    );
     expect(body).toContain(
       'A queued push does not prove that it reached your phone or that you read it.',
     );

@@ -25,9 +25,19 @@
  * has no money-check screen yet (the admin route is POST /v1/admin/payments/
  * reconciliation/run-sweeper).
  *
+ * MONEY-NOTICE-BE (owner #203-E117, 203-D1 op 1): the day counts as finished
+ * only when the run reached every purchase (nothing stopped it), read at least
+ * one (ok or drift) or had none to read, and its result reached the owner:
+ * the inbox row was written, whether or not a phone got the push, or his own
+ * in-app setting skipped the row and the push was queued. Then the run writes
+ * the day and its finish time to its lease row's cursor (dailyRecord), which
+ * the status route (money-check-status.service.ts) reads. A run that is not
+ * counted writes nothing and logs MONEY_DAILY_NOT_COUNTED with the reason.
+ *
  * Off switch: RECONCILIATION_DAILY_ENABLED. Unset = on; only "false" turns the
  * daily run off (the admin "run the money check" button is not affected).
- * No new table: the lease is a CronLease row, the alert is a Notification row.
+ * No new table: the lease and the finished-day record are one CronLease row,
+ * the alert is a Notification row.
  */
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
@@ -41,6 +51,34 @@ import { MONEY_CHECK_ROW_TYPE } from '../notifications/current-coach-inbox';
 import { CronLeaseService } from './cron-lease.service';
 
 export const DAILY_JOB_NAME = 'reconciliation-daily';
+
+/** A counted day: the run start's UTC day and when the run finished. */
+export interface DailyRecord {
+  day: string;
+  finishedAt: Date;
+}
+
+const DAILY_RECORD = /^(\d{4}-\d{2}-\d{2})\|(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)$/;
+
+/** The record on the DAILY_JOB_NAME lease row's cursor: `YYYY-MM-DD|<finish time, ISO UTC>`. */
+export function dailyRecord(r: DailyRecord): string {
+  return `${r.day}|${r.finishedAt.toISOString()}`;
+}
+
+/**
+ * Strict: exactly dailyRecord's shape, a real calendar day and a real instant
+ * (each must read back unchanged), or null. Never throws.
+ */
+export function parseDailyRecord(raw: string | null | undefined): DailyRecord | null {
+  const m = typeof raw === 'string' ? DAILY_RECORD.exec(raw) : null;
+  if (!m) return null;
+  const day = new Date(`${m[1]}T00:00:00.000Z`);
+  const finishedAt = new Date(m[2]);
+  if (Number.isNaN(day.getTime()) || day.toISOString().slice(0, 10) !== m[1]) return null;
+  if (Number.isNaN(finishedAt.getTime()) || finishedAt.toISOString() !== m[2]) return null;
+  return { day: m[1], finishedAt };
+}
+
 /** 11:00 UTC = 03:00 PST / 04:00 PDT. */
 export const DAILY_CRON = '0 11 * * *';
 export const BATCH = 50;
@@ -67,7 +105,13 @@ export const DAILY_LOG_CODES = {
   stoppedEarly: 'MONEY_DAILY_STOPPED_EARLY',
   noOwner: 'MONEY_DAILY_NO_OWNER',
   alertFailed: 'MONEY_DAILY_ALERT_FAILED',
+  /** No phone to send to (no-token, invalid-token); the inbox row still counts. */
+  noDevice: 'MONEY_DAILY_NO_DEVICE',
+  /** The push could not be queued; the inbox row still counts. */
+  pushFailed: 'MONEY_DAILY_PUSH_FAILED',
   done: 'MONEY_DAILY_DONE',
+  counted: 'MONEY_DAILY_COUNTED',
+  notCounted: 'MONEY_DAILY_NOT_COUNTED',
 } as const;
 
 export interface DailyTally {
@@ -82,7 +126,33 @@ export interface DailyTally {
 
 export type DailyRunResult =
   | { ran: false; reason: 'disabled' | 'lock_held' | 'lock_error' }
-  | { ran: true; verdict: 'clean' | 'needs_review'; tally: DailyTally; batches: number; alerted: boolean };
+  | {
+      ran: true;
+      verdict: 'clean' | 'needs_review';
+      tally: DailyTally;
+      batches: number;
+      /** The result reached the owner (rule c of notCountedReason). */
+      alerted: boolean;
+      /** The day was counted and its record written. */
+      counted: boolean;
+    };
+
+/** Why a run that ran is not counted as a finished day. */
+export type NotCountedReason = 'stopped' | 'nothing_read' | 'notice';
+
+/**
+ * MONEY-NOTICE-BE: null when the day counts, else the first rule it fails:
+ * (a) the run reached every purchase; (b) it read at least one (ok or drift),
+ * or there was none to read: with Stripe down every purchase is unknown or
+ * failed and the run still reaches the end; (c) the result reached the owner
+ * (`reachedOwner`, alertOwner's answer).
+ */
+export function notCountedReason(t: DailyTally, reachedOwner: boolean): NotCountedReason | null {
+  if (t.stopped !== null) return 'stopped';
+  if (t.checked > 0 && t.ok + t.drift === 0) return 'nothing_read';
+  if (!reachedOwner) return 'notice';
+  return null;
+}
 
 /** RECONCILIATION_DAILY_ENABLED: unset = on; only "false" turns the daily run off. */
 export function reconciliationDailyEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -145,6 +215,7 @@ export class ReconciliationDailyCron {
     pause: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
     clock: () => number = () => Date.now(),
   ): Promise<DailyRunResult> {
+    const began = clock();
     if (!reconciliationDailyEnabled()) {
       this.logger.warn(
         `${DAILY_LOG_CODES.disabled} RECONCILIATION_DAILY_ENABLED=false; the daily money check is off. The admin "run the money check" button still works.`,
@@ -171,11 +242,34 @@ export class ReconciliationDailyCron {
     if (tally.stopped) {
       this.logger.warn(`${DAILY_LOG_CODES.stoppedEarly} reason=${tally.stopped} checked=${tally.checked}`);
     }
+    const alerted = await this.alertOwner(tally, now);
+    const day = now.toISOString().slice(0, 10);
+    // The finish time on the run's own clock seam: its start plus the time it took.
+    const notCounted =
+      notCountedReason(tally, alerted) ??
+      (await this.recordDay(holder, { day, finishedAt: new Date(now.getTime() + (clock() - began)) }));
+    // DONE, then the line that says whether the day was counted and, if not, why.
     this.logger.log(
       `${DAILY_LOG_CODES.done} verdict=${verdict} checked=${tally.checked} ok=${tally.ok} drift=${tally.drift} unknown=${tally.unknown} failed=${tally.failed} batches=${batches}`,
     );
-    const alerted = await this.alertOwner(tally, now);
-    return { ran: true, verdict, tally, batches, alerted };
+    if (notCounted) {
+      this.logger.error(
+        `${DAILY_LOG_CODES.notCounted} alert=true reason=${notCounted}; the money-check status stays on the last counted day`,
+      );
+    } else {
+      this.logger.log(`${DAILY_LOG_CODES.counted} day=${day}`);
+    }
+    return { ran: true, verdict, tally, batches, alerted, counted: notCounted === null };
+  }
+
+  /** Writes the counted day on this run's lease row. Never throws; null when written, else why not. */
+  private async recordDay(holder: string, record: DailyRecord): Promise<string | null> {
+    try {
+      const written = await this.lease.writeCursor(DAILY_JOB_NAME, holder, dailyRecord(record));
+      return written ? null : 'write_failed (the lease row has another holder)';
+    } catch (err) {
+      return `write_failed (${(err as Error)?.name ?? 'error'})`;
+    }
   }
 
   /** Batches of BATCH until a short batch, a batch with no new id, the time budget, or an error. */
@@ -233,7 +327,11 @@ export class ReconciliationDailyCron {
     return { tally, batches };
   }
 
-  /** One inbox row and one push to the owner-role account. Never throws; false when nothing was sent. */
+  /**
+   * One inbox row and one push to the owner-role account. Never throws. True
+   * only when the result reached him: the inbox row was written (whatever the
+   * push did), or his in-app setting skipped the row and the push was queued.
+   */
   private async alertOwner(tally: DailyTally, now: Date): Promise<boolean> {
     try {
       const owner = await this.prisma.user.findFirst({
@@ -259,7 +357,8 @@ export class ReconciliationDailyCron {
         failed: tally.failed,
         day,
       };
-      await this.notifications.createNotification({
+      // null: his in-app setting for coach alerts is off, so no row (createNotification's gate).
+      const row = await this.notifications.createNotification({
         user_id: owner.id,
         kind: NotificationKind.COACH_ALERT,
         body,
@@ -268,7 +367,7 @@ export class ReconciliationDailyCron {
         // LS-1225 B3 / LO-1225 C2: the inbox keeps the whole body, the same words as the push.
         sender_words: true,
       });
-      await this.notifications.pushToUser(
+      const push = await this.notifications.pushToUser(
         owner.id,
         title,
         body,
@@ -278,7 +377,14 @@ export class ReconciliationDailyCron {
         // Money: passes Mute all (README note 1); one push per day, a rerun never posts twice.
         { kind: NotificationKind.COACH_ALERT, passesMuteAll: true, dedupeKey: `money_daily:${day}` },
       );
-      return true;
+      const inbox = Boolean(row);
+      if (!push.delivered) {
+        const gap = push.code === 'no-token' || push.code === 'invalid-token';
+        this.logger.warn(
+          `${gap ? DAILY_LOG_CODES.noDevice : DAILY_LOG_CODES.pushFailed} push=${push.code} inbox=${inbox ? 'written' : 'skipped'}; the money-check push was not queued`,
+        );
+      }
+      return inbox || push.delivered;
     } catch (err) {
       this.logger.error(
         `${DAILY_LOG_CODES.alertFailed} alert=true the money-check result could not be sent: ${(err as Error)?.name ?? 'error'}`,
