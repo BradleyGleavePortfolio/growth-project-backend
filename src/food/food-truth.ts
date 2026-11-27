@@ -118,6 +118,24 @@ export function legacyPackagedZero(row: FoodNumbers & {
   return packaged && [row.protein_g, row.carbs_g, row.fat_g].some((v) => Number(v) === 0);
 }
 
+/**
+ * SAVED-FOODS-TRUTH-BE (#ALM-E19, V1_1_MUST_DO 21.33): what a stored row says before its source is read, the first
+ * step of the check POST /log/food runs on a stored food (FoodService.heldUsable). 'ok': it logs as stored (the
+ * person's own food, or a shared row whose numbers can be true and that is not a packaged 0 g row stored before
+ * FIX-1222). 'held': its numbers cannot be true (search leaves it out). 'legacy_zero': a packaged row stored before
+ * FIX-1222 with a 0 g macro. A 'held' or 'legacy_zero' row is logged only when its source, read again, confirms it.
+ */
+export type StoredFoodTruth = 'ok' | 'held' | 'legacy_zero';
+
+export function storedFoodTruth(
+  row: FoodNumbers & { tags?: readonly string[] | null; barcode?: string | null; created_by_user_id?: string | null },
+  basicTag: string,
+): StoredFoodTruth {
+  if (row.created_by_user_id) return 'ok';
+  if (!storedNumbersCanBeTrue(row)) return 'held';
+  return legacyPackagedZero(row, basicTag) ? 'legacy_zero' : 'ok';
+}
+
 /** What a source lists for one food, per 100 g: each macro (null when it does not list it), alcohol and polyols. */
 export interface SourceEvidence {
   protein_g: number | null;

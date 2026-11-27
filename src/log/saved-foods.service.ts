@@ -1,5 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { FoodItem, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { FoodService } from '../food/food.service';
 import { AnalyticsService } from '../analytics/analytics.service';
@@ -7,15 +7,25 @@ import { Events } from '../analytics/events';
 import { PtmService } from '../ptm/ptm.service';
 import { ClientAIContextService } from '../ai/client-ai-context.service';
 import { CreateSavedMealDto, FAVORITES_MAX, LogSavedMealDto, SAVED_MEALS_MAX } from './saved-foods.dto';
+import type { StoredFoodTruth } from '../food/food-truth';
 
 const WITH_FOOD = { food_item: true } as const;
 const WITH_ITEMS = { items: { orderBy: { position: 'asc' }, include: WITH_FOOD } } as const;
+/** A saved meal as this service reads it: its items, each with its food. */
+type MealRow = Prisma.SavedMealGetPayload<{ include: { items: { include: typeof WITH_FOOD } } }>;
 
 /**
  * FOODSAVED: a client's favourite foods and saved meals. Every query is scoped
  * to the signed-in client (the server's connection bypasses RLS; the row rules
  * in 20270502003100 are the second line). Another person's row reads as not
  * found, like a missing id.
+ *
+ * SAVED-FOODS-TRUTH-BE (#ALM-E19, V1_1_MUST_DO 21.33): every favourite and
+ * saved-meal item this service answers with carries `food_truth`, what the
+ * check POST /log/food runs reads from its stored food before asking the
+ * source (FoodService.storedTruth): 'ok', 'held' or 'legacy_zero'. No item is
+ * left out; a food deleted from the catalog takes its rows with it (ON DELETE
+ * CASCADE), so a list never names a food that is gone.
  */
 @Injectable()
 export class SavedFoodsService {
@@ -27,12 +37,13 @@ export class SavedFoodsService {
     private aiContext: ClientAIContextService,
   ) {}
 
-  listFavorites(userId: string) {
-    return this.prisma.foodFavorite.findMany({
+  async listFavorites(userId: string) {
+    const rows = await this.prisma.foodFavorite.findMany({
       where: { user_id: userId },
       orderBy: { created_at: 'desc' },
       include: WITH_FOOD,
     });
+    return rows.map(this.withTruth);
   }
 
   /** Idempotent: favouriting a food twice returns the first favourite. */
@@ -40,11 +51,11 @@ export class SavedFoodsService {
     const food_item_id = await this.resolveFood(userId, foodRef);
     const where = { user_id_food_item_id: { user_id: userId, food_item_id } };
     const existing = await this.prisma.foodFavorite.findUnique({ where, include: WITH_FOOD });
-    if (existing) return existing;
+    if (existing) return this.withTruth(existing);
     const count = await this.prisma.foodFavorite.count({ where: { user_id: userId } });
     if (count >= FAVORITES_MAX) throw limitReached('FOOD_FAVORITES_LIMIT', FAVORITES_MAX);
     const create = { user_id: userId, food_item_id };
-    return this.prisma.foodFavorite.upsert({ where, create, update: {}, include: WITH_FOOD });
+    return this.withTruth(await this.prisma.foodFavorite.upsert({ where, create, update: {}, include: WITH_FOOD }));
   }
 
   /** Idempotent: removing a food that is not a favourite removes nothing. */
@@ -55,12 +66,13 @@ export class SavedFoodsService {
     return { removed: count > 0 };
   }
 
-  listSavedMeals(userId: string) {
-    return this.prisma.savedMeal.findMany({
+  async listSavedMeals(userId: string) {
+    const meals = await this.prisma.savedMeal.findMany({
       where: { user_id: userId },
       orderBy: { created_at: 'desc' },
       include: WITH_ITEMS,
     });
+    return meals.map(this.mealWithTruth);
   }
 
   async createSavedMeal(userId: string, data: CreateSavedMealDto) {
@@ -76,16 +88,17 @@ export class SavedFoodsService {
       original_unit: item.original_unit,
       position,
     }));
-    return this.prisma.savedMeal.create({
+    const meal = await this.prisma.savedMeal.create({
       data: { user_id: userId, name: data.name.trim(), items: { createMany: { data: items } } },
       include: WITH_ITEMS,
     });
+    return this.mealWithTruth(meal);
   }
 
   async renameSavedMeal(userId: string, mealId: string, name: string) {
     await this.ownMeal(userId, mealId);
     const data = { name: name.trim() };
-    return this.prisma.savedMeal.update({ where: { id: mealId }, data, include: WITH_ITEMS });
+    return this.mealWithTruth(await this.prisma.savedMeal.update({ where: { id: mealId }, data, include: WITH_ITEMS }));
   }
 
   /** Its items go with it (ON DELETE CASCADE). Entries already logged from it stay. */
@@ -154,6 +167,14 @@ export class SavedFoodsService {
       throw err;
     }
   }
+
+  /** A favourite or saved-meal item with its food's stored state (SAVED-FOODS-TRUTH-BE). */
+  private withTruth = <T extends { food_item: FoodItem }>(row: T): T & { food_truth: StoredFoodTruth } => ({
+    ...row,
+    food_truth: this.foodService.storedTruth(row.food_item),
+  });
+
+  private mealWithTruth = (meal: MealRow) => ({ ...meal, items: meal.items.map(this.withTruth) });
 
   private async ownMeal(userId: string, mealId: string) {
     const meal = await this.prisma.savedMeal.findFirst({
