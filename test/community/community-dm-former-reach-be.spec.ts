@@ -676,6 +676,51 @@ const CAPPED: Capped[] = [
   { label: 'D7 K\'s stored name empty: null', caller: (w) => { Object.assign(w.p.K, { name: '' }); return w.p.X; }, want: (w) => [entry(w.wsId, w.p.K, null)] },
 ];
 
+/** FIX-DMFC-1 (OPERATOR NOTE 7209460757): the reads this PR adds to GET /community/me (lastLeft's). */
+const NEW_READS = ['clientPurchase.findMany', 'communityWorkspace.findMany'];
+/** A caller's former_coach_dms and every delegate read (model.method) that GET /community/me made for it, through a
+ *  CommunityService over a recording view of the same store. */
+async function meReads(w: World, u: User): Promise<{ dms: unknown; reads: string[] }> {
+  const reads: string[] = [];
+  const db = new Proxy(w.db, {
+    get: (t, prop: string) => {
+      const v = Reflect.get(t, prop) as unknown;
+      if (typeof v === 'function') return (v as (...a: unknown[]) => unknown).bind(t);
+      if (prop.startsWith('$') || prop === 'tables' || typeof v !== 'object' || v === null) return v;
+      return new Proxy(v as Record<string, unknown>, {
+        get: (d, m: string) => {
+          const f = Reflect.get(d, m) as unknown;
+          return typeof f !== 'function' ? f : (...a: unknown[]) => {
+            reads.push(`${prop}.${m}`);
+            return (f as (...x: unknown[]) => unknown)(...a);
+          };
+        },
+      });
+    },
+  });
+  const p = stub<PrismaService>(db);
+  const me = new CommunityService(p, new CommunityRepository(p), w.safety, new CommunityAccessService(p));
+  return { dms: stub<Record<string, unknown>>(await me.getMe(u)).former_coach_dms, reads };
+}
+/** D10, the rule's floor (R-a: a thread is kept only where she holds an active row in a space that is not public): with
+ *  no such place in a community of a coach she has left, /me lists nothing and reads neither her plans nor a community
+ *  list, as before this PR (B-E2E-1's world: test/community/community-me-auto-provision.spec.ts); with one, it does. */
+const FLOOR: Array<{ label: string; caller: (w: World) => User; want: (w: World) => unknown[]; reads: string[] }> = [
+  { label: 'D10 A, K\'s current client (her only place is her coach\'s): none, no new read', caller: (w) => w.p.A, want: () => [], reads: [] },
+  {
+    label: 'D10 a client with no coach and no row, a stamped plan from K: none, no new read',
+    caller: (w) => {
+      const n = w.user('student', 'New Client', null);
+      w.db.seed('clientPurchase', { client_user_id: n.id, coach_user_id: w.p.K.id, moved_away_at: day(6) });
+      return n;
+    },
+    want: () => [], reads: [],
+  },
+  { label: 'D10 U, K\'s former client whose only row is in a public space: none, no new read', caller: (w) => w.p.U, want: () => [], reads: [] },
+  { label: 'D10 Z, K\'s former client whose only row was removed: none, no new read', caller: (w) => w.p.Z, want: () => [], reads: [] },
+  { label: 'D10 X, an active row in S of K\'s community (she left K): K, named, after the new reads', caller: (w) => w.p.X, want: inW, reads: NEW_READS },
+];
+
 describe('DM-FORMER-COACH-BE D: GET /community/me keeps one former coach, the one she moved away from last, and names him', () => {
   let w: World;
   let x: Record<Extra, User>;
@@ -700,6 +745,12 @@ describe('DM-FORMER-COACH-BE D: GET /community/me keeps one former coach, the on
   it('D6. A coach who left (LS-DMFC-1 P1): her GET W/dms lists no thread, and /me lists nothing', async () => {
     purge(w, w.p.K, w.wsId);
     expect([await listed(w, w.p.X), await formerDms(w, w.p.X)]).toEqual([[], []]);
+  });
+
+  it.each(FLOOR)('$label', async (f) => {
+    const u = f.caller(w);
+    const { dms, reads } = await meReads(w, u);
+    expect([dms, NEW_READS.filter((r) => reads.includes(r))]).toEqual([f.want(w), f.reads]);
   });
 
   it('D8. The one listed is always one b#1253 would list: its own GET W/dms answers through the former-client arm with that coach', async () => {

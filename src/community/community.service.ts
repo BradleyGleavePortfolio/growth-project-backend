@@ -50,6 +50,9 @@ const COHORT_NOT_FOUND = {
 /** DM-FORMER-COACH-BE: a coach the caller has left, with his community (null when he has none). */
 type FormerCoach = { coachId: string; workspace: CommunityWorkspace | null };
 
+/** DM-FORMER-COACH-BE: a coach the caller has left: neither herself nor her current coach. */
+const hasLeft = (user: Pick<User, 'id' | 'coach_id'>, coachId: string) => coachId !== user.id && coachId !== user.coach_id;
+
 /**
  * Community v1-2 foundation service.
  *
@@ -209,8 +212,10 @@ export class CommunityService {
    *  RULING 7209184240): the one place is the coach she moved away from last (lastLeft, over every coach she has left,
    *  kept or not), listed only when his thread is kept: his community not archived (the purge's archive), his account's
    *  deletion not finalized (User.deleted_at, set by both erasure paths with the tombstone name) and the arm 'open'.
-   *  Otherwise nothing: an older coach never takes the place. Named by namesOf (b#1253's rule: trimmed, null when blank). */
+   *  Otherwise nothing: an older coach never takes the place. Named by namesOf (b#1253's rule: trimmed, null when blank).
+   *  First the rule's own floor (inLeftCommunity): with no place a thread can be kept in, nothing more is read. */
   private async formerCoachDms(user: Pick<User, 'id' | 'coach_id'>): Promise<CommunityMeResponse['former_coach_dms']> {
+    if (!(await this.inLeftCommunity(user))) return [];
     const workspace = (await this.lastLeft(user))?.workspace;
     if (!workspace || workspace.archived_at) return [];
     const coach = await this.prisma.user.findUnique({ where: { id: workspace.coach_id }, select: { deleted_at: true } });
@@ -219,6 +224,19 @@ export class CommunityService {
     if ((await formerClientArm(this.access, this.safety, workspace, user.id, membership)) !== 'open') return [];
     const names = await new CommunityDmsRepository(this.prisma).namesOf([workspace.coach_id]);
     return [{ workspace_id: workspace.id, coach_user_id: workspace.coach_id, coach_display_name: names.get(workspace.coach_id) ?? null }];
+  }
+
+  /** DM-FORMER-COACH-BE (FIX-DMFC-1, OPERATOR NOTE 7209460757): the rule keeps a thread only in a community where she
+   *  still holds an active row in a space that is not public (app.community_dm_former_client, R-a; dmSettingWorkspaces
+   *  is that set, the read /me made here before this PR). True when one of those communities is a coach's she has left.
+   *  When none is (every client who never moved), the list is empty whoever she left last, so /me reads what it read
+   *  before this PR and nothing more: no plan, no community list. */
+  private async inLeftCommunity(user: Pick<User, 'id' | 'coach_id'>): Promise<boolean> {
+    for (const id of await this.access.dmSettingWorkspaces(user.id)) {
+      const workspace = await this.access.findWorkspace(id);
+      if (workspace && hasLeft(user, workspace.coach_id)) return true;
+    }
+    return false;
   }
 
   /** DM-FORMER-COACH-BE: the coach the caller moved away from last, with his community (null when he has none). No table
@@ -246,7 +264,7 @@ export class CommunityService {
       where: { OR: [{ id: { in: rows.map((r) => r.workspace_id) } }, { coach_id: { in: stamps.map((s) => s.coach_user_id) } }] },
       orderBy: { id: 'asc' },
     });
-    const left = (coachId: string) => coachId !== user.id && coachId !== user.coach_id;
+    const left = (coachId: string) => hasLeft(user, coachId);
     const coaches: FormerCoach[] = [
       ...workspaces.filter((w) => left(w.coach_id)).map((w) => ({ coachId: w.coach_id, workspace: w })),
       ...[...new Set(stamps.map((s) => s.coach_user_id))]
