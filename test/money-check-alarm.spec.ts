@@ -1194,8 +1194,9 @@ describe('MONEY-EMAIL-BE: the daily result is emailed to OWNER_ALERT_EMAIL, and 
       const mailed = world({ mail: 'resend' });
       before.owner.present = present;
       mailed.owner.present = present;
-      const a = await before.tick('2026-11-07T11:00:00Z');
-      const b = await mailed.tick('2026-11-07T11:00:00Z');
+      // The run's clock seam on the fake clock, so both records carry the same finish time.
+      const a = await before.timedTick('2026-11-07T11:00:00Z', 0);
+      const b = await mailed.timedTick('2026-11-07T11:00:00Z', 0);
       expect(b).toEqual(a);
       expect(a).toMatchObject({ ran: true, alerted: present, counted: present });
       expect(mailed.inbox.rows).toEqual(before.inbox.rows);
