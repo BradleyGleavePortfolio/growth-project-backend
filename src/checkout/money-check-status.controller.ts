@@ -23,7 +23,7 @@ export class MoneyCheckStatusController {
   @ApiOperation({
     summary: 'Daily money check status',
     description:
-      'Unauthenticated. on_time, late (no finished run with its result saved for the owner in 26 hours) or off, plus the last finished UTC day. Not a readiness probe.',
+      'Unauthenticated. on_time, late (no finished run whose result reached the owner in 26 hours) or off, plus the last finished UTC day. Not a readiness probe.',
   })
   @ApiResponse({
     status: 200,

@@ -7,16 +7,17 @@
  * status reads one row, the reconciliation-daily CronLease row, and its
  * cursor: the record of the last counted day (reconciliation-daily.cron.ts,
  * dailyRecord). A run writes it only when it reached every purchase, read at
- * least one (or had none to read) and its result reached the owner: the inbox
- * row in the app was written, whether or not a phone got the push, or his
- * in-app setting skipped the row and the push was queued. A queued push is
- * not proof that the owner received or read it.
+ * least one (or had none to read) and its result reached the owner: the email
+ * provider accepted the email to OWNER_ALERT_EMAIL (MONEY-EMAIL-BE), or the
+ * inbox row in the app was written, whether or not a phone got the push, or
+ * his in-app setting skipped the row and the push was queued. A queued push
+ * or an accepted email is not proof that the owner received or read it.
  *
  *   on_time  the record's finish time is at most LATE_AFTER_MS ago.
  *   late     it is not: the timer never fired, the lease read failed, the run
- *            died or stopped before the end, it read no purchase, there is no
- *            owner account, nothing he can read holds the result, or the
- *            record could not be written. A cursor that does not parse, or a
+ *            died or stopped before the end, it read no purchase, no email was
+ *            accepted and nothing he can read in the app holds the result, or
+ *            the record could not be written. A cursor that does not parse, or a
  *            finish time more than CLOCK_SKEW_MS ahead of this machine's
  *            clock, is no record.
  *   off      RECONCILIATION_DAILY_ENABLED is 'false' (its meaning is kept).
@@ -44,7 +45,7 @@ export type MoneyCheckState = 'on_time' | 'late' | 'off';
 
 export interface MoneyCheckStatus {
   status: MoneyCheckState;
-  /** The newest counted UTC day (YYYY-MM-DD): finished with its result saved for the owner; or null. */
+  /** The newest counted UTC day (YYYY-MM-DD): finished with its result emailed (accepted) or saved for the owner; or null. */
   lastDay: string | null;
 }
 

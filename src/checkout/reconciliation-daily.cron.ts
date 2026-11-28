@@ -34,17 +34,30 @@
  * the status route (money-check-status.service.ts) reads. A run that is not
  * counted writes nothing and logs MONEY_DAILY_NOT_COUNTED with the reason.
  *
+ * MONEY-EMAIL-BE (owner #203-E125): every run that took the lease also emails
+ * the same words, counts only, through EmailService to the one address in the
+ * server setting OWNER_ALERT_EMAIL (set by the owner; never in code), whether
+ * or not an owner-role account exists. Once a day: the lease, plus the
+ * EmailSendLog key money-check-daily:<day>, also sent as the provider's key.
+ * The result also reached the owner (rule c) when the provider accepted that
+ * email (status 'sent'); 'logged', 'skipped', 'failed' and a throw do not.
+ * Unset or not one address: no email, MONEY_DAILY_NO_EMAIL; not accepted:
+ * MONEY_DAILY_EMAIL_FAILED. No line holds the address.
+ *
  * Off switch: RECONCILIATION_DAILY_ENABLED. Unset = on; only "false" turns the
  * daily run off (the admin "run the money check" button is not affected).
  * No new table: the lease and the finished-day record are one CronLease row,
  * the alert is a Notification row.
  */
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { hostname } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma.service';
 import { ReconciliationService } from '../connect/fees/reconciliation.service';
+import { EmailService } from '../email/email.service';
+import { parseEmailSender } from '../email/email-sender';
+import { EmailTemplateKey } from '../email/email.types';
 import { NotificationsService, pushTapData } from '../notifications/notifications.service';
 import { NotificationKind } from '../notifications/notification-kind';
 import { MONEY_CHECK_ROW_TYPE } from '../notifications/current-coach-inbox';
@@ -109,6 +122,10 @@ export const DAILY_LOG_CODES = {
   noDevice: 'MONEY_DAILY_NO_DEVICE',
   /** The push could not be queued; the inbox row still counts. */
   pushFailed: 'MONEY_DAILY_PUSH_FAILED',
+  /** MONEY-EMAIL-BE: no email, OWNER_ALERT_EMAIL is unset or not one address (reason=unset|invalid). */
+  noEmail: 'MONEY_DAILY_NO_EMAIL',
+  /** MONEY-EMAIL-BE: the email was not accepted (status=failed|logged|skipped, or thrown). */
+  emailFailed: 'MONEY_DAILY_EMAIL_FAILED',
   done: 'MONEY_DAILY_DONE',
   counted: 'MONEY_DAILY_COUNTED',
   notCounted: 'MONEY_DAILY_NOT_COUNTED',
@@ -131,7 +148,7 @@ export type DailyRunResult =
       verdict: 'clean' | 'needs_review';
       tally: DailyTally;
       batches: number;
-      /** The result reached the owner (rule c of notCountedReason). */
+      /** The result reached the owner (rule c of notCountedReason): the inbox row, the in-app-off push, or the accepted email. */
       alerted: boolean;
       /** The day was counted and its record written. */
       counted: boolean;
@@ -145,7 +162,7 @@ export type NotCountedReason = 'stopped' | 'nothing_read' | 'notice';
  * (a) the run reached every purchase; (b) it read at least one (ok or drift),
  * or there was none to read: with Stripe down every purchase is unknown or
  * failed and the run still reaches the end; (c) the result reached the owner
- * (`reachedOwner`, alertOwner's answer).
+ * (`reachedOwner`: alertOwner's answer, or the email the provider accepted).
  */
 export function notCountedReason(t: DailyTally, reachedOwner: boolean): NotCountedReason | null {
   if (t.stopped !== null) return 'stopped';
@@ -157,6 +174,11 @@ export function notCountedReason(t: DailyTally, reachedOwner: boolean): NotCount
 /** RECONCILIATION_DAILY_ENABLED: unset = on; only "false" turns the daily run off. */
 export function reconciliationDailyEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.RECONCILIATION_DAILY_ENABLED !== 'false';
+}
+
+/** OWNER_ALERT_EMAIL (MONEY-EMAIL-BE): the one address the daily result is emailed to; null when unset or not one address. */
+export function ownerAlertEmail(env: NodeJS.ProcessEnv = process.env): string | null {
+  return parseEmailSender(env.OWNER_ALERT_EMAIL)?.value ?? null;
 }
 
 /** Clean only when every purchase was reached and every one matched. */
@@ -200,6 +222,8 @@ export class ReconciliationDailyCron {
     private readonly reconciliation: ReconciliationService,
     private readonly notifications: NotificationsService,
     private readonly prisma: PrismaService,
+    // MONEY-EMAIL-BE: Nest injects it (EmailModule is global); a construction without it sends no email.
+    @Optional() private readonly email?: EmailService,
   ) {}
 
   @Cron(DAILY_CRON, { name: DAILY_JOB_NAME, timeZone: 'UTC' })
@@ -242,7 +266,11 @@ export class ReconciliationDailyCron {
     if (tally.stopped) {
       this.logger.warn(`${DAILY_LOG_CODES.stoppedEarly} reason=${tally.stopped} checked=${tally.checked}`);
     }
-    const alerted = await this.alertOwner(tally, now);
+    const notified = await this.alertOwner(tally, now);
+    // MONEY-EMAIL-BE: the email goes on every run that took the lease, whatever alertOwner did.
+    const emailed = await this.emailOwner(tally, now);
+    // Rule (c): the inbox row or the in-app-off push, or the email the provider accepted.
+    const alerted = notified || emailed;
     const day = now.toISOString().slice(0, 10);
     // The finish time on the run's own clock seam: its start plus the time it took.
     const notCounted =
@@ -340,7 +368,7 @@ export class ReconciliationDailyCron {
         select: { id: true },
       });
       if (!owner) {
-        this.logger.error(`${DAILY_LOG_CODES.noOwner} alert=true no owner account; the money-check result was not sent`);
+        this.logger.error(`${DAILY_LOG_CODES.noOwner} alert=true no owner account; no inbox row or push was sent`);
         return false;
       }
       const { title, body } = dailyAlertCopy(tally);
@@ -387,9 +415,49 @@ export class ReconciliationDailyCron {
       return inbox || push.delivered;
     } catch (err) {
       this.logger.error(
-        `${DAILY_LOG_CODES.alertFailed} alert=true the money-check result could not be sent: ${(err as Error)?.name ?? 'error'}`,
+        `${DAILY_LOG_CODES.alertFailed} alert=true the money-check inbox row and push could not be sent: ${(err as Error)?.name ?? 'error'}`,
       );
       return false;
     }
+  }
+
+  /**
+   * MONEY-EMAIL-BE: one email, counts only (dailyAlertCopy's words), to
+   * OWNER_ALERT_EMAIL. Never throws. True only when the provider accepted it
+   * (status 'sent'). One per UTC day: the day's EmailSendLog key, also the
+   * provider's key. Its lines name the code, the reason or status and a
+   * server-owned error, never the address.
+   */
+  private async emailOwner(tally: DailyTally, now: Date): Promise<boolean> {
+    if (!this.email) return false;
+    const address = ownerAlertEmail();
+    if (!address) {
+      const code = DAILY_LOG_CODES.noEmail;
+      const reason = process.env.OWNER_ALERT_EMAIL === undefined ? 'unset' : 'invalid';
+      this.logger.warn(`${code} reason=${reason}; no money-check email was sent: OWNER_ALERT_EMAIL is not set to one address`);
+      return false;
+    }
+    const code = DAILY_LOG_CODES.emailFailed;
+    const { title, body } = dailyAlertCopy(tally);
+    const day = now.toISOString().slice(0, 10);
+    const key = `money-check-daily:${day}`;
+    try {
+      const result = await this.email.send({
+        to: address,
+        template: EmailTemplateKey.MONEY_CHECK_DAILY,
+        data: { subject: title, title, body, day },
+        idempotencyKey: key,
+        providerIdempotencyKey: key,
+      });
+      if (result.status === 'sent') return true;
+      this.logger.warn(
+        `${code} status=${result.status} error=${result.error ?? 'none'}; the money-check email was not accepted`,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `${code} status=thrown error=${(err as Error)?.name ?? 'error'}; the money-check email was not accepted`,
+      );
+    }
+    return false;
   }
 }

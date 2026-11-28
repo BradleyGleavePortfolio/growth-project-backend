@@ -1162,6 +1162,13 @@ export const ENV_RULES: EnvRule[] = [
       'B-EMAILFROM-126 — the ONE From address for every email the backend sends (EmailService templates, digests, guest-checkout welcome; src/email/email-sender.ts). Must be on the domain verified with Resend (production: The Growth Project <noreply@growthprojectapp.com>). EmailService refuses to boot EMAIL_TRANSPORT=resend without a valid value; with a live transport and no valid value nothing is sent and the log names this variable.',
   },
   {
+    name: 'OWNER_ALERT_EMAIL',
+    tier: 'feature',
+    default: 'unset → no money-check email; the inbox row and push are unchanged',
+    reason:
+      "MONEY-EMAIL-BE (owner #203-E125) — the one address the daily money check (src/checkout/reconciliation-daily.cron.ts) emails its result to, counts only, once a day after its 11:00 UTC run; a day also counts as finished when the email provider accepts that email. One address (a bare address or 'Name <address>', as parseEmailSender in src/email/email-sender.ts reads it); anything else sends nothing and logs MONEY_DAILY_NO_EMAIL. The owner sets it himself as a Fly secret; it is never written in code, tests or records.",
+  },
+  {
     name: 'SENDGRID_API_KEY',
     tier: 'optional',
     default: 'unset → digest send skipped with a warn',

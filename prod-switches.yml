@@ -1076,6 +1076,12 @@ switches:
     auto_flip_on_in_prod: false
     owner: email
     description: "R43 — Resend API key used to dispatch the guest-checkout welcome email. When unset, the guest checkout flow still completes (account + entit"
+  - name: OWNER_ALERT_EMAIL
+    tier: feature
+    prod_default: ON
+    auto_flip_on_in_prod: false
+    owner: email
+    description: "MONEY-EMAIL-BE — the one address the daily money check emails its result to (counts only, once a day); the owner sets it as a Fly secret. Unset = no email"
   - name: RESEND_FROM_EMAIL
     tier: feature
     prod_default: ON
