@@ -41,6 +41,8 @@ export const EmailTemplateKey = {
   // GUEST-ELIGIBILITY (owner #170-2) — the 6-digit code an existing TGP
   // email gets before it may pay on the web purchase page. Append-only.
   BUYER_EMAIL_CODE: 'buyer-email-code',
+  // MONEY-EMAIL-BE (owner #203-E125) — the daily money check's result, counts only, to OWNER_ALERT_EMAIL. Append-only.
+  MONEY_CHECK_DAILY: 'money-check-daily',
 } as const;
 export type EmailTemplateKey =
   (typeof EmailTemplateKey)[keyof typeof EmailTemplateKey];

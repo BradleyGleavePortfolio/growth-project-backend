@@ -147,6 +147,9 @@ function fullProdEnv(): NodeJS.ProcessEnv {
     MUX_TOKEN_ID: 'test-mux-token-id',
     MUX_TOKEN_SECRET: 'test-mux-token-secret',
     MUX_WEBHOOK_SECRET: 'test-mux-webhook-secret',
+    // MONEY-EMAIL-BE — feature tier: unset sends no daily money-check email. A made-up
+    // address on the reserved example.com domain; the owner sets the real one on Fly.
+    OWNER_ALERT_EMAIL: 'owner.alerts@example.com',
   };
 }
 

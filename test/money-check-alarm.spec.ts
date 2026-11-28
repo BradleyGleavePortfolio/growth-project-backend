@@ -10,12 +10,23 @@
 // alerts off, queued as a push), whether or not a phone got the push. The
 // record is the reconciliation-daily lease row's cursor; the status reads it
 // and nothing else. "case N" names the job's numbered cases.
+//
+// MONEY-EMAIL-BE (owner #203-E125): the run also emails its result, counts
+// only, to the address in OWNER_ALERT_EMAIL through the REAL EmailService
+// (Resend's one POST mocked), and a day also counts when the provider
+// accepted that email (status 'sent'). Those cases are in the MONEY-EMAIL-BE
+// describe below; "case N" there names that job's numbered cases.
 import { INestApplication, Logger, RequestMethod } from '@nestjs/common';
-import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
+import { METHOD_METADATA, OPTIONAL_DEPS_METADATA, PATH_METADATA } from '@nestjs/common/constants';
+import type { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
+import { Prisma } from '@prisma/client';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CacheControlInterceptor } from '../src/common/cache-control.interceptor';
+import { ENV_RULES } from '../src/common/env-validation';
+import { ReconciliationService } from '../src/connect/fees/reconciliation.service';
+import { EmailService } from '../src/email/email.service';
 import { IS_PUBLIC_KEY } from '../src/common/decorators/public.decorator';
 import { CronLeaseService } from '../src/checkout/cron-lease.service';
 import { MoneyCheckStatusController } from '../src/checkout/money-check-status.controller';
@@ -31,9 +42,11 @@ import {
   BATCH,
   DAILY_JOB_NAME,
   ReconciliationDailyCron,
+  dailyAlertCopy,
   dailyRecord,
   notCountedReason,
   parseDailyRecord,
+  type DailyRunResult,
   type DailyTally,
 } from '../src/checkout/reconciliation-daily.cron';
 import { NotificationKind } from '../src/notifications/notification-kind';
@@ -41,6 +54,8 @@ import { NotificationsService } from '../src/notifications/notifications.service
 import type { ExpoPushClient } from '../src/notifications/push/expo-push-client';
 import { PushDeliveryService } from '../src/notifications/push/push-delivery.service';
 import { PrismaService } from '../src/prisma.service';
+import { scanEnvReadsInSource } from './prod-readiness/env-registration';
+import { loadRegistry } from './prod-readiness/registry-loader';
 import { pushOutboxWorld } from './utils/push-outbox-fake';
 import { Table, asPrisma, type Row } from './utils/settlement-fakes';
 import { stub } from './utils/trial-fakes';
@@ -138,7 +153,68 @@ function purchases(clock: { at: Date }) {
   return Object.assign(state, { runSweep });
 }
 
-function world() {
+/**
+ * MONEY-EMAIL-BE: the email world. A made-up recipient and sender on the reserved example.com domain
+ * (RFC 2606); the owner's own address is a server setting and is never written in code or tests.
+ */
+const RECIPIENT = 'owner.alerts@example.com';
+const SENDER = 'Money Check Test <money-sender@example.com>';
+const EMAIL_KEY = 'money-check-daily:';
+type MailTransport = 'resend' | 'log';
+
+interface EmailLogRow {
+  id: string;
+  idempotency_key: string;
+  template_key: string;
+  recipient_email: string;
+  status: string;
+  provider_message_id?: string | null;
+  error?: string | null;
+  sent_at?: Date | null;
+}
+
+/** The EmailSendLog table: one row per idempotency key (a reused key is P2002, as the unique index does). */
+function emailSendLogTable() {
+  const rows: EmailLogRow[] = [];
+  return {
+    rows,
+    create: jest.fn(async ({ data }: { data: Omit<EmailLogRow, 'id'> }) => {
+      if (rows.some((r) => r.idempotency_key === data.idempotency_key)) {
+        throw new Prisma.PrismaClientKnownRequestError('Unique constraint failed on the fields: (`idempotency_key`)', {
+          code: 'P2002',
+          clientVersion: 'test',
+        });
+      }
+      const row = { id: `email-${rows.length + 1}`, ...data };
+      rows.push(row);
+      return { id: row.id };
+    }),
+    update: jest.fn(async ({ where, data }: { where: { id: string }; data: Partial<EmailLogRow> }) => {
+      const row = rows.find((r) => r.id === where.id);
+      if (!row) throw new Error('no such email row');
+      Object.assign(row, data);
+      return row;
+    }),
+  };
+}
+
+/** The REAL EmailService over the fake table; Resend's one POST is mocked per case (global fetch). */
+function mailer(transport: MailTransport) {
+  const emailSendLog = emailSendLogTable();
+  const config: Record<string, string> = {
+    EMAIL_TRANSPORT: transport,
+    RESEND_API_KEY: 're_test_money_check_fake',
+    EMAIL_FROM_ADDRESS: SENDER,
+  };
+  const service = new EmailService(
+    stub<PrismaService>({ emailSendLog }),
+    stub<ConfigService>({ get: (key: string) => config[key] }),
+  );
+  return { service, emailSendLog };
+}
+
+/** `mail`: give the cron a real EmailService (its fifth parameter); without it the cron is built as before. */
+function world(opts: { mail?: MailTransport } = {}) {
   const clock = { at: at('2026-11-07T11:00:00Z') };
   const outbox = pushOutboxWorld({ now: () => clock.at, tokens: { [OWNER]: TOKEN } });
   const inbox = inboxTable(clock);
@@ -176,7 +252,8 @@ function world() {
   );
   const sweep = purchases(clock);
   const lease = new CronLeaseService(asPrisma({ cronLease }));
-  const machine = () => new ReconciliationDailyCron(lease, sweep as any, notifications, db as any);
+  const mail = opts.mail ? mailer(opts.mail) : null;
+  const machine = () => new ReconciliationDailyCron(lease, sweep as any, notifications, db as any, mail?.service);
   const cron = machine();
   const status = new MoneyCheckStatusService(db as unknown as PrismaService);
   /** The 11:00 UTC tick on one machine, at `iso`. */
@@ -208,6 +285,7 @@ function world() {
     tick,
     timedTick,
     read,
+    mail,
   };
 }
 
@@ -956,4 +1034,489 @@ describe('MONEY-ALARM-BE: GET /api/money-check/status over HTTP', () => {
     );
     expect(health).not.toMatch(/money|reconciliation/i);
   });
+});
+
+describe('MONEY-EMAIL-BE: the daily result is emailed to OWNER_ALERT_EMAIL, and an accepted email counts the day', () => {
+  const savedAddress = process.env.OWNER_ALERT_EMAIL;
+  let fetchSpy: jest.SpyInstance | null = null;
+  const setAddress = (value: string | undefined) => {
+    if (value === undefined) delete process.env.OWNER_ALERT_EMAIL;
+    else process.env.OWNER_ALERT_EMAIL = value;
+  };
+  afterEach(() => {
+    fetchSpy?.mockRestore();
+    fetchSpy = null;
+    setAddress(savedAddress);
+  });
+
+  interface ResendCall {
+    url: string;
+    headers: Record<string, string>;
+    body: Record<string, unknown>;
+  }
+  /** Resend's one HTTP POST, answered the same way each time; every call is recorded. */
+  const resend = (answer: 'ok' | 'reject' | 'throw' | 'no-id' = 'ok'): ResendCall[] => {
+    const calls: ResendCall[] = [];
+    fetchSpy = jest.spyOn(global, 'fetch').mockImplementation(async (url: any, init: any) => {
+      calls.push({
+        url: String(url),
+        headers: { ...(init?.headers ?? {}) },
+        body: JSON.parse(String(init?.body ?? '{}')),
+      });
+      if (answer === 'throw') throw new TypeError('fetch failed');
+      if (answer === 'reject') {
+        return { ok: false, status: 422, json: async () => ({}), text: async () => '{"name":"validation_error"}' } as any;
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => (answer === 'no-id' ? {} : { id: `re_msg_${calls.length}` }),
+        text: async () => '',
+      } as any;
+    });
+    return calls;
+  };
+  /** The two lines that say why no email was accepted. */
+  const emailLines = () => dailyLines().filter((l) => /^MONEY_DAILY_(NO_EMAIL|EMAIL_FAILED)\b/.test(l));
+  /** No line any service logged in this case holds the address or any part of it. */
+  const expectNoAddressLogged = (...parts: string[]) => {
+    const all = logged().join('\n');
+    for (const part of parts) expect(all).not.toContain(part);
+  };
+  /** Handlebars' own escaping of {{body}}, to look for the words inside the html. */
+  const esc = (s: string) =>
+    s.replace(/[&<>"'`=]/g, (c) => `&${{ '&': 'amp', '<': 'lt', '>': 'gt', '"': 'quot', "'": '#x27', '`': '#x60', '=': '#x3D' }[c]};`);
+  const tallyOf = (r: DailyRunResult): DailyTally => {
+    if (!r.ran) throw new Error(`the run did not run: ${r.reason}`);
+    return r.tally;
+  };
+  const ME7 =
+    'This email holds counts only: no names, amounts or purchase ids. The daily money check sends it once a day, after its 11:00 UTC run, to the address in the server setting OWNER_ALERT_EMAIL.';
+
+  it('case 1: no owner account, a valid address, Resend accepts: on time with that day, one sent EmailSendLog row, one POST; late 26 hours and 1 ms after the finish', async () => {
+    setAddress(RECIPIENT);
+    const calls = resend('ok');
+    const w = world({ mail: 'resend' });
+    w.owner.present = false;
+    const r = await w.timedTick('2026-11-07T11:00:00Z', 20 * 60_000);
+    expect(r).toMatchObject({ ran: true, verdict: 'clean', alerted: true, counted: true });
+    expect([w.inbox.rows.length, w.outbox.rows.length]).toEqual([0, 0]);
+    expect(w.mail!.emailSendLog.rows).toEqual([
+      expect.objectContaining({
+        idempotency_key: `${EMAIL_KEY}2026-11-07`,
+        template_key: 'money-check-daily',
+        status: 'sent',
+        provider_message_id: 're_msg_1',
+      }),
+    ]);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe('https://api.resend.com/emails');
+    expect(calls[0].body).toMatchObject({ to: RECIPIENT, subject: dailyAlertCopy(tallyOf(r)).title });
+    // The day's key goes to Resend as its Idempotency-Key (with the content hash EmailService adds).
+    expect(calls[0].headers['Idempotency-Key']).toMatch(/^money-check-daily:2026-11-07:[0-9a-f]{32}$/);
+    // The record: the day and the finish time on the run's own clock (11:20 UTC).
+    expect(w.leaseRows[0].cursor).toBe('2026-11-07|2026-11-07T11:20:00.000Z');
+    expect(dailyLines()).toContainEqual('MONEY_DAILY_COUNTED day=2026-11-07');
+    // E6: no owner account still says so, and now says only the inbox row and the push were not sent.
+    expect(dailyLines()).toContainEqual('MONEY_DAILY_NO_OWNER alert=true no owner account; no inbox row or push was sent');
+    expect(emailLines()).toEqual([]);
+    const finished = at('2026-11-07T11:20:00Z').getTime();
+    await expect(w.status.status(new Date(finished + LATE_AFTER_MS), finished - 72 * H)).resolves.toEqual({
+      status: 'on_time',
+      lastDay: '2026-11-07',
+    });
+    await expect(w.status.status(new Date(finished + LATE_AFTER_MS + 1), finished - 72 * H)).resolves.toEqual({
+      status: 'late',
+      lastDay: '2026-11-07',
+    });
+    expectNoAddressLogged(RECIPIENT, 'owner.alerts');
+  });
+
+  it('case 2: Resend refuses (422): late with no day, the row failed, MONEY_DAILY_EMAIL_FAILED status=failed, not alerted, no record', async () => {
+    setAddress(RECIPIENT);
+    const calls = resend('reject');
+    const w = world({ mail: 'resend' });
+    w.owner.present = false;
+    await expect(w.tick('2026-11-07T11:00:00Z')).resolves.toMatchObject({ ran: true, alerted: false, counted: false });
+    expect(calls).toHaveLength(1);
+    expect(w.mail!.emailSendLog.rows).toEqual([expect.objectContaining({ status: 'failed', provider_message_id: null })]);
+    expect(emailLines()).toEqual([
+      expect.stringMatching(/^MONEY_DAILY_EMAIL_FAILED status=failed error=provider=resend status=422 code=validation_error\b/),
+    ]);
+    expect(dailyLines()).toContainEqual(expect.stringMatching(/^MONEY_DAILY_NOT_COUNTED .*reason=notice/));
+    expect(w.leaseRows[0].cursor ?? null).toBeNull();
+    await expect(w.read('2026-11-07T11:05:00Z')).resolves.toEqual({ status: 'late', lastDay: null });
+    expectNoAddressLogged(RECIPIENT, 'owner.alerts');
+  });
+
+  it('case 3: the provider call throws (no network): late, the run resolves, the row failed', async () => {
+    setAddress(RECIPIENT);
+    resend('throw');
+    const w = world({ mail: 'resend' });
+    w.owner.present = false;
+    await expect(w.tick('2026-11-07T11:00:00Z')).resolves.toMatchObject({ ran: true, alerted: false, counted: false });
+    expect(w.mail!.emailSendLog.rows).toEqual([expect.objectContaining({ status: 'failed' })]);
+    expect(emailLines()).toEqual([expect.stringMatching(/^MONEY_DAILY_EMAIL_FAILED status=failed error=/)]);
+    await expect(w.read('2026-11-07T11:05:00Z')).resolves.toEqual({ status: 'late', lastDay: null });
+  });
+
+  it('case 3b: the send itself throws (its EmailSendLog write fails): late, the run resolves, MONEY_DAILY_EMAIL_FAILED status=thrown', async () => {
+    setAddress(RECIPIENT);
+    const calls = resend('ok');
+    const w = world({ mail: 'resend' });
+    w.owner.present = false;
+    w.mail!.emailSendLog.create.mockRejectedValueOnce(new Error('email log down'));
+    await expect(w.tick('2026-11-07T11:00:00Z')).resolves.toMatchObject({ ran: true, alerted: false, counted: false });
+    expect(calls).toEqual([]);
+    expect(emailLines()).toEqual([expect.stringMatching(/^MONEY_DAILY_EMAIL_FAILED status=thrown error=Error\b/)]);
+    expect(logged().join('\n')).not.toContain('email log down');
+    await expect(w.read('2026-11-07T11:05:00Z')).resolves.toEqual({ status: 'late', lastDay: null });
+  });
+
+  it("case 4: EMAIL_TRANSPORT 'log': status logged, no fetch, late, MONEY_DAILY_EMAIL_FAILED status=logged", async () => {
+    setAddress(RECIPIENT);
+    const calls = resend('ok');
+    const w = world({ mail: 'log' });
+    w.owner.present = false;
+    await expect(w.tick('2026-11-07T11:00:00Z')).resolves.toMatchObject({ ran: true, alerted: false, counted: false });
+    expect(calls).toEqual([]);
+    expect(w.mail!.emailSendLog.rows).toEqual([expect.objectContaining({ status: 'logged' })]);
+    expect(emailLines()).toEqual([expect.stringMatching(/^MONEY_DAILY_EMAIL_FAILED status=logged error=none\b/)]);
+    await expect(w.read('2026-11-07T11:05:00Z')).resolves.toEqual({ status: 'late', lastDay: null });
+  });
+
+  it.each([true, false])(
+    'case 5a: OWNER_ALERT_EMAIL unset (owner account present: %s): every outcome is as a run with no EmailService; no fetch, no EmailSendLog row',
+    async (present) => {
+      setAddress(undefined);
+      const calls = resend('ok');
+      const before = world();
+      const mailed = world({ mail: 'resend' });
+      before.owner.present = present;
+      mailed.owner.present = present;
+      // The run's clock seam on the fake clock, so both records carry the same finish time.
+      const a = await before.timedTick('2026-11-07T11:00:00Z', 0);
+      const b = await mailed.timedTick('2026-11-07T11:00:00Z', 0);
+      expect(b).toEqual(a);
+      expect(a).toMatchObject({ ran: true, alerted: present, counted: present });
+      expect(mailed.inbox.rows).toEqual(before.inbox.rows);
+      expect(mailed.outbox.rows).toEqual(before.outbox.rows);
+      // The lease row as the status reads it (the fake table's own id counter and wall-clock stamps differ per world).
+      const leaseView = (rows: Row[]) =>
+        rows.map(({ name, holder, acquired_at, lease_until, cursor }) => ({ name, holder, acquired_at, lease_until, cursor }));
+      expect(leaseView(mailed.leaseRows)).toEqual(leaseView(before.leaseRows));
+      expect(mailed.leaseRows).toHaveLength(1);
+      await expect(mailed.read('2026-11-07T11:05:00Z')).resolves.toEqual(await before.read('2026-11-07T11:05:00Z'));
+      expect(calls).toEqual([]);
+      expect(mailed.mail!.emailSendLog.rows).toEqual([]);
+    },
+  );
+
+  it('case 5b: OWNER_ALERT_EMAIL unset: MONEY_DAILY_NO_EMAIL reason=unset, once', async () => {
+    setAddress(undefined);
+    resend('ok');
+    const w = world({ mail: 'resend' });
+    await w.tick('2026-11-07T11:00:00Z');
+    expect(emailLines()).toEqual([expect.stringMatching(/^MONEY_DAILY_NO_EMAIL reason=unset\b/)]);
+  });
+
+  it.each([
+    ['empty', ''],
+    ['spaces only', '   '],
+    ['two addresses with a comma', 'owner.alerts@example.com, second.inbox@example.com'],
+    ['a CR inside', 'owner.alerts@example.com\rBcc: second.inbox@example.com'],
+    ['an LF inside', 'owner.alerts@example.com\nBcc: second.inbox@example.com'],
+    ['no @', 'owner.alerts.example.com'],
+  ])(
+    'case 6: OWNER_ALERT_EMAIL %s is not one address: no send, MONEY_DAILY_NO_EMAIL reason=invalid, and no line holds the value',
+    async (_name, value) => {
+      setAddress(value);
+      const calls = resend('ok');
+      const w = world({ mail: 'resend' });
+      w.owner.present = false;
+      await expect(w.tick('2026-11-07T11:00:00Z')).resolves.toMatchObject({ ran: true, alerted: false, counted: false });
+      expect(calls).toEqual([]);
+      expect(w.mail!.emailSendLog.rows).toEqual([]);
+      expect(emailLines()).toEqual([expect.stringMatching(/^MONEY_DAILY_NO_EMAIL reason=invalid\b/)]);
+      expectNoAddressLogged('owner.alerts', 'second.inbox', 'Bcc');
+    },
+  );
+
+  it('case 6: a display-name form on example.com is one address and sends', async () => {
+    const named = 'Owner Alerts <owner.alerts@example.com>';
+    setAddress(named);
+    const calls = resend('ok');
+    const w = world({ mail: 'resend' });
+    w.owner.present = false;
+    await expect(w.tick('2026-11-07T11:00:00Z')).resolves.toMatchObject({ ran: true, alerted: true, counted: true });
+    expect(calls.map((c) => c.body.to)).toEqual([named]);
+    expect(emailLines()).toEqual([]);
+    expectNoAddressLogged('owner.alerts', 'Owner Alerts');
+  });
+
+  it.each([['error'], ['time_limit'], ['no_progress'], ['unread']] as const)(
+    'case 7: a run that %s, with the email sent: late, no record; the email still says "needs review"',
+    async (mode) => {
+      setAddress(RECIPIENT);
+      const calls = resend('ok');
+      const w = world({ mail: 'resend' });
+      w.owner.present = false;
+      w.sweep.mode = mode;
+      const r = await w.tick('2026-11-07T11:00:00Z');
+      expect(r).toMatchObject({ ran: true, verdict: 'needs_review', alerted: true, counted: false });
+      expect(dailyLines()).toContainEqual(
+        expect.stringMatching(mode === 'unread' ? /^MONEY_DAILY_NOT_COUNTED .*reason=nothing_read/ : /^MONEY_DAILY_NOT_COUNTED .*reason=stopped/),
+      );
+      expect(w.leaseRows[0].cursor ?? null).toBeNull();
+      await expect(w.read('2026-11-07T11:05:00Z')).resolves.toEqual({ status: 'late', lastDay: null });
+      const { title, body } = dailyAlertCopy(tallyOf(r));
+      expect(title).toBe('Money check: needs review');
+      expect(calls).toHaveLength(1);
+      expect(calls[0].body.subject).toBe(title);
+      expect(String(calls[0].body.html)).toContain(esc(body));
+      expect(w.mail!.emailSendLog.rows).toEqual([expect.objectContaining({ status: 'sent' })]);
+    },
+  );
+
+  it('case 8: owner present, inbox written, push queued, email sent: on time; one row, one push, one email; the row and the push as a run with no email', async () => {
+    setAddress(RECIPIENT);
+    const calls = resend('ok');
+    const before = world();
+    const w = world({ mail: 'resend' });
+    await before.tick('2026-11-07T11:00:00Z');
+    await expect(w.tick('2026-11-07T11:00:00Z')).resolves.toMatchObject({ ran: true, alerted: true, counted: true });
+    expect([w.inbox.rows.length, w.outbox.rows.length, calls.length, w.mail!.emailSendLog.rows.length]).toEqual([1, 1, 1, 1]);
+    expect(w.inbox.rows).toEqual(before.inbox.rows);
+    expect(w.outbox.rows).toEqual(before.outbox.rows);
+    await expect(w.read('2026-11-07T11:05:00Z')).resolves.toEqual({ status: 'on_time', lastDay: '2026-11-07' });
+  });
+
+  it("case 9: once a day: two machines at one tick send one email; a second run the same UTC day sends none; the next day uses the next day's key", async () => {
+    setAddress(RECIPIENT);
+    const calls = resend('ok');
+    const w = world({ mail: 'resend' });
+    w.owner.present = false;
+    const other = w.machine();
+    w.clock.at = at('2026-11-07T11:00:00Z');
+    const results = await Promise.all([
+      w.cron.runOnce(at('2026-11-07T11:00:00Z'), 'machine-a', async () => undefined),
+      other.runOnce(at('2026-11-07T11:00:00Z'), 'machine-b', async () => undefined),
+    ]);
+    expect(results.map((r) => (r.ran ? 'ran' : r.reason)).sort()).toEqual(['lock_held', 'ran']);
+    await expect(w.tick('2026-11-07T15:00:00Z', other, 'machine-b')).resolves.toEqual({ ran: false, reason: 'lock_held' });
+    expect(calls).toHaveLength(1);
+    expect(w.mail!.emailSendLog.rows.map((r) => r.idempotency_key)).toEqual([`${EMAIL_KEY}2026-11-07`]);
+    await expect(w.tick('2026-11-08T11:00:00Z')).resolves.toMatchObject({ ran: true, alerted: true, counted: true });
+    expect(calls).toHaveLength(2);
+    expect(w.mail!.emailSendLog.rows.map((r) => r.idempotency_key)).toEqual([
+      `${EMAIL_KEY}2026-11-07`,
+      `${EMAIL_KEY}2026-11-08`,
+    ]);
+    expect(calls[1].headers['Idempotency-Key']).toMatch(/^money-check-daily:2026-11-08:/);
+  });
+
+  it("case 10: the day's key was already used: send answers skipped, no fetch, not counted by the email (late with no owner)", async () => {
+    setAddress(RECIPIENT);
+    const calls = resend('ok');
+    const w = world({ mail: 'resend' });
+    w.owner.present = false;
+    w.mail!.emailSendLog.rows.push({
+      id: 'email-earlier',
+      idempotency_key: `${EMAIL_KEY}2026-11-07`,
+      template_key: 'money-check-daily',
+      recipient_email: RECIPIENT,
+      status: 'sending',
+    });
+    await expect(w.tick('2026-11-07T11:00:00Z')).resolves.toMatchObject({ ran: true, alerted: false, counted: false });
+    expect(calls).toEqual([]);
+    expect(w.mail!.emailSendLog.rows).toHaveLength(1);
+    expect(emailLines()).toEqual([expect.stringMatching(/^MONEY_DAILY_EMAIL_FAILED status=skipped error=none\b/)]);
+    await expect(w.read('2026-11-07T11:05:00Z')).resolves.toEqual({ status: 'late', lastDay: null });
+  });
+
+  it("case 11: the email holds counts only: the subject is the title, the html the body, the day and the two closing lines; EmailService's sender; no reply-to", async () => {
+    setAddress(RECIPIENT);
+    const calls = resend('ok');
+    const w = world({ mail: 'resend' });
+    const r = await w.tick('2026-11-07T11:00:00Z');
+    const { title, body } = dailyAlertCopy(tallyOf(r));
+    expect(calls).toHaveLength(1);
+    const sent = calls[0].body;
+    expect(Object.keys(sent).sort()).toEqual(['from', 'html', 'subject', 'to']);
+    expect(sent.subject).toBe(title);
+    expect(sent.from).toBe(SENDER);
+    const html = String(sent.html);
+    expect(html).toContain(`>${esc(title)}</h1>`);
+    expect(html).toContain(esc(body));
+    expect(html).toContain('Day checked: 2026-11-07 (UTC).');
+    expect(html).toContain(ME7);
+    // No purchase id, no account id, no amount, no address.
+    expect(html).not.toMatch(/pu-\d|owner-1|\$\d|@/);
+  });
+
+  it('case 12: Nest injects EmailService as the fifth, optional parameter', async () => {
+    expect(Reflect.getMetadata('design:paramtypes', ReconciliationDailyCron)[4]).toBe(EmailService);
+    expect(Reflect.getMetadata(OPTIONAL_DEPS_METADATA, ReconciliationDailyCron)).toEqual([4]);
+    const email = { send: jest.fn() };
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        ReconciliationDailyCron,
+        { provide: CronLeaseService, useValue: {} },
+        { provide: ReconciliationService, useValue: {} },
+        { provide: NotificationsService, useValue: {} },
+        { provide: PrismaService, useValue: {} },
+        { provide: EmailService, useValue: email },
+      ],
+    }).compile();
+    expect((moduleRef.get(ReconciliationDailyCron) as any).email).toBe(email);
+    await moduleRef.close();
+  });
+
+  it('case 13: OWNER_ALERT_EMAIL is registered (ENV_RULES feature row with a default; prod-switches.yml row) and the env scanner sees the read', async () => {
+    const rule = ENV_RULES.find((r) => r.name === 'OWNER_ALERT_EMAIL');
+    expect(rule).toMatchObject({ tier: 'feature' });
+    expect(rule?.default?.trim()).toBeTruthy();
+    expect(rule?.reason).toMatch(/MONEY-EMAIL-BE/);
+    expect([rule?.values, rule?.unsetIs, rule?.launch, rule?.validate]).toEqual([undefined, undefined, undefined, undefined]);
+    const registry = await loadRegistry(join(__dirname, '..', 'prod-switches.yml'));
+    expect(registry.switches.find((s) => s.name === 'OWNER_ALERT_EMAIL')).toMatchObject({
+      tier: 'feature',
+      prod_default: 'ON',
+      auto_flip_on_in_prod: false,
+      owner: 'email',
+    });
+    const rel = 'src/checkout/reconciliation-daily.cron.ts';
+    const reads = scanEnvReadsInSource(readFileSync(join(__dirname, '..', rel), 'utf8'), rel).names;
+    expect([...reads]).toContain('OWNER_ALERT_EMAIL');
+  });
+
+  it('Q1: the admin run-sweeper sends no email, with OWNER_ALERT_EMAIL set', async () => {
+    setAddress(RECIPIENT);
+    const calls = resend('ok');
+    const w = world({ mail: 'resend' });
+    const ctl = Object.create(AdminPaymentOpsController.prototype) as AdminPaymentOpsController;
+    (ctl as any).reconciliation = w.sweep;
+    await expect(ctl.runReconciliationSweeper('50')).resolves.toEqual({ scanned: 2, drifted: 0, unknown: 0 });
+    expect(calls).toEqual([]);
+    expect(w.mail!.emailSendLog.rows).toEqual([]);
+  });
+
+  /** What a class-table row does to the world before the tick (applied in order). */
+  type ClassSetup =
+    | 'noOwner'
+    | 'inappOff'
+    | 'noPhone'
+    | 'usedKey'
+    | 'recordWriteFails'
+    | 'anotherHolder'
+    | 'nothingToCheck'
+    | 'stoppedError'
+    | 'nothingRead'
+    | 'inboxThrows';
+  type ResendAnswer = 'ok' | 'reject' | 'throw' | 'no-id';
+  interface Answer {
+    status: string;
+    lastDay: string | null;
+  }
+  type ClassRow = [
+    row: string,
+    setups: ClassSetup[],
+    transport: MailTransport,
+    address: string | undefined,
+    answer: ResendAnswer,
+    alerted: boolean,
+    counted: boolean,
+    answerAt: Answer,
+  ];
+  const ON: Answer = { status: 'on_time', lastDay: '2026-11-07' };
+  const LATE: Answer = { status: 'late', lastDay: null };
+  const CLASS_TABLE: ClassRow[] = [
+    ['reached the end, no owner, email sent (moved)', ['noOwner'], 'resend', RECIPIENT, 'ok', true, true, ON],
+    ['no owner, Resend refuses', ['noOwner'], 'resend', RECIPIENT, 'reject', false, false, LATE],
+    ['no owner, Resend answers 2xx with no id', ['noOwner'], 'resend', RECIPIENT, 'no-id', false, false, LATE],
+    ['no owner, the call throws', ['noOwner'], 'resend', RECIPIENT, 'throw', false, false, LATE],
+    ['no owner, the log transport (logged)', ['noOwner'], 'log', RECIPIENT, 'ok', false, false, LATE],
+    ['no owner, the key already used (skipped)', ['noOwner', 'usedKey'], 'resend', RECIPIENT, 'ok', false, false, LATE],
+    ['no owner, OWNER_ALERT_EMAIL unset', ['noOwner'], 'resend', undefined, 'ok', false, false, LATE],
+    ['no owner, OWNER_ALERT_EMAIL two addresses', ['noOwner'], 'resend', 'a.one@example.com, b.two@example.com', 'ok', false, false, LATE],
+    ['inbox written, email refused', [], 'resend', RECIPIENT, 'reject', true, true, ON],
+    ['inbox written, OWNER_ALERT_EMAIL unset', [], 'resend', undefined, 'ok', true, true, ON],
+    ['in-app off, push queued, email refused (b#1268 arm, unchanged)', ['inappOff'], 'resend', RECIPIENT, 'reject', true, true, ON],
+    ['in-app off, push not queued, email sent (moved)', ['inappOff', 'noPhone'], 'resend', RECIPIENT, 'ok', true, true, ON],
+    ['in-app off, push not queued, email refused', ['inappOff', 'noPhone'], 'resend', RECIPIENT, 'reject', false, false, LATE],
+    ['the inbox write throws, email sent (moved)', ['inboxThrows'], 'resend', RECIPIENT, 'ok', true, true, ON],
+    ['the inbox write throws, email refused', ['inboxThrows'], 'resend', RECIPIENT, 'reject', false, false, LATE],
+    ['email sent, but the record write fails', ['noOwner', 'recordWriteFails'], 'resend', RECIPIENT, 'ok', true, false, LATE],
+    ['email sent, but another holder has the row', ['noOwner', 'anotherHolder'], 'resend', RECIPIENT, 'ok', true, false, LATE],
+    ['nothing to check (checked 0), no owner, email sent (moved)', ['noOwner', 'nothingToCheck'], 'resend', RECIPIENT, 'ok', true, true, ON],
+    ['stopped (error), no owner, email sent: rule (a)', ['noOwner', 'stoppedError'], 'resend', RECIPIENT, 'ok', true, false, LATE],
+    ['nothing read, no owner, email sent: rule (b)', ['noOwner', 'nothingRead'], 'resend', RECIPIENT, 'ok', true, false, LATE],
+  ];
+  it.each(CLASS_TABLE)(
+    'the class table: %s',
+    async (_row, setups, transport, address, answer, alerted, counted, answerAt) => {
+      setAddress(address);
+      resend(answer);
+      const w = world({ mail: transport });
+      for (const setup of setups) {
+        switch (setup) {
+          case 'noOwner':
+            w.owner.present = false;
+            break;
+          case 'inappOff':
+            w.outbox.prefs[OWNER] = { coach_alert_inapp: false };
+            break;
+          case 'noPhone':
+            w.outbox.tokens[OWNER] = null;
+            break;
+          case 'usedKey':
+            w.mail!.emailSendLog.rows.push({
+              id: 'email-earlier',
+              idempotency_key: `${EMAIL_KEY}2026-11-07`,
+              template_key: 'money-check-daily',
+              recipient_email: RECIPIENT,
+              status: 'sent',
+            });
+            break;
+          case 'recordWriteFails': {
+            const real = w.db.cronLease.updateMany.getMockImplementation()!;
+            w.db.cronLease.updateMany.mockImplementation(async (args: any) => {
+              if (args?.data && 'cursor' in args.data) throw new Error('write failed');
+              return real(args);
+            });
+            break;
+          }
+          case 'anotherHolder': {
+            const real = w.sweep.runSweep.getMockImplementation()!;
+            w.sweep.runSweep.mockImplementationOnce(async () => {
+              w.leaseRows[0].holder = 'machine-z';
+              return real();
+            });
+            break;
+          }
+          case 'nothingToCheck':
+            w.sweep.runSweep.mockImplementationOnce(async () => ({
+              scanned: 0,
+              drifted: 0,
+              unknown: 0,
+              failed: 0,
+              outcomes: [],
+              timedOut: false,
+            }));
+            break;
+          case 'stoppedError':
+            w.sweep.mode = 'error';
+            break;
+          case 'nothingRead':
+            w.sweep.mode = 'unread';
+            break;
+          case 'inboxThrows':
+            w.inbox.create.mockRejectedValueOnce(new Error('inbox write failed'));
+            break;
+        }
+      }
+      await expect(w.tick('2026-11-07T11:00:00Z')).resolves.toMatchObject({ ran: true, alerted, counted });
+      await expect(w.read('2026-11-07T11:05:00Z')).resolves.toEqual(answerAt);
+    },
+  );
 });

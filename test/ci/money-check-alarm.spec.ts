@@ -177,8 +177,21 @@ describe('money check alarm script', () => {
     expect(body).toMatch(/- Checked: \S+Z, twice, 60 seconds apart/);
     expect(body).toContain(`- Status: ${STATUS_URL}`);
     expect(body).toContain(`- Run: ${RUN_URL}`);
+    // MONEY-EMAIL-BE (ME-1, ME-2, ME-3): an accepted email also counts the day, and the issue says so.
     expect(body).toContain(
-      'This alarm counts a day only when the run reached every purchase and could read at least one of them, and its result was saved to your inbox in the app (or, if your in-app alerts are off, queued as a push).',
+      'This alarm counts a day only when the run reached every purchase and could confirm at least one of them, a match or a mismatch (or there were none to check), and its result reached you: the email provider accepted the email, or it was saved to your inbox in the app (or, if your in-app alerts are off, queued as a push).',
+    );
+    expect(body).toContain(
+      'When a run finishes, it emails the result to the address in the server setting OWNER_ALERT_EMAIL, writes it to your inbox in the app if an account has the owner role, and queues one push to your phone if a phone is signed in to that account.',
+    );
+    expect(body).toContain(
+      'An accepted email does not prove that it reached your mailbox or that you read it.',
+    );
+    expect(body).toContain(
+      'This opens when the run did not start, stopped before it reached every purchase, or could confirm none of them (for example the server was down or restarting at 11:00 UTC, the check could not read its lock, or it hit its time limit), or when its result reached you by no route: the email was not accepted (OWNER_ALERT_EMAIL is not set or is not one address, or the email provider refused it) and nothing was saved to your inbox (no account has the owner role, the inbox write failed, or your in-app alerts are off and no push could be queued).',
+    );
+    expect(body).toContain(
+      'A day with no phone signed in, or with no account that has the owner role, still counts when the email was accepted or the result reached your inbox; MONEY_DAILY_NO_EMAIL and MONEY_DAILY_EMAIL_FAILED say why no email was accepted.',
     );
     expect(body).toContain(
       'A queued push does not prove that it reached your phone or that you read it.',
