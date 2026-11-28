@@ -123,6 +123,23 @@ describe('EmailService', () => {
       }
     });
 
+    // MONEY-EMAIL-BE: the daily money check's email renders with the generic data too.
+    it('renders money-check-daily: subject "Money check" without a subject, the title with one', () => {
+      const svc = new EmailService(mockPrisma(), mockConfig({}));
+      const generic = svc.render('money-check-daily' as EmailTemplateKey, {});
+      expect(generic.subject).toBe('Money check');
+      expect(generic.html.length).toBeGreaterThan(50);
+      const out = svc.render('money-check-daily' as EmailTemplateKey, {
+        subject: 'Money check: clean',
+        title: 'Money check: clean',
+        body: 'Checked 2 purchases against Stripe. Every one matches.',
+        day: '2026-11-07',
+      });
+      expect(out.subject).toBe('Money check: clean');
+      expect(out.html).toContain('Checked 2 purchases against Stripe. Every one matches.');
+      expect(out.html).toContain('Day checked: 2026-11-07 (UTC).');
+    });
+
     it('interpolates coach_name into the coach-invites-client subject', () => {
       const svc = new EmailService(mockPrisma(), mockConfig({}));
       const out = svc.render(EmailTemplateKey.COACH_INVITES_CLIENT, {
