@@ -122,12 +122,17 @@ describe('WEAR-AI: wearable insight allow-list value, box-2 grant first', () => 
     process.env = ORIGINAL_ENV;
   });
 
-  it('ENV_RULES holds exactly the two values, and only the second names the insight capabilities', () => {
+  it('ENV_RULES holds exactly the four values, and only the second and fourth name the insight capabilities', () => {
     expect(VALUES).toEqual([
       'draft.create_workout_plan,draft.edit_workout_plan',
       'draft.create_workout_plan,draft.edit_workout_plan,wearable_insight.client,wearable_insight.coach',
+      'draft.create_workout_plan,draft.edit_workout_plan,draft.coach_message',
+      'draft.create_workout_plan,draft.edit_workout_plan,wearable_insight.client,wearable_insight.coach,draft.coach_message',
     ]);
+    expect(VALUES.filter((v) => v.includes('wearable_insight'))).toEqual([VALUES[1], VALUES[3]]);
     expect(WORKOUT_ONLY).not.toContain('wearable_insight');
+    // COACH-DRAFT-CAP-BE: the first value with the insight capabilities is still the second.
+    expect(WITH_INSIGHTS).toBe(VALUES[1]);
   });
 
   it('two-capability value (today): granted client still gets the empty insight; the provider is never called', async () => {

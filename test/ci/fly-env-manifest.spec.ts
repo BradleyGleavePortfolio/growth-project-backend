@@ -39,6 +39,9 @@ const baseline = (): FlyEnvManifest => {
 };
 const WEAR_AI_CAPS =
   'draft.create_workout_plan,draft.edit_workout_plan,wearable_insight.client,wearable_insight.coach';
+/** COACH-DRAFT-CAP-BE: the third and fourth values add Roman's coach message drafts. */
+const COACH_DRAFT_CAPS = 'draft.create_workout_plan,draft.edit_workout_plan,draft.coach_message';
+const ALL_AI_CAPS = `${WEAR_AI_CAPS},draft.coach_message`;
 const VALUE = 'leakcanary-value-7d6c5b4a39213f2e';
 const SB_SECRET = 'sb_secret_leakcanary-Ab12_Cd34';
 const SB_PUBLISHABLE = 'sb_publishable_leakcanary-Ef56_Gh78';
@@ -572,8 +575,12 @@ describe('validation errors are specific and carry a Fix', () => {
       '*',
       'wearable_insight.client,wearable_insight.coach',
       `${WEAR_AI_CAPS},community_ai_triage`,
+      'draft.coach_message',
+      'draft.coach_message,draft.create_workout_plan,draft.edit_workout_plan',
+      `${ALL_AI_CAPS},community_ai_triage`,
+      `${COACH_DRAFT_CAPS},`,
     ].map((v): [string, (m: FlyEnvManifest) => FlyEnvManifest, RegExp] => [
-      `the AI allow-list outside its two values: ${v}`,
+      `the AI allow-list outside its four values: ${v}`,
       (m) => edit(m, { flags: { AI_GATEWAY_CAPABILITIES: v } }),
       /flags\.AI_GATEWAY_CAPABILITIES is ".*Fix: /,
     ]),
@@ -734,6 +741,32 @@ describe('validation errors are specific and carry a Fix', () => {
     [
       'the wearable insight allow-list without the consent ledger',
       { AI_GATEWAY_CAPABILITIES: WEAR_AI_CAPS },
+      {},
+      'wearable-insight-needs-consent-ledger',
+    ],
+    // COACH-DRAFT-CAP-BE: coach drafts need no precondition (R4: with the ledger off every draft is refused 403, never sent).
+    [
+      'the coach draft allow-list with the consent ledger on, workout builder live',
+      {
+        FEATURE_AI_CONSENT_LEDGER_ENABLED: 'true',
+        FEATURE_MWB_AI_LIVE_CREATE: 'true',
+        AI_GATEWAY_ENABLED: 'true',
+        AI_GATEWAY_PROVIDER: 'anthropic',
+        AI_GATEWAY_CAPABILITIES: COACH_DRAFT_CAPS,
+      },
+      {},
+      null,
+    ],
+    ['the coach draft allow-list without the consent ledger', { AI_GATEWAY_CAPABILITIES: COACH_DRAFT_CAPS }, {}, null],
+    [
+      'the full allow-list with the consent ledger on',
+      { FEATURE_AI_CONSENT_LEDGER_ENABLED: 'true', AI_GATEWAY_CAPABILITIES: ALL_AI_CAPS },
+      {},
+      null,
+    ],
+    [
+      'the full allow-list without the consent ledger',
+      { AI_GATEWAY_CAPABILITIES: ALL_AI_CAPS },
       {},
       'wearable-insight-needs-consent-ledger',
     ],
