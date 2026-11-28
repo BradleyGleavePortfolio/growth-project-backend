@@ -1401,93 +1401,120 @@ describe('MONEY-EMAIL-BE: the daily result is emailed to OWNER_ALERT_EMAIL, and 
     expect(w.mail!.emailSendLog.rows).toEqual([]);
   });
 
-  type Setup = (w: ReturnType<typeof world>) => void;
-  const noOwner: Setup = (w) => {
-    w.owner.present = false;
-  };
-  const inappOff: Setup = (w) => {
-    w.outbox.prefs[OWNER] = { coach_alert_inapp: false };
-  };
-  const noPhone: Setup = (w) => {
-    w.outbox.tokens[OWNER] = null;
-  };
-  const both =
-    (...s: Setup[]): Setup =>
-    (w) => {
-      for (const f of s) f(w);
-    };
-  const usedKey: Setup = (w) => {
-    w.mail!.emailSendLog.rows.push({
-      id: 'email-earlier',
-      idempotency_key: `${EMAIL_KEY}2026-11-07`,
-      template_key: 'money-check-daily',
-      recipient_email: RECIPIENT,
-      status: 'sent',
-    });
-  };
-  const recordWriteFails: Setup = (w) => {
-    const real = w.db.cronLease.updateMany.getMockImplementation()!;
-    w.db.cronLease.updateMany.mockImplementation(async (args: any) => {
-      if (args?.data && 'cursor' in args.data) throw new Error('write failed');
-      return real(args);
-    });
-  };
-  const anotherHolder: Setup = (w) => {
-    const real = w.sweep.runSweep.getMockImplementation()!;
-    w.sweep.runSweep.mockImplementationOnce(async () => {
-      w.leaseRows[0].holder = 'machine-z';
-      return real();
-    });
-  };
-  const nothingToCheck: Setup = (w) => {
-    w.sweep.runSweep.mockImplementationOnce(async () => ({
-      scanned: 0,
-      drifted: 0,
-      unknown: 0,
-      failed: 0,
-      outcomes: [],
-      timedOut: false,
-    }));
-  };
-  const mode =
-    (m: SweepMode): Setup =>
-    (w) => {
-      w.sweep.mode = m;
-    };
-  const inboxThrows: Setup = (w) => {
-    w.inbox.create.mockRejectedValueOnce(new Error('inbox write failed'));
-  };
-  const ON = { status: 'on_time', lastDay: '2026-11-07' };
-  const LATE = { status: 'late', lastDay: null };
-  it.each([
-    // [row, setup, transport, address, Resend's answer, alerted, counted, the answer at 11:05]
-    ['reached the end, no owner, email sent (moved)', noOwner, 'resend', RECIPIENT, 'ok', true, true, ON],
-    ['no owner, Resend refuses', noOwner, 'resend', RECIPIENT, 'reject', false, false, LATE],
-    ['no owner, Resend answers 2xx with no id', noOwner, 'resend', RECIPIENT, 'no-id', false, false, LATE],
-    ['no owner, the call throws', noOwner, 'resend', RECIPIENT, 'throw', false, false, LATE],
-    ['no owner, the log transport (logged)', noOwner, 'log', RECIPIENT, 'ok', false, false, LATE],
-    ['no owner, the key already used (skipped)', both(noOwner, usedKey), 'resend', RECIPIENT, 'ok', false, false, LATE],
-    ['no owner, OWNER_ALERT_EMAIL unset', noOwner, 'resend', undefined, 'ok', false, false, LATE],
-    ['no owner, OWNER_ALERT_EMAIL two addresses', noOwner, 'resend', 'a.one@example.com, b.two@example.com', 'ok', false, false, LATE],
-    ['inbox written, email refused', (_w: ReturnType<typeof world>) => undefined, 'resend', RECIPIENT, 'reject', true, true, ON],
-    ['inbox written, OWNER_ALERT_EMAIL unset', (_w: ReturnType<typeof world>) => undefined, 'resend', undefined, 'ok', true, true, ON],
-    ['in-app off, push queued, email refused (b#1268 arm, unchanged)', inappOff, 'resend', RECIPIENT, 'reject', true, true, ON],
-    ['in-app off, push not queued, email sent (moved)', both(inappOff, noPhone), 'resend', RECIPIENT, 'ok', true, true, ON],
-    ['in-app off, push not queued, email refused', both(inappOff, noPhone), 'resend', RECIPIENT, 'reject', false, false, LATE],
-    ['the inbox write throws, email sent (moved)', inboxThrows, 'resend', RECIPIENT, 'ok', true, true, ON],
-    ['the inbox write throws, email refused', inboxThrows, 'resend', RECIPIENT, 'reject', false, false, LATE],
-    ['email sent, but the record write fails', both(noOwner, recordWriteFails), 'resend', RECIPIENT, 'ok', true, false, LATE],
-    ['email sent, but another holder has the row', both(noOwner, anotherHolder), 'resend', RECIPIENT, 'ok', true, false, LATE],
-    ['nothing to check (checked 0), no owner, email sent (moved)', both(noOwner, nothingToCheck), 'resend', RECIPIENT, 'ok', true, true, ON],
-    ['stopped (error), no owner, email sent: rule (a)', both(noOwner, mode('error')), 'resend', RECIPIENT, 'ok', true, false, LATE],
-    ['nothing read, no owner, email sent: rule (b)', both(noOwner, mode('unread')), 'resend', RECIPIENT, 'ok', true, false, LATE],
-  ] as const)(
+  /** What a class-table row does to the world before the tick (applied in order). */
+  type ClassSetup =
+    | 'noOwner'
+    | 'inappOff'
+    | 'noPhone'
+    | 'usedKey'
+    | 'recordWriteFails'
+    | 'anotherHolder'
+    | 'nothingToCheck'
+    | 'stoppedError'
+    | 'nothingRead'
+    | 'inboxThrows';
+  type ResendAnswer = 'ok' | 'reject' | 'throw' | 'no-id';
+  interface Answer {
+    status: string;
+    lastDay: string | null;
+  }
+  type ClassRow = [
+    row: string,
+    setups: ClassSetup[],
+    transport: MailTransport,
+    address: string | undefined,
+    answer: ResendAnswer,
+    alerted: boolean,
+    counted: boolean,
+    answerAt: Answer,
+  ];
+  const ON: Answer = { status: 'on_time', lastDay: '2026-11-07' };
+  const LATE: Answer = { status: 'late', lastDay: null };
+  const CLASS_TABLE: ClassRow[] = [
+    ['reached the end, no owner, email sent (moved)', ['noOwner'], 'resend', RECIPIENT, 'ok', true, true, ON],
+    ['no owner, Resend refuses', ['noOwner'], 'resend', RECIPIENT, 'reject', false, false, LATE],
+    ['no owner, Resend answers 2xx with no id', ['noOwner'], 'resend', RECIPIENT, 'no-id', false, false, LATE],
+    ['no owner, the call throws', ['noOwner'], 'resend', RECIPIENT, 'throw', false, false, LATE],
+    ['no owner, the log transport (logged)', ['noOwner'], 'log', RECIPIENT, 'ok', false, false, LATE],
+    ['no owner, the key already used (skipped)', ['noOwner', 'usedKey'], 'resend', RECIPIENT, 'ok', false, false, LATE],
+    ['no owner, OWNER_ALERT_EMAIL unset', ['noOwner'], 'resend', undefined, 'ok', false, false, LATE],
+    ['no owner, OWNER_ALERT_EMAIL two addresses', ['noOwner'], 'resend', 'a.one@example.com, b.two@example.com', 'ok', false, false, LATE],
+    ['inbox written, email refused', [], 'resend', RECIPIENT, 'reject', true, true, ON],
+    ['inbox written, OWNER_ALERT_EMAIL unset', [], 'resend', undefined, 'ok', true, true, ON],
+    ['in-app off, push queued, email refused (b#1268 arm, unchanged)', ['inappOff'], 'resend', RECIPIENT, 'reject', true, true, ON],
+    ['in-app off, push not queued, email sent (moved)', ['inappOff', 'noPhone'], 'resend', RECIPIENT, 'ok', true, true, ON],
+    ['in-app off, push not queued, email refused', ['inappOff', 'noPhone'], 'resend', RECIPIENT, 'reject', false, false, LATE],
+    ['the inbox write throws, email sent (moved)', ['inboxThrows'], 'resend', RECIPIENT, 'ok', true, true, ON],
+    ['the inbox write throws, email refused', ['inboxThrows'], 'resend', RECIPIENT, 'reject', false, false, LATE],
+    ['email sent, but the record write fails', ['noOwner', 'recordWriteFails'], 'resend', RECIPIENT, 'ok', true, false, LATE],
+    ['email sent, but another holder has the row', ['noOwner', 'anotherHolder'], 'resend', RECIPIENT, 'ok', true, false, LATE],
+    ['nothing to check (checked 0), no owner, email sent (moved)', ['noOwner', 'nothingToCheck'], 'resend', RECIPIENT, 'ok', true, true, ON],
+    ['stopped (error), no owner, email sent: rule (a)', ['noOwner', 'stoppedError'], 'resend', RECIPIENT, 'ok', true, false, LATE],
+    ['nothing read, no owner, email sent: rule (b)', ['noOwner', 'nothingRead'], 'resend', RECIPIENT, 'ok', true, false, LATE],
+  ];
+  it.each(CLASS_TABLE)(
     'the class table: %s',
-    async (_row, setup, transport, address, answer, alerted, counted, answerAt) => {
+    async (_row, setups, transport, address, answer, alerted, counted, answerAt) => {
       setAddress(address);
       resend(answer);
       const w = world({ mail: transport });
-      setup(w);
+      for (const setup of setups) {
+        switch (setup) {
+          case 'noOwner':
+            w.owner.present = false;
+            break;
+          case 'inappOff':
+            w.outbox.prefs[OWNER] = { coach_alert_inapp: false };
+            break;
+          case 'noPhone':
+            w.outbox.tokens[OWNER] = null;
+            break;
+          case 'usedKey':
+            w.mail!.emailSendLog.rows.push({
+              id: 'email-earlier',
+              idempotency_key: `${EMAIL_KEY}2026-11-07`,
+              template_key: 'money-check-daily',
+              recipient_email: RECIPIENT,
+              status: 'sent',
+            });
+            break;
+          case 'recordWriteFails': {
+            const real = w.db.cronLease.updateMany.getMockImplementation()!;
+            w.db.cronLease.updateMany.mockImplementation(async (args: any) => {
+              if (args?.data && 'cursor' in args.data) throw new Error('write failed');
+              return real(args);
+            });
+            break;
+          }
+          case 'anotherHolder': {
+            const real = w.sweep.runSweep.getMockImplementation()!;
+            w.sweep.runSweep.mockImplementationOnce(async () => {
+              w.leaseRows[0].holder = 'machine-z';
+              return real();
+            });
+            break;
+          }
+          case 'nothingToCheck':
+            w.sweep.runSweep.mockImplementationOnce(async () => ({
+              scanned: 0,
+              drifted: 0,
+              unknown: 0,
+              failed: 0,
+              outcomes: [],
+              timedOut: false,
+            }));
+            break;
+          case 'stoppedError':
+            w.sweep.mode = 'error';
+            break;
+          case 'nothingRead':
+            w.sweep.mode = 'unread';
+            break;
+          case 'inboxThrows':
+            w.inbox.create.mockRejectedValueOnce(new Error('inbox write failed'));
+            break;
+        }
+      }
       await expect(w.tick('2026-11-07T11:00:00Z')).resolves.toMatchObject({ ran: true, alerted, counted });
       await expect(w.read('2026-11-07T11:05:00Z')).resolves.toEqual(answerAt);
     },
