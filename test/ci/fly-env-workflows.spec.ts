@@ -51,12 +51,12 @@ const EXPECTED_ALLOWLIST = [
 ];
 const REGISTERED = new Set(ENV_RULES.map((r) => r.name));
 
-function loadWorkflow(file: string): { wf: Workflow; text: string; job: Job } {
+// Two jobs since ALM-D11 op 1: the production-secrets guard first, then the bound job, by id.
+function loadWorkflow(file: string, id: string): { wf: Workflow; text: string; job: Job } {
   const text = read(file);
   const wf = parseYaml(text) as Workflow;
-  const jobs = Object.values(wf.jobs);
-  expect(jobs).toHaveLength(1);
-  return { wf, text, job: jobs[0] };
+  expect(Object.keys(wf.jobs)).toEqual(['secrets-environment-guard', id]);
+  return { wf, text, job: wf.jobs[id] };
 }
 
 const allRuns = (job: Job): string => job.steps.map((s) => s.run ?? '').join('\n');
@@ -75,16 +75,16 @@ function expectAppAllowlist(job: Job): void {
 }
 
 describe('fly-env-sync.yml (manifest-driven plan / apply; B-FLAGS-2)', () => {
-  const { wf, text, job } = loadWorkflow('.github/workflows/fly-env-sync.yml');
+  const { wf, text, job } = loadWorkflow('.github/workflows/fly-env-sync.yml', 'fly-env-sync');
   const stageStep = job.steps.find((s) => /flyctl secrets set/.test(s.run ?? ''))!;
   const manifest = JSON.parse(read('.github/fly-env-desired-state.json')) as {
     secrets: Record<string, string>;
   };
 
-  it('is workflow_dispatch only, read-only token, production environment, one Fly lock', () => {
+  it('is workflow_dispatch only, read-only token, production-secrets environment, one Fly lock', () => {
     expect(Object.keys(wf.on)).toEqual(['workflow_dispatch']);
     expect(wf.permissions).toEqual({ contents: 'read' });
-    expect(envName(job)).toBe('production');
+    expect(envName(job)).toBe('production-secrets');
     expect(text).toMatch(/concurrency: fly-secrets-\$\{\{ inputs\.app \}\}/);
     expectAppAllowlist(job);
   });
@@ -230,12 +230,12 @@ describe('fly-env-sync.yml (manifest-driven plan / apply; B-FLAGS-2)', () => {
 });
 
 describe('fly-env-truth.yml (read-only)', () => {
-  const { wf, text, job } = loadWorkflow('.github/workflows/fly-env-truth.yml');
+  const { wf, text, job } = loadWorkflow('.github/workflows/fly-env-truth.yml', 'fly-env-truth');
 
-  it('is workflow_dispatch only with a read-only token and the production environment', () => {
+  it('is workflow_dispatch only with a read-only token and the production-secrets environment', () => {
     expect(Object.keys(wf.on)).toEqual(['workflow_dispatch']);
     expect(wf.permissions).toEqual({ contents: 'read' });
-    expect(envName(job)).toBe('production');
+    expect(envName(job)).toBe('production-secrets');
     expectAppAllowlist(job);
   });
 

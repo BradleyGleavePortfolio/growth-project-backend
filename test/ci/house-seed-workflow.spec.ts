@@ -49,14 +49,20 @@ describe('house-seed.yml — operator only, production-gated, inputs are data', 
   it('is workflow_dispatch only with mode (dry-run | apply), coach_id and exercise_catalog', () => {
     expect(Object.keys(wf.on)).toEqual(['workflow_dispatch']);
     const inputs = wf.on.workflow_dispatch.inputs;
-    expect(inputs.mode).toMatchObject({ required: true, default: 'dry-run', options: ['dry-run', 'apply'] });
+    expect(inputs.mode).toMatchObject({
+      required: true,
+      default: 'dry-run',
+      options: ['dry-run', 'apply'],
+    });
     expect(inputs.coach_id).toMatchObject({ required: true, type: 'string' });
     expect(inputs.exercise_catalog).toMatchObject({ default: 'skip', options: ['skip', 'upsert'] });
   });
 
-  it('runs only from main, inside the production environment (required reviewers gate it)', () => {
-    expect(job.if).toBe("github.ref == 'refs/heads/main'");
-    expect(job.environment).toBe('production');
+  it('runs only from main, after the guard job, inside production-secrets (the owner approves each run)', () => {
+    expect(job.if).toBe(
+      "github.ref == 'refs/heads/main' && needs.secrets-environment-guard.result == 'success'",
+    );
+    expect(job.environment).toBe('production-secrets');
   });
 
   it('no run block interpolates expressions; every action is pinned to a 40-hex sha', () => {
@@ -90,7 +96,7 @@ describe('house-seed.yml — operator only, production-gated, inputs are data', 
   });
 
   it('computes the approval from the committed fixture and passes it to the house seed', () => {
-    const approval = step('Compute the approval from main\'s committed fixture').run ?? '';
+    const approval = step("Compute the approval from main's committed fixture").run ?? '';
     expect(approval).toContain(`f=${FIXTURE}`);
     expect(approval).toContain('sha256sum "${f}"');
     expect(approval).toContain('approved=${version}:${sha}');
@@ -99,10 +105,12 @@ describe('house-seed.yml — operator only, production-gated, inputs are data', 
     expect(seed.run).toContain('CLINIC_SEED_TARGET=production');
     expect(seed.run).toContain('CLINIC_PROGRAMS_SEED_APPROVED=${APPROVED}');
     expect(seed.run).toContain('CLINIC_OWNER_COACH_ID=${COACH_ID}');
-    expect(seed.run).toMatch(/flags="--house"\n\s*if \[ "\$\{MODE\}" = "dry-run" \]; then flags="--house --dry-run"; fi/);
+    expect(seed.run).toMatch(
+      /flags="--house"\n\s*if \[ "\$\{MODE\}" = "dry-run" \]; then flags="--house --dry-run"; fi/,
+    );
   });
 
-  it('stops before the seed when the running image lacks main\'s fixture; catalog upsert is apply-only', () => {
+  it("stops before the seed when the running image lacks main's fixture; catalog upsert is apply-only", () => {
     const names = job.steps.map((s) => s.name);
     const check = names.indexOf('Check the running image carries the same fixture');
     expect(check).toBeGreaterThan(-1);
@@ -130,8 +138,12 @@ describe('compiled copy — the paths the workflow runs exist in the build outpu
   it('tsconfig.house-seed.json emits both scripts under dist/house-seed/scripts/', () => {
     expect(error).toBeUndefined();
     expect(parsed.errors).toEqual([]);
-    expect(jsOut('scripts/seed-clinic-programs.ts')).toBe('dist/house-seed/scripts/seed-clinic-programs.js');
-    expect(jsOut('scripts/seed-exercise-catalog.ts')).toBe('dist/house-seed/scripts/seed-exercise-catalog.js');
+    expect(jsOut('scripts/seed-clinic-programs.ts')).toBe(
+      'dist/house-seed/scripts/seed-clinic-programs.js',
+    );
+    expect(jsOut('scripts/seed-exercise-catalog.ts')).toBe(
+      'dist/house-seed/scripts/seed-exercise-catalog.js',
+    );
   });
 
   it('the workflow, the Dockerfile build stage and the runtime artifact check name the same files', () => {
@@ -144,7 +156,9 @@ describe('compiled copy — the paths the workflow runs exist in the build outpu
       expect(raw).toContain(`/app/${p}`); // runtime WORKDIR is /app
       expect(runtime).toContain(`test -f ${p}`);
     }
-    expect(build.indexOf('npx tsc -p tsconfig.house-seed.json')).toBeGreaterThan(build.indexOf('RUN npm run build'));
+    expect(build.indexOf('npx tsc -p tsconfig.house-seed.json')).toBeGreaterThan(
+      build.indexOf('RUN npm run build'),
+    );
     expect(build).toContain(`cp ${FIXTURE} ${fixtureOut}`);
     expect(runtime).toMatch(/COPY --from=build \/app\/dist \.\/dist/);
     expect(read('.dockerignore').split('\n')).not.toContain('seed/');
@@ -155,22 +169,36 @@ describe('compiled copy — the paths the workflow runs exist in the build outpu
     const program = ts.createProgram(parsed.fileNames, { ...parsed.options, outDir: out });
     const emitted = program.emit();
     expect(emitted.emitSkipped).toBe(false);
-    expect(ts.getPreEmitDiagnostics(program).map((d) => ts.flattenDiagnosticMessageText(d.messageText, '\n'))).toEqual([]);
+    expect(
+      ts
+        .getPreEmitDiagnostics(program)
+        .map((d) => ts.flattenDiagnosticMessageText(d.messageText, '\n')),
+    ).toEqual([]);
     mkdirSync(join(out, 'seed'));
     copyFileSync(join(ROOT, FIXTURE), join(out, 'seed', 'clinic-programs.v1.json'));
     const runSeed = (approved?: string) =>
-      spawnSync(process.execPath, [join(out, 'scripts', 'seed-clinic-programs.js'), '--house', '--dry-run'], {
-        encoding: 'utf8',
-        env: {
-          PATH: process.env.PATH ?? '',
-          NODE_PATH: join(ROOT, 'node_modules'),
-          CLINIC_SEED_TARGET: 'production',
-          CLINIC_OWNER_COACH_ID: COACH,
-          ...(approved ? { CLINIC_PROGRAMS_SEED_APPROVED: approved } : {}),
+      spawnSync(
+        process.execPath,
+        [join(out, 'scripts', 'seed-clinic-programs.js'), '--house', '--dry-run'],
+        {
+          encoding: 'utf8',
+          env: {
+            PATH: process.env.PATH ?? '',
+            NODE_PATH: join(ROOT, 'node_modules'),
+            CLINIC_SEED_TARGET: 'production',
+            CLINIC_OWNER_COACH_ID: COACH,
+            ...(approved ? { CLINIC_PROGRAMS_SEED_APPROVED: approved } : {}),
+          },
         },
-      });
-    const sha = createHash('sha256').update(readFileSync(join(ROOT, FIXTURE))).digest('hex');
-    for (const r of [runSeed(), runSeed('clinic-programs.v1:0000'), runSeed(`clinic-programs.v0:${sha}`)]) {
+      );
+    const sha = createHash('sha256')
+      .update(readFileSync(join(ROOT, FIXTURE)))
+      .digest('hex');
+    for (const r of [
+      runSeed(),
+      runSeed('clinic-programs.v1:0000'),
+      runSeed(`clinic-programs.v0:${sha}`),
+    ]) {
       expect(r.status).toBe(1);
       expect(r.stdout).toBe('');
       expect(r.stderr).toContain('Refusing to seed production');
@@ -185,7 +213,9 @@ describe('production guard on the committed, owner-approved fixture (decision 13
   const text = read(FIXTURE);
   const fx = parseFixture(text);
   // What the workflow computes: sha256sum of the file bytes.
-  const fileSha = createHash('sha256').update(readFileSync(join(ROOT, FIXTURE))).digest('hex');
+  const fileSha = createHash('sha256')
+    .update(readFileSync(join(ROOT, FIXTURE)))
+    .digest('hex');
 
   it('is approved and authorized, and the workflow hash equals the hash the guard checks', () => {
     expect(fx.approval_status).toBe('approved');
@@ -197,18 +227,33 @@ describe('production guard on the committed, owner-approved fixture (decision 13
     const draftSha = createHash('sha256')
       .update(
         text
-          .replace('"approval_status": "approved"', '"approval_status": "draft-owner-approval-required"')
+          .replace(
+            '"approval_status": "approved"',
+            '"approval_status": "draft-owner-approval-required"',
+          )
           .replace('"production_seed_authorized": true', '"production_seed_authorized": false'),
       )
       .digest('hex');
     expect(draftSha).not.toBe(fileSha);
-    for (const approved of [undefined, '', `clinic-programs.v1:${draftSha}`, fileSha, `clinic-programs.v2:${fileSha}`]) {
+    for (const approved of [
+      undefined,
+      '',
+      `clinic-programs.v1:${draftSha}`,
+      fileSha,
+      `clinic-programs.v2:${fileSha}`,
+    ]) {
       expect(() =>
         assertSeedAllowed({ NODE_ENV: 'production', CLINIC_PROGRAMS_SEED_APPROVED: approved }, fx),
       ).toThrow(/Refusing to seed production/);
     }
     expect(() =>
-      assertSeedAllowed({ CLINIC_SEED_TARGET: 'production', CLINIC_PROGRAMS_SEED_APPROVED: `clinic-programs.v1:${fileSha}` }, fx),
+      assertSeedAllowed(
+        {
+          CLINIC_SEED_TARGET: 'production',
+          CLINIC_PROGRAMS_SEED_APPROVED: `clinic-programs.v1:${fileSha}`,
+        },
+        fx,
+      ),
     ).not.toThrow();
   });
 });

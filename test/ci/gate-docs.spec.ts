@@ -23,18 +23,20 @@ const STALE: RegExp[] = [
   /its\s+required\s+reviewers\s+gate/i,
 ];
 
-// Also bound to `production`; what their comments should say waits on DECISIONS ALM-D11 (op 1 moves them
-// to a new environment with a required reviewer, op 2 keeps them on dispatch). The job that follows the
-// answer removes them from this list.
-const AWAITING_ALM_D11 = new Set([
-  '.github/workflows/fly-secrets-set.yml',
-  '.github/workflows/fly-db-secrets-set.yml',
-  '.github/workflows/fly-apple-signin-set.yml',
-  '.github/workflows/fly-launch-env-set.yml',
-  '.github/workflows/fly-recent-auth-set.yml',
-  '.github/workflows/fly-env-truth.yml',
-  '.github/workflows/house-seed.yml',
-]);
+// ALM-D11 op 1: each moved workflow names its environment and the decision.
+const MOVED_TO_SECRETS_ENV = [
+  'fly-secrets-set',
+  'fly-db-secrets-set',
+  'fly-apple-signin-set',
+  'fly-launch-env-set',
+  'fly-recent-auth-set',
+  'fly-env-sync',
+  'fly-env-truth',
+  'house-seed',
+].map((f) => ({
+  file: `.github/workflows/${f}.yml`,
+  present: [/production-secrets/, /ALM-D11\s+op\s+1/],
+}));
 
 const ROWS: { file: string; present: RegExp[]; absent?: RegExp[] }[] = [
   {
@@ -54,6 +56,12 @@ const ROWS: { file: string; present: RegExp[]; absent?: RegExp[] }[] = [
     present: [/revert\s+#1261/, /standing\s+approval\s+for\s+every\s+deploy/],
     absent: [/approves\s+every\s+deploy\s+himself/],
   },
+  ...MOVED_TO_SECRETS_ENV,
+  {
+    file: 'test/ci/house-seed-workflow.spec.ts',
+    present: [/production-secrets/],
+    absent: [/required\s+reviewers\s+gate\s+it/],
+  },
 ];
 
 describe('GATE-DOCS-BE: the deploy docs say what the release gate does since #1261', () => {
@@ -68,7 +76,7 @@ describe('GATE-DOCS-BE: the deploy docs say what the release gate does since #12
       ...walk('docs', (p) => p.endsWith('.md')),
       ...walk('.github/workflows', (p) => /\.ya?ml$/.test(p)),
       ...walk('scripts', (p) => p.endsWith('.sh')),
-    ].filter((p) => !AWAITING_ALM_D11.has(p));
+    ];
     const hits = files.flatMap((p) =>
       STALE.filter((re) => re.test(read(p))).map((re) => `${p} ${re}`),
     );
