@@ -147,15 +147,19 @@ describe('AIB-4 manifest entries', () => {
       FEATURE_MWB_AI_LIVE_CREATE: 'true',
       AI_GATEWAY_ENABLED: 'true',
       AI_GATEWAY_PROVIDER: 'anthropic',
-      AI_GATEWAY_CAPABILITIES: TWO_CAPS,
+      // COACH-DRAFT-CAP-BE: the third value, the two workout capabilities plus Roman's coach message drafts.
+      AI_GATEWAY_CAPABILITIES: `${TWO_CAPS},draft.coach_message`,
       AI_GATEWAY_REQUIRE_APPROVAL: 'unset',
     };
     for (const n of NAMES) expect([n, m.flags[n], typeof m.gates[n], n in m.excluded]).toEqual([n, FLIPPED[n], 'string', false]);
     expect(fem.validateManifest(m, rules)).toEqual([]);
-    // WEAR-AI (owner 161-1 op 1): exactly two allowed values; the manifest keeps the first until ALL-ON.
+    // Exactly four allowed values: WEAR-AI (owner 161-1 op 1) added the second, COACH-DRAFT-CAP-BE the third and
+    // fourth (draft.coach_message); the manifest keeps the third, without the insight notes, until ALL-ON.
     expect(rules.get('AI_GATEWAY_CAPABILITIES')?.values).toEqual([
       TWO_CAPS,
       `${TWO_CAPS},wearable_insight.client,wearable_insight.coach`,
+      `${TWO_CAPS},draft.coach_message`,
+      `${TWO_CAPS},wearable_insight.client,wearable_insight.coach,draft.coach_message`,
     ]);
   });
 
