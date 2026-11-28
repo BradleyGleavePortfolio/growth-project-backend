@@ -10,7 +10,7 @@ import { MoneyCheckStatus, MoneyCheckStatusService } from './money-check-status.
  * health probes (the alarm runs with no secret), but it is not a health probe:
  * Fly never reads it and it never answers for traffic readiness.
  * 200 { status: 'on_time' | 'late' | 'off', lastDay: 'YYYY-MM-DD' | null };
- * 503 {} when the rows cannot be read (no reason, no raw error).
+ * 503 {} when the status row cannot be read (no reason, no raw error).
  */
 @ApiTags('money-check')
 @Public()
@@ -23,7 +23,7 @@ export class MoneyCheckStatusController {
   @ApiOperation({
     summary: 'Daily money check status',
     description:
-      'Unauthenticated. on_time, late (no finished run with a sent owner notice in 26 hours) or off, plus the last finished UTC day. Not a readiness probe.',
+      'Unauthenticated. on_time, late (no finished run with its result saved for the owner in 26 hours) or off, plus the last finished UTC day. Not a readiness probe.',
   })
   @ApiResponse({
     status: 200,

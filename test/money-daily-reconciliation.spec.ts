@@ -117,7 +117,8 @@ const OWNER = { id: 'owner-1' };
 function notifier() {
   return {
     createNotification: jest.fn(async (input: any) => ({ id: 'n-1', ...input })),
-    pushToUser: jest.fn(async () => ({ sent: 1 }) as any),
+    // What NotificationsService.pushToUser returns for a queued push (a PushDeliveryResult).
+    pushToUser: jest.fn(async () => ({ delivered: true, code: 'delivered' }) as any),
   };
 }
 

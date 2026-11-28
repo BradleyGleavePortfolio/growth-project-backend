@@ -52,6 +52,19 @@ export class CronLeaseService {
       data: { lease_until: now },
     });
   }
+
+  /**
+   * Save the job's cursor on its lease row; only the current holder can. True
+   * only when exactly one row was written. The lease itself is not touched,
+   * and tryAcquire never writes the cursor, so it outlives the next lease.
+   */
+  async writeCursor(name: string, holder: string, cursor: string): Promise<boolean> {
+    const written = await this.prisma.cronLease.updateMany({
+      where: { name, holder },
+      data: { cursor },
+    });
+    return written.count === 1;
+  }
 }
 
 function isUniqueViolation(err: unknown): boolean {

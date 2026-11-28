@@ -67,13 +67,13 @@ case "$STATE" in
 - Status: ${STATUS_URL}
 - Run: ${RUN_URL}
 
-The check runs once a day at 11:00 UTC (03:00 PST, 04:00 PDT). When a run finishes, it writes the result to your inbox in the app and queues one push to your phone. This alarm counts a day only when that push was queued. A queued push does not prove that it reached your phone or that you read it.
+The check runs once a day at 11:00 UTC (03:00 PST, 04:00 PDT). When a run finishes, it writes the result to your inbox in the app and queues one push to your phone, if a phone is signed in to your account. This alarm counts a day only when the run reached every purchase and could read at least one of them, and its result was saved to your inbox in the app (or, if your in-app alerts are off, queued as a push). Whether a phone got the push does not change the count. A queued push does not prove that it reached your phone or that you read it.
 
-This opens when the run did not start or did not finish (for example the server was down or restarting at 11:00 UTC, or the check could not read its lock), when no account has the owner role, or when the result could not be written to your inbox or queued as a push (for example when no phone is signed in to your account). Running the reconciliation sweeper by hand (the admin run-sweeper route) checks purchases but sends no daily result, so it does not close this issue. If the check was just switched back on, this closes after its next run.
+This opens when the run did not start, stopped before it reached every purchase, or could read none of them (for example the server was down or restarting at 11:00 UTC, the check could not read its lock, or it hit its time limit), when no account has the owner role, or when the result could not be saved to your inbox (the inbox write failed, or your in-app alerts are off and no push could be queued). Running the reconciliation sweeper by hand (the admin run-sweeper route) checks purchases but sends no daily result, so it does not close this issue. If the check was just switched back on, this closes after its next run.
 
-What to look for in the server logs around 11:00 UTC: no MONEY_DAILY_ line means the run did not start; MONEY_DAILY_LOCK_ERROR means it could not read its lock; MONEY_DAILY_DONE means the purchases were checked, and MONEY_DAILY_NO_OWNER or MONEY_DAILY_ALERT_FAILED after it says why the notice was not sent. MONEY_DAILY_DONE with neither means the push was not queued.
+What to look for in the server logs around 11:00 UTC: no MONEY_DAILY_ line means the run did not start; MONEY_DAILY_LOCK_ERROR means it could not read its lock; MONEY_DAILY_DONE means the sweep ended, and the line after it says whether the day was counted and, if not, why. A day with no phone signed in still counts when the result reached your inbox; it is logged with its own code.
 
-This issue is updated every hour while the check is late and closes by itself after the next run that queues its push."
+This issue is updated every hour while the check is late and closes by itself after the next run that is counted."
     echo "::warning::The daily money check is late; last finished day: ${LAST}"
     if [ -n "$open_issue" ]; then
       gh issue edit "$open_issue" --body "$body"

@@ -3,57 +3,66 @@
  * check's own status, read by its own alarm (.github/workflows/
  * money-check-alarm.yml). Never /readyz, never the production-down issue.
  *
- * No new table or column. A finished run writes two rows to the owner account
- * (ReconciliationDailyCron.alertOwner), in this order:
- *   1. the day's inbox row: a Notification of kind coach_alert, payload.type
- *      'money_check', payload.day 'YYYY-MM-DD' (skipped, not failed, when the
- *      owner turned in-app coach alerts off);
- *   2. the day's queued push: a PushOutbox row with dedupe_key
- *      'money_daily:YYYY-MM-DD', kept RETENTION_MS (30 days).
- * The status reads the push row only: it is queued only after the run
- * finished, the owner account was found and the inbox step did not fail, so
- * it is the record of a finished run with a sent owner notice. A queued push
- * is not proof that the owner received or read it.
+ * MONEY-NOTICE-BE (owner #203-E117, 203-D1 op 1): no new table or column. The
+ * status reads one row, the reconciliation-daily CronLease row, and its
+ * cursor: the record of the last counted day (reconciliation-daily.cron.ts,
+ * dailyRecord). A run writes it only when it reached every purchase, read at
+ * least one (or had none to read) and its result reached the owner: the inbox
+ * row in the app was written, whether or not a phone got the push, or his
+ * in-app setting skipped the row and the push was queued. A queued push is
+ * not proof that the owner received or read it.
  *
- *   on_time  the newest such row was queued at most LATE_AFTER_MS ago.
- *   late     none was: the timer never fired, the lease read failed, the run
- *            died before the end, there is no owner account, or the inbox row
- *            or the push could not be written.
+ *   on_time  the record's finish time is at most LATE_AFTER_MS ago.
+ *   late     it is not: the timer never fired, the lease read failed, the run
+ *            died or stopped before the end, it read no purchase, there is no
+ *            owner account, nothing he can read holds the result, or the
+ *            record could not be written. A cursor that does not parse, or a
+ *            finish time more than CLOCK_SKEW_MS ahead of this machine's
+ *            clock, is no record.
  *   off      RECONCILIATION_DAILY_ENABLED is 'false' (its meaning is kept).
  *
  * Grace: on a database where the daily check has never started (no
  * reconciliation-daily CronLease row, the first day) the answer is on_time
  * for the first LATE_AFTER_MS after the serving machine started, so a new
  * deployment's first 11:00 UTC run can come. Once the check has started, a
- * new deployment gets no grace: the answer reads only rows a deployment does
+ * new deployment gets no grace: the answer reads only a row a deployment does
  * not change, so a grace would only let a deploy hide a missed day.
  *
- * The answer is the state and the last finished day: no counts, amounts, ids,
+ * The answer is the state and the last counted day: no counts, amounts, ids,
  * verdicts, reasons or errors.
  */
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import { DAILY_JOB_NAME, reconciliationDailyEnabled } from './reconciliation-daily.cron';
+import {
+  DAILY_JOB_NAME,
+  type DailyRecord,
+  parseDailyRecord,
+  reconciliationDailyEnabled,
+} from './reconciliation-daily.cron';
 
 export type MoneyCheckState = 'on_time' | 'late' | 'off';
 
 export interface MoneyCheckStatus {
   status: MoneyCheckState;
-  /** The newest UTC day (YYYY-MM-DD) that finished with a sent owner notice, or null. */
+  /** The newest counted UTC day (YYYY-MM-DD): finished with its result saved for the owner; or null. */
   lastDay: string | null;
 }
 
-/** 24 hours plus 2: the run's 45-minute budget, the push queue and the schedule's delays. */
+/** 24 hours plus 2: the run's 45-minute budget and the schedule's delays. */
 export const LATE_AFTER_MS = 26 * 60 * 60_000;
-/** The day's push key, as the daily check writes it (reconciliation-daily.cron.ts, pushToUser's dedupeKey). */
-export const MONEY_DAILY_PUSH_KEY = 'money_daily:';
-/** UTC days read, today first: today and the 30 days the push outbox keeps rows (RETENTION_MS). */
-export const STATUS_DAYS = 31;
-const DAY_MS = 24 * 60 * 60_000;
+/** A finish time further ahead of the reading machine's clock is no record (clock skew between machines). */
+export const CLOCK_SKEW_MS = 5 * 60_000;
 
-/** on_time, late or off from what the rows say. Pure; `now` and the machine start in ms. */
+/** The counted day a lease cursor holds, or null (it does not parse, or it finished too far ahead). Pure. */
+export function countedRecord(cursor: string | null | undefined, now: Date): DailyRecord | null {
+  const record = parseDailyRecord(cursor);
+  return record && record.finishedAt.getTime() - now.getTime() <= CLOCK_SKEW_MS ? record : null;
+}
+
+/** on_time, late or off from what the row says. Pure; `now` and the machine start in ms. */
 export function moneyCheckState(input: {
   enabled: boolean;
+  /** The last counted day's finish time. */
   lastNoticeAt: Date | null;
   everStarted: boolean;
   machineStartedAt: number;
@@ -73,48 +82,24 @@ export class MoneyCheckStatusService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Throws when the rows cannot be read; the route answers 503 then. */
+  /** Throws when the row cannot be read; the route answers 503 then. */
   async status(
     now: Date = new Date(),
     machineStartedAt: number = this.startedAt,
   ): Promise<MoneyCheckStatus> {
-    const last = await this.lastFinished(now);
-    const everStarted =
-      last !== null ||
-      (await this.prisma.cronLease.findUnique({
-        where: { name: DAILY_JOB_NAME },
-        select: { name: true },
-      })) !== null;
+    // The finish time is the record's own; the row's acquired_at and updated_at move with the next day's lease.
+    const row = await this.prisma.cronLease.findUnique({
+      where: { name: DAILY_JOB_NAME },
+      select: { name: true, cursor: true },
+    });
+    const last = countedRecord(row?.cursor, now);
     const status = moneyCheckState({
       enabled: reconciliationDailyEnabled(),
-      lastNoticeAt: last?.at ?? null,
-      everStarted,
+      lastNoticeAt: last?.finishedAt ?? null,
+      everStarted: row !== null,
       machineStartedAt,
       now: now.getTime(),
     });
     return { status, lastDay: last?.day ?? null };
-  }
-
-  /** The newest day whose push was queued to the owner account, with the time it was queued. */
-  private async lastFinished(now: Date): Promise<{ day: string; at: Date } | null> {
-    // The same owner account the daily check writes to (reconciliation-daily.cron.ts alertOwner).
-    const owner = await this.prisma.user.findFirst({
-      where: { role: 'owner', deleted_at: null, deletion_scheduled_at: null },
-      orderBy: { created_at: 'asc' },
-      select: { id: true },
-    });
-    if (!owner) return null;
-    const keys = Array.from(
-      { length: STATUS_DAYS },
-      (_, i) =>
-        MONEY_DAILY_PUSH_KEY + new Date(now.getTime() - i * DAY_MS).toISOString().slice(0, 10),
-    );
-    const row = await this.prisma.pushOutbox.findFirst({
-      where: { user_id: owner.id, dedupe_key: { in: keys } },
-      orderBy: { created_at: 'desc' },
-      select: { dedupe_key: true, created_at: true },
-    });
-    if (!row?.dedupe_key) return null;
-    return { day: row.dedupe_key.slice(MONEY_DAILY_PUSH_KEY.length), at: row.created_at };
   }
 }
