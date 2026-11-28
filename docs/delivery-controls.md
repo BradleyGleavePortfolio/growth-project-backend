@@ -6,10 +6,11 @@ it in `docs/deploy-runbook.md` is stale and should be fixed there.
 
 ## 1. Two separate authorizations
 
-| Authorization       | Mechanism                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Who/what decides                                                                                                                                                                                                                                                                              |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Merge to `main`** | Branch protection / ruleset: 11 required checks (exactly the live list, read back 2026-10-02 after 16:41 PDT) `build-and-test`, `rls-floor-guard`, `rls-live-tests`, `mwb-3-live-tests`, `npm audit (high+critical, whole graph)`, `CodeQL JS/TS (javascript-typescript)`, `Banned cast tokens (R75 / R100.A2)`, `build-sbom`, `danger`, `Schema parity (migrations match schema.prisma)`, `community-live-tests` (owner 2026-10-02 16:38), all bound to the GitHub Actions app; strict up-to-date; enforce admins; linear history OFF (changing it needs the owner's explicit words); conversation resolution OFF (audits are issue comments); operator 2026-10-02. | `scripts/setup-branch-protection.sh` (NOT yet run — see §6).                                                                                                                                                                                                                                  |
-| **Deploy to Fly**   | `Fly Deploy` (`.github/workflows/fly-deploy.yml`): `workflow_dispatch` only, `release_sha` + `confirm=deploy` inputs, job `Release evidence gate` (`scripts/ci/release-evidence-gate.sh`) then job `deploy` bound to environment `production`.                                                                                                                                                                                                                                                                                                                                                                                                                       | A human dispatch. Since 2026-11-26 the `production` environment has **no required reviewer**: the owner removed it and gave a standing approval for every deploy ("I auto approve all deploys from now on", #ALM-E7; decision ALM-D7 op 2, see §2.1), so the dispatch is the only human step. |
+| Authorization                                              | Mechanism                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Who/what decides                                                                                                                                                                                                                                                                              |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Merge to `main`**                                        | Branch protection / ruleset: 11 required checks (exactly the live list, read back 2026-10-02 after 16:41 PDT) `build-and-test`, `rls-floor-guard`, `rls-live-tests`, `mwb-3-live-tests`, `npm audit (high+critical, whole graph)`, `CodeQL JS/TS (javascript-typescript)`, `Banned cast tokens (R75 / R100.A2)`, `build-sbom`, `danger`, `Schema parity (migrations match schema.prisma)`, `community-live-tests` (owner 2026-10-02 16:38), all bound to the GitHub Actions app; strict up-to-date; enforce admins; linear history OFF (changing it needs the owner's explicit words); conversation resolution OFF (audits are issue comments); operator 2026-10-02. | `scripts/setup-branch-protection.sh` (NOT yet run — see §6).                                                                                                                                                                                                                                  |
+| **Deploy to Fly**                                          | `Fly Deploy` (`.github/workflows/fly-deploy.yml`): `workflow_dispatch` only, `release_sha` + `confirm=deploy` inputs, job `Release evidence gate` (`scripts/ci/release-evidence-gate.sh`) then job `deploy` bound to environment `production`.                                                                                                                                                                                                                                                                                                                                                                                                                       | A human dispatch. Since 2026-11-26 the `production` environment has **no required reviewer**: the owner removed it and gave a standing approval for every deploy ("I auto approve all deploys from now on", #ALM-E7; decision ALM-D7 op 2, see §2.1), so the dispatch is the only human step. |
+| **Run a production secrets, flag, seed or shell workflow** | The eight operator workflows of §2.2 (`fly-secrets-set`, `fly-db-secrets-set`, `fly-apple-signin-set`, `fly-launch-env-set`, `fly-recent-auth-set`, `fly-env-sync`, `fly-env-truth`, `house-seed`): `workflow_dispatch` only, job `secrets-environment-guard` (`scripts/ci/secrets-environment-guard.sh`), then the job bound to environment `production-secrets`.                                                                                                                                                                                                                                                                                                   | The owner approves each run in GitHub (decision ALM-D11 op 1, 2026-11-27). No operator or agent approves one.                                                                                                                                                                                 |
 
 A green merge is **not** a deploy authorization. Nothing deploys on `push`.
 
@@ -83,6 +84,141 @@ checks; it does not run tests itself and cannot approve its own change.
 Negatives are covered by `test/ci/release-evidence-gate.spec.ts`
 (fixture GitHub API server) and `test/ci/delivery-artifact.spec.ts`.
 
+### 2.2 Production secrets, flags, seed and shell wait for the owner (2026-11-27, decision ALM-D11 op 1)
+
+Removing the `production` reviewer (§2.1) also removed the human approval
+from every other workflow bound to `production`. On 2026-11-27 the owner
+chose decision ALM-D11 option 1 (#ALM-E25): these workflows run only in a
+separate environment, `production-secrets`, whose required reviewer (the
+owner) approves each run. Code deploys stay automatic (§2.1).
+
+What moved (each workflow's one real job now runs in `production-secrets`):
+
+| Workflow                                                   | What it does to production                                                                                                                                                          | Secrets it reads                                                                                                                                                                                            |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Fly Secrets Set (`fly-secrets-set.yml`)                    | writes the Stripe and Sentry keys and the public URLs to Fly (machines restart)                                                                                                     | `FLY_API_TOKEN`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `SENTRY_DSN`                                                                                                                                 |
+| Fly DB Secrets Set (`fly-db-secrets-set.yml`)              | writes the database URLs to Fly and deploys them                                                                                                                                    | `FLY_API_TOKEN`, `DATABASE_URL`, `DIRECT_URL`                                                                                                                                                               |
+| Fly Apple Sign-In Secrets Set (`fly-apple-signin-set.yml`) | writes the Sign in with Apple key to Fly                                                                                                                                            | `FLY_API_TOKEN`, `APPLE_SIGNIN_KEY_ID`, `APPLE_SIGNIN_PRIVATE_KEY`                                                                                                                                          |
+| Fly Launch Env Set (`fly-launch-env-set.yml`)              | writes the checkout and AI cost secrets to Fly                                                                                                                                      | `FLY_API_TOKEN`, `GUEST_CHECKOUT_PII_SALT`, `LANDING_VIEW_HASH_SECRET`, `CHECKOUT_RECOVERY_SECRET`, `COACH_AI_MAX_ACTUAL_CENTS`, `COACH_AI_VALUE_MULTIPLIER`, `ANDROID_CERT_SHA256_FINGERPRINTS` (optional) |
+| Fly Recent Auth Set (`fly-recent-auth-set.yml`)            | writes the recent-auth secret and its lifetime to Fly                                                                                                                               | `FLY_API_TOKEN`, `RECENT_AUTH_SECRET`, `RECENT_AUTH_TTL_MS`                                                                                                                                                 |
+| Fly Env Sync (`fly-env-sync.yml`)                          | plan: opens a shell on a production machine to read names; apply: stages every launch flag and 32 secrets from GitHub, and with `deploy_staged` deploys them with a rolling restart | `FLY_API_TOKEN` and the 32 names its manifest sources from GitHub                                                                                                                                           |
+| Fly Env Truth (`fly-env-truth.yml`)                        | opens a shell on a production machine and reports which names are set (no values)                                                                                                   | `FLY_API_TOKEN`                                                                                                                                                                                             |
+| House Seed (`house-seed.yml`)                              | opens a shell on a production machine and writes the house program set (dry-run reads only); from `main` only                                                                       | `FLY_API_TOKEN`                                                                                                                                                                                             |
+
+The 48 secret names the eight read (names only, never a value):
+
+| name                               | workflows that read it                                                                                                                      | also read outside the eight  |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| `ANDROID_CERT_SHA256_FINGERPRINTS` | fly-launch-env-set                                                                                                                          | none                         |
+| `APPLE_SIGNIN_KEY_ID`              | fly-apple-signin-set                                                                                                                        | none                         |
+| `APPLE_SIGNIN_PRIVATE_KEY`         | fly-apple-signin-set                                                                                                                        | none                         |
+| `CHECKOUT_RECOVERY_SECRET`         | fly-launch-env-set                                                                                                                          | none                         |
+| `COACH_AI_MAX_ACTUAL_CENTS`        | fly-launch-env-set                                                                                                                          | none                         |
+| `COACH_AI_VALUE_MULTIPLIER`        | fly-launch-env-set                                                                                                                          | none                         |
+| `CONTRACT_PDF_URL_SECRET`          | fly-env-sync                                                                                                                                | none                         |
+| `DATABASE_URL`                     | fly-db-secrets-set                                                                                                                          | none                         |
+| `DATA_EXPORT_DOWNLOAD_SECRET`      | fly-env-sync                                                                                                                                | none                         |
+| `DIRECT_URL`                       | fly-db-secrets-set                                                                                                                          | none                         |
+| `FITBIT_CLIENT_ID`                 | fly-env-sync                                                                                                                                | none                         |
+| `FITBIT_CLIENT_SECRET`             | fly-env-sync                                                                                                                                | none                         |
+| `FLY_API_TOKEN`                    | fly-secrets-set, fly-db-secrets-set, fly-apple-signin-set, fly-launch-env-set, fly-recent-auth-set, fly-env-sync, fly-env-truth, house-seed | fly-deploy, fly-secrets-list |
+| `GARMIN_CLIENT_ID`                 | fly-env-sync                                                                                                                                | none                         |
+| `GARMIN_CLIENT_SECRET`             | fly-env-sync                                                                                                                                | none                         |
+| `GARMIN_WEBHOOK_SALT`              | fly-env-sync                                                                                                                                | none                         |
+| `GOOGLE_CLIENT_IDS`                | fly-env-sync                                                                                                                                | none                         |
+| `GOOGLE_OAUTH_CLIENT_ID`           | fly-env-sync                                                                                                                                | none                         |
+| `GOOGLE_OAUTH_CLIENT_SECRET`       | fly-env-sync                                                                                                                                | none                         |
+| `GOOGLE_OAUTH_REDIRECT_URI`        | fly-env-sync                                                                                                                                | none                         |
+| `GUEST_CHECKOUT_PII_SALT`          | fly-launch-env-set                                                                                                                          | none                         |
+| `LANDING_VIEW_HASH_SECRET`         | fly-launch-env-set                                                                                                                          | none                         |
+| `METRICS_AUTH_TOKEN`               | fly-env-sync                                                                                                                                | none                         |
+| `MWB_AUTOSAVE_LOCK_TOKEN_SECRET`   | fly-env-sync                                                                                                                                | none                         |
+| `OURA_CLIENT_ID`                   | fly-env-sync                                                                                                                                | none                         |
+| `OURA_CLIENT_SECRET`               | fly-env-sync                                                                                                                                | none                         |
+| `POLAR_CLIENT_ID`                  | fly-env-sync                                                                                                                                | none                         |
+| `POLAR_CLIENT_SECRET`              | fly-env-sync                                                                                                                                | none                         |
+| `PUBLIC_LISTING_CURSOR_SECRET`     | fly-env-sync                                                                                                                                | none                         |
+| `RECENT_AUTH_SECRET`               | fly-recent-auth-set                                                                                                                         | none                         |
+| `RECENT_AUTH_TTL_MS`               | fly-recent-auth-set                                                                                                                         | none                         |
+| `SCHEDULING_WEBHOOK_SECRET`        | fly-env-sync                                                                                                                                | none                         |
+| `SENTRY_DSN`                       | fly-secrets-set                                                                                                                             | fly-deploy                   |
+| `SIGNUP_MARKER_SIGNING_SECRET`     | fly-env-sync                                                                                                                                | none                         |
+| `STRAVA_CLIENT_ID`                 | fly-env-sync                                                                                                                                | none                         |
+| `STRAVA_CLIENT_SECRET`             | fly-env-sync                                                                                                                                | none                         |
+| `STRIPE_SECRET_KEY`                | fly-secrets-set                                                                                                                             | none                         |
+| `STRIPE_WEBHOOK_SECRET`            | fly-secrets-set                                                                                                                             | none                         |
+| `SUPABASE_ANON_KEY`                | fly-env-sync                                                                                                                                | none                         |
+| `SUPABASE_SERVICE_ROLE_KEY`        | fly-env-sync                                                                                                                                | none                         |
+| `VOICE_KEY_SIGNING_SECRET`         | fly-env-sync                                                                                                                                | none                         |
+| `WAHOO_CLIENT_ID`                  | fly-env-sync                                                                                                                                | none                         |
+| `WAHOO_CLIENT_SECRET`              | fly-env-sync                                                                                                                                | none                         |
+| `WHOOP_CLIENT_ID`                  | fly-env-sync                                                                                                                                | none                         |
+| `WHOOP_CLIENT_SECRET`              | fly-env-sync                                                                                                                                | none                         |
+| `WHOOP_WEBHOOK_SALT`               | fly-env-sync                                                                                                                                | none                         |
+| `WITHINGS_CLIENT_ID`               | fly-env-sync                                                                                                                                | none                         |
+| `WITHINGS_CLIENT_SECRET`           | fly-env-sync                                                                                                                                | none                         |
+
+What stays as it is: Fly Deploy (`fly-deploy.yml`) on `production`,
+automatic once its evidence is green (§2.1, ALM-D7 op 2); Fly Secrets List
+(`fly-secrets-list.yml`), which binds no environment and prints secret names
+and digests only, although it holds the full `FLY_API_TOKEN`.
+
+The guard. Each moved workflow starts with a job of its own,
+`secrets-environment-guard`, bound to no environment, with `contents: read`
+and `actions: read`. It runs `scripts/ci/secrets-environment-guard.sh`,
+which reads the environment through the GitHub API and refuses (the run goes
+red with the reason) unless:
+
+1. `production-secrets` exists, with exactly that name;
+2. it has at least one required reviewer;
+3. admins cannot bypass its rules;
+4. its deployment branches are "Selected branches and tags";
+5. it has exactly one branch rule, a branch named `main`.
+
+The real job needs the guard and runs only when it passed. The guard is a
+separate job because GitHub creates an environment that a job names, with no
+protection, the first time a job uses it, and a check inside that job would
+run only after the job had entered the environment. With the guard first, a
+dispatch made before the setup below stops before any job enters
+`production-secrets` or reads a secret. If a setting is weakened later
+(reviewer removed, admin bypass ticked, branch rule widened), every run
+refuses again until it is put back.
+
+The owner's setup, in GitHub (growth-project-backend > Settings):
+
+1. Environments > New environment, named exactly `production-secrets`.
+2. Tick "Required reviewers" and add himself. Leave "Prevent self-review"
+   unticked: the operators dispatch under his account, so with it ticked
+   nobody could approve their runs.
+3. Untick "Allow administrators to bypass configured protection rules".
+4. "Deployment branches and tags": "Selected branches and tags", then one
+   rule, ref type Branch, name `main`.
+5. Secrets: a secret these workflows read that is held only as a
+   repository secret (Settings > Secrets and variables > Actions) needs
+   nothing. One held as a `production` environment secret (Settings >
+   Environments > `production`) must be added to `production-secrets` with
+   the same value from its source; if a name is in both places, the
+   `production` copy is the one these workflows used until now.
+
+What the approval protects, and what it does not. Each run of the eight
+waits for his approval, so nobody runs them without him. A secret kept at
+repository level is still readable by a changed workflow on any branch that
+names no environment; only secrets kept in `production-secrets` alone, with
+its `main`-only rule, are locked to these jobs. Moving them is his later
+call. Fly Env Sync's apply without `deploy_staged` only stages values; the
+next Fly Deploy, which nobody approves (§2.1), puts them live, so "approved"
+means "staged", not "live at approval".
+
+Only the owner approves a `production-secrets` run, on the run page's review
+button. No operator or agent approves one, from any machine, even where a
+token in reach would allow it. A run left waiting may hold its workflow's
+`fly-secrets-<app>` concurrency group, so the next secrets run queues behind
+it: approve or reject each run when it comes. During an incident a rotation
+waits for his approval too.
+
+To undo ("secrets env off"): revert the PR that made this change; the eight
+then run in `production` again, which has no reviewer.
+
 ## 3. Deploy job
 
 - `needs: evidence-gate`, `result == 'success'`, output sha == `github.sha`.
@@ -146,23 +282,31 @@ Read 2026-09-20 (evidence in the private evidence repo): the only
 environment was named `noble-celebration / production` (no environment
 named `production` existed) with **no** protection rules and
 `can_admins_bypass=true`; `main` had no branch protection (404) and no
-rulesets. The workflows here bind to `environment: production`; GitHub
-creates that environment, unprotected, on first dispatch — so the gate
+rulesets. The workflows here bind to `environment: production` (since
+2026-11-27 only Fly Deploy does; the eight of §2.2 bind to
+`production-secrets`); GitHub creates that environment, unprotected, on first dispatch — so the gate
 **fails closed today** (step 5 above) until an authorized operator
 configures:
 
 1. environment `production`: admins bypass off (the gate refuses without
    it); required reviewers (≥1 real human account; never a second account
    of the same person — G05) are optional since 2026-11-26, when the owner
-   removed them (§2.1); deployment branch policy `main` only; move
-   `FLY_API_TOKEN` from the repository secret store into this environment
-   (the other `fly-*-set` workflows are bound to the same environment for
-   that reason);
+   removed them (§2.1); deployment branch policy `main` only; keep
+   `FLY_API_TOKEN` a repository secret, because Fly Deploy, the eight
+   workflows of §2.2 and Fly Secrets List (which binds no
+   environment) all read the same token (as §8 of `docs/deploy-runbook.md`
+   says); the `fly-*-set` workflows, Fly Env Sync, Fly Env Truth and House Seed now
+   run in `production-secrets` (§2.2);
 2. branch protection / ruleset for `main` as in §1, run via
    `scripts/setup-branch-protection.sh` with an **explicit**
    `REQUIRED_APPROVING_REVIEW_COUNT` (0 = recorded single-maintainer
    decision; 1 requires a second maintainer) and `CHECKS_APP_ID=15368`
-   (GitHub Actions) so required check names are bound to the Actions app.
+   (GitHub Actions) so required check names are bound to the Actions app;
+3. environment `production-secrets` (§2.2): at least one required reviewer
+   (the owner), admins bypass off, deployment branches `main` only (one
+   branch rule, `main`), and a copy of any secret its workflows read that is
+   held as a `production` environment secret. The guard refuses every run of
+   those workflows until all of that reads back.
 
 Until those are read back, the state of hosted settings is **UNKNOWN**
 and nothing here should be described as enforced.
@@ -259,8 +403,11 @@ claim about production state, other machines, or earlier deploys.
 
 - `flyctl` binary version is whatever `setup-flyctl` (pinned by commit)
   installs; the CLI itself is not pinned.
-- Whether `GITHUB_TOKEN` can read environment protection rules on this
-  plan is unmeasured; if the API returns 403 the gate fails closed.
+- The job token can read an environment's protection rules on this plan:
+  the Fly Deploy gate read `production` in runs 45887904641, 45888670085
+  and 45897205238 (2026-11-26). Whether it can read an environment's branch
+  rules (`deployment-branch-policies`, check 5 of the §2.2 guard) is not yet
+  measured. If either read returns 403, the gate or the guard fails closed.
 - Field shapes for `flyctl machines list --json` (`image_ref.labels`,
   `config.metadata.fly_process_group`, `checks[].status`) were taken from
   a live read on 2026-09-20 and from Fly documentation; a schema change

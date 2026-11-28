@@ -12,16 +12,16 @@ There is a single test, `test/deploy-readiness.spec.ts`, that runs eight checks 
 
 The sections are:
 
-| Section | Question it answers |
-| --- | --- |
-| STUB VALUES | Are there any leftover placeholder or stub values in production code that must be removed before launch |
-| PROD SWITCHES | Is every production safety switch declared coherently in the registry, and is every must-set switch actually set |
+| Section          | Question it answers                                                                                                                                                                                                                               |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| STUB VALUES      | Are there any leftover placeholder or stub values in production code that must be removed before launch                                                                                                                                           |
+| PROD SWITCHES    | Is every production safety switch declared coherently in the registry, and is every must-set switch actually set                                                                                                                                  |
 | ENV REGISTRATION | Is every environment variable name the code reads (directly, through ConfigService, through a helper, or built from a template such as `${PROVIDER}_CLIENT_ID`) registered in `src/common/env-validation.ts` with a tier, real default and reason |
-| WIRING | Is every third-party integration (Stripe, Mux, SendGrid, Supabase, OpenAI, Twilio, Cloudflare, AWS S3, Fly, Sentry) actually credentialed rather than stubbed |
-| ENV DISCOVERY | Is every environment variable referenced in the code also registered in the switch registry |
-| AUTO-FLIPPER | Which switches would automatically flip to their production value on a production deploy (informational, never blocks) |
-| OPERATOR KEYS | Which keys and secrets you, the operator, still need to provide |
-| AGGREGATE EXIT | The single tally of red lines across every blocking section |
+| WIRING           | Is every third-party integration (Stripe, Mux, SendGrid, Supabase, OpenAI, Twilio, Cloudflare, AWS S3, Fly, Sentry) actually credentialed rather than stubbed                                                                                     |
+| ENV DISCOVERY    | Is every environment variable referenced in the code also registered in the switch registry                                                                                                                                                       |
+| AUTO-FLIPPER     | Which switches would automatically flip to their production value on a production deploy (informational, never blocks)                                                                                                                            |
+| OPERATOR KEYS    | Which keys and secrets you, the operator, still need to provide                                                                                                                                                                                   |
+| AGGREGATE EXIT   | The single tally of red lines across every blocking section                                                                                                                                                                                       |
 
 The board ends with one of two lines:
 
@@ -94,7 +94,7 @@ After any fix, re-run the board until the exit line reads ALL CLEAR.
 
 ## Checking and filling the real Fly environment (S-ENVTRUTH)
 
-The board checks the code. Two operator workflows check and fill the real production machine. Both are manual (`workflow_dispatch`), both are restricted to the `backend-spring-lake-3890` app, and both are bound to the `production` GitHub environment. Neither ever prints a secret value.
+The board checks the code. Two operator workflows check and fill the real production machine. Both are manual (`workflow_dispatch`), both are restricted to the `backend-spring-lake-3890` app, and both run in the `production-secrets` GitHub environment, and each run waits for the owner's approval. Neither ever prints a secret value.
 
 ### 1. Fly Env Truth (read-only): what is actually set
 
@@ -145,14 +145,14 @@ With that in mind, the operator actions after this merges:
 
 ## Where the pieces live
 
-| Piece | Path |
-| --- | --- |
-| The orchestrator board and its tests | `test/deploy-readiness.spec.ts` |
-| The section registry (which scanners run, in what order, gating or informational) | `test/prod-readiness.config.ts` |
-| The sub-scanners (including `env-registration.ts`) | `test/prod-readiness/` |
-| The env registry (tier, real default, reason for every env name) | `src/common/env-validation.ts` (`ENV_RULES`) |
-| The in-machine env-truth classifier | `scripts/env-truth/fly-env-classifier.js` |
-| The env workflows | `.github/workflows/fly-env-truth.yml`, `.github/workflows/fly-env-sync.yml` |
-| The switch registry | `prod-switches.yml` |
-| The learning ledger (false positives and tracked debt) | `test/prod-readiness/__fixtures__/learning-ledger.json` |
-| The CI workflow with both jobs | `.github/workflows/h4-readiness.yml` |
+| Piece                                                                             | Path                                                                        |
+| --------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| The orchestrator board and its tests                                              | `test/deploy-readiness.spec.ts`                                             |
+| The section registry (which scanners run, in what order, gating or informational) | `test/prod-readiness.config.ts`                                             |
+| The sub-scanners (including `env-registration.ts`)                                | `test/prod-readiness/`                                                      |
+| The env registry (tier, real default, reason for every env name)                  | `src/common/env-validation.ts` (`ENV_RULES`)                                |
+| The in-machine env-truth classifier                                               | `scripts/env-truth/fly-env-classifier.js`                                   |
+| The env workflows                                                                 | `.github/workflows/fly-env-truth.yml`, `.github/workflows/fly-env-sync.yml` |
+| The switch registry                                                               | `prod-switches.yml`                                                         |
+| The learning ledger (false positives and tracked debt)                            | `test/prod-readiness/__fixtures__/learning-ledger.json`                     |
+| The CI workflow with both jobs                                                    | `.github/workflows/h4-readiness.yml`                                        |

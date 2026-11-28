@@ -65,9 +65,10 @@ interface Workflow {
   jobs: Record<string, { steps: Step[] }>;
 }
 
-const steps: Step[] = Object.values(
-  (parseYaml(fs.readFileSync(WORKFLOW, 'utf8')) as Workflow).jobs,
-)[0].steps;
+// By id: since ALM-D11 op 1 the first job is the production-secrets guard.
+const steps: Step[] = (parseYaml(fs.readFileSync(WORKFLOW, 'utf8')) as Workflow).jobs[
+  'fly-env-sync'
+].steps;
 
 const FAKE_FLYCTL = `#!/usr/bin/env node
 // Fake flyctl for fly-env-sync-behavior.spec.ts. Logs argv NAMES only.
@@ -647,7 +648,9 @@ describe('fly-env-sync.yml behaviour (fake flyctl, real run: scripts)', () => {
     it('stages a capability-list flag value: AI_GATEWAY_CAPABILITIES with "_" and "," passes the NAME=value guard (AIB-4)', () => {
       const run = runJob({
         mode: 'apply',
-        edits: { 'flags.AI_GATEWAY_CAPABILITIES': 'draft.create_workout_plan,draft.edit_workout_plan' },
+        edits: {
+          'flags.AI_GATEWAY_CAPABILITIES': 'draft.create_workout_plan,draft.edit_workout_plan',
+        },
       });
       expect(run.ok).toBe(true);
       expect(writes(run)).toEqual(['secrets set stage=1 names=AI_GATEWAY_CAPABILITIES']);

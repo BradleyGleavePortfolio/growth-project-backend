@@ -197,11 +197,11 @@ onboarding instead of the consultation (S-REVENUE-124 B-REV-1).
 
 ### Program set resolution and the house set (CONSULT-ALL-BE-133)
 
-| client                      | set used                         | clone owner / tenant (`owner_user_id` / `coach_id`) | spaces | coach alert | `coach` in the result |
-| --------------------------- | -------------------------------- | --------------------------------------------------- | ------ | ----------- | --------------------- |
-| coach with an active set    | the coach's own set (unchanged)  | coach / INT-607-1 tenant                             | joined | the coach   | the coach             |
-| coach without a usable set  | the house set                    | coach / INT-607-1 tenant                             | none   | the coach   | the coach             |
-| no coach (coachless)        | the house set                    | the client / the client                              | none   | none        | `null`                |
+| client                     | set used                        | clone owner / tenant (`owner_user_id` / `coach_id`) | spaces | coach alert | `coach` in the result |
+| -------------------------- | ------------------------------- | --------------------------------------------------- | ------ | ----------- | --------------------- |
+| coach with an active set   | the coach's own set (unchanged) | coach / INT-607-1 tenant                            | joined | the coach   | the coach             |
+| coach without a usable set | the house set                   | coach / INT-607-1 tenant                            | none   | the coach   | the coach             |
+| no coach (coachless)       | the house set                   | the client / the client                             | none   | none        | `null`                |
 
 The house set is the newest active `ClinicProgramSet` with `is_house = true`
 whose owner is a live coach or owner account (seeded with `--house`, below).
@@ -452,7 +452,7 @@ Production (HOUSE-SEED-134): the image carries a compiled copy of this script
 and `scripts/seed-exercise-catalog.ts` at `dist/house-seed/` (built by
 `tsconfig.house-seed.json` in the Dockerfile build stage) plus the fixture at
 `dist/house-seed/seed/`. The operator workflow `.github/workflows/house-seed.yml`
-(workflow_dispatch from main, `environment: production`) runs it inside a
+(workflow_dispatch from main, `environment: production-secrets`, approved by the owner on each run) runs it inside a
 running machine over `flyctl ssh console` with the app's own env, so it needs
 no new secret. Inputs: `mode` (`dry-run` | `apply`), `coach_id` (the house
 account's User id, never an email) and `exercise_catalog` (`skip` | `upsert`,
