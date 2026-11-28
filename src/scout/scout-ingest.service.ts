@@ -50,9 +50,14 @@ const REDACTED_PAYLOAD_KEYS: ReadonlySet<string> = new Set([
  * specs and native rule sets reconstruction reads (loaded once, fail loud).
  */
 let keepPlan: PayloadKeepPlan | undefined;
-function payloadKeepPlan(): PayloadKeepPlan {
+export function payloadKeepPlan(): PayloadKeepPlan {
   keepPlan ??= buildPayloadKeepPlan(loadSourceMappingSpecs(), loadNativeRuleSets());
   return keepPlan;
+}
+
+/** The payload as stored: cut to the declared paths, then redacted (P3b reuses this). */
+export function keptPayload(sourcePlatform: string, payload: Prisma.InputJsonObject) {
+  return redactPayload(keepDeclaredPayload(payloadKeepPlan(), sourcePlatform, payload));
 }
 
 @Injectable()
@@ -110,9 +115,7 @@ export class ScoutIngestService {
       captured_at: new Date(entity.capturedAt),
       // PRIV-04: only the declared mapping paths are stored; the rest of the
       // crawled record is dropped here and never persisted.
-      payload: redactPayload(
-        keepDeclaredPayload(payloadKeepPlan(), entity.sourcePlatform, entity.payload),
-      ),
+      payload: keptPayload(entity.sourcePlatform, entity.payload),
     }));
 
     const resolution = await this.lifecycle.resolve(coachId, dto.intent_id);
