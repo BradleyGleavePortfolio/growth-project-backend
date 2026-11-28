@@ -1200,7 +1200,11 @@ describe('MONEY-EMAIL-BE: the daily result is emailed to OWNER_ALERT_EMAIL, and 
       expect(a).toMatchObject({ ran: true, alerted: present, counted: present });
       expect(mailed.inbox.rows).toEqual(before.inbox.rows);
       expect(mailed.outbox.rows).toEqual(before.outbox.rows);
-      expect(mailed.leaseRows).toEqual(before.leaseRows);
+      // The lease row as the status reads it (the fake table's own id counter and wall-clock stamps differ per world).
+      const leaseView = (rows: Row[]) =>
+        rows.map(({ name, holder, acquired_at, lease_until, cursor }) => ({ name, holder, acquired_at, lease_until, cursor }));
+      expect(leaseView(mailed.leaseRows)).toEqual(leaseView(before.leaseRows));
+      expect(mailed.leaseRows).toHaveLength(1);
       await expect(mailed.read('2026-11-07T11:05:00Z')).resolves.toEqual(await before.read('2026-11-07T11:05:00Z'));
       expect(calls).toEqual([]);
       expect(mailed.mail!.emailSendLog.rows).toEqual([]);
