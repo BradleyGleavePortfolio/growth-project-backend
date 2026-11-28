@@ -21,7 +21,7 @@ Preconditions are checked on the manifest alone, so they fail the PR's tests and
 - Every community surface flag (`FEATURE_COMMUNITY_POSTS`, `_MESSAGES`, `_PUSH`, `_REALTIME`, `_VOICE_NOTES`, `_DM` and the others) needs `FEATURE_COMMUNITY_API=true`.
 - `FEATURE_COMMUNITY_API=true` needs `FEATURE_COMMUNITY_SCHEMA` to be `true` or `unset` (unset means on).
 - `FEATURE_COMMUNITY_VOICE_NOTES_REQUIRE_ENTITLEMENT=true` needs `FEATURE_COMMUNITY_VOICE_NOTES=true`.
-- `FEATURE_MWB_AI_LIVE_CREATE=true` needs `AI_GATEWAY_ENABLED=true`, `AI_GATEWAY_PROVIDER=anthropic` and `AI_GATEWAY_CAPABILITIES` declared (its only settable value is `draft.create_workout_plan,draft.edit_workout_plan`; `*` is outside the closed set).
+- `FEATURE_MWB_AI_LIVE_CREATE=true` needs `AI_GATEWAY_ENABLED=true`, `AI_GATEWAY_PROVIDER=anthropic` and `AI_GATEWAY_CAPABILITIES` declared (its four settable values are `draft.create_workout_plan,draft.edit_workout_plan`, the same plus `wearable_insight.client,wearable_insight.coach`, the same two plus `draft.coach_message`, and all five; the manifest declares the third, `draft.create_workout_plan,draft.edit_workout_plan,draft.coach_message`; `*` is outside the closed set).
 - A `github-secret` source must be set and non-blank. `GOOGLE_CLIENT_IDS` must be a comma list with no empty entry. `SUPABASE_SERVICE_ROLE_KEY` must be an `sb_secret_` key and `SUPABASE_ANON_KEY` an `sb_publishable_` key (letters, digits, `_` and `-` after the prefix; no spaces, no legacy `eyJ...` JWT).
 
 ## 1. Flip: one PR per flip

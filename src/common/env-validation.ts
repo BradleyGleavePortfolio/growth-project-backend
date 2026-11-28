@@ -997,13 +997,15 @@ export const ENV_RULES: EnvRule[] = [
   {
     name: 'AI_GATEWAY_CAPABILITIES',
     // WEAR-AI (owner 161-1 op 1): the second value adds the two wearable insight
-    // capabilities. Both routes check the client's live box-2 grant first.
-    values: ['draft.create_workout_plan,draft.edit_workout_plan', 'draft.create_workout_plan,draft.edit_workout_plan,wearable_insight.client,wearable_insight.coach'],
+    // capabilities. COACH-DRAFT-CAP-BE: the third and fourth add draft.coach_message
+    // (Roman's coach message drafts) to the first and second. Every one of those
+    // calls checks the live grants first (the coach's own for a coach draft).
+    values: ['draft.create_workout_plan,draft.edit_workout_plan', 'draft.create_workout_plan,draft.edit_workout_plan,wearable_insight.client,wearable_insight.coach', 'draft.create_workout_plan,draft.edit_workout_plan,draft.coach_message', 'draft.create_workout_plan,draft.edit_workout_plan,wearable_insight.client,wearable_insight.coach,draft.coach_message'],
     unsetIs: 'off',
     tier: 'optional',
     default: "unset → no capability allowed ('*' allows all)",
     reason:
-      "Comma-separated capability allow-list for the AI gateway: the two workout capabilities, or those two plus the two wearable insight capabilities (the client's live box-2 grant is checked first). Never '*': it would send every gateway capability to the provider.",
+      "Comma-separated capability allow-list for the AI gateway: the two workout capabilities; those two plus the two wearable insight capabilities; those two plus draft.coach_message (Roman's coach message drafts: the check-in reply, the Home win and reach-out notes, the win-back note, each filed pending and sent only on the coach's tap); or all five. An insight call checks the client's live box-2 grant first; a coach draft checks the coach's own AI grant and the client's live box-2 grant first. Never '*': it would send every gateway capability to the provider.",
   },
   {
     name: 'AI_GATEWAY_REQUIRE_APPROVAL',
